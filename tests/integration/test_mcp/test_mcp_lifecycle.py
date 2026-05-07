@@ -33,6 +33,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "run": 14,
     "schedule": 3,
     "schema": 3,
+    "sitemap": 1,
     "source": 2,
     "target": 5,
     "topic": 7,
@@ -40,7 +41,8 @@ EXPECTED_NAMESPACE_COUNTS = {
 }
 
 # Total = sum of values; locked here to flag accidental drops.
-EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())  # 125 at M3 land.
+EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
+# 125 at M3 land; 126 at M6.A (added ``sitemap.fetch`` for skill #5).
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:

@@ -88,6 +88,92 @@ _TEST_PUBLISHER: frozenset[str] = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# M6.A real skill grants.
+# ---------------------------------------------------------------------------
+#
+# Per PLAN.md L692-L718 the tool-grant matrix is the load-bearing seam
+# for the security model — every skill declares the smallest set of MCP
+# tools it needs, and ``check_grant`` rejects anything else. Grants for
+# the five M6.A research-phase skills are below; the corresponding
+# ``allowed_tools`` lists in each ``SKILL.md`` frontmatter must mirror
+# this set verbatim (a startup smoke check enforces the parity).
+#
+# The shared ``_run_lifecycle`` set carries the four read-write tools
+# every skill needs to participate in the runs audit trail; we factor
+# it out so a future skill author doesn't accidentally drop one.
+
+
+_RUN_LIFECYCLE: frozenset[str] = frozenset(
+    {
+        "run.start",
+        "run.heartbeat",
+        "run.finish",
+        "run.recordStepCall",
+    }
+)
+
+
+_SKILL_KEYWORD_DISCOVERY: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "cluster.list",
+    "topic.bulkCreate",
+    "topic.list",
+    "integration.test",
+    "integration.testGsc",
+    "cost.queryProject",
+}
+
+
+_SKILL_SERP_ANALYZER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.get",
+    "source.add",
+    "source.list",
+    "integration.test",
+}
+
+
+_SKILL_TOPICAL_CLUSTER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "cluster.create",
+    "cluster.list",
+    "cluster.get",
+    "topic.list",
+    "topic.bulkUpdateStatus",
+}
+
+
+_SKILL_CONTENT_BRIEF: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.create",
+    "article.setBrief",
+    "source.add",
+    "source.list",
+    "integration.test",
+}
+
+
+_SKILL_COMPETITOR_SITEMAP: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "cluster.list",
+    "cluster.create",
+    "topic.bulkCreate",
+    "topic.list",
+    "integration.test",
+    "sitemap.fetch",
+}
+
+
 # The matrix proper. Special-case keys (``__system__``, ``__test__``) hold
 # a sentinel set; ``check_grant`` short-circuits on them so we never
 # enumerate the full tool registry just to grant access.
@@ -98,6 +184,12 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "_test_editor": _TEST_EDITOR,
     "_test_eeat_gate": _TEST_EEAT_GATE,
     "_test_publisher": _TEST_PUBLISHER,
+    # M6.A skills (research phase).
+    "01-research/keyword-discovery": _SKILL_KEYWORD_DISCOVERY,
+    "01-research/serp-analyzer": _SKILL_SERP_ANALYZER,
+    "01-research/topical-cluster": _SKILL_TOPICAL_CLUSTER,
+    "01-research/content-brief": _SKILL_CONTENT_BRIEF,
+    "01-research/competitor-sitemap-shortcut": _SKILL_COMPETITOR_SITEMAP,
 }
 
 

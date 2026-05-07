@@ -797,6 +797,106 @@ async def test_integration(
 
 
 # ---------------------------------------------------------------------------
+# Sitemap-fetch helper for skill #5 (competitor-sitemap-shortcut).
+# ---------------------------------------------------------------------------
+
+
+class SitemapFetchRequest(BaseModel):
+    """Body for ``POST /projects/{id}/sitemap-fetch``."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "urls": [
+                    "https://competitor.example/sitemap.xml",
+                ],
+                "max_entries": 500,
+            }
+        }
+    )
+
+    urls: list[str] = Field(min_length=1, max_length=20)
+    timeout_s: float = Field(default=15.0, gt=0, le=60)
+    max_index_depth: int = Field(default=2, ge=0, le=4)
+    max_entries: int = Field(default=5_000, ge=1, le=20_000)
+
+
+class SitemapFetchEntryResponse(BaseModel):
+    """One URL row in the sitemap-fetch response."""
+
+    url: str
+    lastmod: str | None = None
+    changefreq: str | None = None
+    priority: str | None = None
+    source_sitemap: str | None = None
+
+
+class SitemapFetchErrorResponse(BaseModel):
+    """One per-URL fetch failure in the sitemap-fetch response."""
+
+    url: str
+    error: str
+
+
+class SitemapFetchResponse(BaseModel):
+    """Top-level shape of the sitemap-fetch response."""
+
+    entries: list[SitemapFetchEntryResponse]
+    errors: list[SitemapFetchErrorResponse]
+
+
+@router.post(
+    "/{project_id}/sitemap-fetch",
+    response_model=SitemapFetchResponse,
+)
+async def fetch_project_sitemap(
+    project_id: int,
+    body: SitemapFetchRequest,
+    session: Session = Depends(get_session),
+) -> SitemapFetchResponse:
+    """Fetch a list of competitor sitemap URLs and return parsed entries.
+
+    Companion to MCP ``sitemap.fetch`` — same payload, same response
+    shape; the REST endpoint exists so the UI can show a project-scoped
+    sitemap browser without going through MCP. We resolve the project
+    only to validate the path (the helper itself doesn't read project
+    rows).
+    """
+    import httpx as _httpx
+
+    from content_stack.integrations.sitemap import fetch_sitemap_entries
+
+    # Validate the project exists; the helper itself is project-agnostic.
+    ProjectRepository(session).get(project_id)
+
+    async with _httpx.AsyncClient(
+        timeout=body.timeout_s,
+        follow_redirects=True,
+    ) as client:
+        result = await fetch_sitemap_entries(
+            body.urls,
+            client=client,
+            timeout_s=body.timeout_s,
+            max_index_depth=body.max_index_depth,
+            max_entries=body.max_entries,
+        )
+
+    return SitemapFetchResponse(
+        entries=[
+            SitemapFetchEntryResponse(
+                url=e.url,
+                lastmod=e.lastmod,
+                changefreq=e.changefreq,
+                priority=e.priority,
+                source_sitemap=e.source_sitemap,
+            )
+            for e in result.entries
+        ],
+        errors=[SitemapFetchErrorResponse(url=err.url, error=err.error) for err in result.errors],
+    )
+
+
+# ---------------------------------------------------------------------------
 # GSC OAuth flow (PLAN.md L1069-L1080).
 # ---------------------------------------------------------------------------
 

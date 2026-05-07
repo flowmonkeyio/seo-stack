@@ -21,6 +21,7 @@ from content_stack.mcp.tools import (
     meta,
     projects,
     runs,
+    sitemap,
 )
 
 
@@ -35,6 +36,7 @@ def register_all(registry: ToolRegistry) -> None:
     authors.register(registry)
     cost.register(registry)
     meta.register(registry)
+    sitemap.register(registry)
 
 
 __all__ = ["register_all"]

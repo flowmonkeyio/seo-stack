@@ -117,6 +117,7 @@ READ_VERBS: frozenset[str] = frozenset(
         "getActive",
         "lookup",
         "diff",
+        "fetch",
     }
 )
 
