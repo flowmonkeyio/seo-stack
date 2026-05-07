@@ -28,6 +28,8 @@ const tabs = [
   { key: 'eeat', label: 'EEAT' },
   { key: 'targets', label: 'Targets' },
   { key: 'integrations', label: 'Integrations' },
+  { key: 'schedules', label: 'Schedules' },
+  { key: 'cost-budget', label: 'Cost & Budget' },
 ]
 
 const activeKey = computed<string>(() => {

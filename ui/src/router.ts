@@ -10,6 +10,8 @@ import ComplianceTab from './views/project-detail/ComplianceTab.vue'
 import EeatTab from './views/project-detail/EeatTab.vue'
 import TargetsTab from './views/project-detail/TargetsTab.vue'
 import IntegrationsTab from './views/project-detail/IntegrationsTab.vue'
+import SchedulesTab from './views/project-detail/SchedulesTab.vue'
+import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
 import ClustersView from './views/ClustersView.vue'
 import TopicsView from './views/TopicsView.vue'
 import ArticlesView from './views/ArticlesView.vue'
@@ -50,6 +52,8 @@ const routes: RouteRecordRaw[] = [
       { path: 'eeat', name: 'project-detail-eeat', component: EeatTab },
       { path: 'targets', name: 'project-detail-targets', component: TargetsTab },
       { path: 'integrations', name: 'project-detail-integrations', component: IntegrationsTab },
+      { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
+      { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
     ],
   },
   { path: '/projects/:id/clusters', name: 'project-clusters', component: ClustersView },
@@ -143,6 +147,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/gsc', name: 'project-gsc', component: GscView },
   { path: '/projects/:id/drift', name: 'project-drift', component: DriftView },
   { path: '/projects/:id/runs', name: 'project-runs', component: RunsView },
+  { path: '/projects/:id/runs/:run_id', name: 'project-run-detail', component: RunsView },
   { path: '/projects/:id/procedures', name: 'project-procedures', component: ProceduresView },
 ]
 

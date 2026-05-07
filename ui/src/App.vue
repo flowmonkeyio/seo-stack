@@ -60,14 +60,14 @@ const projectNav = computed<NavItem[]>(() => {
   if (!id) return []
   return [
     { label: 'Overview', to: `/projects/${id}/overview` },
-    { label: 'Clusters', to: `/projects/${id}/clusters`, milestone: 'M5.B' },
-    { label: 'Topics', to: `/projects/${id}/topics`, milestone: 'M5.B' },
-    { label: 'Articles', to: `/projects/${id}/articles`, milestone: 'M5.B' },
-    { label: 'Interlinks', to: `/projects/${id}/interlinks`, milestone: 'M5.C' },
-    { label: 'GSC', to: `/projects/${id}/gsc`, milestone: 'M5.C' },
-    { label: 'Drift', to: `/projects/${id}/drift`, milestone: 'M5.C' },
-    { label: 'Runs', to: `/projects/${id}/runs`, milestone: 'M5.C' },
-    { label: 'Procedures', to: `/projects/${id}/procedures`, milestone: 'M5.C' },
+    { label: 'Clusters', to: `/projects/${id}/clusters` },
+    { label: 'Topics', to: `/projects/${id}/topics` },
+    { label: 'Articles', to: `/projects/${id}/articles` },
+    { label: 'Interlinks', to: `/projects/${id}/interlinks` },
+    { label: 'GSC', to: `/projects/${id}/gsc` },
+    { label: 'Drift', to: `/projects/${id}/drift` },
+    { label: 'Runs', to: `/projects/${id}/runs` },
+    { label: 'Procedures', to: `/projects/${id}/procedures` },
   ]
 })
 
