@@ -335,6 +335,52 @@ class TopicStatus(enum.StrEnum):
     REJECTED = "rejected"
 
 
+# Topic state-machine. M1.B repository layer enforces transitions via
+# ``validate_transition``; the legal moves are derived from PLAN.md L385 +
+# procedure 4 (queued/approved are pre-draft; drafting kicks in once an
+# Article row is created; published mirrors the Article terminal; rejected
+# terminates without drafting).
+TOPIC_STATUS_TRANSITIONS: dict[TopicStatus, frozenset[TopicStatus]] = {
+    TopicStatus.QUEUED: frozenset({TopicStatus.APPROVED, TopicStatus.REJECTED}),
+    TopicStatus.APPROVED: frozenset(
+        {TopicStatus.DRAFTING, TopicStatus.REJECTED, TopicStatus.QUEUED}
+    ),
+    TopicStatus.DRAFTING: frozenset({TopicStatus.PUBLISHED, TopicStatus.REJECTED}),
+    # Terminal — refresh creates a new Article version, not a new topic.
+    TopicStatus.PUBLISHED: frozenset(),
+    # Un-reject path for the UI escape hatch.
+    TopicStatus.REJECTED: frozenset({TopicStatus.QUEUED}),
+}
+
+
+# Internal-link state-machine. PLAN.md L392 lists the statuses; the
+# transitions encode the per-status flows from the interlinker skill (#15)
+# and the article-unpublish-repair (audit M-05).
+INTERNAL_LINK_STATUS_TRANSITIONS: dict[InternalLinkStatus, frozenset[InternalLinkStatus]] = {
+    InternalLinkStatus.SUGGESTED: frozenset(
+        {InternalLinkStatus.APPLIED, InternalLinkStatus.DISMISSED}
+    ),
+    InternalLinkStatus.APPLIED: frozenset(
+        {InternalLinkStatus.BROKEN, InternalLinkStatus.DISMISSED}
+    ),
+    InternalLinkStatus.BROKEN: frozenset(
+        {InternalLinkStatus.APPLIED, InternalLinkStatus.DISMISSED}
+    ),
+    InternalLinkStatus.DISMISSED: frozenset(),  # terminal
+}
+
+
+# Run lifecycle. PLAN.md L390. ``running`` is the only entry; the three
+# terminal states are mutually exclusive and not re-enterable (a new run row
+# is created instead).
+RUN_STATUS_TRANSITIONS: dict[RunStatus, frozenset[RunStatus]] = {
+    RunStatus.RUNNING: frozenset({RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.ABORTED}),
+    RunStatus.SUCCESS: frozenset(),
+    RunStatus.FAILED: frozenset(),
+    RunStatus.ABORTED: frozenset(),
+}
+
+
 # ---------------------------------------------------------------------------
 # Tables — order chosen so referenced parents are declared before children.
 # ---------------------------------------------------------------------------
@@ -1277,6 +1323,9 @@ class ScheduledJob(SQLModel, table=True):
 
 __all__ = [
     "ARTICLE_STATUS_TRANSITIONS",
+    "INTERNAL_LINK_STATUS_TRANSITIONS",
+    "RUN_STATUS_TRANSITIONS",
+    "TOPIC_STATUS_TRANSITIONS",
     "Article",
     "ArticleAsset",
     "ArticleAssetKind",

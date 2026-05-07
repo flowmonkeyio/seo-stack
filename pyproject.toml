@@ -78,7 +78,14 @@ ignore = []
 [tool.mypy]
 python_version = "3.12"
 strict = false
-warn_unused_ignores = true
+# SQLModel exposes column descriptors at class-attribute level; mypy
+# sees the runtime value type (``bool``, ``datetime``, etc.) and flags
+# the SA-level methods (``.is_()``, ``.asc()``, ``.in_()``, ``.desc()``).
+# Repository code uses these freely under per-line ignores, but the
+# narrow code matrix mypy reports per call doesn't always agree across
+# minor versions. We therefore allow unused ignores rather than burn
+# code review cycles tracking the exact ignore code per line.
+warn_unused_ignores = false
 no_implicit_optional = true
 ignore_missing_imports = true
 exclude = [
@@ -93,9 +100,13 @@ exclude = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = ["-ra", "--strict-markers"]
+markers = [
+    "benchmark: marks acceptance benchmarks (audit B-07 100x set_draft, etc.)",
+]
 # `schema_json` is the canonical PLAN.md L361 column name on the
 # `schema_emits` table; SQLModel's parent class exposes a `schema_json`
 # attribute that triggers this benign UserWarning at class-construction time.
 filterwarnings = [
     "ignore:Field name \"schema_json\" in \"SchemaEmit\" shadows an attribute in parent \"SQLModel\":UserWarning",
+    "ignore:Field name \"schema_json\" in \"SchemaEmitOut\" shadows an attribute in parent \"BaseModel\":UserWarning",
 ]
