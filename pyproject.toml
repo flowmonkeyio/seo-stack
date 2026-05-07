@@ -114,4 +114,5 @@ filterwarnings = [
     "ignore:Field name \"schema_json\" in \"SchemaEmit\" shadows an attribute in parent \"SQLModel\":UserWarning",
     "ignore:Field name \"schema_json\" in \"SchemaEmitOut\" shadows an attribute in parent \"BaseModel\":UserWarning",
     "ignore:Field name \"schema_json\" in \"SchemaSetRequest\" shadows an attribute in parent \"BaseModel\":UserWarning",
+    "ignore:Field name \"schema_json\" in \"SchemaSetInput\" shadows an attribute in parent \"MCPInput\":UserWarning",
 ]

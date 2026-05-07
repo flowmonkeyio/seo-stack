@@ -45,6 +45,39 @@ jobs:
       - name: Pytest
         run: uv run pytest -v
 
+      # M3: live MCP smoke. Boots the daemon in the background and
+      # exercises the JSON-RPC POST surface against ``meta.enums`` to
+      # confirm the Streamable HTTP transport is wired and the lowlevel
+      # ``Server.run`` lifespan + tool dispatch round-trip cleanly. A
+      # broken mount or registration-time discipline failure surfaces
+      # here as a non-zero exit.
+      - name: MCP smoke
+        run: |
+          set -euo pipefail
+          uv run python -m content_stack serve --host 127.0.0.1 --port 5189 &
+          DAEMON_PID=$!
+          # Give the daemon a beat to bind the port + finish startup.
+          sleep 3
+          token="$(cat ~/.local/state/content-stack/auth.token)"
+          # initialize.
+          curl -fsS -X POST http://127.0.0.1:5189/mcp \
+            -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/json, text/event-stream" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":"i","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"ci","version":"0.1"}}}' \
+            > /tmp/init.json
+          # tools/call meta.enums.
+          curl -fsS -X POST http://127.0.0.1:5189/mcp \
+            -H "Authorization: Bearer ${token}" \
+            -H "Accept: application/json, text/event-stream" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","id":"e","method":"tools/call","params":{"name":"meta.enums","arguments":{}}}' \
+            > /tmp/enums.json
+          # Assert the response contains the topics_status enum (proves
+          # the dispatcher round-tripped the structured result).
+          grep -q "topics_status" /tmp/enums.json
+          kill "${DAEMON_PID}"
+
   ui:
     name: UI (typecheck, build, bundle-parity, gen-types-parity)
     runs-on: ubuntu-latest

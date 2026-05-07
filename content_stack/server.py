@@ -30,6 +30,7 @@ from content_stack.auth import BearerTokenMiddleware, ensure_token
 from content_stack.config import Settings, get_settings
 from content_stack.db.connection import make_engine
 from content_stack.logging import configure_logging, get_logger
+from content_stack.mcp import register_mcp
 
 _SEED_BYTES = 32
 _REQUIRED_MODE = 0o600
@@ -212,6 +213,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(HostHeaderMiddleware)
 
     register_routers(app)
+
+    # Mount the MCP Streamable HTTP transport at /mcp. Bearer-token
+    # middleware already covers ``/mcp/*`` via ``PROTECTED_PREFIXES``,
+    # so the MCP layer never re-checks auth — every request landing on
+    # a tool handler has already cleared the BearerTokenMiddleware.
+    register_mcp(app)
 
     _mount_ui(app, settings)
 
