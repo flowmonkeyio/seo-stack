@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App-wide base styles. Keep minimal; per-component styles live in SFC <style> blocks. */
+html,
+body,
+#app {
+  height: 100%;
+}
