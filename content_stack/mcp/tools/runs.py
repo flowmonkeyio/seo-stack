@@ -4,12 +4,13 @@ Exposes the audit-trail layer (``RunRepository`` + ``RunStepRepository``
 + ``RunStepCallRepository`` + ``ProcedureRunStepRepository``) plus the
 procedure-orchestration seam.
 
-**Procedure runner is M8** — ``procedure.run`` validates the slug
-exists in the (M3-empty) registry and otherwise raises
-``MilestoneDeferralError`` so the tool is discoverable but documents
-the deferral cleanly. ``procedure.list`` returns ``[]`` (the registry is
-empty at M3); ``procedure.status`` works today and reads the
-``ProcedureRunStep`` rows for any existing run.
+M7.A: ``procedure.run`` / ``procedure.resume`` / ``procedure.fork`` now
+dispatch to the daemon-side ``ProcedureRunner`` per locked decision D4.
+The runner is held on ``app.state.procedure_runner`` (built during the
+FastAPI lifespan); we resolve it here via the SDK's request context.
+
+The remaining deferral is ``run.resume`` / ``run.fork`` — those land in
+M8 alongside APScheduler-driven cron entries.
 """
 
 from __future__ import annotations
@@ -25,7 +26,12 @@ from content_stack.mcp.contract import MCPInput, MCPOutput, WriteEnvelope
 from content_stack.mcp.errors import MilestoneDeferralError
 from content_stack.mcp.server import ToolRegistry, ToolSpec
 from content_stack.mcp.streaming import ProgressEmitter
-from content_stack.repositories.base import Page
+from content_stack.procedures.runner import ProcedureRunner
+from content_stack.repositories.base import (
+    NotFoundError,
+    Page,
+    ValidationError,
+)
 from content_stack.repositories.runs import (
     ProcedureRunStepOut,
     ProcedureRunStepRepository,
@@ -385,24 +391,25 @@ async def _run_step_call_list(
 
 
 class ProcedureListInput(MCPInput):
-    """List registered procedure slugs (M3 returns [] — registry empty)."""
+    """List registered procedure slugs."""
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
 
 
 class ProcedureRunInput(MCPInput):
-    """Enqueue a procedure run — M8 deferral.
+    """Enqueue a procedure run via the daemon-orchestrated runner (D4).
 
-    M3 documents the seam: validates the slug exists in the registry
-    (currently empty) and raises ``MilestoneDeferralError`` with the
-    M8 hint. M8 will create the ``runs`` row, return ``(run_id,
-    run_token, status_url)``, and dispatch the runner asynchronously.
+    The runner pre-writes a ``runs`` row + the procedure's
+    ``procedure_run_steps`` skeleton, dispatches an asyncio task to walk
+    the steps, and returns ``{run_id, run_token, status_url}``. The
+    caller polls ``procedure.status(run_id)`` (or hits
+    ``GET /api/v1/procedures/runs/{run_id}``) for live state.
     """
 
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {"slug": "topic-to-published", "project_id": 1, "args": {"topic_id": 1}}
+            "example": {"slug": "04-topic-to-published", "project_id": 1, "args": {"topic_id": 1}}
         },
     )
 
@@ -411,6 +418,19 @@ class ProcedureRunInput(MCPInput):
     # ``Field(default_factory=dict)`` avoids the mutable-default class-attribute
     # pitfall (RUF012) while still letting the JSON wire shape default to {}.
     args: dict[str, Any] = Field(default_factory=dict)
+    parent_run_id: int | None = None
+    variant: str | None = None
+
+
+class ProcedureRunOutput(BaseModel):
+    """Wire shape for ``procedure.run``."""
+
+    run_id: int
+    run_token: str
+    status_url: str
+    slug: str
+    project_id: int
+    started: bool
 
 
 class ProcedureStatusInput(MCPInput):
@@ -429,7 +449,7 @@ class ProcedureStatusOutput(MCPOutput):
 
 
 class ProcedureResumeInput(MCPInput):
-    """Resume a paused procedure run — M8/M9 deferral."""
+    """Resume an aborted / paused procedure run from the next pending step."""
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
 
@@ -437,89 +457,129 @@ class ProcedureResumeInput(MCPInput):
 
 
 class ProcedureForkInput(MCPInput):
-    """Fork a procedure run — M8/M9 deferral."""
+    """Fork a procedure run from a step index, copying prior outputs.
+
+    Forking is the canonical "redo from step N onward" pattern — used
+    by the content-refresher chain to roll a published article back
+    through the editor + EEAT-gate + publish steps without losing the
+    versions baked into the source run's audit trail.
+    """
 
     model_config = ConfigDict(
-        extra="forbid", json_schema_extra={"example": {"run_id": 1, "from_step": "editor"}}
+        extra="forbid",
+        json_schema_extra={"example": {"run_id": 1, "from_step_index": 5}},
     )
 
     run_id: int
-    from_step: str
+    from_step_index: int
+
+
+def _resolve_runner(ctx: MCPContext) -> ProcedureRunner:
+    """Pull the bound runner off the context, raising a typed error if missing."""
+    runner = ctx.procedure_runner
+    if runner is None:
+        raise ValidationError(
+            "procedure_runner not initialised — daemon lifespan did not run",
+            data={"hint": "this should never happen in production; tests must inject a runner"},
+        )
+    if not isinstance(runner, ProcedureRunner):
+        # Defensive — keeps mypy + tests honest if someone monkey-patches.
+        raise ValidationError(
+            f"procedure_runner is the wrong type: {type(runner).__name__}",
+            data={"hint": "ctx.procedure_runner must be a ProcedureRunner instance"},
+        )
+    return runner
 
 
 async def _procedure_list(
-    _inp: ProcedureListInput, _ctx: MCPContext, _emit: ProgressEmitter
+    _inp: ProcedureListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[str]:
     """Return the registered procedure slug list.
 
-    M3 ships with an empty registry; the procedure-runner + slug-loader
-    land in M8. We return ``[]`` rather than -32601 because the
-    operation is well-defined ("list known procedures") even when the
-    list is empty — this matches the deliverable brief.
+    M7.A: the runner exposes the slug catalogue; we proxy it.
     """
-    return []
+    runner = _resolve_runner(ctx)
+    return runner.list_procedures()
 
 
 async def _procedure_run(
-    inp: ProcedureRunInput, _ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[Any]:
-    """Enqueue a procedure run — M7 deferral.
+    inp: ProcedureRunInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProcedureRunOutput]:
+    """Enqueue a procedure run via the daemon-orchestrated runner.
 
-    The slug is validated against the (empty) registry; the deferral
-    error carries ``data.milestone='M7'`` and a hint pointing at
-    PLAN.md L880-L900 + decision D4. Procedure-runner work is
-    step 8 (M7 in 0-indexed convention).
+    Per locked decision D4 (PLAN.md L884-L900): the runner is daemon-side;
+    the user's LLM client only kicks off + polls. Returns the envelope
+    immediately; the asyncio task continues walking the procedure's
+    steps in the background.
     """
-    raise MilestoneDeferralError(
-        "procedure.run requires the M7 procedure runner",
-        data={
-            "milestone": "M7",
-            "hint": (
-                "M3 exposes the tool seam; M7 implements the daemon-orchestrated runner per "
-                "PLAN.md L880-L900 (decision D4). The runner creates a `runs` row with "
-                "kind='procedure' and dispatches step-by-step LLM subprocesses."
-            ),
-            "slug": inp.slug,
-            "project_id": inp.project_id,
-        },
+    runner = _resolve_runner(ctx)
+    try:
+        envelope = await runner.start(
+            slug=inp.slug,
+            args=inp.args,
+            project_id=inp.project_id,
+            parent_run_id=inp.parent_run_id,
+            variant=inp.variant,
+        )
+    except NotFoundError:
+        raise
+    payload = ProcedureRunOutput(
+        run_id=envelope["run_id"],
+        run_token=envelope["run_token"],
+        status_url=envelope["status_url"],
+        slug=envelope["slug"],
+        project_id=envelope["project_id"],
+        started=envelope["started"],
+    )
+    return WriteEnvelope[ProcedureRunOutput](
+        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
     )
 
 
 async def _procedure_status(
     inp: ProcedureStatusInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> ProcedureStatusOutput:
-    """Return the run header + every procedure-step row for a run.
-
-    Works today — reads ``RunRepository.get`` plus
-    ``ProcedureRunStepRepository.list_steps``. M8 will populate the
-    ``ProcedureRunStep`` rows during runner execution; until then any
-    rows pre-inserted by tests / ad-hoc fixtures show up here.
-    """
+    """Return the run header + every procedure-step row for a run."""
     run = RunRepository(ctx.session).get(inp.run_id)
     steps = ProcedureRunStepRepository(ctx.session).list_steps(inp.run_id)
     return ProcedureStatusOutput(run=run, steps=steps)
 
 
 async def _procedure_resume(
-    inp: ProcedureResumeInput, _ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[Any]:
-    raise MilestoneDeferralError(
-        "procedure.resume requires the M7 procedure runner",
-        data={"milestone": "M7", "hint": "Lands with the runner", "run_id": inp.run_id},
+    inp: ProcedureResumeInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProcedureRunOutput]:
+    """Resume an aborted / paused procedure run."""
+    runner = _resolve_runner(ctx)
+    envelope = await runner.resume(run_id=inp.run_id)
+    payload = ProcedureRunOutput(
+        run_id=envelope["run_id"],
+        run_token=envelope["run_token"],
+        status_url=envelope["status_url"],
+        slug=envelope["slug"],
+        project_id=envelope["project_id"],
+        started=envelope["started"],
+    )
+    return WriteEnvelope[ProcedureRunOutput](
+        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
     )
 
 
 async def _procedure_fork(
-    inp: ProcedureForkInput, _ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[Any]:
-    raise MilestoneDeferralError(
-        "procedure.fork requires the M7 procedure runner",
-        data={
-            "milestone": "M7",
-            "hint": "Lands with the runner",
-            "run_id": inp.run_id,
-            "from_step": inp.from_step,
-        },
+    inp: ProcedureForkInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProcedureRunOutput]:
+    """Fork a procedure run from a step index, copying prior outputs."""
+    runner = _resolve_runner(ctx)
+    envelope = await runner.fork(run_id=inp.run_id, from_step_index=inp.from_step_index)
+    payload = ProcedureRunOutput(
+        run_id=envelope["run_id"],
+        run_token=envelope["run_token"],
+        status_url=envelope["status_url"],
+        slug=envelope["slug"],
+        project_id=envelope["project_id"],
+        started=envelope["started"],
+    )
+    return WriteEnvelope[ProcedureRunOutput](
+        data=payload, run_id=envelope["run_id"], project_id=envelope["project_id"]
     )
 
 
@@ -659,9 +719,12 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="procedure.run",
-            description="Enqueue a procedure run (M8 deferral; documented seam).",
+            description=(
+                "Enqueue a procedure run (daemon-orchestrated, decision D4); "
+                "returns {run_id, run_token, status_url}."
+            ),
             input_model=ProcedureRunInput,
-            output_model=WriteEnvelope[Any],
+            output_model=WriteEnvelope[ProcedureRunOutput],
             handler=_procedure_run,
             streaming=True,
         )
@@ -678,18 +741,18 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             "procedure.resume",
-            "Resume a paused procedure run.",
+            "Resume an aborted/paused procedure run from the next pending step.",
             ProcedureResumeInput,
-            WriteEnvelope[Any],
+            WriteEnvelope[ProcedureRunOutput],
             _procedure_resume,
         )
     )
     registry.register(
         ToolSpec(
             "procedure.fork",
-            "Fork a procedure run from a named step.",
+            "Fork a procedure run from a step index, copying prior outputs.",
             ProcedureForkInput,
-            WriteEnvelope[Any],
+            WriteEnvelope[ProcedureRunOutput],
             _procedure_fork,
         )
     )

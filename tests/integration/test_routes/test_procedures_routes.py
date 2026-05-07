@@ -1,4 +1,4 @@
-"""Procedures router tests — list (M2: empty), run (501), runs/{id} (works today)."""
+"""Procedures router tests — list, run (live in M7.A), runs/{id}."""
 
 from __future__ import annotations
 
@@ -12,12 +12,15 @@ def test_list_procedures_returns_array(api: TestClient) -> None:
     assert isinstance(resp.json(), list)
 
 
-def test_run_procedure_returns_501_with_m7_hint(api: TestClient) -> None:
-    """``POST /procedures/{slug}/run`` 501 with ``M7`` hint (procedure runner)."""
-    resp = api.post("/api/v1/procedures/bootstrap/run")
-    assert resp.status_code == 501
+def test_run_procedure_unknown_slug_returns_404(api: TestClient, project_id: int) -> None:
+    """``POST /procedures/{slug}/run`` 404s when the slug isn't registered."""
+    resp = api.post(
+        "/api/v1/procedures/bootstrap-not-real/run",
+        json={"project_id": project_id, "args": {}},
+    )
+    assert resp.status_code == 404
     body = resp.json()["detail"]
-    assert "M7" in body["hint"]
+    assert "bootstrap-not-real" in body["detail"]
 
 
 def test_get_procedure_run_404_for_missing(api: TestClient) -> None:

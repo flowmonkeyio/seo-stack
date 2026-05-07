@@ -30,18 +30,28 @@ def test_drift_diff_returns_milestone_deferral(mcp_client: MCPClient, seeded_pro
     assert err["data"]["milestone"] == "M6"
 
 
-def test_procedure_run_returns_m7_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """procedure.run returns -32601 with milestone='M7' hint (procedure runner)."""
+def test_procedure_run_unknown_slug_404s(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """``procedure.run`` for an unknown slug returns -32004 NotFoundError.
+
+    M7.A replaced the M3-era milestone deferral with the live runner;
+    callers that ask for a procedure slug we haven't authored yet
+    (procedures 1, 2, 3, 5, 6, 7, 8 land in M7.B) get a clean 404 instead
+    of a stale milestone hint.
+    """
     err = mcp_client.call_tool_error(
         "procedure.run",
         {"slug": "any-procedure", "project_id": seeded_project["data"]["id"]},
     )
-    assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M7"
+    assert err["code"] == -32004
+    assert err["message"] == "NotFoundError"
 
 
-def test_procedure_list_returns_empty_list(mcp_client: MCPClient) -> None:
-    """procedure.list returns ``[]`` (registry empty at M3)."""
+def test_procedure_list_returns_authored_slugs(mcp_client: MCPClient) -> None:
+    """``procedure.list`` includes every slug the runner discovered on disk.
+
+    M7.A: procedure 04-topic-to-published is authored as the workhorse;
+    the rest land in M7.B. Tests assert presence rather than equality so
+    M7.B can grow the list without revising this test.
+    """
     payload = mcp_client.call_tool_structured("procedure.list", {})
-    # Wrapped under 'items' by the dispatcher's list serializer.
-    assert payload == {"items": []}
+    assert "04-topic-to-published" in payload.get("items", [])

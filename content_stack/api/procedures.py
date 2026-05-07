@@ -1,12 +1,15 @@
-"""Procedures router — list, run (501), poll.
+"""Procedures router — list, run, resume, fork, poll.
 
 PLAN.md L611-L617:
 
-- ``GET /procedures`` — list discovered procedure files. M2 scans
-  ``procedures/`` (which is empty until M8); we return a real list-of-dicts
-  shape so the UI doesn't have to special-case "not yet implemented".
-- ``POST /procedures/{slug}/run`` — 501 with M8 hint per the deliverable
-  brief; the runner is daemon-orchestrated and lands in M8.
+- ``GET /procedures`` — list discovered procedure files (frontmatter
+  metadata).
+- ``POST /procedures/{slug}/run`` — enqueue a procedure run via the
+  daemon-orchestrated runner (M7+, decision D4); 202 with envelope.
+- ``POST /procedures/runs/{run_id}/resume`` — resume from the next
+  pending step.
+- ``POST /procedures/runs/{run_id}/fork`` — clone a run from a step
+  index.
 - ``GET /procedures/runs/{run_id}`` — poll a procedure run by id;
   works today via ``RunRepository`` + ``ProcedureRunStepRepository``.
 """
@@ -17,12 +20,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
 from content_stack.api.deps import get_session
 from content_stack.config import Settings, get_settings
+from content_stack.repositories.base import (
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from content_stack.repositories.runs import (
     ProcedureRunStepOut,
     ProcedureRunStepRepository,
@@ -58,6 +66,40 @@ class ProcedureRunResponse(BaseModel):
 
     run: RunOut
     steps: list[ProcedureRunStepOut] = Field(default_factory=list)
+
+
+class ProcedureRunRequest(BaseModel):
+    """Wire shape for ``POST /procedures/{slug}/run``."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"project_id": 1, "args": {"topic_id": 1}}},
+    )
+
+    project_id: int
+    args: dict[str, Any] = Field(default_factory=dict)
+    parent_run_id: int | None = None
+    variant: str | None = None
+
+
+class ProcedureRunEnqueued(BaseModel):
+    """Wire shape returned by the runner after ``start`` / ``resume`` / ``fork``."""
+
+    run_id: int
+    run_token: str
+    status_url: str
+    slug: str
+    project_id: int
+    started: bool
+    parent_run_id: int | None = None
+
+
+class ProcedureForkRequest(BaseModel):
+    """Wire shape for ``POST /procedures/runs/{run_id}/fork``."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"from_step_index": 5}})
+
+    from_step_index: int
 
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -141,26 +183,108 @@ async def list_procedures(
     return _scan_procedures(_procedures_root(settings))
 
 
-@router.post("/{slug}/run")
-async def run_procedure(slug: str) -> Any:
-    """Procedure runner — pending M7.
+def _runner_from(request: Request) -> Any:
+    """Resolve ``app.state.procedure_runner`` or 503."""
+    runner = getattr(request.app.state, "procedure_runner", None)
+    if runner is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="procedure_runner not initialised on app.state",
+        )
+    return runner
 
-    PLAN.md L611-L617 + audit B-21 + D4: the runner is daemon-orchestrated
-    and lands in M7 with the procedure-runner subsystem. M2 surfaces a
-    501 so callers know the route exists but is not yet implemented.
+
+@router.post(
+    "/{slug}/run",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ProcedureRunEnqueued,
+)
+async def run_procedure(
+    slug: str,
+    payload: ProcedureRunRequest,
+    request: Request,
+) -> ProcedureRunEnqueued:
+    """Enqueue a procedure run via the daemon-orchestrated runner.
+
+    Per locked decision D4 (PLAN.md L884-L900): the runner is daemon-side;
+    the client only kicks off + polls. Returns 202 + the envelope so
+    UI / MCP clients can navigate to ``status_url`` for live state.
     """
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "detail": "Not yet implemented (M7)",
-            "code": -32601,
-            "data": {"slug": slug},
-            "hint": (
-                "Procedure runner is daemon-orchestrated; lands in M7. "
-                "Until then, drive procedures manually via the article + run REST endpoints."
-            ),
-        },
-    )
+    runner = _runner_from(request)
+    try:
+        envelope = await runner.start(
+            slug=slug,
+            args=payload.args,
+            project_id=payload.project_id,
+            parent_run_id=payload.parent_run_id,
+            variant=payload.variant,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    return ProcedureRunEnqueued(**envelope)
+
+
+@router.post(
+    "/runs/{run_id}/resume",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ProcedureRunEnqueued,
+)
+async def resume_procedure_run(run_id: int, request: Request) -> ProcedureRunEnqueued:
+    """Resume an aborted / paused procedure run from the next pending step."""
+    runner = _runner_from(request)
+    try:
+        envelope = await runner.resume(run_id=run_id)
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    return ProcedureRunEnqueued(**envelope)
+
+
+@router.post(
+    "/runs/{run_id}/fork",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ProcedureRunEnqueued,
+)
+async def fork_procedure_run(
+    run_id: int,
+    payload: ProcedureForkRequest,
+    request: Request,
+) -> ProcedureRunEnqueued:
+    """Fork a procedure run from a step index, copying prior outputs."""
+    runner = _runner_from(request)
+    try:
+        envelope = await runner.fork(run_id=run_id, from_step_index=payload.from_step_index)
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    return ProcedureRunEnqueued(**envelope)
 
 
 @router.get("/runs/{run_id}", response_model=ProcedureRunResponse)
@@ -174,4 +298,11 @@ async def get_procedure_run(
     return ProcedureRunResponse(run=run, steps=steps)
 
 
-__all__ = ["ProcedureRunResponse", "ProcedureSummary", "router"]
+__all__ = [
+    "ProcedureForkRequest",
+    "ProcedureRunEnqueued",
+    "ProcedureRunRequest",
+    "ProcedureRunResponse",
+    "ProcedureSummary",
+    "router",
+]

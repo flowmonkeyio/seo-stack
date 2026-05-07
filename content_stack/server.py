@@ -33,6 +33,7 @@ from content_stack.crypto.aes_gcm import configure_seed_path
 from content_stack.db.connection import make_engine
 from content_stack.logging import configure_logging, get_logger
 from content_stack.mcp import register_mcp
+from content_stack.procedures.runner import ProcedureRunner
 
 _SEED_BYTES = 32
 _REQUIRED_MODE = 0o600
@@ -161,6 +162,17 @@ def _build_lifespan(
         app.state.engine = engine
         app.state.started_at = time.monotonic()
         app.state.scheduler_running = False  # APScheduler lands in M9.
+
+        # M7: build the procedure runner. It loads PROCEDURE.md files
+        # from the repo's ``procedures/`` directory at construction time
+        # — a malformed file aborts startup which is what we want
+        # (operator sees the parse error in the lifespan log, not a
+        # mysterious 500 on the first ``procedure.run`` call).
+        app.state.procedure_runner = ProcedureRunner(
+            settings=settings,
+            engine=engine,
+            plugin_root=os.environ.get("CLAUDE_PLUGIN_ROOT"),
+        )
 
         log.info(
             "daemon.started",

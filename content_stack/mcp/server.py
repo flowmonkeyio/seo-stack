@@ -257,13 +257,34 @@ def _result_to_json(result: Any) -> dict[str, Any]:
     if isinstance(result, BaseModel):
         return result.model_dump(mode="json")
     if isinstance(result, list):
-        return {"items": [_result_to_json(x) for x in result]}
+        return {"items": [_item_to_json(x) for x in result]}
     if isinstance(result, dict):
         # For dict returns we wrap values with model dump where needed.
         return {
             k: (_result_to_json(v) if isinstance(v, BaseModel) else v) for k, v in result.items()
         }
     return {"value": result}
+
+
+def _item_to_json(item: Any) -> Any:
+    """Serialise a list element.
+
+    Pydantic models go through ``model_dump`` so the JSON shape
+    round-trips through ``output_schema``; everything else (str / int /
+    bool / None) ships verbatim. Nested lists / dicts recurse — the
+    dispatcher's outer schema declares ``items`` as the wrapping key,
+    but per-element shape is whatever the tool returned.
+    """
+    if isinstance(item, BaseModel):
+        return item.model_dump(mode="json")
+    if isinstance(item, dict):
+        return {
+            k: (_item_to_json(v) if not isinstance(v, str | int | float | bool | type(None)) else v)
+            for k, v in item.items()
+        }
+    if isinstance(item, list):
+        return [_item_to_json(x) for x in item]
+    return item
 
 
 # ---------------------------------------------------------------------------
@@ -288,9 +309,18 @@ class MCPDispatcher:
     exercise the path without spinning up the FastAPI mount.
     """
 
-    def __init__(self, registry: ToolRegistry, engine_resolver: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        engine_resolver: Callable[[], Any],
+        procedure_runner_resolver: Callable[[], Any] | None = None,
+    ) -> None:
         self._registry = registry
         self._engine_resolver = engine_resolver
+        # Resolves the ``ProcedureRunner`` lazily so tests can build a
+        # dispatcher without one (the M7 runs.py handlers gracefully
+        # raise a typed error when called with no runner attached).
+        self._procedure_runner_resolver = procedure_runner_resolver
 
     async def dispatch(self, name: str, arguments: dict[str, Any] | None) -> _CallResult:
         """Resolve a tool, validate input, execute, return JSON-RPC payload.
@@ -335,6 +365,11 @@ class MCPDispatcher:
         engine = self._engine_resolver()
         with Session(engine) as session:
             ctx = build_context(arguments, session)
+            if self._procedure_runner_resolver is not None:
+                try:
+                    ctx.procedure_runner = self._procedure_runner_resolver()
+                except RuntimeError:
+                    ctx.procedure_runner = None
             with bind_context(ctx):
                 # Resolve session + progress token from SDK request_ctx.
                 emitter = self._build_emitter()
@@ -601,7 +636,13 @@ def register_mcp(app: FastAPI) -> None:
             raise RuntimeError("MCP engine not initialised on app.state")
         return engine
 
-    dispatcher = MCPDispatcher(registry, _engine_resolver)
+    def _runner_resolver() -> Any:
+        runner = getattr(app.state, "procedure_runner", None)
+        if runner is None:  # pragma: no cover — lifespan did not finish
+            raise RuntimeError("procedure_runner not initialised on app.state")
+        return runner
+
+    dispatcher = MCPDispatcher(registry, _engine_resolver, _runner_resolver)
     server = build_server(registry, dispatcher)
 
     # Stash on app.state so tests / introspection can reach the registry.
