@@ -359,6 +359,107 @@ _SKILL_WORDPRESS_PUBLISH: frozenset[str] = _SKILL_PUBLISH_BASE
 _SKILL_GHOST_PUBLISH: frozenset[str] = _SKILL_PUBLISH_BASE
 
 
+# ---------------------------------------------------------------------------
+# M6.D real skill grants (ongoing-operations phase).
+# ---------------------------------------------------------------------------
+#
+# Per PLAN.md L862-L866 the five ongoing-operations skills (#20-#24) carry
+# the project from "first published" into the steady-state pipeline:
+# weekly GSC opportunity finding, weekly drift / crawl-error watch,
+# weekly-or-on-demand refresh detection, and the per-article content
+# refresh that re-runs the production chain. The opportunity-finder, the
+# drift-watch, and the crawl-error-watch are the GSC trio (procedure 6's
+# weekly-gsc-review pipeline); refresh-detector is procedure 7's seed,
+# and content-refresher composes the editor + humanizer + interlinker +
+# schema-emitter + publish skills around an `article.createVersion`
+# transaction.
+#
+# Skill #24 (content-refresher) inherits the publish-base grant set
+# because it must drive the full re-publish chain. The drift-watch grant
+# carries the four `drift.*` tools even though `drift.diff` is a
+# MilestoneDeferralError until the comparison engine lands — the skill
+# prose handles the deferral by falling through to capture-only mode and
+# emitting a warning to the operator.
+
+
+_SKILL_GSC_OPPORTUNITY_FINDER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "cluster.list",
+    "topic.list",
+    "topic.bulkCreate",
+    "article.list",
+    "gsc.queryProject",
+    "gsc.queryArticle",
+    "integration.test",
+    "integration.testGsc",
+}
+
+
+_SKILL_DRIFT_WATCH: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.list",
+    "article.get",
+    "drift.snapshot",
+    "drift.list",
+    "drift.get",
+    "drift.diff",
+    "integration.test",
+}
+
+
+_SKILL_CRAWL_ERROR_WATCH: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.list",
+    "topic.bulkCreate",
+    "gsc.queryArticle",
+    "integration.test",
+    "integration.testGsc",
+}
+
+
+_SKILL_REFRESH_DETECTOR: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.list",
+    "article.markRefreshDue",
+    "gsc.queryArticle",
+    "drift.list",
+    "drift.get",
+}
+
+
+# Content-refresher composes the publish chain; it inherits the publish
+# base set (article.markPublished + publish.recordPublish + the schema /
+# target / asset reads) plus the version-management writes (createVersion
+# / listVersions), the voice / compliance / EEAT reads the editor and
+# the humanizer pull, and `interlink.repair` for stale-link cleanup on
+# the refreshed body. The grant intentionally does NOT include
+# `interlink.suggest` (the suggester runs as a separate dispatch when the
+# refresh body needs new links) or `schema.validate` (the schema-emitter
+# the refresher dispatches owns validation; the refresher only reads /
+# rewrites schema_emits via schema.set when chaining the emitter).
+_SKILL_CONTENT_REFRESHER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.list",
+    "article.createVersion",
+    "article.listVersions",
+    "interlink.repair",
+    "schema.list",
+    "schema.set",
+    "target.list",
+    "publish.preview",
+    "publish.recordPublish",
+}
+
+
 # The matrix proper. Special-case keys (``__system__``, ``__test__``) hold
 # a sentinel set; ``check_grant`` short-circuits on them so we never
 # enumerate the full tool registry just to grant access.
@@ -391,6 +492,12 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "04-publishing/nuxt-content-publish": _SKILL_NUXT_CONTENT_PUBLISH,
     "04-publishing/wordpress-publish": _SKILL_WORDPRESS_PUBLISH,
     "04-publishing/ghost-publish": _SKILL_GHOST_PUBLISH,
+    # M6.D skills (ongoing-operations phase).
+    "05-ongoing/gsc-opportunity-finder": _SKILL_GSC_OPPORTUNITY_FINDER,
+    "05-ongoing/drift-watch": _SKILL_DRIFT_WATCH,
+    "05-ongoing/crawl-error-watch": _SKILL_CRAWL_ERROR_WATCH,
+    "05-ongoing/refresh-detector": _SKILL_REFRESH_DETECTOR,
+    "05-ongoing/content-refresher": _SKILL_CONTENT_REFRESHER,
 }
 
 
