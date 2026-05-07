@@ -28,9 +28,20 @@ from starlette.responses import Response
 PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 
 # Inside the protected surfaces, these paths bypass the bearer-token check.
-# Health is required so `doctor` can probe liveness *before* it has resolved
-# the token (e.g., when diagnosing token-related failures themselves).
-WHITELIST_PREFIXES: tuple[str, ...] = ("/api/v1/health",)
+# Each entry is justified below; do NOT add to this list without an explicit
+# threat-model note and same-origin/Host-check coverage.
+#
+# - ``/api/v1/health``: ``doctor`` probes liveness *before* it has resolved
+#   the token (e.g., when diagnosing token-related failures themselves).
+# - ``/api/v1/auth/ui-token``: the same-origin Vue UI cannot read the token
+#   file from the browser, so it fetches the token at boot via this
+#   endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
+#   (same-origin) form the upstream guard. Trade-off documented in
+#   ``docs/security.md`` and in ``content_stack/api/auth.py``.
+WHITELIST_PREFIXES: tuple[str, ...] = (
+    "/api/v1/health",
+    "/api/v1/auth/ui-token",
+)
 
 _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600

@@ -17,6 +17,7 @@ from content_stack.api.articles import (
 from content_stack.api.articles import (
     project_router as articles_project_router,
 )
+from content_stack.api.auth import router as auth_router
 from content_stack.api.authors import router as authors_router
 from content_stack.api.clusters import (
     cluster_router as clusters_cluster_router,
@@ -69,6 +70,8 @@ def register_routers(app: FastAPI) -> None:
 
     # Health (M0).
     app.include_router(health_router)
+    # Auth bootstrap (whitelisted; UI fetches its bearer token at boot).
+    app.include_router(auth_router)
     # Meta (enums, observability).
     app.include_router(meta_router)
     # Domain routers — projects + nested presets land first because most

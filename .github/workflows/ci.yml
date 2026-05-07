@@ -149,3 +149,72 @@ jobs:
             echo "Run \`make gen-types\` locally and commit the result."
             exit 1
           fi
+
+  ui-unit:
+    name: UI unit tests (vitest + jsdom)
+    runs-on: ubuntu-latest
+    needs: ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install UI deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Vitest
+        working-directory: ui
+        run: pnpm test
+
+  ui-e2e:
+    name: UI E2E (Playwright + axe + responsive screenshots)
+    runs-on: ubuntu-latest
+    needs: ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync Python deps
+        run: uv sync --all-extras --dev
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install UI deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        working-directory: ui
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run E2E (spawns daemon on :5181, axe, screenshots, console-error gate)
+        working-directory: ui
+        run: pnpm e2e
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            ui/playwright/.pw-html-report
+            ui/playwright/.pw-results
+            ui/playwright/screenshots
+          retention-days: 14

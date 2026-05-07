@@ -1,0 +1,61 @@
+import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+
+import {
+  BREAKPOINTS,
+  createProject,
+  resetProjects,
+  trackConsoleErrors,
+} from '../helpers'
+
+test.describe('responsive viewports — screenshots + axe + zero console errors', () => {
+  test.beforeAll(async () => {
+    await resetProjects()
+  })
+
+  for (const bp of BREAKPOINTS) {
+    test(`projects @ ${bp.name}px`, async ({ page }) => {
+      await page.setViewportSize({ width: bp.width, height: bp.height })
+      const errors = trackConsoleErrors(page)
+      await page.goto('/projects')
+      await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
+      await page.screenshot({
+        path: `./playwright/screenshots/projects-${bp.name}.png`,
+        fullPage: true,
+      })
+      const results = await new AxeBuilder({ page }).analyze()
+      expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([])
+      errors.assertNone()
+    })
+  }
+
+  for (const bp of BREAKPOINTS) {
+    test(`project detail tabs @ ${bp.name}px`, async ({ page }) => {
+      await page.setViewportSize({ width: bp.width, height: bp.height })
+      const errors = trackConsoleErrors(page)
+      await resetProjects()
+      const project = await createProject({
+        name: `Resp ${bp.name}`,
+        slug: `resp-${bp.name}`,
+        domain: `resp-${bp.name}.example.com`,
+      })
+
+      const tabs = ['overview', 'voice', 'compliance', 'eeat', 'targets', 'integrations']
+      for (const tab of tabs) {
+        await page.goto(`/projects/${project.id}/${tab}`)
+        // Wait for the tab heading to render before screenshot/axe.
+        await page.waitForLoadState('networkidle', { timeout: 10_000 })
+        await page.screenshot({
+          path: `./playwright/screenshots/project-${tab}-${bp.name}.png`,
+          fullPage: true,
+        })
+        const results = await new AxeBuilder({ page }).analyze()
+        expect(
+          results.violations,
+          `axe violations on /${tab} @ ${bp.name}: ${JSON.stringify(results.violations, null, 2)}`,
+        ).toEqual([])
+      }
+      errors.assertNone()
+    })
+  }
+})

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { apiFetch, ApiError } from '@/lib/client'
-import type { HealthResponse } from '@/api'
+import type { components } from '@/api'
+
+type HealthResponse = components['schemas']['HealthResponse']
 
 type LoadState =
   | { kind: 'loading' }
@@ -74,7 +76,9 @@ const schedulerLabel = computed<string>(() => {
 <template>
   <div class="mx-auto w-full max-w-2xl">
     <header class="mb-6">
-      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">content-stack</h1>
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">
+        content-stack
+      </h1>
       <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
         agent-driven SEO content pipelines
       </p>
@@ -86,7 +90,9 @@ const schedulerLabel = computed<string>(() => {
       :aria-busy="state.kind === 'loading'"
     >
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 class="text-base font-semibold sm:text-lg">Daemon health</h2>
+        <h2 class="text-base font-semibold sm:text-lg">
+          Daemon health
+        </h2>
         <button
           type="button"
           class="self-start rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto dark:border-gray-700 dark:hover:bg-gray-800"
@@ -98,7 +104,10 @@ const schedulerLabel = computed<string>(() => {
       </div>
 
       <!-- Loading -->
-      <div v-if="state.kind === 'loading'" class="mt-4 text-sm text-gray-500">
+      <div
+        v-if="state.kind === 'loading'"
+        class="mt-4 text-sm text-gray-500"
+      >
         Pinging <code>/api/v1/health</code>&hellip;
       </div>
 
@@ -108,7 +117,9 @@ const schedulerLabel = computed<string>(() => {
         class="mt-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200"
         role="alert"
       >
-        <div class="font-medium">Could not reach the daemon.</div>
+        <div class="font-medium">
+          Could not reach the daemon.
+        </div>
         <div class="mt-1">
           <span v-if="state.status">HTTP {{ state.status }} &mdash; </span>{{ state.message }}
         </div>
@@ -119,7 +130,10 @@ const schedulerLabel = computed<string>(() => {
       </div>
 
       <!-- Loaded -->
-      <div v-else class="mt-4 space-y-4">
+      <div
+        v-else
+        class="mt-4 space-y-4"
+      >
         <div class="flex flex-wrap gap-2">
           <span
             class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
@@ -146,17 +160,16 @@ const schedulerLabel = computed<string>(() => {
             v{{ state.data.version }}
           </span>
           <span
-            v-if="typeof state.data.uptime_s === 'number'"
+            v-if="typeof state.data.daemon_uptime_s === 'number'"
             class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-800 dark:text-gray-200"
           >
-            uptime: {{ Math.round(state.data.uptime_s) }}s
+            uptime: {{ Math.round(state.data.daemon_uptime_s) }}s
           </span>
         </div>
 
         <pre
           class="max-h-80 overflow-auto rounded bg-gray-50 p-3 text-xs leading-relaxed text-gray-800 ring-1 ring-inset ring-gray-200 dark:bg-gray-950 dark:text-gray-200 dark:ring-gray-800"
-          >{{ prettyJson }}</pre
-        >
+        >{{ prettyJson }}</pre>
       </div>
     </section>
 

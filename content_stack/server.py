@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlmodel import SQLModel
@@ -237,14 +237,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 def _mount_ui(app: FastAPI, settings: Settings) -> None:
-    """Mount static UI bundle at `/`; serve a placeholder if not yet built."""
+    """Mount static UI bundle at `/`; serve a placeholder if not yet built.
+
+    SPA-aware: for routes that aren't static files (e.g. ``/projects/12/eeat``)
+    we fall back to ``index.html`` so the browser-side router can resolve
+    them. The fallback only fires for requests that don't match any API
+    or static-file path, which avoids leaking the SPA in place of a real
+    404 from the API.
+    """
+    _ = settings
     ui_dist = Path(__file__).parent / "ui_dist"
     index = ui_dist / "index.html"
 
     # Always register the placeholder/static branch *after* API routes are
     # included so router precedence is deterministic.
     if index.is_file():
-        app.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
+        app.mount("/assets", StaticFiles(directory=ui_dist / "assets"), name="ui-assets")
+        index_bytes = index.read_bytes()
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def _ui_spa(full_path: str) -> Response:
+            """Return the static asset if present, else fall back to index.html.
+
+            Anything starting with ``api/`` or ``mcp/`` should never reach
+            this handler (those routers come before the catch-all in
+            ``register_routers`` ordering), but we guard with a 404 just
+            in case so we don't paper over a missing API endpoint with
+            the SPA shell.
+            """
+            if full_path.startswith(("api/", "mcp/")):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            target = ui_dist / full_path
+            try:
+                target_resolved = target.resolve()
+                ui_dist_resolved = ui_dist.resolve()
+            except OSError:
+                target_resolved = target
+                ui_dist_resolved = ui_dist
+            if full_path and target.is_file() and ui_dist_resolved in target_resolved.parents:
+                return FileResponse(target_resolved)
+            return Response(
+                content=index_bytes,
+                media_type="text/html",
+                headers={"cache-control": "no-cache"},
+            )
+
+        _ = _ui_spa
         return
 
     @app.get("/", include_in_schema=False)

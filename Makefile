@@ -11,9 +11,9 @@ UV ?= uv
 .PHONY: help install serve dev-ui build-ui register-codex register-claude \
         install-skills-codex install-skills-claude \
         install-procedures-codex install-procedures-claude \
-        install-launchd doctor test migrate lint format typecheck \
-        gen-types clean uninstall backup restore rotate-seed rotate-token \
-        oauth-refresh
+        install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
+        format typecheck gen-types clean uninstall backup restore \
+        rotate-seed rotate-token oauth-refresh
 
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -33,8 +33,14 @@ build-ui: ## (M6) Build Vue UI into content_stack/ui_dist/
 migrate: ## (M0/M1) Run alembic migrations forward (schema lands in M1)
 	$(UV) run alembic upgrade head
 
-test: ## (M0) Run pytest
+test: test-ui-unit ## (M0) Run pytest + UI unit tests (vitest)
 	$(UV) run pytest
+
+test-ui-unit: ## (M5) Run UI unit tests (vitest, jsdom env)
+	@if [ -d ui ]; then cd ui && pnpm install --silent && pnpm test; else echo "ui/ not yet scaffolded"; exit 0; fi
+
+test-ui-e2e: ## (M5) Run UI E2E tests (Playwright + axe; spawns daemon on :5181)
+	@if [ -d ui ]; then cd ui && pnpm install --silent && pnpm e2e; else echo "ui/ not yet scaffolded"; exit 0; fi
 
 lint: ## (M0) Run ruff check + format-check
 	$(UV) run ruff check .

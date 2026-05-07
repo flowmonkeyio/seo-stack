@@ -30,6 +30,13 @@ ui/dist/
 ui/.vite/
 .vite/
 
+# Playwright artefacts (large + binary; CI re-generates on every run)
+ui/playwright/.pw-results/
+ui/playwright/.pw-html-report/
+ui/playwright/screenshots/
+ui/playwright-report/
+ui/test-results/
+
 # Note: content_stack/ui_dist/ IS committed per D8 (no pnpm at user install)
 
 # Local databases (the canonical DB lives at ~/.local/share/content-stack/)
