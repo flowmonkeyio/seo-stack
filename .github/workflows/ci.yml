@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync deps
+        run: uv sync --all-extras --dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy content_stack
+
+      - name: Pytest
+        run: uv run pytest -v
+
+  ui:
+    name: UI (typecheck, build, bundle-parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check UI
+        working-directory: ui
+        run: pnpm type-check
+
+      - name: Lint UI
+        working-directory: ui
+        run: pnpm lint
+
+      - name: Build UI
+        working-directory: ui
+        run: pnpm build
+
+      # Per D8: content_stack/ui_dist/ is committed (no pnpm at user install).
+      # If the build produces output that differs from the committed bundle,
+      # the PR has drifted — fail so the author rebuilds and commits.
+      - name: Verify committed ui_dist matches build
+        run: |
+          if ! git diff --exit-code -- content_stack/ui_dist; then
+            echo "::error::content_stack/ui_dist/ does not match \`pnpm build\` output"
+            echo "Run \`make build-ui\` locally and commit the result."
+            exit 1
+          fi
