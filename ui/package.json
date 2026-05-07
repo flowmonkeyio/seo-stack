@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint --ext .ts,.vue,.tsx src",
-    "format": "prettier --write src"
+    "format": "prettier --write src",
+    "gen-types": "openapi-typescript http://127.0.0.1:5180/api/openapi.json -o src/api.ts --enum --root-types"
   },
   "dependencies": {
     "vue": "^3.4.0",

@@ -19,11 +19,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlmodel import SQLModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
 from content_stack import __version__
-from content_stack.api.health import router as health_router
+from content_stack.api import register_routers
 from content_stack.auth import BearerTokenMiddleware, ensure_token
 from content_stack.config import Settings, get_settings
 from content_stack.db.connection import make_engine
@@ -70,6 +72,30 @@ class HostHeaderMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+_PARTIAL_INDEX_DDL: tuple[str, ...] = (
+    # Partial unique on internal_links (audit B-09)
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_internal_links_unique "
+    "ON internal_links(from_article_id, to_article_id, anchor_text, position) "
+    "WHERE status != 'dismissed'",
+    # Primary publish target (audit B-08)
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_publish_targets_primary "
+    "ON publish_targets(project_id) WHERE is_primary = 1",
+)
+
+
+def _ensure_partial_indexes(engine: object) -> None:
+    """Emit the partial-unique indexes that SQLModel can't express declaratively.
+
+    The Alembic 0002 migration is the canonical source of truth for these;
+    this fallback runs them only if absent (``IF NOT EXISTS``) so a daemon
+    started against a freshly-``create_all``'d schema still enforces the
+    M1.B invariants (B-08 / B-09).
+    """
+    with engine.begin() as conn:  # type: ignore[attr-defined]
+        for ddl in _PARTIAL_INDEX_DDL:
+            conn.execute(text(ddl))
+
+
 def _ensure_seed(seed_path: Path) -> None:
     """Generate `seed.bin` if absent; refuse to start if mode is wrong.
 
@@ -110,6 +136,17 @@ def _build_lifespan(
 
         engine = make_engine(settings.db_path)
 
+        # Ensure schema exists. In production the M0 cli runs ``make migrate``
+        # before starting the daemon; the lifespan's ``create_all`` is a
+        # safety net for fresh installs and tests that don't pre-run alembic.
+        # ``create_all`` is a no-op when the tables are already there, so it
+        # adds zero cost on warm starts.
+        SQLModel.metadata.create_all(engine)
+        # Emit the migration-only partial-unique indexes so the M1.B
+        # invariants exercised by integration tests (B-08, B-09, M-20) are
+        # active even when the lifespan path didn't go through alembic.
+        _ensure_partial_indexes(engine)
+
         app.state.settings = settings
         app.state.token = token
         app.state.engine = engine
@@ -149,6 +186,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="content-stack",
         version=__version__,
+        summary="Multi-project SEO content pipelines for any LLM client.",
+        description=(
+            "A globally-installed Python daemon (FastAPI + SQLite/WAL + MCP "
+            "Streamable HTTP) plus Vue UI giving any LLM client a stateful "
+            "CRUD seam over multi-project SEO content pipelines."
+        ),
         lifespan=_build_lifespan(settings),
         docs_url="/api/docs",
         redoc_url=None,
@@ -168,7 +211,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.add_middleware(HostHeaderMiddleware)
 
-    app.include_router(health_router)
+    register_routers(app)
 
     _mount_ui(app, settings)
 

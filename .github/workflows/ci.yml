@@ -46,10 +46,23 @@ jobs:
         run: uv run pytest -v
 
   ui:
-    name: UI (typecheck, build, bundle-parity)
+    name: UI (typecheck, build, bundle-parity, gen-types-parity)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync Python deps
+        run: uv sync --all-extras --dev
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v3
@@ -87,5 +100,19 @@ jobs:
           if ! git diff --exit-code -- content_stack/ui_dist; then
             echo "::error::content_stack/ui_dist/ does not match \`pnpm build\` output"
             echo "Run \`make build-ui\` locally and commit the result."
+            exit 1
+          fi
+
+      # M2: ui/src/api.ts is auto-generated from the daemon's OpenAPI spec.
+      # Boot the daemon, regenerate types, diff against the committed copy.
+      # Any PR that changes the API surface MUST commit the regenerated types.
+      - name: Regenerate types from OpenAPI
+        run: bash scripts/gen-types.sh
+
+      - name: Verify committed ui/src/api.ts matches OpenAPI
+        run: |
+          if ! git diff --exit-code -- ui/src/api.ts; then
+            echo "::error::ui/src/api.ts does not match the daemon OpenAPI spec"
+            echo "Run \`make gen-types\` locally and commit the result."
             exit 1
           fi

@@ -12,7 +12,7 @@ UV ?= uv
         install-skills-codex install-skills-claude \
         install-procedures-codex install-procedures-claude \
         install-launchd doctor test migrate lint format typecheck \
-        clean uninstall backup restore rotate-seed rotate-token
+        gen-types clean uninstall backup restore rotate-seed rotate-token
 
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -45,6 +45,9 @@ format: ## (M0) Apply ruff format + auto-fix lints
 
 typecheck: ## (M0) Run mypy on the package
 	$(UV) run mypy content_stack
+
+gen-types: ## (M2) Regenerate ui/src/api.ts from the daemon's OpenAPI spec
+	bash scripts/gen-types.sh
 
 doctor: ## (M0) Diagnose install (M0 minimal — full check list grows through M10)
 	$(PYTHON) -m content_stack doctor
