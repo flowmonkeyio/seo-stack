@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Note: uv.lock IS committed (pinned deps)
+
+# Vite / Node (UI source)
+ui/node_modules/
+ui/dist/
+ui/.vite/
+.vite/
+
+# Note: content_stack/ui_dist/ IS committed per D8 (no pnpm at user install)
+
+# Local databases (the canonical DB lives at ~/.local/share/content-stack/)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Upstream reference clones — read-only, not vendored, not redistributed
+.upstream/
+
+# Logs
+*.log
+logs/
+
+# Misc
+*.bak
+*.tmp
+.cache/
