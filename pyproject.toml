@@ -93,3 +93,9 @@ exclude = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = ["-ra", "--strict-markers"]
+# `schema_json` is the canonical PLAN.md L361 column name on the
+# `schema_emits` table; SQLModel's parent class exposes a `schema_json`
+# attribute that triggers this benign UserWarning at class-construction time.
+filterwarnings = [
+    "ignore:Field name \"schema_json\" in \"SchemaEmit\" shadows an attribute in parent \"SQLModel\":UserWarning",
+]

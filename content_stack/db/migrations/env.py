@@ -1,8 +1,9 @@
 """Alembic environment.
 
 Reads the DB URL from `Settings.db_path` (env-overridable via
-`CONTENT_STACK_*`) instead of `alembic.ini`. The `metadata` object is empty
-in M0 and will be populated by SQLModel models in M1.
+`CONTENT_STACK_*`) instead of `alembic.ini`. Importing
+`content_stack.db.models` registers all 28 tables on
+`SQLModel.metadata`, which Alembic's autogenerate uses as the target.
 """
 
 from __future__ import annotations
@@ -12,6 +13,10 @@ from logging.config import fileConfig
 from alembic import context
 from sqlmodel import SQLModel
 
+# Importing the models package as a side effect populates
+# `SQLModel.metadata` with the 28 table definitions. Without this,
+# `alembic check` and autogenerate run against an empty metadata.
+import content_stack.db.models  # noqa: F401  (import for side effect)
 from content_stack.config import get_settings
 from content_stack.db.connection import make_engine
 
