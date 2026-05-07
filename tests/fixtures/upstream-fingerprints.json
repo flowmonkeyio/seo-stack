@@ -132,6 +132,30 @@
       "upstream": "cody-article-writer",
       "severity": "block",
       "why": "Cody's draft-state preamble; we use SQLite, not JSON files"
+    },
+    {
+      "phrase": "Always create `-editorpass.md` as a new file. Never overwrite the original.",
+      "upstream": "cody-article-writer",
+      "severity": "block",
+      "why": "Distinctive editor-style-guide.md filesystem-discipline prose; we use article.setEdited against the SQLite column, no `-editorpass.md` filename in our world"
+    },
+    {
+      "phrase": "Liberal use of single-sentence paragraphs for impact",
+      "upstream": "cody-article-writer",
+      "severity": "block",
+      "why": "Verbatim editor-style-guide visual-breaks calibration prose"
+    },
+    {
+      "phrase": "vary with \"Also,\" \"Beyond this,\" or restructure",
+      "upstream": "cody-article-writer",
+      "severity": "block",
+      "why": "Distinctive transition-replacement guidance from editor-style-guide.md AI-tell pass"
+    },
+    {
+      "phrase": "Cody acts as a firm sounding board",
+      "upstream": "cody-article-writer",
+      "severity": "block",
+      "why": "Iconic SKILL.md collaboration-principles framing; covers the subject-verb form of the sounding-board phrase that the standalone substring would miss"
     }
   ]
 }

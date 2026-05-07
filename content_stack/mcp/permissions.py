@@ -174,6 +174,99 @@ _SKILL_COMPETITOR_SITEMAP: frozenset[str] = _RUN_LIFECYCLE | {
 }
 
 
+# ---------------------------------------------------------------------------
+# M6.B real skill grants (content-production phase).
+# ---------------------------------------------------------------------------
+#
+# Per PLAN.md L848-L854 the seven content-production skills (#6-#12) build
+# the article from outline through humanizer pass. Each declares the
+# narrowest set of tools it touches; the EEAT gate carries the unique
+# eeat.bulkRecord + eeat.score + article.markEeatPassed grant so no other
+# skill can mark a verdict.
+
+
+_SKILL_OUTLINE: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "eeat.list",
+    "article.get",
+    "article.setOutline",
+    "source.list",
+}
+
+
+_SKILL_DRAFT_INTRO: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.setDraft",
+    "source.list",
+}
+
+
+_SKILL_DRAFT_BODY: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.setDraft",
+    "source.list",
+}
+
+
+_SKILL_DRAFT_CONCLUSION: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.setDraft",
+    "article.markDrafted",
+    "source.list",
+}
+
+
+_SKILL_EDITOR: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "eeat.list",
+    "article.get",
+    "article.setEdited",
+    "source.list",
+}
+
+
+_SKILL_EEAT_GATE: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "eeat.list",
+    "eeat.score",
+    "eeat.bulkRecord",
+    "article.get",
+    "article.markEeatPassed",
+    "compliance.list",
+}
+
+
+_SKILL_HUMANIZER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "article.get",
+    "article.setEdited",
+}
+
+
 # The matrix proper. Special-case keys (``__system__``, ``__test__``) hold
 # a sentinel set; ``check_grant`` short-circuits on them so we never
 # enumerate the full tool registry just to grant access.
@@ -190,6 +283,14 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "01-research/topical-cluster": _SKILL_TOPICAL_CLUSTER,
     "01-research/content-brief": _SKILL_CONTENT_BRIEF,
     "01-research/competitor-sitemap-shortcut": _SKILL_COMPETITOR_SITEMAP,
+    # M6.B skills (content-production phase).
+    "02-content/outline": _SKILL_OUTLINE,
+    "02-content/draft-intro": _SKILL_DRAFT_INTRO,
+    "02-content/draft-body": _SKILL_DRAFT_BODY,
+    "02-content/draft-conclusion": _SKILL_DRAFT_CONCLUSION,
+    "02-content/editor": _SKILL_EDITOR,
+    "02-content/eeat-gate": _SKILL_EEAT_GATE,
+    "02-content/humanizer": _SKILL_HUMANIZER,
 }
 
 
