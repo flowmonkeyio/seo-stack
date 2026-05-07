@@ -267,6 +267,98 @@ _SKILL_HUMANIZER: frozenset[str] = _RUN_LIFECYCLE | {
 }
 
 
+# ---------------------------------------------------------------------------
+# M6.C real skill grants (assets + publishing phase).
+# ---------------------------------------------------------------------------
+#
+# Per PLAN.md L855-L861 the seven assets-and-publishing skills (#13-#19)
+# turn the EEAT-passed article into published artifacts. The image
+# generator (#13) is the only skill that calls into the OpenAI Images
+# integration (the wrapper handles cost recording — the skill consults
+# cost.queryProject pre-emptively); the publish skills (#17-#19) are the
+# only skills that may call publish.recordPublish, publish.setCanonical,
+# and article.markPublished. The interlinker (#15) carries the unique
+# interlink.suggest grant so the suggest-then-apply pattern stays gated.
+
+
+_SKILL_IMAGE_GENERATOR: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "article.get",
+    "asset.create",
+    "asset.list",
+    "cost.queryProject",
+    "integration.test",
+}
+
+
+_SKILL_ALT_TEXT_AUDITOR: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.get",
+    "asset.list",
+    "asset.update",
+}
+
+
+_SKILL_INTERLINKER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "cluster.list",
+    "topic.list",
+    "article.list",
+    "article.get",
+    "interlink.suggest",
+    "interlink.list",
+    "interlink.repair",
+}
+
+
+_SKILL_SCHEMA_EMITTER: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "article.get",
+    "asset.list",
+    "author.get",
+    "schema.set",
+    "schema.get",
+    "schema.validate",
+}
+
+
+# All three publish skills share the same grant set: they consume the
+# same artefacts (article + assets + sources + schema_emits), call the
+# same three publish.* writes, and are the only skills (alongside each
+# other) that may call article.markPublished. We factor the grant into
+# a shared module-level frozenset so a future addition (e.g. hugo /
+# astro / custom-webhook publishers per PLAN.md L398) inherits the
+# same shape without drift.
+_SKILL_PUBLISH_BASE: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "voice.get",
+    "compliance.list",
+    "article.get",
+    "article.markPublished",
+    "asset.list",
+    "source.list",
+    "schema.get",
+    "target.list",
+    "publish.preview",
+    "publish.recordPublish",
+    "publish.setCanonical",
+    "integration.test",
+}
+
+
+_SKILL_NUXT_CONTENT_PUBLISH: frozenset[str] = _SKILL_PUBLISH_BASE
+_SKILL_WORDPRESS_PUBLISH: frozenset[str] = _SKILL_PUBLISH_BASE
+_SKILL_GHOST_PUBLISH: frozenset[str] = _SKILL_PUBLISH_BASE
+
+
 # The matrix proper. Special-case keys (``__system__``, ``__test__``) hold
 # a sentinel set; ``check_grant`` short-circuits on them so we never
 # enumerate the full tool registry just to grant access.
@@ -291,6 +383,14 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "02-content/editor": _SKILL_EDITOR,
     "02-content/eeat-gate": _SKILL_EEAT_GATE,
     "02-content/humanizer": _SKILL_HUMANIZER,
+    # M6.C skills (assets + publishing phase).
+    "03-assets/image-generator": _SKILL_IMAGE_GENERATOR,
+    "03-assets/alt-text-auditor": _SKILL_ALT_TEXT_AUDITOR,
+    "04-publishing/interlinker": _SKILL_INTERLINKER,
+    "04-publishing/schema-emitter": _SKILL_SCHEMA_EMITTER,
+    "04-publishing/nuxt-content-publish": _SKILL_NUXT_CONTENT_PUBLISH,
+    "04-publishing/wordpress-publish": _SKILL_WORDPRESS_PUBLISH,
+    "04-publishing/ghost-publish": _SKILL_GHOST_PUBLISH,
 }
 
 
