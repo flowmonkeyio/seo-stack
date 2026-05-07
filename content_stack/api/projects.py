@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
@@ -191,8 +192,8 @@ class PublishTargetUpdateRequest(BaseModel):
 class IntegrationCreateRequest(BaseModel):
     """Body for ``POST /projects/{id}/integrations``.
 
-    M5 swaps in real AES-256-GCM; M2 stores the plaintext bytes verbatim
-    (``IntegrationCredentialRepository.set`` documents the temporary stub).
+    M4: ``IntegrationCredentialRepository.set`` encrypts the plaintext
+    payload via AES-256-GCM with a project-bound AAD (PLAN.md L1106-L1124).
     """
 
     kind: str = Field(min_length=1, max_length=120)
@@ -653,8 +654,8 @@ async def create_integration(
 ) -> WriteResponse[IntegrationCredentialOut]:
     """Upsert an integration credential.
 
-    M2 stores the plaintext bytes verbatim; M5 swaps in AES-256-GCM. The
-    repository's ``set`` is documented as a stub the wire shape outlives.
+    M4: ``IntegrationCredentialRepository.set`` encrypts the plaintext
+    payload via AES-256-GCM at rest (PLAN.md L1106-L1124).
     """
     return write_response(
         IntegrationCredentialRepository(session).set(
@@ -698,7 +699,10 @@ async def update_integration(
             detail={
                 "detail": "plaintext_payload is required to rotate a credential",
                 "code": -32602,
-                "hint": "M5 will add a config-only patch route once secrets are encrypted.",
+                "hint": (
+                    "Send the plaintext payload again — config-only patches "
+                    "are not supported (rotation safety)."
+                ),
             },
         )
     new_kind = body.kind if body.kind is not None else current.kind
@@ -734,17 +738,191 @@ async def delete_integration(
 async def test_integration(
     project_id: int,
     credential_id: int,
-) -> None:
-    """Probe vendor health — pending M5 (integrations layer)."""
-    _ = project_id, credential_id
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "detail": "Not yet implemented (M5)",
-            "code": -32601,
-            "hint": "Integration health checks land in M5 with the per-vendor wrappers.",
-        },
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Probe vendor health by dispatching to the per-kind wrapper.
+
+    Resolves the credential row, looks up the integration class via
+    ``content_stack.integrations.REGISTRY``, instantiates it with the
+    decrypted payload + config, and calls ``test_credentials()``.
+    Returns the wrapper's status dict on success; raises
+    ``IntegrationDownError`` (502) or ``RateLimitedError`` (429) on
+    failure (the typed-error map handles the HTTP shape).
+    """
+    import httpx
+
+    from content_stack.integrations import integration_class_for
+    from content_stack.repositories.base import NotFoundError
+
+    repo = IntegrationCredentialRepository(session)
+    row = repo.fetch_row(credential_id)
+    if row.project_id is not None and row.project_id != project_id:
+        raise NotFoundError(f"credential {credential_id} not in project {project_id}")
+    integration_cls = integration_class_for(row.kind)
+    if integration_cls is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "detail": (
+                    f"integration kind {row.kind!r} has no test wrapper; "
+                    "it may be a runtime LLM key (no health probe)"
+                ),
+                "code": -32602,
+                "hint": "Only DataForSEO/Firecrawl/GSC/OpenAI/Reddit/Jina/Ahrefs/PAA expose tests.",
+            },
+        )
+    plaintext = repo.get_decrypted(credential_id)
+    extra: dict[str, Any] = {}
+    # DataForSEO needs the login; everyone else takes only the payload.
+    if row.kind == "dataforseo":
+        config = row.config_json or {}
+        login = config.get("login")
+        if not login:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "detail": "dataforseo credential missing config_json.login",
+                    "code": -32602,
+                },
+            )
+        extra["login"] = login
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        integration = integration_cls(
+            payload=plaintext,
+            project_id=project_id,
+            http=client,
+            **extra,
+        )
+        return await integration.test_credentials()
+
+
+# ---------------------------------------------------------------------------
+# GSC OAuth flow (PLAN.md L1069-L1080).
+# ---------------------------------------------------------------------------
+
+
+# Module-level routers so the OAuth routes are *not* nested under
+# ``/projects/{project_id}/...`` — Google's redirect URI is shared
+# across projects, so the callback path must be flat. We add the
+# routes to a separate router then re-export through the same module.
+
+oauth_router = APIRouter(prefix="/api/v1/integrations/gsc", tags=["integrations"])
+
+
+class GscAuthorizeRequest(BaseModel):
+    """Body for ``POST /integrations/gsc/oauth/authorize``."""
+
+    model_config = ConfigDict(json_schema_extra={"example": {"project_id": 1}})
+
+    project_id: int
+    redirect_uri: str = Field(
+        default="http://localhost:5180/api/v1/integrations/gsc/oauth/callback",
+        description="Must match the redirect URI registered in Google Cloud Console.",
     )
+
+
+@oauth_router.post("/oauth/authorize")
+async def gsc_oauth_authorize(
+    body: GscAuthorizeRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Return the Google OAuth consent URL the operator opens in their browser.
+
+    Stores the random ``state`` nonce in
+    ``integration_credentials.config_json.oauth_state`` so the callback
+    can validate it.
+    """
+    import secrets
+
+    from content_stack.integrations.gsc import build_authorize_url
+
+    state = secrets.token_urlsafe(32)
+    # Persist the nonce on a placeholder row so the callback can find
+    # the project + state pair by state value alone.
+    repo = IntegrationCredentialRepository(session)
+    config = {
+        "oauth_state": state,
+        "redirect_uri": body.redirect_uri,
+    }
+    # Empty plaintext is fine — the row is a placeholder until the
+    # callback fills it in. AAD is bound to ``(project_id, kind)`` so
+    # the row can't be moved between projects.
+    repo.set(
+        project_id=body.project_id,
+        kind="gsc",
+        plaintext_payload=b"{}",
+        config_json=config,
+    )
+    url = build_authorize_url(state=state, redirect_uri=body.redirect_uri)
+    return {"authorization_url": url, "state": state}
+
+
+@oauth_router.get("/oauth/callback", response_class=HTMLResponse)
+async def gsc_oauth_callback(
+    code: str,
+    state: str,
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Exchange the OAuth code for tokens and store them encrypted.
+
+    Returns a tiny "you can close this tab" HTML page so the operator
+    sees confirmation in the browser they opened the consent URL in.
+    """
+    import json
+
+    from sqlmodel import select
+
+    from content_stack.db.models import IntegrationCredential
+    from content_stack.integrations.gsc import exchange_code
+
+    # Locate the placeholder row by state. The state nonce lives in
+    # ``config_json.oauth_state``; we filter at the DB level on
+    # ``kind='gsc'`` and post-filter on the JSON column (SQLite's JSON
+    # functions are too version-dependent to rely on at the ORM layer).
+    candidates = session.exec(
+        select(IntegrationCredential).where(IntegrationCredential.kind == "gsc")
+    ).all()
+    matched = next(
+        (r for r in candidates if (r.config_json or {}).get("oauth_state") == state),
+        None,
+    )
+    if matched is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "detail": "OAuth state mismatch — start the authorize flow again",
+                "code": -32602,
+            },
+        )
+    redirect_uri = (matched.config_json or {}).get(
+        "redirect_uri",
+        "http://localhost:5180/api/v1/integrations/gsc/oauth/callback",
+    )
+    tokens = await exchange_code(code=code, redirect_uri=redirect_uri)
+    payload_bytes = json.dumps(tokens).encode("utf-8")
+    config = {k: v for k, v in (matched.config_json or {}).items() if k != "oauth_state"}
+    expires_at: datetime | None = None
+    if "expires_at" in tokens:
+        try:
+            expires_at = datetime.fromisoformat(str(tokens["expires_at"]).rstrip("Z"))
+        except ValueError:
+            expires_at = None
+    repo = IntegrationCredentialRepository(session)
+    repo.set(
+        project_id=matched.project_id,
+        kind="gsc",
+        plaintext_payload=payload_bytes,
+        config_json=config,
+        expires_at=expires_at,
+    )
+    body = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<title>GSC connected</title></head><body>"
+        "<h1>Google Search Console connected</h1>"
+        "<p>You can close this tab.</p>"
+        "</body></html>"
+    )
+    return HTMLResponse(body, status_code=200)
 
 
 # ---------------------------------------------------------------------------

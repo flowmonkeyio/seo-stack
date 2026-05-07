@@ -1,0 +1,82 @@
+content-stack — third-party attribution notices
+================================================
+
+This product bundles or directly inspired upstream work from the
+following Apache-2.0 licensed projects. Their copyright + license
+notices are reproduced below per Section 4 of the Apache License,
+Version 2.0.
+
+A copy of the Apache License 2.0 is available at:
+    http://www.apache.org/licenses/LICENSE-2.0
+
+
+--------------------------------------------------------------------
+1. OpenAI codex-plugin-cc
+--------------------------------------------------------------------
+
+  Copyright 2026 OpenAI
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+The codex-companion.mjs runtime contract used by
+``content_stack.integrations.codex_plugin_cc.adversarial_review`` is
+documented in the upstream plugin and consumed unmodified.
+
+
+--------------------------------------------------------------------
+2. aaron-he-zhu / seo-geo-claude-skills
+--------------------------------------------------------------------
+
+  Copyright 2024 Aaron He Zhu
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+The CORE-EEAT 80-item rubric seeded by ``content_stack.db.seed`` is a
+clean-room adaptation of the criteria framework published by this
+project (see PLAN.md L562-L569 + the original SKILL.md files in
+``.upstream/seo-geo-claude-skills/optimize/``).
+
+
+--------------------------------------------------------------------
+3. cody-article-writer
+--------------------------------------------------------------------
+
+  Apache License, Version 2.0
+      http://www.apache.org/licenses/LICENSE-2.0
+
+The article-writer skill (``.upstream/cody-article-writer``) informs
+the prose-generation procedure in M7. Used here under the Apache 2.0
+license.
+
+
+--------------------------------------------------------------------
+4. codex-seo
+--------------------------------------------------------------------
+
+  Apache License, Version 2.0
+      http://www.apache.org/licenses/LICENSE-2.0
+
+The SEO skill collection in ``.upstream/codex-seo/skills/seo-*/`` is
+referenced clean-room as a per-vendor pattern guide for the M4
+integration wrappers (PLAN.md D2). Used here under the Apache 2.0
+license.

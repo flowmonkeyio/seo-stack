@@ -5,8 +5,9 @@ when the input row count exceeds 1000 the handler emits a progress
 notification every 1000 rows so multi-tens-of-thousand-row imports give
 the caller continuous feedback.
 
-``drift.diff`` is M5 work (Firecrawl + drift-watch skill); the M3 tool
-returns ``MilestoneDeferralError`` with the M5 hint.
+``drift.diff`` is M6 work (drift-watch skill on top of the M4 Firecrawl
+wrapper); the M3 tool returns ``MilestoneDeferralError`` with the M6
+hint.
 """
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ class DriftGetInput(MCPInput):
 
 
 class DriftDiffInput(MCPInput):
-    """Compare a baseline to current content — M5 deferral."""
+    """Compare a baseline to current content — M6 deferral (drift-watch skill)."""
 
     model_config = ConfigDict(
         extra="forbid", json_schema_extra={"example": {"baseline_id": 1, "current_md": "..."}}
@@ -244,12 +245,17 @@ async def _drift_get(
 async def _drift_diff(
     inp: DriftDiffInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[Any]:
-    """M5 deferral — drift comparison engine."""
+    """M6 deferral — drift comparison engine.
+
+    Drift detection ships with skill #21 (drift-watch) in M6, on top of
+    the M4 Firecrawl wrapper. M3 exposes the tool seam; M6 implements
+    the diff engine.
+    """
     raise MilestoneDeferralError(
-        "drift.diff requires the M5 drift-watch skill",
+        "drift.diff requires the M6 drift-watch skill",
         data={
-            "milestone": "M5",
-            "hint": "Lands with the Firecrawl integration + drift-watch skill",
+            "milestone": "M6",
+            "hint": "Lands with skill #21 (drift-watch) on top of the M4 Firecrawl wrapper",
             "baseline_id": inp.baseline_id,
         },
     )
@@ -401,7 +407,7 @@ def register(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             "drift.diff",
-            "Compare a baseline to current content (M5 deferral).",
+            "Compare a baseline to current content (M6 deferral).",
             DriftDiffInput,
             WriteEnvelope[Any],
             _drift_diff,

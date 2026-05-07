@@ -247,12 +247,43 @@ def test_integration_credential_set_then_remove(session: Session, project_id: in
     assert len(repo.list(project_id)) == 0
 
 
-def test_integration_credential_test_is_m5_stub(session: Session, project_id: int) -> None:
+def test_integration_credential_set_then_get_decrypted(session: Session, project_id: int) -> None:
+    """M4 contract: ``set`` encrypts; ``get_decrypted`` round-trips.
+
+    Exercises the AES-256-GCM seam directly. AAD is bound to
+    ``(project_id, kind)``; mutating either column on disk would render
+    the row undecryptable. We verify three things:
+
+    1. Round-trip yields the original plaintext bytes.
+    2. The persisted row exposes a fresh per-row 12-byte nonce + non-empty
+       ciphertext.
+    3. Tampering with ``project_id`` (the AAD) makes ``decrypt`` raise
+       ``CryptoError``.
+    """
+    from content_stack.crypto.aes_gcm import CryptoError, decrypt
+
     repo = IntegrationCredentialRepository(session)
-    env = repo.set(project_id=project_id, kind="firecrawl", plaintext_payload=b"k")
-    with pytest.raises(NotImplementedError) as exc_info:
-        repo.test(env.data.id)
-    assert "M5" in str(exc_info.value)
+    env = repo.set(
+        project_id=project_id,
+        kind="firecrawl",
+        plaintext_payload=b"sk-live-secret-123",
+    )
+    plaintext = repo.get_decrypted(env.data.id)
+    assert plaintext == b"sk-live-secret-123"
+
+    raw = repo.fetch_row(env.data.id)
+    assert raw.encrypted_payload is not None and len(raw.encrypted_payload) > 0
+    assert raw.nonce is not None and len(raw.nonce) == 12
+
+    # AAD tamper — pass a different project_id; the auth tag mismatch
+    # surfaces as ``CryptoError``.
+    with pytest.raises(CryptoError):
+        decrypt(
+            raw.encrypted_payload,
+            nonce=raw.nonce,
+            project_id=(project_id or 0) + 9999,
+            kind="firecrawl",
+        )
 
 
 # -------- Budgets --------

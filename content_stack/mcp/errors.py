@@ -83,10 +83,10 @@ class MilestoneDeferralError(RepositoryError):
 
 
 class IntegrationDownError(RepositoryError):
-    """An integration vendor is unreachable; M5 marker error.
+    """An integration vendor is unreachable.
 
-    Returned only by M5 integration code; M3 declares the type so the
-    JSON-RPC error map is complete.
+    Raised by the M4 vendor wrappers when a 5xx exhausts retries or a
+    4xx (other than 429) surfaces immediately.
     """
 
     code = JSONRPC_INTEGRATION_DOWN

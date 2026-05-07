@@ -6,8 +6,8 @@ Three concerns under one roof:
   ingest (with dedup via the ``dimensions_hash`` unique constraint) plus
   the nightly daily-rollup operation.
 - ``DriftBaselineRepository`` — content-drift baselines. The diff
-  *engine* is M5 (drift-watch + Firecrawl); M1 only stores baselines
-  and exposes the snapshot/list/get seam.
+  *engine* is M6 (drift-watch skill on top of the M4 Firecrawl wrapper);
+  M1 only stores baselines and exposes the snapshot/list/get seam.
 - ``RedirectRepository`` — 301/302 records.
 """
 
@@ -292,7 +292,7 @@ class GscMetricsDailyRepository:
 
 
 # ---------------------------------------------------------------------------
-# DriftBaselineRepository — snapshot only at M1; diff engine in M5.
+# DriftBaselineRepository — snapshot only at M1; diff engine in M6.
 # ---------------------------------------------------------------------------
 
 
@@ -333,7 +333,8 @@ class DriftBaselineRepository:
     def diff(self, *, baseline_id: int, current_md: str) -> Any:
         """Compare a baseline to current content."""
         raise NotImplementedError(
-            "M5: drift comparison engine — requires Firecrawl + drift-watch skill"
+            "M6: drift comparison engine — requires the drift-watch skill on top of "
+            "the M4 Firecrawl wrapper"
         )
 
 

@@ -8,17 +8,40 @@ migration flow which has its own coverage in ``test_schema.py``).
 The schema is created once per session and partial-unique indexes are
 emitted alongside so the audit B-08 / B-09 / M-20 invariants are
 exercised in tests.
+
+M4 addition: a session-scoped fixture wires ``configure_seed_path`` to a
+tmp seed file so the AES-GCM round-trip in
+``IntegrationCredentialRepository`` succeeds without leaking real seeds.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel
 
+from content_stack.crypto.aes_gcm import configure_seed_path
+from content_stack.crypto.seed import ensure_seed_file
 from content_stack.db.connection import make_memory_engine
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _crypto_seed(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Configure a deterministic per-session seed file.
+
+    M4: ``IntegrationCredentialRepository.set`` now calls into
+    ``content_stack.crypto.aes_gcm.encrypt``. That helper requires
+    ``configure_seed_path`` to have been called at daemon startup. The
+    autouse fixture mirrors what ``server.create_app`` does.
+    """
+    seed_dir = tmp_path_factory.mktemp("crypto-seed")
+    seed_path = seed_dir / "seed.bin"
+    ensure_seed_file(seed_path)
+    configure_seed_path(seed_path)
+    yield seed_path
 
 
 def _emit_partial_indexes(engine: object) -> None:

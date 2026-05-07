@@ -197,18 +197,36 @@ def test_cost_returns_zero_when_no_runs(api: TestClient, project_id: int) -> Non
     assert body["by_integration"] == {}
 
 
-# ---- Integrations test stub returns 501 ----
+# ---- Integrations test route — M4 dispatches to vendor wrappers ----
 
 
-def test_integration_test_returns_501(api: TestClient, project_id: int) -> None:
-    """``test`` route is M5; M2 returns 501 with hint."""
-    # Need a credential row first.
+def test_integration_test_dispatches_to_wrapper(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: object,
+) -> None:
+    """M4: the ``test`` route now dispatches to the per-vendor wrapper.
+
+    We seed a Firecrawl credential (Bearer auth, simplest shape) and
+    mock the upstream HTTP call via ``pytest-httpx``. The route returns
+    the wrapper's status dict.
+    """
+    from pytest_httpx import HTTPXMock
+
+    typed_mock: HTTPXMock = httpx_mock  # type: ignore[assignment]
+    typed_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v1/scrape",
+        json={"data": {"markdown": "# example", "url": "https://example.com"}},
+    )
+
     cr = api.post(
         f"/api/v1/projects/{project_id}/integrations",
-        json={"kind": "dataforseo", "plaintext_payload": "secret123"},
+        json={"kind": "firecrawl", "plaintext_payload": "fc-test-key"},
     )
     cid = cr.json()["data"]["id"]
     resp = api.post(f"/api/v1/projects/{project_id}/integrations/{cid}/test")
-    assert resp.status_code == 501
-    body = resp.json()["detail"]
-    assert "M5" in body["hint"]
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["vendor"] == "firecrawl"

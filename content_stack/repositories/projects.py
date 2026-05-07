@@ -23,7 +23,6 @@ Locked invariants enforced here:
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -768,19 +767,22 @@ class PublishTargetRepository:
 
 
 # ---------------------------------------------------------------------------
-# IntegrationCredentialRepository — M1 stub for encryption.
+# IntegrationCredentialRepository — M4 AES-256-GCM at-rest encryption.
 # ---------------------------------------------------------------------------
 
 
 class IntegrationCredentialRepository:
-    """Integration credentials with an explicit M1-only encryption stub.
+    """Integration credentials encrypted at rest via AES-256-GCM (PLAN.md L1106-L1124).
 
-    M1 invariant: the repository accepts plaintext bytes and stores them
-    as-is in ``encrypted_payload`` with a fresh ``os.urandom(12)`` nonce.
-    M5 will swap this for AES-256-GCM (PLAN.md L1098-L1102) and add a
-    `decrypt` seam; the wire shape (``IntegrationCredentialOut``) does
-    NOT expose the payload, so M5 can change the under-the-hood format
-    without callers breaking.
+    M4 swap-in vs M1: ``set`` now derives a key via HKDF-SHA256 from the
+    seed file, generates a fresh 12-byte nonce, and stores
+    ``ciphertext || tag``. ``get`` decrypts on the way out. The wire
+    shape (``IntegrationCredentialOut``) intentionally never exposes
+    ``encrypted_payload`` — only the ``get`` accessor returns plaintext,
+    and only to integration wrappers that need it.
+
+    The AAD is bound to ``(project_id, kind)`` so a row tampered with via
+    direct SQL UPDATE will fail to decrypt (PLAN.md L1119-L1122).
     """
 
     def __init__(self, session: Session) -> None:
@@ -808,13 +810,21 @@ class IntegrationCredentialRepository:
         config_json: dict[str, Any] | None = None,
         expires_at: datetime | None = None,
     ) -> Envelope[IntegrationCredentialOut]:
-        """Upsert a credential row.
+        """Upsert a credential row, encrypting the payload at rest.
 
-        **M1 stub**: ``encrypted_payload = plaintext_payload`` verbatim.
-        M5 replaces this with AES-256-GCM. Callers should treat the
-        plaintext bytes as already-encrypted at the type-system level
-        from M5 onwards; M1 is a temporary tightrope.
+        Wire format inside ``encrypted_payload``: ``ciphertext || tag``
+        (cryptography's ``AESGCM.encrypt`` returns this concatenated).
+        ``nonce`` lives in its own column. The AAD is
+        ``project_id={p}|kind={k}`` so direct SQL tampering renders the
+        row undecryptable (PLAN.md L1119-L1122).
         """
+        # Local import — the crypto module pulls in the seed-path
+        # configuration, which is set during daemon startup. Keeping the
+        # import lazy means tests that build a Session without going
+        # through ``create_app`` still load the repository module
+        # cleanly.
+        from content_stack.crypto.aes_gcm import encrypt as _crypto_encrypt
+
         # Upsert on (project_id, kind) — the unique constraint backs this.
         existing_stmt = select(IntegrationCredential).where(IntegrationCredential.kind == kind)
         if project_id is None:
@@ -822,22 +832,25 @@ class IntegrationCredentialRepository:
         else:
             existing_stmt = existing_stmt.where(IntegrationCredential.project_id == project_id)
         row = self._s.exec(existing_stmt).first()
-        nonce = os.urandom(12)
+        ciphertext, nonce = _crypto_encrypt(plaintext_payload, project_id=project_id, kind=kind)
+        now = _utcnow()
         if row is None:
             row = IntegrationCredential(
                 project_id=project_id,
                 kind=kind,
-                encrypted_payload=plaintext_payload,
+                encrypted_payload=ciphertext,
                 nonce=nonce,
                 expires_at=expires_at,
                 config_json=config_json,
+                last_refreshed_at=now,
             )
         else:
-            row.encrypted_payload = plaintext_payload
+            row.encrypted_payload = ciphertext
             row.nonce = nonce
             row.expires_at = expires_at
             row.config_json = config_json
-            row.updated_at = _utcnow()
+            row.last_refreshed_at = now
+            row.updated_at = now
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
@@ -846,21 +859,80 @@ class IntegrationCredentialRepository:
             project_id=project_id,
         )
 
-    def test(self, credential_id: int) -> Envelope[IntegrationCredentialOut]:
-        """M1 stub for the ``integration.test`` flow.
+    def get_decrypted(self, credential_id: int) -> bytes:
+        """Decrypt a credential row's payload.
 
-        Real test logic lives in M5 (per-integration health checks). M1
-        returns the row as-is so REST/MCP wiring can be smoke-tested
-        ahead of M5. Raises ``NotImplementedError`` ONLY for the
-        connection check itself — the row read is real.
+        The integration wrappers in ``content_stack.integrations.*`` are
+        the only callers; the bytes never leave the daemon's address
+        space. Raises ``NotFoundError`` if the row is missing,
+        ``CryptoError`` if the auth tag mismatches.
         """
+        from content_stack.crypto.aes_gcm import decrypt as _crypto_decrypt
+
         row = self._s.get(IntegrationCredential, credential_id)
         if row is None:
             raise NotFoundError(f"credential {credential_id} not found")
-        # The actual call to vendor health endpoints is M5 work.
-        raise NotImplementedError(
-            "M5: integration.test calls vendor health endpoints; M1 only stores credentials"
+        return _crypto_decrypt(
+            row.encrypted_payload,
+            nonce=row.nonce,
+            project_id=row.project_id,
+            kind=row.kind,
         )
+
+    def get_decrypted_for(self, project_id: int | None, kind: str) -> tuple[int, bytes]:
+        """Resolve + decrypt by ``(project_id, kind)``.
+
+        Returns ``(credential_id, plaintext_bytes)``. Raises
+        ``NotFoundError`` if no row matches. Resolution order per
+        PLAN.md L1100-L1102: project-scoped first, then global.
+        """
+        if project_id is not None:
+            row = self._s.exec(
+                select(IntegrationCredential).where(
+                    IntegrationCredential.project_id == project_id,
+                    IntegrationCredential.kind == kind,
+                )
+            ).first()
+            if row is not None:
+                from content_stack.crypto.aes_gcm import decrypt as _crypto_decrypt
+
+                assert row.id is not None
+                return row.id, _crypto_decrypt(
+                    row.encrypted_payload,
+                    nonce=row.nonce,
+                    project_id=row.project_id,
+                    kind=row.kind,
+                )
+        # Fall through to global.
+        row = self._s.exec(
+            select(IntegrationCredential).where(
+                IntegrationCredential.project_id.is_(None),  # type: ignore[union-attr,attr-defined]
+                IntegrationCredential.kind == kind,
+            )
+        ).first()
+        if row is None:
+            raise NotFoundError(
+                f"credential not found for project={project_id} kind={kind!r}",
+                data={"project_id": project_id, "kind": kind},
+            )
+        from content_stack.crypto.aes_gcm import decrypt as _crypto_decrypt
+
+        assert row.id is not None
+        return row.id, _crypto_decrypt(
+            row.encrypted_payload,
+            nonce=row.nonce,
+            project_id=row.project_id,
+            kind=row.kind,
+        )
+
+    def mark_refreshed(self, credential_id: int) -> None:
+        """Update ``last_refreshed_at`` to now (used by ``test`` + OAuth refresh)."""
+        row = self._s.get(IntegrationCredential, credential_id)
+        if row is None:
+            raise NotFoundError(f"credential {credential_id} not found")
+        row.last_refreshed_at = _utcnow()
+        self._s.add(row)
+        self._s.commit()
 
     def remove(self, credential_id: int) -> Envelope[IntegrationCredentialOut]:
         """Hard-delete a credential row."""
@@ -871,6 +943,13 @@ class IntegrationCredentialRepository:
         self._s.delete(row)
         self._s.commit()
         return Envelope(data=out, project_id=row.project_id)
+
+    def fetch_row(self, credential_id: int) -> IntegrationCredential:
+        """Return the raw ORM row (for the ``test`` dispatcher in the API layer)."""
+        row = self._s.get(IntegrationCredential, credential_id)
+        if row is None:
+            raise NotFoundError(f"credential {credential_id} not found")
+        return row
 
 
 # ---------------------------------------------------------------------------

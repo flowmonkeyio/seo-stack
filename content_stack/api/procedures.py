@@ -143,20 +143,20 @@ async def list_procedures(
 
 @router.post("/{slug}/run")
 async def run_procedure(slug: str) -> Any:
-    """Procedure runner — pending M8.
+    """Procedure runner — pending M7.
 
     PLAN.md L611-L617 + audit B-21 + D4: the runner is daemon-orchestrated
-    and lands in M8 with the procedure-runner subsystem. M2 surfaces a
+    and lands in M7 with the procedure-runner subsystem. M2 surfaces a
     501 so callers know the route exists but is not yet implemented.
     """
     raise HTTPException(
         status_code=501,
         detail={
-            "detail": "Not yet implemented (M8)",
+            "detail": "Not yet implemented (M7)",
             "code": -32601,
             "data": {"slug": slug},
             "hint": (
-                "Procedure runner is daemon-orchestrated; lands in M8. "
+                "Procedure runner is daemon-orchestrated; lands in M7. "
                 "Until then, drive procedures manually via the article + run REST endpoints."
             ),
         },

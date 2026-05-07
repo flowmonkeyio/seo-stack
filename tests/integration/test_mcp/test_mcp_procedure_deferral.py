@@ -1,4 +1,4 @@
-"""``procedure.run`` returns -32601 (M8 deferral); status works today."""
+"""``procedure.*`` returns -32601 (M7 procedure-runner deferral); status works today."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from .conftest import MCPClient
 def test_procedure_run_for_any_slug_returns_deferral(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:
-    """procedure.run with any slug returns -32601 + milestone='M8'."""
+    """procedure.run with any slug returns -32601 + milestone='M7'."""
     err = mcp_client.call_tool_error(
         "procedure.run",
         {
@@ -17,7 +17,7 @@ def test_procedure_run_for_any_slug_returns_deferral(
         },
     )
     assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M8"
+    assert err["data"]["milestone"] == "M7"
 
 
 def test_procedure_list_returns_empty(mcp_client: MCPClient) -> None:
@@ -48,14 +48,14 @@ def test_procedure_status_works_for_existing_run(
 
 
 def test_procedure_resume_returns_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """procedure.resume returns -32601 + milestone='M8'."""
+    """procedure.resume returns -32601 + milestone='M7'."""
     err = mcp_client.call_tool_error("procedure.resume", {"run_id": 1})
     assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M8"
+    assert err["data"]["milestone"] == "M7"
 
 
 def test_procedure_fork_returns_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """procedure.fork returns -32601 + milestone='M8'."""
+    """procedure.fork returns -32601 + milestone='M7'."""
     err = mcp_client.call_tool_error("procedure.fork", {"run_id": 1, "from_step": "editor"})
     assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M8"
+    assert err["data"]["milestone"] == "M7"

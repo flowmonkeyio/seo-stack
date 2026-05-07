@@ -81,12 +81,13 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
     assert repo.get(fresh.id).status == RunStatus.RUNNING
 
 
-def test_resume_and_fork_are_m9_stubs(session: Session, project_id: int) -> None:
+def test_resume_and_fork_are_m8_stubs(session: Session, project_id: int) -> None:
+    """``run.resume`` / ``run.fork`` defer to M8 jobs/scheduling."""
     repo = RunRepository(session)
     env = repo.start(project_id=project_id, kind=RunKind.PROCEDURE).data
     with pytest.raises(NotImplementedError) as exc1:
         repo.resume(env.id)
-    assert "M9" in str(exc1.value)
+    assert "M8" in str(exc1.value)
     with pytest.raises(NotImplementedError):
         repo.fork(env.id, from_step="x")
 

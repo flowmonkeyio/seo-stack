@@ -6,18 +6,18 @@ from fastapi.testclient import TestClient
 
 
 def test_list_procedures_returns_array(api: TestClient) -> None:
-    """``GET /procedures`` returns a list (empty until M8 drops PROCEDURE.md files)."""
+    """``GET /procedures`` returns a list (empty until M7 drops PROCEDURE.md files)."""
     resp = api.get("/api/v1/procedures")
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
 
 
-def test_run_procedure_returns_501_with_m8_hint(api: TestClient) -> None:
-    """``POST /procedures/{slug}/run`` 501 with ``M8`` hint."""
+def test_run_procedure_returns_501_with_m7_hint(api: TestClient) -> None:
+    """``POST /procedures/{slug}/run`` 501 with ``M7`` hint (procedure runner)."""
     resp = api.post("/api/v1/procedures/bootstrap/run")
     assert resp.status_code == 501
     body = resp.json()["detail"]
-    assert "M8" in body["hint"]
+    assert "M7" in body["hint"]
 
 
 def test_get_procedure_run_404_for_missing(api: TestClient) -> None:

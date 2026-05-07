@@ -120,11 +120,12 @@ def test_drift_snapshot(session: Session, project_id: int) -> None:
     assert len(rows) == 1
 
 
-def test_drift_diff_is_m5_stub(session: Session, project_id: int) -> None:
+def test_drift_diff_is_m6_stub(session: Session, project_id: int) -> None:
+    """Drift comparison engine ships with the drift-watch skill in M6."""
     repo = DriftBaselineRepository(session)
     with pytest.raises(NotImplementedError) as exc_info:
         repo.diff(baseline_id=1, current_md="x")
-    assert "M5" in str(exc_info.value)
+    assert "M6" in str(exc_info.value)
 
 
 def test_redirect_lookup(session: Session, project_id: int) -> None:

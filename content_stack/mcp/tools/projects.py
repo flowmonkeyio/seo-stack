@@ -5,9 +5,9 @@ in ``content_stack.repositories.projects`` (and ``runs`` for the cost
 queries). Inputs declare strict-extra ``forbid``; outputs are either
 the bare repo Out type (reads) or ``WriteEnvelope[OutType]`` (mutations).
 
-The integration-test methods (``integration.test``, ``integration.testGsc``)
-are M5 work; they raise ``MilestoneDeferralError`` so the tool is
-discoverable but documents the deferral cleanly.
+M4: ``integration.test`` and ``integration.testGsc`` now dispatch to
+the per-vendor wrappers in ``content_stack.integrations`` rather than
+returning a milestone deferral.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ from content_stack.db.models import (
 )
 from content_stack.mcp.context import MCPContext
 from content_stack.mcp.contract import MCPInput, WriteEnvelope
-from content_stack.mcp.errors import MilestoneDeferralError
 from content_stack.mcp.server import ToolRegistry, ToolSpec
 from content_stack.mcp.streaming import ProgressEmitter
 from content_stack.repositories.base import Page
@@ -651,7 +650,7 @@ class IntegrationSetInput(MCPInput):
 
 
 class IntegrationTestInput(MCPInput):
-    """Test an integration credential — M5 deferral."""
+    """Test an integration credential — M4 dispatcher to per-vendor wrapper."""
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"credential_id": 1}})
 
@@ -667,7 +666,7 @@ class IntegrationRemoveInput(MCPInput):
 
 
 class IntegrationTestGscInput(MCPInput):
-    """Test the GSC integration end-to-end — M5 deferral."""
+    """Test the GSC integration end-to-end — M4 dispatcher to GSC wrapper."""
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
 
@@ -683,7 +682,7 @@ async def _integration_list(
 async def _integration_set(
     inp: IntegrationSetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[IntegrationCredentialOut]:
-    """Upsert an integration credential. M1 stores plaintext; M5 will encrypt."""
+    """Upsert an integration credential. M4 encrypts at rest via AES-256-GCM."""
     import base64
     from datetime import datetime
 
@@ -703,30 +702,91 @@ async def _integration_set(
 
 async def _integration_test(
     inp: IntegrationTestInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[IntegrationCredentialOut]:
-    """M5 deferral — vendor health check."""
-    raise MilestoneDeferralError(
-        "integration.test calls vendor health endpoints; lands at M5",
-        data={
-            "milestone": "M5",
-            "hint": "M3 stores credentials only; the actual vendor reachability check is M5 work",
-            "credential_id": inp.credential_id,
-        },
-    )
+) -> WriteEnvelope[dict[str, Any]]:
+    """Probe vendor health by dispatching to the per-kind wrapper.
+
+    Resolves the credential row, looks up the wrapper class via the M4
+    integrations registry, and calls ``test_credentials()``. The
+    returned dict comes straight from the wrapper (e.g. ``{"ok": True,
+    "vendor": "dataforseo", "data": {...}}``); the dispatcher routes
+    typed errors (``IntegrationDownError``, ``RateLimitedError``,
+    ``BudgetExceededError``) through the standard MCP error envelope.
+    """
+    import httpx
+
+    from content_stack.integrations import integration_class_for
+    from content_stack.repositories.base import NotFoundError, ValidationError
+
+    repo = IntegrationCredentialRepository(ctx.session)
+    row = repo.fetch_row(inp.credential_id)
+    integration_cls = integration_class_for(row.kind)
+    if integration_cls is None:
+        raise ValidationError(
+            f"integration kind {row.kind!r} has no test wrapper; runtime LLM keys"
+            " (openai/anthropic) are tested elsewhere",
+            data={"kind": row.kind, "credential_id": inp.credential_id},
+        )
+    plaintext = repo.get_decrypted(inp.credential_id)
+    extra: dict[str, Any] = {}
+    if row.kind == "dataforseo":
+        config = row.config_json or {}
+        login = config.get("login")
+        if not login:
+            raise ValidationError(
+                "dataforseo credential missing config_json.login",
+                data={"credential_id": inp.credential_id},
+            )
+        extra["login"] = login
+    if row.project_id is None:
+        raise NotFoundError(
+            f"credential {inp.credential_id} is global; integration.test requires a project",
+            data={"credential_id": inp.credential_id},
+        )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        integration = integration_cls(
+            payload=plaintext,
+            project_id=row.project_id,
+            http=client,
+            **extra,
+        )
+        result = await integration.test_credentials()
+    # Update last_refreshed_at as a side-effect — the test succeeded so
+    # the row's auth state is fresh.
+    repo.mark_refreshed(inp.credential_id)
+    return WriteEnvelope[dict[str, Any]](data=result, run_id=ctx.run_id, project_id=row.project_id)
 
 
 async def _integration_test_gsc(
     inp: IntegrationTestGscInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[Any]:
-    """M5 deferral — exercises the GSC OAuth flow + sample query."""
-    raise MilestoneDeferralError(
-        "integration.testGsc requires the M5 GSC OAuth integration",
-        data={
-            "milestone": "M5",
-            "hint": "Lands with the gsc-pull job and the OAuth refresh worker",
-            "project_id": inp.project_id,
-        },
-    )
+) -> WriteEnvelope[dict[str, Any]]:
+    """Sample GSC query + OAuth refresh validation.
+
+    Per PLAN.md L1079-L1080: a 401 surfaces as "re-auth needed". We
+    dispatch through the GSC wrapper, which calls
+    ``searchanalytics.query`` against the operator's authorised sites.
+    """
+    import httpx
+
+    from content_stack.integrations.gsc import GscIntegration
+    from content_stack.repositories.base import NotFoundError
+
+    repo = IntegrationCredentialRepository(ctx.session)
+    try:
+        cred_id, plaintext = repo.get_decrypted_for(project_id=inp.project_id, kind="gsc")
+    except NotFoundError as exc:
+        raise NotFoundError(
+            f"no GSC credential for project {inp.project_id}",
+            data={"project_id": inp.project_id},
+        ) from exc
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        integration = GscIntegration(
+            payload=plaintext,
+            project_id=inp.project_id,
+            http=client,
+        )
+        result = await integration.test_credentials()
+    repo.mark_refreshed(cred_id)
+    return WriteEnvelope[dict[str, Any]](data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
 async def _integration_remove(
@@ -1165,7 +1225,7 @@ def register(registry: ToolRegistry) -> None:
             "integration.test",
             "Exercise an integration credential against the vendor.",
             IntegrationTestInput,
-            WriteEnvelope[IntegrationCredentialOut],
+            WriteEnvelope[dict[str, Any]],
             _integration_test,
         )
     )
@@ -1174,7 +1234,7 @@ def register(registry: ToolRegistry) -> None:
             "integration.testGsc",
             "Exercise the GSC OAuth flow end-to-end.",
             IntegrationTestGscInput,
-            WriteEnvelope[Any],
+            WriteEnvelope[dict[str, Any]],
             _integration_test_gsc,
         )
     )

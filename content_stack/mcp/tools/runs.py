@@ -261,12 +261,12 @@ async def _run_cost(inp: RunCostInput, ctx: MCPContext, _emit: ProgressEmitter) 
 async def _run_resume(
     inp: RunResumeInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    """Resume a paused procedure run — M9 deferral."""
+    """Resume a paused procedure run — M8 deferral (jobs + scheduling)."""
     raise MilestoneDeferralError(
-        "run.resume requires the procedure runner",
+        "run.resume requires the M8 jobs/scheduling subsystem",
         data={
-            "milestone": "M9",
-            "hint": "Lands with APScheduler + the procedure runner; M3 only exposes the seam",
+            "milestone": "M8",
+            "hint": "Lands with APScheduler + the procedure runner driver",
             "run_id": inp.run_id,
         },
     )
@@ -275,12 +275,12 @@ async def _run_resume(
 async def _run_fork(
     inp: RunForkInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    """Fork a procedure run from a named step — M9 deferral."""
+    """Fork a procedure run from a named step — M8 deferral."""
     raise MilestoneDeferralError(
-        "run.fork requires the procedure runner",
+        "run.fork requires the M8 jobs/scheduling subsystem",
         data={
-            "milestone": "M9",
-            "hint": "Lands with APScheduler + the procedure runner",
+            "milestone": "M8",
+            "hint": "Lands with APScheduler + the procedure runner driver",
             "run_id": inp.run_id,
             "from_step": inp.from_step,
         },
@@ -463,18 +463,19 @@ async def _procedure_list(
 async def _procedure_run(
     inp: ProcedureRunInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[Any]:
-    """Enqueue a procedure run — M8 deferral.
+    """Enqueue a procedure run — M7 deferral.
 
     The slug is validated against the (empty) registry; the deferral
-    error carries ``data.milestone='M8'`` and a hint pointing at
-    PLAN.md L880-L900 + decision D4.
+    error carries ``data.milestone='M7'`` and a hint pointing at
+    PLAN.md L880-L900 + decision D4. Procedure-runner work is
+    step 8 (M7 in 0-indexed convention).
     """
     raise MilestoneDeferralError(
-        "procedure.run requires a procedure registry; lands at M8",
+        "procedure.run requires the M7 procedure runner",
         data={
-            "milestone": "M8",
+            "milestone": "M7",
             "hint": (
-                "M3 exposes the tool seam; M8 implements the daemon-orchestrated runner per "
+                "M3 exposes the tool seam; M7 implements the daemon-orchestrated runner per "
                 "PLAN.md L880-L900 (decision D4). The runner creates a `runs` row with "
                 "kind='procedure' and dispatches step-by-step LLM subprocesses."
             ),
@@ -503,8 +504,8 @@ async def _procedure_resume(
     inp: ProcedureResumeInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[Any]:
     raise MilestoneDeferralError(
-        "procedure.resume requires the procedure runner",
-        data={"milestone": "M8", "hint": "Lands with the runner", "run_id": inp.run_id},
+        "procedure.resume requires the M7 procedure runner",
+        data={"milestone": "M7", "hint": "Lands with the runner", "run_id": inp.run_id},
     )
 
 
@@ -512,9 +513,9 @@ async def _procedure_fork(
     inp: ProcedureForkInput, _ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[Any]:
     raise MilestoneDeferralError(
-        "procedure.fork requires the procedure runner",
+        "procedure.fork requires the M7 procedure runner",
         data={
-            "milestone": "M8",
+            "milestone": "M7",
             "hint": "Lands with the runner",
             "run_id": inp.run_id,
             "from_step": inp.from_step,

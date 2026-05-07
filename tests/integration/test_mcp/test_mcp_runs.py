@@ -68,11 +68,11 @@ def test_run_token_correlation_to_run(mcp_client: MCPClient, seeded_project: dic
 
 
 def test_run_resume_returns_milestone_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """run.resume returns -32601 with milestone='M9' hint."""
+    """run.resume returns -32601 with milestone='M8' hint (jobs/scheduling)."""
     env = mcp_client.call_tool_structured(
         "run.start",
         {"project_id": seeded_project["data"]["id"], "kind": "procedure"},
     )
     err = mcp_client.call_tool_error("run.resume", {"run_id": env["data"]["run_id"]})
     assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M9"
+    assert err["data"]["milestone"] == "M8"

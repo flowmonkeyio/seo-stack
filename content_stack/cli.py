@@ -146,6 +146,57 @@ def _file_mode_or_none(path: Path) -> int | None:
     return stat.S_IMODE(path.stat().st_mode)
 
 
+def _check_credentials_decrypt(
+    settings: Settings,
+    db_present: bool,
+) -> tuple[bool, list[dict[str, object]]]:
+    """Return ``(all_ok, [issues])`` for every integration_credentials row.
+
+    Each issue is ``{credential_id, kind, project_id, error}``. Returns
+    ``(True, [])`` when there are zero rows or when the DB does not
+    exist yet — those are not failures, just a fresh install.
+    """
+    if not db_present:
+        return True, []
+    try:
+        from sqlmodel import Session, select
+
+        from content_stack.crypto.aes_gcm import (
+            CryptoError,
+            configure_seed_path,
+        )
+        from content_stack.db.connection import make_engine
+        from content_stack.db.models import IntegrationCredential
+        from content_stack.repositories.projects import IntegrationCredentialRepository
+
+        configure_seed_path(settings.seed_path)
+        engine = make_engine(settings.db_path)
+        issues: list[dict[str, object]] = []
+        try:
+            with Session(engine) as session:
+                rows = session.exec(select(IntegrationCredential)).all()
+                repo = IntegrationCredentialRepository(session)
+                for row in rows:
+                    if row.id is None:
+                        continue
+                    try:
+                        repo.get_decrypted(row.id)
+                    except CryptoError as exc:
+                        issues.append(
+                            {
+                                "credential_id": row.id,
+                                "kind": row.kind,
+                                "project_id": row.project_id,
+                                "error": str(exc.detail),
+                            }
+                        )
+        finally:
+            engine.dispose()
+    except Exception as exc:  # pragma: no cover — defensive
+        return False, [{"error": f"doctor probe failed: {exc}"}]
+    return len(issues) == 0, issues
+
+
 @app.command()
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
@@ -173,6 +224,14 @@ def doctor(
 
     db_present = settings.db_path.exists()
 
+    # M4: walk every integration_credentials row and confirm it
+    # decrypts cleanly. A failure here usually means the seed file was
+    # rotated outside the CLI or restored from a backup that doesn't
+    # match the DB's credentials. We surface it as an issue list rather
+    # than crashing doctor — operators want a full report, not a
+    # half-finished one.
+    credentials_ok, credential_issues = _check_credentials_decrypt(settings, db_present)
+
     checks = {
         "daemon_up": daemon_up,
         "seed_file_present": seed_mode is not None,
@@ -180,6 +239,7 @@ def doctor(
         "auth_token_present": token_mode is not None,
         "auth_token_mode_0600": token_ok,
         "db_file_present": db_present,
+        "credentials_decrypt": credentials_ok,
     }
     info = {
         "host": settings.host,
@@ -190,11 +250,16 @@ def doctor(
         "token_mode": oct(token_mode) if token_mode is not None else None,
         "version": __version__,
         "milestone": __milestone__,
+        "credential_issues": credential_issues,
     }
 
     # Compute exit code with the highest-priority failure winning so a single
     # `doctor` invocation gives the operator the most actionable signal.
-    if seed_mode is None or not seed_ok:
+    # Credential decrypt failures imply seed mismatch (operator restored a
+    # DB without the seed, or seed was overwritten); we surface that as
+    # the same exit-code 8 as a missing seed since the remediation is
+    # identical (find the right seed or rotate).
+    if seed_mode is None or not seed_ok or not credentials_ok:
         code = 8
     elif token_mode is None or not token_ok:
         code = 7
@@ -213,6 +278,11 @@ def doctor(
             typer.echo(f"  [{mark}] {name}: {val}")
         if not db_present:
             typer.echo("  note: DB not yet created — run `make migrate` after first install.")
+        if credential_issues:
+            typer.echo(
+                f"  note: {len(credential_issues)} credential row(s) failed to decrypt — "
+                "see --json output for details."
+            )
 
     _exit(code)
 
@@ -249,12 +319,69 @@ def install() -> None:
 @app.command(name="rotate-seed")
 def rotate_seed(
     reencrypt: Annotated[
-        bool, typer.Option("--reencrypt", help="Required: re-encrypt all rows")
+        bool,
+        typer.Option(
+            "--reencrypt",
+            help="Required — re-encrypt every integration_credentials row under a fresh seed.",
+        ),
     ] = False,
 ) -> None:
-    """Rotate the integration-credentials seed (M5)."""
-    _ = reencrypt
-    _stub("M5: integrations / credential encryption", "rotate-seed")
+    """Rotate the integration-credentials seed.
+
+    Per PLAN.md L1136-L1142: writes a fresh 32-byte seed, re-encrypts
+    every credential row in a single SQLite transaction, and keeps the
+    old seed at ``seed.bin.bak`` for one daemon boot. ``--reencrypt`` is
+    mandatory because rotating without re-encrypting would orphan every
+    existing credential.
+    """
+    if not reencrypt:
+        typer.echo(
+            "error: rotate-seed requires --reencrypt (rotating without re-encryption "
+            "would orphan every credential row).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from sqlmodel import Session
+
+    from content_stack.crypto.aes_gcm import configure_seed_path
+    from content_stack.crypto.seed import rotate_seed as crypto_rotate_seed
+    from content_stack.db.connection import make_engine
+    from content_stack.db.models import IntegrationCredential
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    configure_seed_path(settings.seed_path)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            from sqlmodel import select
+
+            rows = list(session.exec(select(IntegrationCredential)).all())
+            row_dicts = [
+                {
+                    "id": r.id,
+                    "project_id": r.project_id,
+                    "kind": r.kind,
+                    "encrypted_payload": r.encrypted_payload,
+                    "nonce": r.nonce,
+                }
+                for r in rows
+            ]
+            _, rotated = crypto_rotate_seed(settings.seed_path, rows=row_dicts)
+            id_to_row = {r.id: r for r in rows}
+            for rotated_row in rotated:
+                row = id_to_row[rotated_row["id"]]
+                row.encrypted_payload = rotated_row["encrypted_payload"]
+                row.nonce = rotated_row["nonce"]
+                session.add(row)
+            session.commit()
+        # Drop any cached key from the old seed so subsequent calls in
+        # this process re-derive from the fresh seed file.
+        configure_seed_path(settings.seed_path)
+        typer.echo(f"rotate-seed: rotated {len(rows)} row(s); old seed → seed.bin.bak")
+    finally:
+        engine.dispose()
 
 
 @app.command(name="rotate-token")

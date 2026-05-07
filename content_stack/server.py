@@ -28,6 +28,8 @@ from content_stack import __version__
 from content_stack.api import register_routers
 from content_stack.auth import BearerTokenMiddleware, ensure_token
 from content_stack.config import Settings, get_settings
+from content_stack.crypto import cleanup_old_backup
+from content_stack.crypto.aes_gcm import configure_seed_path
 from content_stack.db.connection import make_engine
 from content_stack.logging import configure_logging, get_logger
 from content_stack.mcp import register_mcp
@@ -133,6 +135,12 @@ def _build_lifespan(
         log = get_logger("content_stack.server")
 
         _ensure_seed(settings.seed_path)
+        # M4: register the seed path with the crypto layer so encrypt/decrypt
+        # can resolve it without each call passing it explicitly. We also
+        # delete the rotation backup left over from the previous boot
+        # (PLAN.md L1142 — bak kept for one boot only).
+        configure_seed_path(settings.seed_path)
+        cleanup_old_backup(settings.seed_path)
         token = ensure_token(settings.token_path)
 
         engine = make_engine(settings.db_path)
@@ -182,6 +190,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Pre-flight ensure so the token exists before middleware reads it.
     settings.ensure_dirs()
     _ensure_seed(settings.seed_path)
+    # Wire the crypto layer up before any request hits an integration repo.
+    configure_seed_path(settings.seed_path)
+    cleanup_old_backup(settings.seed_path)
     token = ensure_token(settings.token_path)
 
     app = FastAPI(

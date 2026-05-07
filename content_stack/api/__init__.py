@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from content_stack.api.adversarial_review import router as adversarial_review_router
 from content_stack.api.articles import (
     article_router as articles_article_router,
 )
@@ -40,6 +41,7 @@ from content_stack.api.health import router as health_router
 from content_stack.api.interlinks import router as interlinks_router
 from content_stack.api.meta import router as meta_router
 from content_stack.api.procedures import router as procedures_router
+from content_stack.api.projects import oauth_router as projects_oauth_router
 from content_stack.api.projects import router as projects_router
 from content_stack.api.runs import (
     project_router as runs_project_router,
@@ -72,6 +74,7 @@ def register_routers(app: FastAPI) -> None:
     # Domain routers — projects + nested presets land first because most
     # other resources hang off ``/projects/{id}/...``.
     app.include_router(projects_router)
+    app.include_router(projects_oauth_router)
     app.include_router(clusters_project_router)
     app.include_router(clusters_cluster_router)
     app.include_router(topics_project_router)
@@ -86,6 +89,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(gsc_article_router)
     app.include_router(authors_router)
     app.include_router(procedures_router)
+    app.include_router(adversarial_review_router)
 
 
 __all__ = ["register_routers"]

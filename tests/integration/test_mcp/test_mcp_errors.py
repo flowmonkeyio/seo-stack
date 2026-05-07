@@ -23,28 +23,21 @@ def test_validation_error_maps_to_minus_32602(mcp_client: MCPClient) -> None:
 
 
 def test_drift_diff_returns_milestone_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """drift.diff returns -32601 with milestone='M5' hint."""
+    """drift.diff returns -32601 with milestone='M6' hint (drift-watch skill)."""
     err = mcp_client.call_tool_error("drift.diff", {"baseline_id": 1, "current_md": "x"})
     assert err["code"] == -32601
     assert err["message"] == "MilestoneDeferralError"
-    assert err["data"]["milestone"] == "M5"
+    assert err["data"]["milestone"] == "M6"
 
 
-def test_integration_test_returns_milestone_deferral(mcp_client: MCPClient) -> None:
-    """integration.test returns -32601 with milestone='M5' hint."""
-    err = mcp_client.call_tool_error("integration.test", {"credential_id": 1})
-    assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M5"
-
-
-def test_procedure_run_returns_m8_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """procedure.run returns -32601 with milestone='M8' hint."""
+def test_procedure_run_returns_m7_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """procedure.run returns -32601 with milestone='M7' hint (procedure runner)."""
     err = mcp_client.call_tool_error(
         "procedure.run",
         {"slug": "any-procedure", "project_id": seeded_project["data"]["id"]},
     )
     assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M8"
+    assert err["data"]["milestone"] == "M7"
 
 
 def test_procedure_list_returns_empty_list(mcp_client: MCPClient) -> None:

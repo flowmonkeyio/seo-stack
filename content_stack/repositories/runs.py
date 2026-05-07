@@ -366,15 +366,19 @@ class RunRepository:
         self._s.commit()
         return len(rows)
 
-    # -------- Resume / fork — M9 --------
+    # -------- Resume / fork — M8 (jobs/scheduling) --------
 
     def resume(self, run_id: int) -> Envelope[RunOut]:
         """Resume a procedure run from its last successful step."""
-        raise NotImplementedError("M9: procedure resume — requires the procedure runner (M8 + M9)")
+        raise NotImplementedError(
+            "M8: procedure resume — requires the procedure runner (M7) + APScheduler (M8)"
+        )
 
     def fork(self, run_id: int, *, from_step: str) -> Envelope[RunOut]:
         """Fork a procedure run from a named step."""
-        raise NotImplementedError("M9: procedure fork — requires the procedure runner (M8 + M9)")
+        raise NotImplementedError(
+            "M8: procedure fork — requires the procedure runner (M7) + APScheduler (M8)"
+        )
 
     # -------- Internal --------
 

@@ -12,7 +12,8 @@ UV ?= uv
         install-skills-codex install-skills-claude \
         install-procedures-codex install-procedures-claude \
         install-launchd doctor test migrate lint format typecheck \
-        gen-types clean uninstall backup restore rotate-seed rotate-token
+        gen-types clean uninstall backup restore rotate-seed rotate-token \
+        oauth-refresh
 
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -89,8 +90,11 @@ backup: ## (M9) Atomic SQLite .backup + copy seed.bin and auth.token
 restore: ## (M9) Halt daemon, copy backup file over current DB, restart
 	@echo "Not yet implemented (M9: jobs/scheduling)"
 
-rotate-seed: ## (M5) Re-encrypt all integration_credentials with a new seed
-	@echo "Not yet implemented (M5: integrations / credentials encryption)"
+rotate-seed: ## (M4) Re-encrypt all integration_credentials with a new seed
+	$(PYTHON) -m content_stack rotate-seed --reencrypt
+
+oauth-refresh: ## (M4) Run the GSC OAuth refresh worker once
+	$(PYTHON) -m content_stack.jobs.oauth_refresh --once
 
 rotate-token: ## (M10) Generate new auth token and update MCP configs
 	@echo "Not yet implemented (M10: distribution)"
