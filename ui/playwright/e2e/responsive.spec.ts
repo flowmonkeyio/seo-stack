@@ -58,4 +58,34 @@ test.describe('responsive viewports — screenshots + axe + zero console errors'
       errors.assertNone()
     })
   }
+
+  for (const bp of BREAKPOINTS) {
+    test(`M5.B list views @ ${bp.name}px`, async ({ page }) => {
+      await page.setViewportSize({ width: bp.width, height: bp.height })
+      const errors = trackConsoleErrors(page)
+      await resetProjects()
+      const project = await createProject({
+        name: `M5b ${bp.name}`,
+        slug: `m5b-${bp.name}`,
+        domain: `m5b-${bp.name}.example.com`,
+      })
+
+      // Empty-state pass for clusters/topics/articles (no rows seeded).
+      const views = ['clusters', 'topics', 'articles']
+      for (const v of views) {
+        await page.goto(`/projects/${project.id}/${v}`)
+        await page.waitForLoadState('networkidle', { timeout: 10_000 })
+        await page.screenshot({
+          path: `./playwright/screenshots/project-${v}-${bp.name}.png`,
+          fullPage: true,
+        })
+        const results = await new AxeBuilder({ page }).analyze()
+        expect(
+          results.violations,
+          `axe violations on /${v} @ ${bp.name}: ${JSON.stringify(results.violations, null, 2)}`,
+        ).toEqual([])
+      }
+      errors.assertNone()
+    })
+  }
 })

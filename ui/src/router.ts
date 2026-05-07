@@ -14,15 +14,27 @@ import ClustersView from './views/ClustersView.vue'
 import TopicsView from './views/TopicsView.vue'
 import ArticlesView from './views/ArticlesView.vue'
 import ArticleDetailView from './views/ArticleDetailView.vue'
+import BriefTab from './views/article-detail/BriefTab.vue'
+import OutlineTab from './views/article-detail/OutlineTab.vue'
+import DraftTab from './views/article-detail/DraftTab.vue'
+import EditedTab from './views/article-detail/EditedTab.vue'
+import AssetsTab from './views/article-detail/AssetsTab.vue'
+import SourcesTab from './views/article-detail/SourcesTab.vue'
+import SchemaTab from './views/article-detail/SchemaTab.vue'
+import PublishesTab from './views/article-detail/PublishesTab.vue'
+import ArticleEeatTab from './views/article-detail/EeatTab.vue'
+import VersionsTab from './views/article-detail/VersionsTab.vue'
+import ArticleInterlinksTab from './views/article-detail/InterlinksTab.vue'
+import DriftTab from './views/article-detail/DriftTab.vue'
 import InterlinksView from './views/InterlinksView.vue'
 import GscView from './views/GscView.vue'
 import DriftView from './views/DriftView.vue'
 import RunsView from './views/RunsView.vue'
 import ProceduresView from './views/ProceduresView.vue'
 
-// Routes per PLAN.md L185-L194 plus the extras spelled out in the M5.A
-// brief. Project-detail tabs are nested children so the URL preserves
-// the active tab on refresh + back/forward.
+// Routes per PLAN.md L185-L194 + the M5.B article-detail tabs.
+// Each article-detail tab is its own child route so the URL preserves the
+// active tab on refresh + back/forward (audit-trail-friendly URLs).
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
@@ -45,8 +57,87 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/articles', name: 'project-articles', component: ArticlesView },
   {
     path: '/projects/:id/articles/:aid',
-    name: 'project-article-detail',
     component: ArticleDetailView,
+    props: true,
+    children: [
+      // The empty path matches the bare `/projects/:id/articles/:aid`. The
+      // outer view's onMounted redirects this to `/brief` so the URL is
+      // bookmark-friendly; the named route still resolves so vue-router
+      // doesn't 404 the bare URL.
+      { path: '', name: 'project-article-detail', component: BriefTab, props: true },
+      {
+        path: 'brief',
+        name: 'project-article-detail-brief',
+        component: BriefTab,
+        props: true,
+      },
+      {
+        path: 'outline',
+        name: 'project-article-detail-outline',
+        component: OutlineTab,
+        props: true,
+      },
+      {
+        path: 'draft',
+        name: 'project-article-detail-draft',
+        component: DraftTab,
+        props: true,
+      },
+      {
+        path: 'edited',
+        name: 'project-article-detail-edited',
+        component: EditedTab,
+        props: true,
+      },
+      {
+        path: 'assets',
+        name: 'project-article-detail-assets',
+        component: AssetsTab,
+        props: true,
+      },
+      {
+        path: 'sources',
+        name: 'project-article-detail-sources',
+        component: SourcesTab,
+        props: true,
+      },
+      {
+        path: 'schema',
+        name: 'project-article-detail-schema',
+        component: SchemaTab,
+        props: true,
+      },
+      {
+        path: 'publishes',
+        name: 'project-article-detail-publishes',
+        component: PublishesTab,
+        props: true,
+      },
+      {
+        path: 'eeat',
+        name: 'project-article-detail-eeat',
+        component: ArticleEeatTab,
+        props: true,
+      },
+      {
+        path: 'versions',
+        name: 'project-article-detail-versions',
+        component: VersionsTab,
+        props: true,
+      },
+      {
+        path: 'interlinks',
+        name: 'project-article-detail-interlinks',
+        component: ArticleInterlinksTab,
+        props: true,
+      },
+      {
+        path: 'drift',
+        name: 'project-article-detail-drift',
+        component: DriftTab,
+        props: true,
+      },
+    ],
   },
   { path: '/projects/:id/interlinks', name: 'project-interlinks', component: InterlinksView },
   { path: '/projects/:id/gsc', name: 'project-gsc', component: GscView },

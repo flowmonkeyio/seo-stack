@@ -134,7 +134,10 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
 
 <template>
   <div class="cs-datatable-wrapper relative">
-    <div class="overflow-x-auto rounded border border-gray-200 dark:border-gray-800">
+    <div
+      class="overflow-x-auto rounded border border-gray-200 dark:border-gray-800"
+      tabindex="0"
+    >
       <table
         class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800"
         :aria-label="ariaLabel"
