@@ -16,28 +16,68 @@ Pre-implementation. See [`PLAN.md`](./PLAN.md) for the full design and phase pla
 
 ---
 
-## Quickstart (target — not yet implemented)
+## Quickstart
+
+Clone the repo, run one command, open the UI:
 
 ```bash
-# install daemon
-uv pip install -e .
-
-# build UI
-make build-ui
-
-# start daemon (auto-creates DB at ~/.local/share/content-stack/)
-make serve
-
-# register MCP for your runtime(s)
-make register-codex
-make register-claude
-
-# install skills into your runtime(s)
-make install-skills-codex
-make install-skills-claude
-
-# open UI
+git clone https://github.com/flowmonkey-io/content-stack
+cd content-stack
+make install
+make serve              # foreground; or:
+make install-launchd    # macOS only — auto-start on login
 open http://localhost:5180
+```
+
+`make install` is idempotent: re-running produces the same end state.
+It runs every install step (Python deps, migrations, UI bundle, skills
++ procedures into Codex + Claude Code, MCP registration, doctor).
+
+### pipx mode (post-publish)
+
+```bash
+pipx install content-stack
+content-stack install            # mirrors skills/procedures + registers MCP
+content-stack serve              # daemon foreground
+```
+
+### Upgrade
+
+See [`docs/upgrade.md`](./docs/upgrade.md). Quick reference:
+
+- pipx: `pipx upgrade content-stack && content-stack install`
+- Clone: `git pull && make install`
+
+### Verifying an install
+
+```bash
+make doctor                                   # human output
+bash scripts/doctor.sh --json | jq            # JSON envelope
+```
+
+Doctor exit codes:
+0 (ok), 1 (daemon down), 2 (MCP not registered), 3 (skills not
+installed), 4 (missing API keys), 5 (DB schema out of date),
+6 (launchd plist not loaded), 7 (auth token missing or wrong mode),
+8 (seed file missing or wrong mode).
+
+### Codex CLI bearer token
+
+Codex CLI reads the bearer token from an environment variable rather
+than a literal header. After `make install`, add to your shell rc:
+
+```bash
+export CONTENT_STACK_TOKEN="$(cat ~/.local/state/content-stack/auth.token)"
+```
+
+Claude Code reads the token directly from `~/.claude/mcp.json`, no
+shell env required.
+
+### Uninstall
+
+```bash
+make uninstall                  # removes skills, procedures, MCP entries, launchd
+                                # plist; preserves DB + seed + auth.token
 ```
 
 ---

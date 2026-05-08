@@ -18,8 +18,33 @@ UV ?= uv
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-install: ## (M0/M10) Install Python deps via uv (full install pipeline lands in M10)
+install: ## (M9) Full install pipeline — deps + migrate + UI + skills + procedures + MCP + doctor
+	@echo "==> Installing Python deps"
 	$(UV) sync --all-extras
+	@echo "==> Bootstrapping daemon state (creates seed + auth.token if absent)"
+	$(PYTHON) -m content_stack init
+	@echo "==> Running migrations"
+	$(PYTHON) -m content_stack migrate
+	@echo "==> Verifying committed UI bundle (D8: content_stack/ui_dist/ is committed)"
+	@if [ -f content_stack/ui_dist/index.html ]; then \
+	  echo "  ui_dist/index.html present"; \
+	else \
+	  echo "  ui_dist/ missing — running \`make build-ui\` to regenerate"; \
+	  $(MAKE) build-ui; \
+	fi
+	@echo "==> Registering MCP for Codex CLI"
+	@bash scripts/register-mcp-codex.sh
+	@echo "==> Registering MCP for Claude Code"
+	@bash scripts/register-mcp-claude.sh
+	@echo "==> Installing skills (Codex + Claude Code)"
+	@bash scripts/install-codex.sh
+	@bash scripts/install-claude.sh
+	@echo "==> Installing procedures (Codex + Claude Code)"
+	@bash scripts/install-procedures-codex.sh
+	@bash scripts/install-procedures-claude.sh
+	@echo "==> Running doctor (post-install diagnose; daemon-up checks may FAIL until \`make serve\` runs)"
+	@bash scripts/doctor.sh || echo "  (doctor surfaced issues — see output above)"
+	@echo "==> install complete"
 
 serve: ## (M0) Run the daemon foreground on 127.0.0.1:5180
 	$(PYTHON) -m content_stack serve
@@ -64,31 +89,40 @@ clean: ## (M0) Remove caches and build artifacts (preserves DB at ~/.local/share
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name '*.egg-info' -prune -exec rm -rf {} +
 
-# ---- Stubs for later milestones (present so `make` target list matches PLAN.md) ----
+register-codex: ## (M9) Register MCP server with Codex CLI
+	@bash scripts/register-mcp-codex.sh
 
-register-codex: ## (M10) Register MCP server with Codex CLI
-	@echo "Not yet implemented (M10: distribution / MCP registration)"
+register-claude: ## (M9) Register MCP server with Claude Code (.mcp.json upsert)
+	@bash scripts/register-mcp-claude.sh
 
-register-claude: ## (M10) Register MCP server with Claude Code (.mcp.json upsert)
-	@echo "Not yet implemented (M10: distribution / MCP registration)"
+install-skills-codex: ## (M9) Install skills into ~/.codex/skills/content-stack/
+	@bash scripts/install-codex.sh
 
-install-skills-codex: ## (M7/M10) Install skills into ~/.codex/skills/content-stack/
-	@echo "Not yet implemented (M10: distribution; depends on M7 skills)"
+install-skills-claude: ## (M9) Install skills into ~/.claude/skills/content-stack/
+	@bash scripts/install-claude.sh
 
-install-skills-claude: ## (M7/M10) Install skills into ~/.claude/skills/content-stack/
-	@echo "Not yet implemented (M10: distribution; depends on M7 skills)"
+install-procedures-codex: ## (M9) Install procedures into ~/.codex/procedures/content-stack/
+	@bash scripts/install-procedures-codex.sh
 
-install-procedures-codex: ## (M8/M10) Install procedures into ~/.codex/procedures/content-stack/
-	@echo "Not yet implemented (M10: distribution; depends on M8 procedures)"
+install-procedures-claude: ## (M9) Install procedures into ~/.claude/procedures/content-stack/
+	@bash scripts/install-procedures-claude.sh
 
-install-procedures-claude: ## (M8/M10) Install procedures into ~/.claude/procedures/content-stack/
-	@echo "Not yet implemented (M10: distribution; depends on M8 procedures)"
+install-launchd: ## (M9) Write launchd plist for auto-start (macOS, optional)
+	@bash scripts/install-launchd.sh
 
-install-launchd: ## (M9/M10) Write launchd plist for auto-start
-	@echo "Not yet implemented (M9 jobs / M10 distribution)"
-
-uninstall: ## (M10) Remove installed skills/procedures/MCP entries; preserve DB
-	@echo "Not yet implemented (M10: distribution)"
+uninstall: ## (M9) Remove installed skills/procedures/MCP entries; preserve DB + seed
+	@echo "==> Booting out launchd job (if loaded)"
+	@bash scripts/install-launchd.sh --uninstall || true
+	@echo "==> Removing skills"
+	@rm -rf "$(HOME)/.codex/skills/content-stack" "$(HOME)/.claude/skills/content-stack"
+	@echo "==> Removing procedures"
+	@rm -rf "$(HOME)/.codex/procedures/content-stack" "$(HOME)/.claude/procedures/content-stack"
+	@echo "==> Unregistering MCP for Codex CLI"
+	@bash scripts/register-mcp-codex.sh --remove || true
+	@echo "==> Unregistering MCP for Claude Code"
+	@bash scripts/register-mcp-claude.sh --remove || true
+	@echo "==> Note: ~/.local/share/content-stack/ (DB) and ~/.local/state/content-stack/ (seed + token) preserved."
+	@echo "==> uninstall complete"
 
 backup: ## (M9) Atomic SQLite .backup + copy seed.bin and auth.token
 	@echo "Not yet implemented (M9: jobs/scheduling; auto-backup job)"

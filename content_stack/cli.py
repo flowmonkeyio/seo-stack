@@ -8,10 +8,11 @@ or print the milestone tag and exit, so the CLI shape is fixed from day one.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import stat
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
@@ -107,8 +108,6 @@ def serve(
 
     # Override settings with CLI flags by stuffing into env *before* importing
     # uvicorn — pydantic-settings will read these.
-    import os
-
     os.environ["CONTENT_STACK_HOST"] = host
     os.environ["CONTENT_STACK_PORT"] = str(port)
     os.environ["CONTENT_STACK_LOG_LEVEL"] = log_level.upper()
@@ -353,21 +352,151 @@ def _stub(milestone: str, name: str) -> None:
 def init(
     force: Annotated[bool, typer.Option("--force", help="Overwrite existing config")] = False,
 ) -> None:
-    """Initialize XDG dirs, seed, token, and run migrations (M1)."""
-    _ = force
-    _stub("M1: DB + repositories", "init")
+    """Initialize XDG dirs, seed, and bearer token.
+
+    Idempotent: re-running on a populated state dir is a no-op (the
+    seed and token are read but not regenerated). ``--force`` is
+    accepted for symmetry with PLAN.md L1268; it is rejected here as
+    too dangerous to wire blindly — operators wanting to rotate seed
+    should call ``content-stack rotate-seed`` and ``rotate-token``
+    explicitly so the side-effects (re-encryption, MCP re-registration)
+    cannot be skipped accidentally.
+    """
+    if force:
+        typer.echo(
+            "error: --force on `init` is intentionally not implemented. "
+            "Use `content-stack rotate-seed --reencrypt` or `rotate-token --yes`.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    from content_stack.auth import ensure_token
+    from content_stack.crypto.seed import ensure_seed_file
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    ensure_seed_file(settings.seed_path)
+    ensure_token(settings.token_path)
+    typer.echo(f"init: state dir at {settings.state_dir}; seed + auth.token present (mode 0600).")
 
 
 @app.command()
 def migrate() -> None:
-    """Run alembic migrations (M1+; placeholder driver in M0)."""
-    _stub("M1: DB + repositories", "migrate")
+    """Run alembic migrations forward to head."""
+    from alembic import command
+    from alembic.config import Config
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    cfg_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+    cfg = Config(str(cfg_path))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
+    command.upgrade(cfg, "head")
+    typer.echo(f"migrate: alembic upgraded to head ({settings.db_path}).")
 
 
 @app.command()
-def install() -> None:
-    """Wraps `make install` for end-user one-liner installs (M10)."""
-    _stub("M10: distribution", "install")
+def install(
+    skills_only: Annotated[
+        bool,
+        typer.Option("--skills-only", help="Only mirror skills/ into the runtimes."),
+    ] = False,
+    procedures_only: Annotated[
+        bool,
+        typer.Option("--procedures-only", help="Only mirror procedures/ into the runtimes."),
+    ] = False,
+    mcp_only: Annotated[
+        bool,
+        typer.Option("--mcp-only", help="Only register the MCP server."),
+    ] = False,
+    launchd: Annotated[
+        bool,
+        typer.Option("--launchd", help="Also install the launchd plist (macOS)."),
+    ] = False,
+    skip_doctor: Annotated[
+        bool,
+        typer.Option("--skip-doctor", help="Skip the post-install doctor check."),
+    ] = False,
+) -> None:
+    """End-user one-liner install — clone-mode or pipx-mode.
+
+    Auto-detects whether the package was installed from a checked-out
+    repo (uses the bash scripts under ``scripts/``) or via pipx (resolves
+    bundled assets via ``importlib.resources``). The two paths land at
+    the same end state.
+
+    Re-running is idempotent (audit B-24): skills + procedures use
+    rsync-style ``--delete`` mirroring, and MCP registration upserts
+    existing entries.
+    """
+    from content_stack import install as installer
+
+    selectors = [skills_only, procedures_only, mcp_only]
+    if sum(1 for s in selectors if s) > 1:
+        typer.echo(
+            "error: --skills-only, --procedures-only, and --mcp-only are mutually exclusive.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    do_skills = skills_only or not (procedures_only or mcp_only)
+    do_procedures = procedures_only or not (skills_only or mcp_only)
+    do_mcp = mcp_only or not (skills_only or procedures_only)
+
+    mode = installer.detect_mode()
+    typer.echo(f"==> Install mode: {mode}")
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    home = Path.home()
+
+    runtimes: tuple[Literal["codex", "claude"], ...] = ("codex", "claude")
+    if do_skills:
+        for runtime in runtimes:
+            target, count = installer.copy_skills(runtime, home=home)
+            typer.echo(f"==> Installed {count} skills -> {target}")
+
+    if do_procedures:
+        for runtime in runtimes:
+            target, count = installer.copy_procedures(runtime, home=home)
+            typer.echo(f"==> Installed {count} procedures -> {target}")
+
+    if do_mcp:
+        # Codex first; it prints its own skip-line if not on PATH.
+        msg = installer.register_mcp_codex(home=home, port=settings.port)
+        typer.echo(f"==> {msg}")
+        msg = installer.register_mcp_claude(home=home, port=settings.port)
+        typer.echo(f"==> {msg}")
+
+    if launchd:
+        # Defer to the bash script; pipx-mode users still get launchd
+        # via the script if they have a clone of the repo. Without a
+        # repo we cannot generate a sensible plist (the daemon needs a
+        # working directory) — surface that explicitly.
+        scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+        plist_script = scripts_dir / "install-launchd.sh"
+        if plist_script.is_file():
+            import subprocess
+
+            subprocess.run(["bash", str(plist_script)], check=True)
+        else:
+            typer.echo(
+                "warning: --launchd requires a checked-out repo (script not in wheel).",
+                err=True,
+            )
+
+    if not skip_doctor:
+        typer.echo("==> Running doctor")
+        # Re-enter the doctor command in-process so the exit code
+        # propagates. We delegate to the underlying typer command via
+        # the same module to avoid duplicating the logic.
+        try:
+            doctor(json_output=False)
+        except typer.Exit as exc:
+            # Surface the doctor exit code as the install exit code so
+            # `make install` fails loudly when the daemon is not yet up.
+            if exc.exit_code not in (0, None):
+                raise
+    typer.echo("==> install complete")
 
 
 @app.command(name="rotate-seed")
@@ -439,9 +568,55 @@ def rotate_seed(
 
 
 @app.command(name="rotate-token")
-def rotate_token() -> None:
-    """Rotate the bearer auth token and update MCP configs (M10)."""
-    _stub("M10: distribution", "rotate-token")
+def rotate_token(
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            help="Required — rotating without confirmation invalidates every existing MCP config.",
+        ),
+    ] = False,
+) -> None:
+    """Rotate the bearer auth token and re-register MCP configs.
+
+    Per PLAN.md L1273: writes a fresh 32 bytes to ``auth.token`` (mode
+    0600) then re-registers Codex + Claude Code so their saved
+    Authorization headers match the new token. Existing tokens become
+    invalid the moment this completes — that is the whole point.
+    """
+    if not yes:
+        typer.echo(
+            "error: rotate-token requires --yes (rotating invalidates every existing "
+            "MCP config until the registration scripts re-run).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    import secrets
+
+    from content_stack import install as installer
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    new_token = secrets.token_hex(32)
+    token_path = settings.token_path
+    # Write under temp + rename for atomicity, mode 0600 enforced.
+    fd = os.open(
+        str(token_path) + ".new",
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        0o600,
+    )
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(new_token)
+        f.write("\n")
+    os.replace(str(token_path) + ".new", token_path)
+
+    # Re-register so saved Authorization headers refresh.
+    msg = installer.register_mcp_codex(port=settings.port, force=True)
+    typer.echo(msg)
+    msg = installer.register_mcp_claude(port=settings.port)
+    typer.echo(msg)
+    typer.echo("rotate-token: token rotated; MCP configs updated.")
 
 
 @app.command()
