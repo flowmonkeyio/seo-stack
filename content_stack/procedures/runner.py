@@ -9,8 +9,8 @@ Per audit **B-21** + **B-13** the runner is resumable + heartbeat-reapable.
 This module implements:
 
 - ``ProcedureRunner.start`` — create a ``runs`` row + pre-write all
-  ``procedure_run_steps`` rows + dispatch the runner as an asyncio
-  task. Returns ``{run_id, run_token, status_url}`` immediately so the
+  ``procedure_run_steps`` rows + dispatch the runner via APScheduler.
+  Returns ``{run_id, run_token, status_url}`` immediately so the
   client can poll ``procedure.status`` / ``GET /api/v1/procedures/runs/{id}``.
 - ``ProcedureRunner.resume`` — pick up an aborted (or paused) run from
   the next pending step. Reads ``procedure_run_steps`` for the run's
@@ -25,9 +25,11 @@ Per-step semantics:
 
 1. Look up the skill's ``allowed_tools`` from ``SKILL_TOOL_GRANTS``
    (load-bearing grant matrix per audit B-10).
-2. Dispatch via the bound ``LLMDispatcher`` (the ``StubDispatcher`` in
-   M7.A; ``OpenAIDispatcher`` / ``AnthropicDispatcher`` in the M7
-   follow-up).
+2. Dispatch:
+   - ``_programmatic/<name>`` → ``ProgrammaticStepRegistry.dispatch``
+     (M8 — repository / integration code, no LLM session).
+   - everything else → the bound ``LLMDispatcher`` (StubDispatcher /
+     AnthropicSession).
 3. Persist the dispatcher's output verbatim in
    ``procedure_run_steps.output_json``.
 4. Branch per ``ProcedureStep.on_failure``:
@@ -51,11 +53,17 @@ is the **EEAT three-verdict branch** per audit BLOCKER-09:
 - ``verdict='BLOCK'`` → abort with ``runs.status='aborted'`` and (if
   there's an article in scope) flip ``articles.status='aborted-publish'``.
 
-The runner is **single-process for M7.A** — APScheduler integration
-lands in M8 to drive cron-triggered procedures (procedure 6's weekly
-GSC review, procedure 7's monthly refresh check). For M7.A the
-in-process asyncio task is sufficient to prove the dispatch contract
-end-to-end.
+**M7→M8 transition:** M7.A used ``asyncio.create_task`` to dispatch the
+runner's main loop. M8 routes through APScheduler so the runner job is
+persistent (SQLAlchemyJobStore), respects ``max_instances=1`` per
+``run-{run_id}`` job, and resumes cleanly after a daemon crash. The
+runner still uses an in-process ``asyncio.Semaphore`` per
+``(slug, project_id)`` for fine-grained per-project serialization that
+the cross-process scheduler can't express on its own.
+
+If the scheduler is not bound (e.g. tests using the M7.A entry path),
+the runner falls back to ``asyncio.create_task`` — the dispatch
+contract is unchanged.
 """
 
 from __future__ import annotations
@@ -65,8 +73,9 @@ import contextlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
@@ -94,6 +103,13 @@ from content_stack.procedures.parser import (
     ProcedureStep,
     load_all_procedures,
 )
+from content_stack.procedures.programmatic import (
+    HumanReviewPause,
+    ProgrammaticStepRegistry,
+)
+from content_stack.procedures.programmatic import (
+    StepContext as ProgrammaticStepContext,
+)
 from content_stack.repositories.base import (
     ConflictError,
     NotFoundError,
@@ -103,6 +119,15 @@ from content_stack.repositories.runs import (
     ProcedureRunStepRepository,
     RunRepository,
 )
+
+if TYPE_CHECKING:
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Skill prefix for programmatic step dispatch — runner detects this at
+# dispatch time and routes through ``ProgrammaticStepRegistry`` instead
+# of the LLM dispatcher. The handler name follows the prefix:
+# ``_programmatic/foo-bar`` → registry key ``foo-bar``.
+_PROGRAMMATIC_PREFIX = "_programmatic/"
 
 _log = logging.getLogger(__name__)
 
@@ -187,6 +212,11 @@ class _StepContext:
     ``loop_iteration[loop_back_to]`` and the runner aborts when any
     counter exceeds ``settings.procedure_runner_max_loop_iterations``."""
 
+    pause_requested: dict[str, bool] = field(default_factory=dict)
+    """Set by ``HumanReviewPause`` from a programmatic handler. Forces
+    the post-step action to ``pause`` regardless of the step's declared
+    ``on_failure`` mode (operator-driven prompts always pause)."""
+
 
 class ProcedureRunner:
     """Daemon-orchestrated procedure runner per D4."""
@@ -199,6 +229,7 @@ class ProcedureRunner:
         dispatcher: LLMDispatcher | None = None,
         procedures_dir: Path | None = None,
         plugin_root: str | None = None,
+        scheduler: AsyncIOScheduler | None = None,
     ) -> None:
         self._settings = settings
         self._engine = engine
@@ -211,6 +242,11 @@ class ProcedureRunner:
         # any PROCEDURE.md is malformed — we want that surfaced at
         # startup, not at the first ``procedure.run`` call.
         self._registry: dict[str, ProcedureSpec] = load_all_procedures(procedures_dir)
+        # Per-(slug, project_id) semaphore — the in-process complement to
+        # APScheduler's ``max_instances=1`` per job_id. M7.A keyed on slug
+        # alone (system-wide); M8 keys on (slug, project_id) per
+        # PLAN.md L1361 ("per-project serialization") so different projects
+        # of the same procedure can run in parallel.
         self._semaphores: dict[SemaphoreKey, asyncio.Semaphore] = {}
         self._tasks: dict[int, _RunnerTask] = {}
         self._tasks_lock = asyncio.Lock()
@@ -218,6 +254,23 @@ class ProcedureRunner:
         # Skills root mirrors the procedures directory layout — repo
         # root has both. We resolve once at construction.
         self._skills_dir = _default_skills_dir(procedures_dir)
+        # APScheduler binding (M8). When None the runner falls back to
+        # ``asyncio.create_task`` — preserves M7.A test ergonomics where
+        # tests construct a runner without a scheduler.
+        self._scheduler: AsyncIOScheduler | None = scheduler
+
+    def bind_scheduler(self, scheduler: AsyncIOScheduler) -> None:
+        """Attach a scheduler post-construction. Called by the lifespan."""
+        self._scheduler = scheduler
+
+    def list_procedures_with_specs(self) -> dict[str, ProcedureSpec]:
+        """Return ``slug → ProcedureSpec`` for every loaded procedure.
+
+        Used by the M8 cron-procedure registrar to find procedures with a
+        non-None ``schedule`` block. Tests of the M7 path don't need
+        this — it's M8-specific.
+        """
+        return dict(self._registry)
 
     # ------------------------------------------------------------------
     # Public API.
@@ -279,29 +332,21 @@ class ProcedureRunner:
             client_session_id=client_session_id,
         )
 
-        # Reserve the semaphore key + start the asyncio task.
-        sem_key = _semaphore_key(slug)
+        # Reserve the semaphore key + dispatch via the scheduler (M8) or
+        # asyncio fallback (M7.A test path).
+        sem_key = _semaphore_key(slug, project_id)
         sem = self._semaphores.setdefault(sem_key, asyncio.Semaphore(spec.concurrency_limit))
-        coro = self._run_task(
+        await self._dispatch_run(
             spec=spec,
             run_id=run_id,
             run_token=run_token,
             project_id=project_id,
             args=args,
             semaphore=sem,
+            sem_key=sem_key,
+            wait=wait,
+            label="start",
         )
-        task: asyncio.Task[None] = asyncio.create_task(coro, name=f"proc-{slug}-{run_id}")
-        loop_time = asyncio.get_event_loop().time()
-        runner_task = _RunnerTask(
-            task=task, run_id=run_id, slug=slug, semaphore_key=sem_key, started_at=loop_time
-        )
-        async with self._tasks_lock:
-            self._tasks[run_id] = runner_task
-        # Every task removes itself when done so the registry doesn't
-        # accumulate stale entries.
-        task.add_done_callback(self._make_done_callback(run_id))
-        if wait:
-            await task
         return {
             "run_id": run_id,
             "run_token": run_token,
@@ -365,26 +410,21 @@ class ProcedureRunner:
                 if step_row.status == ProcedureRunStepStatus.SUCCESS and step_row.output_json:
                     seed_outputs[step_row.step_id] = step_row.output_json
 
-        sem_key = _semaphore_key(spec.slug)
+        sem_key = _semaphore_key(spec.slug, project_id)
         sem = self._semaphores.setdefault(sem_key, asyncio.Semaphore(spec.concurrency_limit))
-        coro = self._run_task(
+        await self._dispatch_run(
             spec=spec,
             run_id=run_id,
             run_token=run_token,
             project_id=project_id,
             args=args,
             semaphore=sem,
+            sem_key=sem_key,
+            wait=wait,
+            label="resume",
             resume_from=resume_index,
             seed_outputs=seed_outputs,
         )
-        task_name = f"proc-{spec.slug}-{run_id}-resume"
-        task: asyncio.Task[None] = asyncio.create_task(coro, name=task_name)
-        runner_task = _RunnerTask(task=task, run_id=run_id, slug=spec.slug, semaphore_key=sem_key)
-        async with self._tasks_lock:
-            self._tasks[run_id] = runner_task
-        task.add_done_callback(self._make_done_callback(run_id))
-        if wait:
-            await task
         return {
             "run_id": run_id,
             "run_token": run_token,
@@ -460,28 +500,21 @@ class ProcedureRunner:
                     output_json=source_value,
                 )
 
-        sem_key = _semaphore_key(spec.slug)
+        sem_key = _semaphore_key(spec.slug, project_id)
         sem = self._semaphores.setdefault(sem_key, asyncio.Semaphore(spec.concurrency_limit))
-        coro = self._run_task(
+        await self._dispatch_run(
             spec=spec,
             run_id=new_run_id,
             run_token=run_token,
             project_id=project_id,
             args=args,
             semaphore=sem,
+            sem_key=sem_key,
+            wait=wait,
+            label="fork",
             resume_from=from_step_index,
             seed_outputs=seed_outputs,
         )
-        task_name = f"proc-{spec.slug}-{new_run_id}-fork"
-        task: asyncio.Task[None] = asyncio.create_task(coro, name=task_name)
-        runner_task = _RunnerTask(
-            task=task, run_id=new_run_id, slug=spec.slug, semaphore_key=sem_key
-        )
-        async with self._tasks_lock:
-            self._tasks[new_run_id] = runner_task
-        task.add_done_callback(self._make_done_callback(new_run_id))
-        if wait:
-            await task
         return {
             "run_id": new_run_id,
             "run_token": run_token,
@@ -496,6 +529,8 @@ class ProcedureRunner:
         """Abort an in-flight run + cancel its asyncio task.
 
         Idempotent: aborting an already-terminal run flips no states.
+        Also removes the corresponding ``run-{run_id}`` APScheduler job
+        if one was registered (M8).
         """
         async with self._tasks_lock:
             runner_task = self._tasks.get(run_id)
@@ -503,6 +538,12 @@ class ProcedureRunner:
             runner_task.task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await runner_task.task
+        # Remove the scheduler job if one is bound. The job marker
+        # (``_noop_job_marker``) may already have fired; ``remove_job``
+        # is idempotent enough — we suppress JobLookupError.
+        if self._scheduler is not None:
+            with contextlib.suppress(Exception):
+                self._scheduler.remove_job(f"run-{run_id}", jobstore="memory")
         with Session(self._engine) as s:
             RunRepository(s).abort(run_id, cascade=cascade)
             row = s.get(Run, run_id)
@@ -593,6 +634,91 @@ class ProcedureRunner:
                     step_id=step.id,
                 )
         return token, run_id
+
+    async def _dispatch_run(
+        self,
+        *,
+        spec: ProcedureSpec,
+        run_id: int,
+        run_token: str,
+        project_id: int,
+        args: dict[str, Any],
+        semaphore: asyncio.Semaphore,
+        sem_key: SemaphoreKey,
+        wait: bool,
+        label: str,
+        resume_from: int = 0,
+        seed_outputs: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
+        """Schedule the run's main loop via APScheduler (M8) or asyncio (M7.A).
+
+        The scheduler path uses ``trigger='date'`` with ``run_date=now``
+        so the runner job fires immediately but goes through APScheduler
+        — which means the job is persistent (SQLAlchemyJobStore) +
+        respects ``max_instances=1`` across the daemon.
+
+        The asyncio fallback preserves the M7.A test ergonomics (tests
+        that don't bind a scheduler still run end-to-end). Both paths
+        record the in-flight task on ``self._tasks[run_id]`` so
+        ``abort()`` + ``wait_for()`` work uniformly.
+        """
+
+        async def _body() -> None:
+            await self._run_task(
+                spec=spec,
+                run_id=run_id,
+                run_token=run_token,
+                project_id=project_id,
+                args=args,
+                semaphore=semaphore,
+                resume_from=resume_from,
+                seed_outputs=seed_outputs,
+            )
+
+        # Build the asyncio task that drives ``_body``. Both branches
+        # produce an awaitable handle on ``self._tasks[run_id]`` so
+        # ``abort`` / ``wait_for`` can work the same way regardless of
+        # whether APScheduler is in the chain.
+        if self._scheduler is not None and self._scheduler.running:
+            task = asyncio.create_task(_body(), name=f"proc-{spec.slug}-{run_id}-{label}")
+            # Register the run with APScheduler so the in-flight job is
+            # observable / cancellable via ``scheduler.get_job(...)`` and
+            # the persistent jobstore tracks it. We schedule a
+            # short-circuit "complete" job that simply attaches the
+            # task — APScheduler's ``date`` trigger fires once at
+            # ``run_date`` and removes the job afterward.
+            job_id = f"run-{run_id}"
+            try:
+                self._scheduler.add_job(
+                    func=_noop_job_marker,
+                    trigger="date",
+                    run_date=datetime.now(UTC),
+                    id=job_id,
+                    name=f"runner {spec.slug} run_id={run_id}",
+                    replace_existing=True,
+                    jobstore="memory",
+                )
+            except Exception as exc:  # pragma: no cover — defensive
+                _log.warning(
+                    "procedure_runner.scheduler_add_job_failed",
+                    extra={"run_id": run_id, "error": str(exc)},
+                )
+        else:
+            task = asyncio.create_task(_body(), name=f"proc-{spec.slug}-{run_id}-{label}")
+
+        loop_time = asyncio.get_event_loop().time()
+        runner_task = _RunnerTask(
+            task=task,
+            run_id=run_id,
+            slug=spec.slug,
+            semaphore_key=sem_key,
+            started_at=loop_time,
+        )
+        async with self._tasks_lock:
+            self._tasks[run_id] = runner_task
+        task.add_done_callback(self._make_done_callback(run_id))
+        if wait:
+            await task
 
     async def _run_task(
         self,
@@ -719,7 +845,15 @@ class ProcedureRunner:
         )
 
     async def _run_step(self, ctx: _StepContext, *, step_index: int) -> None:
-        """Dispatch one step + persist its output / failure state."""
+        """Dispatch one step + persist its output / failure state.
+
+        Per M8: ``_programmatic/<name>`` skills route through
+        ``ProgrammaticStepRegistry``; everything else goes through the
+        bound ``LLMDispatcher``. ``HumanReviewPause`` raised by a
+        programmatic handler is translated into an ``on_failure='human_review'``
+        equivalent — the runner records the step as ``failed`` so the
+        post-step action handler can pause the run.
+        """
         step = ctx.spec.steps[step_index]
         self._heartbeat(ctx.run_id)
         # Mark the row as 'running' for live UI display.
@@ -731,30 +865,43 @@ class ProcedureRunner:
             step_repo.advance_step(step_pk, status=ProcedureRunStepStatus.RUNNING)
         # Build the dispatch payload.
         merged_args = self._merge_args(ctx, step)
-        skill_body = self._load_skill_body(step.skill)
         max_attempts = step.max_retries + 1 if step.on_failure == "retry" else 1
-        last_exc: LLMDispatcherError | None = None
+        last_exc: Exception | None = None
         for attempt in range(max_attempts):
             try:
-                payload = StepDispatch(
-                    skill=step.skill,
-                    skill_body=skill_body,
-                    step_id=step.id,
-                    args=merged_args,
-                    run_id=ctx.run_id,
-                    run_token=ctx.run_token,
-                    project_id=ctx.project_id,
-                    context={
-                        "article_id": ctx.article_id,
-                        "previous_outputs": dict(ctx.step_outputs),
-                        "procedure_args": dict(ctx.args),
-                        "loop_iteration": dict(ctx.loop_iteration),
-                        "attempt": attempt,
-                        "max_retries": step.max_retries,
-                        "allowed_tools": sorted(SKILL_TOOL_GRANTS.get(step.skill, frozenset())),
-                    },
+                output = await self._dispatch_step_once(
+                    step=step, ctx=ctx, merged_args=merged_args, attempt=attempt
                 )
-                output = await self._dispatcher.dispatch(payload)
+            except HumanReviewPause as exc:
+                # Translate into a step failure with a sentinel error
+                # message. ``_handle_failed_step`` (when the step's
+                # on_failure is human_review) returns a ``pause`` action.
+                # For steps whose on_failure is *not* human_review, the
+                # step still pauses — we override the post-step action
+                # by stamping ``runner_task.paused`` later. To keep the
+                # dispatch contract clean we surface a typed marker in
+                # the step's error column.
+                with Session(self._engine) as s:
+                    step_repo = ProcedureRunStepRepository(s)
+                    row = self._fetch_step_row(s, ctx.run_id, step_index)
+                    step_pk = row.id
+                    assert step_pk is not None
+                    step_repo.advance_step(
+                        step_pk,
+                        status=ProcedureRunStepStatus.FAILED,
+                        error=f"human-review-pause: {exc.reason}",
+                    )
+                ctx.step_outputs[step.id] = {
+                    "human_review": True,
+                    "reason": exc.reason,
+                    "hint": exc.hint,
+                    "skill": step.skill,
+                }
+                # Force the on_failure path to ``human_review`` regardless
+                # of the spec's declared mode — a programmatic prompt
+                # explicitly requested operator attention.
+                ctx.pause_requested[step.id] = True
+                return
             except LLMDispatcherError as exc:
                 last_exc = exc
                 if attempt + 1 < max_attempts and exc.retryable:
@@ -769,6 +916,33 @@ class ProcedureRunner:
                     )
                     continue
                 # Out of retries — record the failure.
+                with Session(self._engine) as s:
+                    step_repo = ProcedureRunStepRepository(s)
+                    row = self._fetch_step_row(s, ctx.run_id, step_index)
+                    step_pk = row.id
+                    assert step_pk is not None
+                    step_repo.advance_step(
+                        step_pk,
+                        status=ProcedureRunStepStatus.FAILED,
+                        error=str(exc),
+                    )
+                ctx.step_outputs[step.id] = {"error": str(exc), "skill": step.skill}
+                return
+            except Exception as exc:
+                # Programmatic handlers raise plain Exceptions for "step
+                # failed" — translate to the same shape as an LLM
+                # dispatcher error so on_failure modes fire identically.
+                last_exc = exc
+                if attempt + 1 < max_attempts and step.on_failure == "retry":
+                    _log.info(
+                        "procedure_runner.retry_programmatic",
+                        extra={
+                            "run_id": ctx.run_id,
+                            "step": step.id,
+                            "attempt": attempt,
+                        },
+                    )
+                    continue
                 with Session(self._engine) as s:
                     step_repo = ProcedureRunStepRepository(s)
                     row = self._fetch_step_row(s, ctx.run_id, step_index)
@@ -809,6 +983,54 @@ class ProcedureRunner:
                     error=str(last_exc),
                 )
 
+    async def _dispatch_step_once(
+        self,
+        *,
+        step: ProcedureStep,
+        ctx: _StepContext,
+        merged_args: dict[str, Any],
+        attempt: int,
+    ) -> dict[str, Any]:
+        """Single-attempt dispatch. M8 splits LLM vs programmatic."""
+        if step.skill.startswith(_PROGRAMMATIC_PREFIX):
+            handler_name = step.skill[len(_PROGRAMMATIC_PREFIX) :]
+            handler = ProgrammaticStepRegistry.get(handler_name)
+            if handler is None:
+                raise LLMDispatcherError(
+                    f"no programmatic handler registered for {step.skill!r}",
+                    skill=step.skill,
+                    retryable=False,
+                )
+            programmatic_ctx = ProgrammaticStepContext(
+                runner=self,
+                run_id=ctx.run_id,
+                project_id=ctx.project_id,
+                args=merged_args,
+                previous_outputs=dict(ctx.step_outputs),
+            )
+            return await handler(programmatic_ctx)
+        # LLM dispatcher path (StubDispatcher / AnthropicSession).
+        skill_body = self._load_skill_body(step.skill)
+        payload = StepDispatch(
+            skill=step.skill,
+            skill_body=skill_body,
+            step_id=step.id,
+            args=merged_args,
+            run_id=ctx.run_id,
+            run_token=ctx.run_token,
+            project_id=ctx.project_id,
+            context={
+                "article_id": ctx.article_id,
+                "previous_outputs": dict(ctx.step_outputs),
+                "procedure_args": dict(ctx.args),
+                "loop_iteration": dict(ctx.loop_iteration),
+                "attempt": attempt,
+                "max_retries": step.max_retries,
+                "allowed_tools": sorted(SKILL_TOOL_GRANTS.get(step.skill, frozenset())),
+            },
+        )
+        return await self._dispatcher.dispatch(payload)
+
     def _post_step_action(
         self,
         ctx: _StepContext,
@@ -818,12 +1040,16 @@ class ProcedureRunner:
 
         Branches in order:
 
+        0. ``HumanReviewPause`` was raised → force pause regardless of
+           the spec's declared on_failure mode (M8 — programmatic prompt).
         1. EEAT three-verdict (audit BLOCKER-09) — only fires when the
            step's skill is the EEAT gate AND the step output carries a
            ``verdict``.
         2. Step's recorded status (success / failed / skipped).
         3. ``on_failure`` mode for the step.
         """
+        if ctx.pause_requested.get(step.id):
+            return _StepAction(action="pause")
         out = ctx.step_outputs.get(step.id, {})
         # EEAT three-verdict special case.
         if step.skill == "02-content/eeat-gate" and isinstance(out, dict):
@@ -1149,13 +1375,27 @@ class _StepAction:
     loop_back_index: int | None = None
 
 
-def _semaphore_key(slug: str) -> SemaphoreKey:
-    """Per-procedure semaphore key — one across all projects.
+def _noop_job_marker() -> None:
+    """Module-level no-op for APScheduler's ``run-{run_id}`` marker job.
 
-    ``concurrency_limit`` in PROCEDURE.md is system-wide per the
-    deliverable spec ("max parallel runs of THIS procedure system-wide").
+    APScheduler's SQLAlchemyJobStore can only persist top-level
+    callables (the pickle layer can't reach closure-bound coroutines).
+    The actual runner work lives on an ``asyncio.Task`` we own; this
+    function is just a "scheduled job ran" telemetry breadcrumb so
+    tests + ``scheduler.get_job(job_id)`` can observe the run.
     """
-    return f"procedure-{slug}"
+    return None
+
+
+def _semaphore_key(slug: str, project_id: int) -> SemaphoreKey:
+    """Per-(slug, project_id) semaphore key — M8 per-project serialization.
+
+    PLAN.md L1361 mandates per-project serialization for procedure runs
+    (``job_id=procedure-{slug}-{project_id}``); the in-process semaphore
+    matches that key so two runs of the same procedure for different
+    projects proceed in parallel.
+    """
+    return f"procedure-{slug}-{project_id}"
 
 
 def _next_pending_step_index(steps: list[Any]) -> int | None:

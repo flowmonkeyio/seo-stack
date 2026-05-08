@@ -59,6 +59,9 @@ ui/test-results/
 *.swo
 *~
 
+# Claude Code session state (per-machine, not portable)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

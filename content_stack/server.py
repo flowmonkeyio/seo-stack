@@ -15,12 +15,14 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -31,9 +33,42 @@ from content_stack.config import Settings, get_settings
 from content_stack.crypto import cleanup_old_backup
 from content_stack.crypto.aes_gcm import configure_seed_path
 from content_stack.db.connection import make_engine
+from content_stack.jobs.cron_procedures import register_cron_procedures
+from content_stack.jobs.drift_rollup import (
+    daily_drift_rollup,
+)
+from content_stack.jobs.drift_rollup import (
+    make_session_factory as drift_session_factory,
+)
+from content_stack.jobs.gsc_pull import (
+    daily_gsc_pull,
+)
+from content_stack.jobs.gsc_pull import (
+    make_session_factory as gsc_session_factory,
+)
+from content_stack.jobs.oauth_refresh import refresh_expiring_gsc_tokens
+from content_stack.jobs.runs_reaper import (
+    DEFAULT_STALE_AFTER_SECONDS,
+    reap_orphaned_runs,
+)
+from content_stack.jobs.runs_reaper import (
+    make_session_factory as reaper_session_factory,
+)
+from content_stack.jobs.scheduler import (
+    DRIFT_ROLLUP_JOB_ID,
+    DRIFT_ROLLUP_MISFIRE_GRACE_SECONDS,
+    GSC_PULL_JOB_ID,
+    GSC_PULL_MISFIRE_GRACE_SECONDS,
+    OAUTH_MISFIRE_GRACE_SECONDS,
+    OAUTH_REFRESH_JOB_ID,
+    REAPER_MISFIRE_GRACE_SECONDS,
+    RUNS_REAPER_JOB_ID,
+    build_scheduler,
+)
 from content_stack.logging import configure_logging, get_logger
 from content_stack.mcp import register_mcp
 from content_stack.procedures.runner import ProcedureRunner
+from content_stack.repositories.runs import RunRepository
 
 _SEED_BYTES = 32
 _REQUIRED_MODE = 0o600
@@ -161,25 +196,119 @@ def _build_lifespan(
         app.state.token = token
         app.state.engine = engine
         app.state.started_at = time.monotonic()
-        app.state.scheduler_running = False  # APScheduler lands in M9.
+
+        # M8: build the APScheduler instance + run the crash-recovery
+        # sweep BEFORE registering recurring jobs (per audit BLOCKER-13).
+        # The sweep's effects are idempotent (rows that aren't stale are
+        # skipped) so re-running on every boot is fine.
+        scheduler = build_scheduler(settings, engine)
+        app.state.scheduler = scheduler
+
+        # Crash-recovery sweep: any ``status='running' AND
+        # heartbeat_at < now - 5 min`` row gets ``aborted`` with
+        # ``error='daemon-restart-orphan'``. Per PLAN.md L1366-L1391
+        # we don't auto-resume — we surface the orphan in the UI's
+        # RunsView with a "Resumable" badge.
+        with Session(engine) as session:  # type: ignore[name-defined]
+            reaped = RunRepository(session).reap_stale(
+                stale_after_seconds=DEFAULT_STALE_AFTER_SECONDS
+            )
+            if reaped:
+                log.info("daemon.recovery_sweep.reaped", count=reaped)
 
         # M7: build the procedure runner. It loads PROCEDURE.md files
         # from the repo's ``procedures/`` directory at construction time
         # — a malformed file aborts startup which is what we want
         # (operator sees the parse error in the lifespan log, not a
-        # mysterious 500 on the first ``procedure.run`` call).
-        app.state.procedure_runner = ProcedureRunner(
+        # mysterious 500 on the first ``procedure.run`` call). M8 binds
+        # the scheduler so subsequent ``runner.start`` calls dispatch
+        # via APScheduler.
+        runner = ProcedureRunner(
             settings=settings,
             engine=engine,
             plugin_root=os.environ.get("CLAUDE_PLUGIN_ROOT"),
+            scheduler=scheduler,
         )
+        app.state.procedure_runner = runner
+
+        # Register recurring background jobs. All four use the
+        # ``memory`` jobstore because their bodies close over the
+        # daemon-local engine + session factory and aren't picklable.
+        scheduler.add_job(
+            reap_orphaned_runs,
+            kwargs={
+                "session_factory": reaper_session_factory(engine),
+                "stale_after_seconds": DEFAULT_STALE_AFTER_SECONDS,
+            },
+            trigger=IntervalTrigger(minutes=5),
+            id=RUNS_REAPER_JOB_ID,
+            name="runs reaper (orphan sweep)",
+            replace_existing=True,
+            jobstore="memory",
+            misfire_grace_time=REAPER_MISFIRE_GRACE_SECONDS,
+        )
+
+        # M4's oauth refresh job — kicks every 50 minutes. Per
+        # PLAN.md L1090-L1096.
+        async def _oauth_refresh_wrapper() -> None:
+            with Session(engine) as session:  # type: ignore[name-defined]
+                await refresh_expiring_gsc_tokens(session)
+
+        scheduler.add_job(
+            _oauth_refresh_wrapper,
+            trigger=IntervalTrigger(minutes=50),
+            id=OAUTH_REFRESH_JOB_ID,
+            name="oauth refresh (gsc tokens)",
+            replace_existing=True,
+            jobstore="memory",
+            misfire_grace_time=OAUTH_MISFIRE_GRACE_SECONDS,
+        )
+
+        # Daily GSC pull — 03:15 UTC.
+        scheduler.add_job(
+            daily_gsc_pull,
+            kwargs={"session_factory": gsc_session_factory(engine)},
+            trigger=CronTrigger(hour=3, minute=15, timezone="UTC"),
+            id=GSC_PULL_JOB_ID,
+            name="daily gsc pull",
+            replace_existing=True,
+            jobstore="memory",
+            misfire_grace_time=GSC_PULL_MISFIRE_GRACE_SECONDS,
+        )
+
+        # Daily drift rollup — 04:00 UTC (after gsc pull at 03:15).
+        scheduler.add_job(
+            daily_drift_rollup,
+            kwargs={"session_factory": drift_session_factory(engine)},
+            trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
+            id=DRIFT_ROLLUP_JOB_ID,
+            name="daily drift rollup + retention",
+            replace_existing=True,
+            jobstore="memory",
+            misfire_grace_time=DRIFT_ROLLUP_MISFIRE_GRACE_SECONDS,
+        )
+
+        # Cron-triggered procedures (procedure 6 weekly, 7 monthly).
+        # One job per active project per scheduled procedure.
+        with Session(engine) as session:  # type: ignore[name-defined]
+            registered = register_cron_procedures(
+                scheduler=scheduler, runner=runner, session=session
+            )
+        log.info(
+            "daemon.scheduler.cron_procedures_registered",
+            count=len(registered),
+            job_ids=registered,
+        )
+
+        scheduler.start()
+        app.state.scheduler_running = True
 
         log.info(
             "daemon.started",
             host=settings.host,
             port=settings.port,
             version=__version__,
-            milestone="M0",
+            milestone="M8",
             data_dir=str(settings.data_dir),
             state_dir=str(settings.state_dir),
         )
@@ -187,6 +316,13 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
+            # Drain the scheduler before disposing the engine so any
+            # in-flight short job finishes its DB writes cleanly.
+            import contextlib as _ctx_lib
+
+            with _ctx_lib.suppress(Exception):  # pragma: no cover — defensive
+                scheduler.shutdown(wait=True)
+            app.state.scheduler_running = False
             engine.dispose()
 
     return lifespan

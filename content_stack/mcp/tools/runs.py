@@ -9,8 +9,18 @@ dispatch to the daemon-side ``ProcedureRunner`` per locked decision D4.
 The runner is held on ``app.state.procedure_runner`` (built during the
 FastAPI lifespan); we resolve it here via the SDK's request context.
 
-The remaining deferral is ``run.resume`` / ``run.fork`` — those land in
-M8 alongside APScheduler-driven cron entries.
+M8: ``run.resume`` / ``run.fork`` now route through the runner the same
+way the ``procedure.*`` variants do. The two pairs are subtly different:
+
+- ``procedure.resume`` / ``procedure.fork`` use the procedure-step
+  index (an integer step position).
+- ``run.resume`` / ``run.fork`` use a **named step id** because the
+  RunRepository view is per-skill (``run_steps``) rather than
+  per-procedure-step (``procedure_run_steps``). For consistency with
+  M8 behaviour we map ``run.fork(from_step=<step_id>)`` to the
+  procedure-step index, then dispatch the same fork path as
+  ``procedure.fork``. ``run.resume`` resolves to the procedure-resume
+  path.
 """
 
 from __future__ import annotations
@@ -23,7 +33,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from content_stack.db.models import RunKind, RunStatus
 from content_stack.mcp.context import MCPContext
 from content_stack.mcp.contract import MCPInput, MCPOutput, WriteEnvelope
-from content_stack.mcp.errors import MilestoneDeferralError
 from content_stack.mcp.server import ToolRegistry, ToolSpec
 from content_stack.mcp.streaming import ProgressEmitter
 from content_stack.procedures.runner import ProcedureRunner
@@ -158,7 +167,7 @@ class RunCostInput(MCPInput):
 
 
 class RunResumeInput(MCPInput):
-    """Resume a paused procedure run — M9 deferral."""
+    """Resume a paused procedure run via the runner (M8)."""
 
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_id": 1}})
 
@@ -166,7 +175,14 @@ class RunResumeInput(MCPInput):
 
 
 class RunForkInput(MCPInput):
-    """Fork a procedure run from a named step — M9 deferral."""
+    """Fork a procedure run from a named step (M8).
+
+    ``from_step`` names a procedure step id (matches
+    ``procedure_run_steps.step_id``). The runner resolves it to the step
+    index and dispatches a fork — same path as ``procedure.fork`` but
+    keyed by step id rather than index for the per-skill
+    audit-trail surface.
+    """
 
     model_config = ConfigDict(
         extra="forbid", json_schema_extra={"example": {"run_id": 1, "from_step": "editor"}}
@@ -265,31 +281,54 @@ async def _run_cost(inp: RunCostInput, ctx: MCPContext, _emit: ProgressEmitter) 
 
 
 async def _run_resume(
-    inp: RunResumeInput, _ctx: MCPContext, _emit: ProgressEmitter
+    inp: RunResumeInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    """Resume a paused procedure run — M8 deferral (jobs + scheduling)."""
-    raise MilestoneDeferralError(
-        "run.resume requires the M8 jobs/scheduling subsystem",
-        data={
-            "milestone": "M8",
-            "hint": "Lands with APScheduler + the procedure runner driver",
-            "run_id": inp.run_id,
-        },
+    """Resume a paused procedure run (M8 — jobs + scheduling subsystem live).
+
+    Routes through the runner just like ``procedure.resume``. Returns
+    the **current** ``RunOut`` row after the resume kicks off so the
+    caller can subscribe to status updates via
+    ``GET /api/v1/procedures/runs/{run_id}``.
+    """
+    runner = _resolve_runner(ctx)
+    envelope = await runner.resume(run_id=inp.run_id)
+    run = RunRepository(ctx.session).get(envelope["run_id"])
+    return WriteEnvelope[RunOut](
+        data=run, run_id=envelope["run_id"], project_id=envelope["project_id"]
     )
 
 
 async def _run_fork(
-    inp: RunForkInput, _ctx: MCPContext, _emit: ProgressEmitter
+    inp: RunForkInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[RunOut]:
-    """Fork a procedure run from a named step — M8 deferral."""
-    raise MilestoneDeferralError(
-        "run.fork requires the M8 jobs/scheduling subsystem",
-        data={
-            "milestone": "M8",
-            "hint": "Lands with APScheduler + the procedure runner driver",
-            "run_id": inp.run_id,
-            "from_step": inp.from_step,
-        },
+    """Fork a procedure run from a named step (M8).
+
+    Resolves ``from_step`` (a ``procedure_run_steps.step_id``) to the
+    procedure-step index, then dispatches the fork via the runner.
+    """
+    runner = _resolve_runner(ctx)
+    # Resolve the named step to an index in the procedure's spec.
+    step_repo = ProcedureRunStepRepository(ctx.session)
+    steps = step_repo.list_steps(inp.run_id)
+    if not steps:
+        raise NotFoundError(
+            f"run {inp.run_id} has no procedure steps recorded",
+            data={"run_id": inp.run_id},
+        )
+    target_idx = next((s.step_index for s in steps if s.step_id == inp.from_step), None)
+    if target_idx is None:
+        raise NotFoundError(
+            f"step {inp.from_step!r} not found on run {inp.run_id}",
+            data={
+                "run_id": inp.run_id,
+                "from_step": inp.from_step,
+                "known_step_ids": [s.step_id for s in steps],
+            },
+        )
+    envelope = await runner.fork(run_id=inp.run_id, from_step_index=target_idx)
+    run = RunRepository(ctx.session).get(envelope["run_id"])
+    return WriteEnvelope[RunOut](
+        data=run, run_id=envelope["run_id"], project_id=envelope["project_id"]
     )
 
 

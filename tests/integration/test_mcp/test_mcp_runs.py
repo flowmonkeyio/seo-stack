@@ -67,12 +67,18 @@ def test_run_token_correlation_to_run(mcp_client: MCPClient, seeded_project: dic
     assert matched[0]["id"] == rid
 
 
-def test_run_resume_returns_milestone_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """run.resume returns -32601 with milestone='M8' hint (jobs/scheduling)."""
+def test_run_resume_routes_to_runner(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """run.resume now routes through the procedure runner (M8 — live)."""
+    # ``run.resume`` requires a procedure-kind run with a procedure_slug
+    # set so the runner can dispatch. A bare ``run.start`` without a
+    # procedure_slug is rejected at the runner layer with ValidationError
+    # (-32602). That's the M8 contract — the deferral is gone.
     env = mcp_client.call_tool_structured(
         "run.start",
         {"project_id": seeded_project["data"]["id"], "kind": "procedure"},
     )
     err = mcp_client.call_tool_error("run.resume", {"run_id": env["data"]["run_id"]})
-    assert err["code"] == -32601
-    assert err["data"]["milestone"] == "M8"
+    # No procedure_slug on the run -> validation error, not milestone deferral.
+    assert err["code"] in (-32602, -32603, -32604), err
+    # Crucially: the error data does NOT carry a "milestone" key.
+    assert err.get("data", {}).get("milestone") != "M8", err

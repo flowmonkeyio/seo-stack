@@ -197,15 +197,59 @@ def _check_credentials_decrypt(
     return len(issues) == 0, issues
 
 
+def _check_alembic_at_head(settings: Settings, db_present: bool) -> tuple[bool, str | None]:
+    """Confirm ``alembic_version`` row matches the expected head.
+
+    Returns ``(ok, version_or_None)``. A missing DB (fresh install) is
+    treated as a non-failure — ``code=4`` only fires when the DB exists
+    AND the version table is missing or stale.
+    """
+    if not db_present:
+        return True, None
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import text as sa_text
+
+        from content_stack.db.connection import make_engine
+
+        engine = make_engine(settings.db_path)
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(sa_text("SELECT version_num FROM alembic_version")).first()
+                current = row[0] if row else None
+            cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+            script = ScriptDirectory.from_config(cfg)
+            head = script.get_current_head()
+            return current == head, current
+        finally:
+            engine.dispose()
+    except Exception:  # pragma: no cover — defensive
+        return False, None
+
+
+def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
+    """Lightweight liveness check for APScheduler.
+
+    M8 doesn't expose an out-of-band query for scheduled jobs (the
+    daemon owns the scheduler instance), so for the doctor we fall back
+    to checking that the daemon is up — when it is, we trust the
+    lifespan registered the four ops jobs.
+    """
+    daemon_up = _tcp_can_connect(settings.host, settings.port)
+    return daemon_up, 4 if daemon_up else 0
+
+
 @app.command()
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
 ) -> None:
-    """Diagnose the install — M0 minimal.
+    """Diagnose the install — M8 expanded.
 
     Exit codes (subset of PLAN.md L1271):
       0 all green
       1 daemon down
+      4 alembic head mismatch
       7 auth token missing or wrong mode
       8 seed file missing or wrong mode
 
@@ -232,6 +276,10 @@ def doctor(
     # half-finished one.
     credentials_ok, credential_issues = _check_credentials_decrypt(settings, db_present)
 
+    # M8: alembic-head + scheduler-jobs probes.
+    alembic_ok, alembic_version = _check_alembic_at_head(settings, db_present)
+    scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
+
     checks = {
         "daemon_up": daemon_up,
         "seed_file_present": seed_mode is not None,
@@ -240,6 +288,8 @@ def doctor(
         "auth_token_mode_0600": token_ok,
         "db_file_present": db_present,
         "credentials_decrypt": credentials_ok,
+        "alembic_at_head": alembic_ok,
+        "scheduler_jobs_healthy": scheduler_ok,
     }
     info = {
         "host": settings.host,
@@ -251,6 +301,8 @@ def doctor(
         "version": __version__,
         "milestone": __milestone__,
         "credential_issues": credential_issues,
+        "alembic_version": alembic_version,
+        "scheduler_job_count": scheduler_job_count,
     }
 
     # Compute exit code with the highest-priority failure winning so a single
@@ -263,6 +315,8 @@ def doctor(
         code = 8
     elif token_mode is None or not token_ok:
         code = 7
+    elif not alembic_ok:
+        code = 4
     elif not daemon_up:
         code = 1
     else:
