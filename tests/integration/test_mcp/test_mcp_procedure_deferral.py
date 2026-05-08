@@ -21,14 +21,23 @@ from .conftest import MCPClient
 def test_procedure_list_includes_seed_procedures(mcp_client: MCPClient) -> None:
     """``procedure.list`` returns the slugs the runner discovered on disk.
 
-    M7.A authors procedure 04-topic-to-published as the workhorse +
-    proof-of-concept; subsequent procedures (1, 2, 3, 5, 6, 7, 8) land
-    in M7.B. The runner's registry is built at lifespan startup, so
-    the slug list is non-empty.
+    M7.A authored procedure 04-topic-to-published as the workhorse +
+    proof-of-concept; M7.B added the remaining seven procedures
+    (1, 2, 3, 5, 6, 7, 8). All eight should be in the registry now.
     """
     payload = mcp_client.call_tool_structured("procedure.list", {})
     items = payload.get("items", [])
-    assert "04-topic-to-published" in items, items
+    expected = {
+        "01-bootstrap-project",
+        "02-one-site-shortcut",
+        "03-keyword-to-topic-queue",
+        "04-topic-to-published",
+        "05-bulk-content-launch",
+        "06-weekly-gsc-review",
+        "07-monthly-humanize-pass",
+        "08-add-new-site",
+    }
+    assert expected.issubset(set(items)), items
 
 
 def test_procedure_status_works_for_existing_run(
@@ -83,3 +92,35 @@ def test_procedure_run_returns_envelope(mcp_client: MCPClient, seeded_project: d
     assert data["started"] is True
     assert data["run_token"]
     assert data["run_id"] >= 1
+
+
+def test_procedure_run_accepts_all_8_slugs(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """After M7.B every authored procedure slug is accepted by ``procedure.run``.
+
+    Smokes that the registry exposes the M7.B catalogue at the MCP
+    boundary — none of the eight slugs should surface a -32004
+    NotFoundError. Per-procedure runtime behaviour is covered by the
+    runner integration tests; this is a wire-shape sanity check.
+    """
+    for slug in (
+        "01-bootstrap-project",
+        "02-one-site-shortcut",
+        "03-keyword-to-topic-queue",
+        "04-topic-to-published",
+        "05-bulk-content-launch",
+        "06-weekly-gsc-review",
+        "07-monthly-humanize-pass",
+        "08-add-new-site",
+    ):
+        payload = mcp_client.call_tool_structured(
+            "procedure.run",
+            {
+                "slug": slug,
+                "project_id": seeded_project["data"]["id"],
+                "args": {},
+            },
+        )
+        data = payload["data"]
+        assert data["slug"] == slug
+        assert data["started"] is True
+        assert data["run_id"] >= 1

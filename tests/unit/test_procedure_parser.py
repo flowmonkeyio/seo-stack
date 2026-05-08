@@ -19,6 +19,7 @@ import yaml
 
 from content_stack.procedures.parser import (
     ProcedureParseError,
+    ProcedureSchedule,
     ProcedureSpec,
     ProcedureStep,
     ProcedureVariant,
@@ -541,3 +542,113 @@ def test_procedure_spec_default_concurrency_limit() -> None:
     )
     assert spec.concurrency_limit == 1
     assert spec.resumable is True
+
+
+# ---------------------------------------------------------------------------
+# ProcedureSchedule (M7.B parser extension for procedures 6 + 7).
+# ---------------------------------------------------------------------------
+
+
+def test_schedule_default_is_none() -> None:
+    """``ProcedureSpec.schedule`` defaults to ``None`` for non-cron procedures."""
+    spec = ProcedureSpec(
+        name="x",
+        slug="x",
+        version="0.1.0",
+        description="y",
+        steps=[ProcedureStep(id="a", skill="x")],
+    )
+    assert spec.schedule is None
+
+
+def test_schedule_block_round_trips() -> None:
+    """A schedule block parses + serialises through ``model_dump`` cleanly."""
+    yaml_block = """name: weekly-job
+slug: weekly-job
+version: 0.1.0
+description: A weekly cron-triggered procedure.
+steps:
+  - id: a
+    skill: x
+schedule:
+  cron: "0 6 * * MON"
+  timezone_field: projects.schedule_json.timezone
+"""
+    spec = parse_procedure(_frontmatter(yaml_block))
+    assert spec.schedule is not None
+    assert spec.schedule.cron == "0 6 * * MON"
+    assert spec.schedule.timezone_field == "projects.schedule_json.timezone"
+    # Round-trip.
+    redumped = yaml.safe_dump(spec.model_dump(), sort_keys=False)
+    reparsed = parse_procedure(_frontmatter(redumped))
+    assert reparsed.schedule is not None
+    assert reparsed.schedule.cron == spec.schedule.cron
+
+
+def test_schedule_default_timezone_field() -> None:
+    """``timezone_field`` defaults to the project's schedule_json.timezone path."""
+    sched = ProcedureSchedule(cron="0 4 1 * *")
+    assert sched.timezone_field == "projects.schedule_json.timezone"
+
+
+def test_schedule_invalid_cron_token_count_rejected() -> None:
+    """A cron expression with fewer than 5 fields is rejected at parse time."""
+    yaml_block = """name: x
+slug: x
+version: 0.1.0
+description: y
+steps:
+  - id: a
+    skill: x
+schedule:
+  cron: "0 6 *"
+"""
+    with pytest.raises(ProcedureParseError):
+        parse_procedure(_frontmatter(yaml_block))
+
+
+def test_schedule_empty_timezone_field_rejected() -> None:
+    """The timezone field path must be a non-empty dotted string."""
+    with pytest.raises(ValueError):
+        ProcedureSchedule(cron="0 4 1 * *", timezone_field="")
+
+
+def test_schedule_extra_fields_rejected() -> None:
+    """``ProcedureSchedule`` is closed (``extra='forbid'``)."""
+    yaml_block = """name: x
+slug: x
+version: 0.1.0
+description: y
+steps:
+  - id: a
+    skill: x
+schedule:
+  cron: "0 6 * * MON"
+  timezone_field: projects.schedule_json.timezone
+  unknown_field: huh
+"""
+    with pytest.raises(ProcedureParseError):
+        parse_procedure(_frontmatter(yaml_block))
+
+
+# ---------------------------------------------------------------------------
+# Procedures 6 + 7 specifically — schedule blocks present.
+# ---------------------------------------------------------------------------
+
+
+def test_procedure_06_carries_schedule_block() -> None:
+    """Procedure 06 weekly-gsc-review carries a Mondays-06:00 cron."""
+    repo_root = Path(__file__).resolve().parents[2]
+    spec = load_procedure(repo_root / "procedures" / "06-weekly-gsc-review")
+    assert spec.schedule is not None
+    assert spec.schedule.cron == "0 6 * * MON"
+    assert spec.schedule.timezone_field == "projects.schedule_json.timezone"
+
+
+def test_procedure_07_carries_schedule_block() -> None:
+    """Procedure 07 monthly-humanize-pass carries a 1st-of-month-04:00 cron."""
+    repo_root = Path(__file__).resolve().parents[2]
+    spec = load_procedure(repo_root / "procedures" / "07-monthly-humanize-pass")
+    assert spec.schedule is not None
+    assert spec.schedule.cron == "0 4 1 * *"
+    assert spec.schedule.timezone_field == "projects.schedule_json.timezone"

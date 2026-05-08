@@ -86,6 +86,50 @@ class ProcedureStep(BaseModel):
         return self
 
 
+class ProcedureSchedule(BaseModel):
+    """Optional cron metadata for scheduled procedures.
+
+    Procedures 6 (``weekly-gsc-review``) and 7 (``monthly-humanize-pass``)
+    are cron-triggered in production. M7.B carries the schedule on the
+    spec so M8's APScheduler bootstrap can read the cron expression
+    plus the project-level timezone field name without re-parsing the
+    PROCEDURE.md file. The runner itself ignores this field — it only
+    influences M8's scheduler, never an in-flight run.
+
+    Shape:
+
+    - ``cron``: a 5-field cron expression (minute hour day-of-month
+      month day-of-week). Validated as five whitespace-separated
+      tokens; APScheduler's ``CronTrigger.from_crontab`` does the deep
+      validation when M8 wires it up.
+    - ``timezone_field``: dotted path into the project row that names
+      the IANA timezone for the schedule. Default
+      ``projects.schedule_json.timezone`` matches the schema. Operators
+      can override per-procedure (e.g. for a procedure that always runs
+      in UTC regardless of project timezone).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cron: str
+    timezone_field: str = "projects.schedule_json.timezone"
+
+    @model_validator(mode="after")
+    def _validate_cron(self) -> ProcedureSchedule:
+        # Lightweight check — five whitespace-separated tokens. Deep
+        # cron validation lives in APScheduler at M8 wire-up time; we
+        # just guard against trivial typos at parse time.
+        tokens = self.cron.split()
+        if len(tokens) != 5:
+            raise ValueError(
+                f"schedule.cron {self.cron!r} must have 5 whitespace-separated fields "
+                "(minute hour day-of-month month day-of-week)"
+            )
+        if not self.timezone_field:
+            raise ValueError("schedule.timezone_field must be a non-empty dotted path")
+        return self
+
+
 class ProcedureVariant(BaseModel):
     """A named variant of the procedure.
 
@@ -132,6 +176,14 @@ class ProcedureSpec(BaseModel):
     variants: list[ProcedureVariant] = Field(default_factory=list)
     concurrency_limit: int = 1
     resumable: bool = True
+    schedule: ProcedureSchedule | None = None
+    """Optional cron metadata for M8's APScheduler bootstrap.
+
+    Per the M7.B deliverable (procedures 6 + 7): the schedule block
+    declares the cron expression + the timezone field on the project
+    row. The runner ignores this field; M8 reads it at job-registration
+    time. ``None`` means the procedure is operator-only / parent-driven.
+    """
 
     @model_validator(mode="after")
     def _validate_slug(self) -> ProcedureSpec:
@@ -327,6 +379,7 @@ def load_all_procedures(procedures_dir: Path) -> dict[str, ProcedureSpec]:
 __all__ = [
     "OnFailure",
     "ProcedureParseError",
+    "ProcedureSchedule",
     "ProcedureSpec",
     "ProcedureStep",
     "ProcedureVariant",
