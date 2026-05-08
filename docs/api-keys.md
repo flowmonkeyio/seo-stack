@@ -95,6 +95,38 @@ re-running step 12 (the Connect button) picks up where we left off.
 
 ---
 
+## Anthropic (procedure-runner LLM)
+
+Used by: the daemon's procedure runner (D4) — the per-skill LLM
+sessions the runner dispatches when ``settings.procedure_runner_llm
+== "anthropic"``. **Separate from any runtime LLM key** the operator
+uses when typing ``/procedure …`` into Codex CLI / Claude Code; the
+daemon holds its own key so procedures execute unattended.
+
+1. Open <https://console.anthropic.com/settings/keys>.
+2. Create a new API key. Restrict to "Restricted" with the
+   ``messages:write`` scope only if your account supports scopes.
+3. In the content-stack UI Integrations tab pick "Anthropic" and
+   paste the key. The row stores under
+   ``integration_credentials.kind='anthropic'`` so the runner's
+   ``AnthropicSession`` dispatcher can resolve it.
+
+Cost: pay-as-you-go per Anthropic's pricing; the runner reports
+spend back into ``run_steps.cost_cents`` per skill invocation, and
+``runs.metadata_json.cost.by_integration.anthropic`` rolls them up.
+
+Env var equivalent (server side / tests):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Switch the dispatcher with the env var ``CONTENT_STACK_PROCEDURE_RUNNER_LLM=anthropic``
+(default ``stub`` so unit tests don't burn tokens). The OpenAI
+dispatcher uses the same shape under ``kind='openai'``.
+
+---
+
 ## OpenAI Images
 
 Used by: ``image-generator``.

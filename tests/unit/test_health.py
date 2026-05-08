@@ -25,8 +25,8 @@ def test_health_returns_m0_shape(client: TestClient) -> None:
     assert body["db_status"] in {"ok", "unreachable"}
     # M8: scheduler is now live — health surfaces True.
     assert body["scheduler_running"] is True
-    assert body["version"] == "0.0.1"
-    assert body["milestone"] == "M0"
+    assert body["version"] == "1.0.0"
+    assert body["milestone"] == "M10"
 
 
 def test_health_does_not_require_bearer_token(client: TestClient) -> None:

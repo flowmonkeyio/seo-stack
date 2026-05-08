@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "content-stack"
-version = "0.0.1"
+version = "1.0.0"
 description = "Globally-installed Python daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) plus Vue UI giving any LLM client a stateful CRUD seam over multi-project SEO content pipelines."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "content-stack contributors" }]
 keywords = ["mcp", "fastapi", "sqlite", "seo", "content", "daemon"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",

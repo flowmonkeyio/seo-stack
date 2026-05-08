@@ -6,7 +6,7 @@ This document, plus the per-skill `derived_from:` field in `skills/<phase>/<skil
 
 ## Pinned reference clones
 
-These four repos are cloned read-only at `.upstream/<name>` (gitignored — never committed) for skill-author reference. Pinned commits as of 2026-05-06.
+These four repos are cloned read-only at `.upstream/<name>` (gitignored — never committed) for skill-author reference. Pinned commits last verified 2026-05-07 against `git rev-parse HEAD` in each `.upstream/<repo>/` working tree.
 
 | Repo | URL | HEAD SHA | License | Role |
 |---|---|---|---|---|

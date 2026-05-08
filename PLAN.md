@@ -348,7 +348,7 @@ content-stack/
 | `voice_profiles` | id, project_id, name, voice_md, is_default, version, created_at | Voice/tone variants. Articles snapshot the active voice at brief time via `articles.brief_json.voice_id` and `voice_id_used`; subsequent edits do NOT retroactively affect the draft. |
 | `authors` | id, project_id, name, slug, bio_md, headshot_url, role, credentials_md, social_links_json, schema_person_json, created_at, updated_at | Per-article author attribution required by E-E-A-T (Experience/Expertise). Self-describing for `schema.org/Person` JSON-LD. |
 | `compliance_rules` | id, project_id, kind, title, body_md, jurisdictions, position, params_json, validator, is_active | RG / affiliate / jurisdiction / age-gate. `position` enum (see below) governs render placement. `params_json` carries structured fields for built-in kinds; `validator` names a registered Python callable (built-in for predefined kinds; required for `custom`). |
-| `eeat_criteria` | id, project_id, code, text, category (E/E/A/T), tier, description, weight, required, active, version, created_at | Project-specific quality gate. `tier` ENUM(`core`,`recommended`,`project`); rows with `tier='core'` cannot have `required=false` or `active=false` (repository invariant; 422 on mutation). T04, C01, R10 seeded as `tier='core'`. |
+| `eeat_criteria` | id, project_id, code, text, category (C/O/R/E/Exp/Ept/A/T), tier, description, weight, required, active, version, created_at | Project-specific quality gate. The 8-letter category form matches the 8-dimension rubric used by the gate (Content / Organisation / Recency / Experience / Expertise / Authority / Trust + a fallback ``E`` shared with the eeat-audit metadata at L444 + L1620). `tier` ENUM(`core`,`recommended`,`project`); rows with `tier='core'` cannot have `required=false` or `active=false` (repository invariant; 422 on mutation). T04, C01, R10 seeded as `tier='core'`. |
 | `clusters` | id, project_id, name, type, parent_id, created_at | Topical map. `type` enum: `pillar | spoke | hub | comparison | resource`. |
 | `topics` | id, project_id, cluster_id, title, primary_kw, secondary_kws, intent, status, priority, source, created_at, updated_at | Topic queue with provenance. `priority` INTEGER 0–100; NULL=50; higher=sooner; tiebreaker `(priority DESC, created_at ASC, id ASC)`. |
 | `articles` | id, project_id, topic_id, author_id, reviewer_author_id, slug, title, status, brief_json, outline_md, draft_md, edited_md, voice_id_used, eeat_criteria_version_used, canonical_target_id, last_refreshed_at, last_evaluated_for_refresh_at, last_link_audit_at, version, owner_run_id, current_step, step_started_at, step_etag (UUID, regenerates each step), lock_token, last_completed_step, created_at, updated_at | Content lifecycle (single fat row, current version only). `slug` UNIQUE(`project_id`, `slug`); auto-generated kebab-case from title (alnum + dashes, max 80 chars), editable. UI/MCP refuse on conflict with 409 + suggestion. `slug` is immutable post-`status='published'` (CHECK + repository invariant); slug change pre-publish only. Every `article.set*` MCP tool requires `expected_etag`; mismatch → 409. |
@@ -400,7 +400,7 @@ content-stack/
 - `run_steps.status`: `pending | running | success | failed | skipped`
 - `eeat_evaluations.verdict`: `pass | partial | fail`
 - `eeat_criteria.tier`: `core | recommended | project`
-- `eeat_criteria.category`: `E | E | A | T` (Experience, Expertise, Authority, Trust)
+- `eeat_criteria.category`: `C | O | R | E | Exp | Ept | A | T` (Content, Organisation, Recency, Experience, Expertise, Authority, Trust — matches the 8 keys used in `runs.metadata_json.eeat.dimension_scores` at L444 + the coverage-floor invariant at L1620)
 - `redirects.kind`: `301 | 302`
 
 ### JSON column shapes
@@ -498,8 +498,10 @@ identifiers) and runs on every daemon start. It populates:
    carries `text` (the human-readable standard) so future rubric renumbering
    doesn't break references.
 3. Default `schema_emits` templates per project: `Article`, `BlogPosting`,
-   `FAQPage`, `Product`, `Organization`, `Review`, `HowTo`, `BreadcrumbList`
-   placeholders.
+   `FAQPage`, `Product`, `Organization`, `Review` placeholders. (HowTo
+   was deprecated by Google in 2023-09 and is no longer eligible for
+   rich results; BreadcrumbList is generated per-article inline by the
+   schema-emitter rather than seeded as a project-level template.)
 4. Default `integration_budgets` per kind on first integration setup (monthly
    $50 cap, 80% alert threshold by default).
 5. No default voice / compliance / publish targets — those are user-supplied
@@ -1408,8 +1410,15 @@ Breach returns 429 with `retry_after` and code -32011.
 codex mcp add content-stack \
   --transport http \
   --url http://localhost:5180/mcp \
-  --header "Authorization: Bearer $(cat ~/.local/state/content-stack/auth.token)"
+  --bearer-token-env-var CONTENT_STACK_TOKEN
 ```
+
+The modern Codex CLI contract reads bearer tokens from a named env var
+rather than a literal header string (per the M9 finding); export it
+from the operator's shell rc with
+``export CONTENT_STACK_TOKEN="$(cat ~/.local/state/content-stack/auth.token)"``
+so each Codex session resolves the current per-install token without
+re-running ``mcp add`` on rotation.
 
 **Claude Code (`.mcp.json`):**
 

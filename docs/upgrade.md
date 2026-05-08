@@ -67,6 +67,18 @@ A backup of the SQLite DB lives at
 12-week retention) — `make restore <file>` halts the daemon, copies
 the backup over the live DB, and restarts.
 
+## Schema migrations
+
+Migrations run automatically every time the daemon boots
+(`alembic upgrade head` is invoked from the lifespan). Operators do
+not normally need to run `make migrate` by hand. Down-migrations
+exist (`alembic downgrade <rev>`) but are discouraged: they run
+forward-only in CI, and a down-migration that drops columns may
+shed data depending on the change.
+
+Breaking schema changes bump the major version (1.x → 2.0). Release
+notes call out manual operator steps.
+
 ## Cross-machine moves
 
 Migration of an install across machines requires copying:

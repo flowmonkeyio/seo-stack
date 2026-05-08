@@ -10,8 +10,8 @@ Response shape (M0 subset; later milestones add `auth_token_mode_ok`,
       "daemon_uptime_s": 12.3,
       "db_status": "ok" | "unreachable",
       "scheduler_running": false,
-      "version": "0.0.1",
-      "milestone": "M0"
+      "version": "1.0.0",
+      "milestone": "M10"
     }
 
 Latency target: < 50 ms p99. Implemented with a synchronous `SELECT 1` on

@@ -98,3 +98,33 @@ aggregate per `Authorization: Bearer` token. Breach returns 429 with
 `retry_after` seconds and JSON-RPC code -32011. Bulk tools count as N
 calls. This caps blast radius if a token is exfiltrated and an attacker
 tries to drive a tight loop against a paid integration.
+
+## Distribution + install posture (M9)
+
+Both the clone-mode `make install` and the pipx-mode
+`content-stack install` paths share the same install code:
+
+- **Auth token**: rotates on every `make install` re-run; the
+  registration scripts (`register-mcp-codex.sh`,
+  `register-mcp-claude.sh`) overwrite the saved MCP configs with the
+  new token. `pipx upgrade` does NOT rotate by itself; operators
+  rotate explicitly via `content-stack rotate-token --yes`.
+- **Seed file**: never rotated by install. Cross-machine moves
+  require copying `seed.bin` alongside the DB; without it,
+  `integration_credentials` rows are unrecoverable. See
+  [`./upgrade.md#cross-machine-moves`](./upgrade.md).
+- **Wheel layout (pipx)**: skills + procedures are bundled under
+  `content_stack/_assets/`. The console script copies them via
+  `importlib.resources` so users without the repo on disk get the
+  same install. The committed `ui_dist/` ships inside the package
+  (D8) — no `pnpm` needed at user install time.
+- **launchd plist**: optional. The plist runs the daemon as the
+  invoking user; never as root. `make install-launchd` writes the
+  plist with mode 0644 (world-readable, owner-writable). The plist
+  itself does not store the auth token; the daemon reads it from
+  `~/.local/state/content-stack/auth.token` at startup.
+
+The M9 pipx + launchd path does not change the threat model: the
+daemon binds loopback only, the bearer token gates every call, and
+the seed encrypts integration credentials at rest. The only delta is
+installation ergonomics.
