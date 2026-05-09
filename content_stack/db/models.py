@@ -192,11 +192,11 @@ class EeatCategory(enum.StrEnum):
 
     PLAN.md L351 narrates "E/E/A/T" but L444 enumerates the rubric using
     8 dimensions ``C, O, R, E, Exp, Ept, A, T`` and the canonical 80-item
-    benchmark (`.upstream/seo-geo-claude-skills/references/core-eeat-benchmark.md`)
-    is structured as 8 x 10. We persist all 8 - the EEAT gate ("refuses
-    to score if any dimension has 0 active items", PLAN.md L1620) cannot
-    work with the collapsed 4-letter taxonomy. Surfaced as a deliberate
-    tightening of the schema in the M1 implementation report.
+    benchmark is structured as 8 x 10. We persist all 8 - the EEAT gate
+    ("refuses to score if any dimension has 0 active items", PLAN.md
+    L1620) cannot work with the collapsed 4-letter taxonomy. Surfaced
+    as a deliberate tightening of the schema in the M1 implementation
+    report.
     """
 
     C = "C"  # Contextual Clarity
@@ -280,7 +280,6 @@ class RunKind(enum.StrEnum):
     INTERLINK_SUGGEST = "interlink-suggest"
     SCHEDULED_JOB = "scheduled-job"
     MAINTENANCE = "maintenance"
-    ADVERSARIAL_REVIEW = "adversarial-review"
 
 
 class RunStatus(enum.StrEnum):

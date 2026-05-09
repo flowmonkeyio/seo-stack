@@ -4,7 +4,7 @@ description: Compose Nuxt Content frontmatter from edited_md + brief + voice + s
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
 derived_from: original
-license: original (clean-room; no upstream — PLAN.md L859 + docs/upstream-stripping-map.md "Original skills" section)
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

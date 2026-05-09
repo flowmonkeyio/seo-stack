@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from content_stack.integrations._base import BaseIntegration, IntegrationCallResult
 from content_stack.integrations.ahrefs import AhrefsIntegration
-from content_stack.integrations.codex_plugin_cc import adversarial_review
 from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
 from content_stack.integrations.google_paa import GooglePaaIntegration
@@ -45,9 +44,9 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
 def integration_class_for(kind: str) -> type[BaseIntegration] | None:
     """Resolve the wrapper class for an ``integration_credentials.kind``.
 
-    Returns ``None`` if no wrapper is registered (e.g. ``codex-plugin-cc``
-    or ``openai`` / ``anthropic`` for the procedure-runner LLM keys —
-    those have separate dispatch paths).
+    Returns ``None`` if no wrapper is registered (e.g. ``openai`` /
+    ``anthropic`` for the procedure-runner LLM keys — those have
+    separate dispatch paths).
     """
     return REGISTRY.get(kind)
 
@@ -64,6 +63,5 @@ __all__ = [
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
     "RedditIntegration",
-    "adversarial_review",
     "integration_class_for",
 ]

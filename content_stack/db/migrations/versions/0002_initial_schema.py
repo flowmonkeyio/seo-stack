@@ -296,7 +296,6 @@ def upgrade() -> None:
                 "interlink-suggest",
                 "scheduled-job",
                 "maintenance",
-                "adversarial-review",
                 name="ck_runkind",
                 native_enum=False,
                 length=64,

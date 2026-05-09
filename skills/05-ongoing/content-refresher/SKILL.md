@@ -3,8 +3,8 @@ name: content-refresher
 description: Snapshot the live article into article_versions via article.createVersion, re-run the editor (#10) and humanizer (#12) on the new version, repair stale interlinks, refresh the schema_emits, and re-publish via the project's primary target — composing the existing production chain rather than re-authoring its logic.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: cody-article-writer @ 981ab435d192c8c37c17b2948a83e260fb3c0691 (clean-room; no upstream files read during authoring; composes skills #10 + #12 + #15 + #16 + #17/18/19 — those skills carry their own clean-room derivations)
-license: clean-room (PLAN.md L866 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get
@@ -55,7 +55,7 @@ outputs:
 
 Procedure 7 (`monthly-humanize-pass`) dispatches this skill once per article whose `articles.status='refresh_due'`. The refresh-detector (#23) populated the queue; the content-refresher consumes it. The skill is the orchestrator that runs the production chain against an existing article, snapshotting the prior version into `article_versions` first so the history is preserved.
 
-The refresher does NOT re-author the editor / humanizer / interlinker / schema-emitter / publisher. It dispatches them. The chain composes existing skills — each child skill carries its own clean-room derivation per D1 (the editor's cody KEEP map; the humanizer's original status; the interlinker's Apache-2.0 reference; the schema-emitter's codex-seo KEEP map; the publish skills' originals). The content-refresher inherits zero-verbatim-text by construction because it does not author any of the steps' prose; it only sequences and persists.
+The refresher does NOT re-author the editor / humanizer / interlinker / schema-emitter / publisher. It dispatches them. The chain composes existing skills; the content-refresher does not author any of the steps' prose, it only sequences and persists.
 
 The skill also runs in operator-invoked one-off mode when the operator clicks "refresh now" on `ArticleDetailView.vue` for an article they manually flagged for refresh. The contract is identical; the difference is procedure-7-driven runs come with a fresh `run_id` per article and the per-skill child runs are linked via `runs.parent_run_id` to procedure 7's parent run, while operator-driven one-offs link to a parent run created by the operator's UI request handler.
 

@@ -86,9 +86,8 @@ class EeatScoreReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-# Verdict → numeric score for averaging. PLAN.md L1014 narrates 0..100;
-# the canonical convention used in `.upstream/seo-geo-claude-skills` is
-# pass=100, partial=50, fail=0.
+# Verdict → numeric score for averaging. PLAN.md L1014 narrates 0..100
+# with pass=100, partial=50, fail=0.
 _VERDICT_SCORE: dict[EeatVerdict, float] = {
     EeatVerdict.PASS: 100.0,
     EeatVerdict.PARTIAL: 50.0,
@@ -205,7 +204,7 @@ class EeatEvaluationRepository:
             cat.value: round(sum(scores) / len(scores), 2) if scores else 0.0
             for cat, scores in per_dim_scores.items()
         }
-        # System scores per PLAN.md L444 / .upstream/seo-geo-claude-skills.
+        # System scores per PLAN.md L444.
         # GEO = mean(C, O, R, E); SEO = mean(Exp, Ept, A, T).
         geo_keys = (EeatCategory.C, EeatCategory.O, EeatCategory.R, EeatCategory.E)
         seo_keys = (EeatCategory.EXP, EeatCategory.EPT, EeatCategory.A, EeatCategory.T)

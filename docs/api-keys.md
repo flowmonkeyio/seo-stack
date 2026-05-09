@@ -219,23 +219,3 @@ If you don't have a plan: skip this integration. ``test_credentials``
 returns ``IntegrationDownError`` with a hint pointing back to this
 section, and the keyword-discovery skill falls back to DataForSEO
 automatically.
-
----
-
-## codex-plugin-cc (adversarial review)
-
-Used by: ``eeat-gate`` (skill #11; M6).
-
-1. Install the Codex Claude Code plugin separately:
-   ``claude plugin install codex-plugin-cc``.
-2. Set ``CLAUDE_PLUGIN_ROOT`` to the plugin root (the install script
-   does this automatically).
-3. In the content-stack UI Integrations tab toggle "codex-plugin-cc"
-   on for the project. The toggle persists as
-   ``integration_credentials.kind='codex-plugin-cc'`` with
-   ``config_json.enabled=true`` (no encrypted payload — the plugin
-   itself is the credential surface).
-
-If the plugin is not installed the adversarial-review helper returns
-``{verdict: "SKIPPED", reason: "plugin-not-installed"}`` so the EEAT
-gate degrades gracefully.

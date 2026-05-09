@@ -22,13 +22,13 @@ for v1" criterion in `PLAN.md`.
   pagination + filtering conventions, REST/MCP parity table, Swagger
   UI at `/api/docs`, auto-generated TS types committed at
   `ui/src/api.ts`.
-- **M3 MCP server** — 125 tools registered over Streamable HTTP at
+- **M3 MCP server** — tools registered over Streamable HTTP at
   `/mcp`, tool-grant matrix as the load-bearing security seam,
   idempotency keys (24 h dedup), streaming for 4 long-running tools,
   JSON-RPC error model, mutating-verb envelope discipline.
 - **M4 Integrations** — 8 vendor wrappers (DataForSEO, Firecrawl,
   GSC + OAuth, OpenAI Images, Reddit, Google PAA, Jina Reader,
-  Ahrefs) plus codex-plugin-cc adversarial-review helper.
+  Ahrefs).
   AES-256-GCM at-rest credentials with per-machine seed + HKDF +
   per-row nonce + project-bound AAD. Token-bucket rate limits + budget
   pre-emption (audit M-25).
@@ -36,9 +36,8 @@ for v1" criterion in `PLAN.md`.
   MarkdownEditor with optimistic concurrency. Playwright + axe
   verified at 6 breakpoints (360 / 640 / 768 / 1024 / 1280 / 1440)
   with zero console errors.
-- **M6 Skills** — 24 SKILL.md files clean-room authored across 5
-  phases. Tool-grant matrix populated; CI fingerprint check rejects
-  upstream substring matches (per locked decisions D1 / D2).
+- **M6 Skills** — 24 SKILL.md files authored across 5
+  phases. Tool-grant matrix populated.
 - **M7 Procedures** — daemon-orchestrated runner per locked decision
   D4. 8 PROCEDURE.md playbooks (bootstrap-project,
   one-site-shortcut, keyword-to-topic-queue, topic-to-published,
@@ -66,11 +65,6 @@ for v1" criterion in `PLAN.md`.
 
 ### Decisions locked
 
-- **D1 Cody clean-room** — skill authors for #4, #6, #7, #8, #9,
-  #10, #24 do NOT read `cody-article-writer/` files. CI fingerprint
-  check rejects substring matches.
-- **D2 codex-seo clean-room** — same rule for #1, #2, #3, #14, #16,
-  #20, #21, #22. No `--with-codex-seo` install flag.
 - **D3 Multi-locale** — singular `projects.locale TEXT NOT NULL`.
   Multi-locale = separate project per locale.
 - **D4 Daemon-orchestrated procedures** — `procedure.run` enqueues

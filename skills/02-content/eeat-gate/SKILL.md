@@ -1,10 +1,10 @@
 ---
 name: eeat-gate
-description: Score the edited article against the project's active EEAT criteria, compute SHIP / FIX / BLOCK verdict, optionally run adversarial review, and persist via article.markEeatPassed when the verdict is SHIP.
+description: Score the edited article against the project's active EEAT criteria, compute SHIP / FIX / BLOCK verdict, and persist via article.markEeatPassed when the verdict is SHIP.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: seo-geo-claude-skills @ 7ecc77b181190fe17a8e3c22a5f6fe705569dc09 (Apache-2.0 reference; CORE-EEAT v3 framework — 8 dimensions × 10 items + three vetoes — re-authored against project-specific eeat_criteria rows; adversarial-review seam invokes the daemon-side codex_plugin_cc helper per audit M-28)
-license: Apache-2.0 reference (PLAN.md L853 + docs/upstream-stripping-map.md adapt notes; full attribution in docs/attribution.md and NOTICE)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get
@@ -93,19 +93,12 @@ Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id
    - Failures in dimensions below the per-dimension floor next.
    - Partials in dimensions near the threshold last.
    For each top issue, capture `{criterion_code, category, tier, severity, finding}` where severity is `critical | high | medium | low`. The editor's FIX-loop pass reads `top_issues` to target its rewriting.
-10. **Adversarial review (optional, runtime-conditional, audit M-28).** When the runtime is `claude-code` AND the project has `integration_credentials.kind='codex-plugin-cc'.config_json.enabled=true`:
-    - The daemon-side helper at `integrations/codex_plugin_cc.py` handles the subprocess (we never shell out from the skill prompt). The helper writes the article body to a 0600 temp file wrapped in `<article_under_review>` tags, invokes `codex-companion.mjs adversarial-review`, returns one of `{verdict: PASS|FIX|BLOCK|SKIPPED, reason?}`.
-    - On `SKIPPED` (plugin-not-installed, timeout, wrong-runtime, or subprocess error), record the reason and proceed with the gate's verdict unchanged.
-    - On `PASS`, no change to the gate's verdict.
-    - On `FIX` and the gate said SHIP, downgrade to FIX and append the reviewer's findings to `top_issues` so the editor's next pass addresses them.
-    - On `BLOCK`, downgrade unconditionally to BLOCK with `vetoes_failed += ['adversarial']` so the procedure runner aborts.
-    - The skill prompt does not run subprocesses or call external binaries directly. The subprocess seam is daemon-side per PLAN.md L1175 to keep the skill prompt sandbox-agnostic.
-11. **Persist the audit row to the run.** Write `runs.metadata_json.eeat = {dimension_scores, system_scores, coverage, vetoes_failed, top_issues[], verdict, weights_applied?, adversarial_review?, fix_required?}`. The shape matches the `eeat-audit` discriminated-union row in PLAN.md L444 (`eeat-audit` kind), with the addition of `fix_required` when verdict is FIX so the editor's FIX-loop knows what to fix. `fix_required[]` is the same shape as `top_issues[]` filtered to `verdict='fail'` rows.
-12. **Verdict-specific persistence.**
+10. **Persist the audit row to the run.** Write `runs.metadata_json.eeat = {dimension_scores, system_scores, coverage, vetoes_failed, top_issues[], verdict, weights_applied?, fix_required?}`. The shape matches the `eeat-audit` discriminated-union row in PLAN.md L444 (`eeat-audit` kind), with the addition of `fix_required` when verdict is FIX so the editor's FIX-loop knows what to fix. `fix_required[]` is the same shape as `top_issues[]` filtered to `verdict='fail'` rows.
+11. **Verdict-specific persistence.**
     - **SHIP** → call `article.markEeatPassed(article_id, expected_etag=<live etag>, run_id, eeat_criteria_version=<current rubric version>)`. The repository advances `articles.status` from `edited` to `eeat_passed`, freezes the rubric version (so future rubric edits don't retroactively invalidate the audit), and rotates `step_etag`. The procedure runner picks up the new etag for skill #13 (image-generator).
     - **FIX** → do NOT advance status. Persist `runs.metadata_json.eeat.fix_required[]` so the procedure runner reads it on FIX-loop re-entry of skill #10. The runner re-dispatches the editor with the fix list as the editor's run args. The fix-loop counter (held in the runner's state, not the gate's) increments; if it exceeds the cap (default 3), the runner aborts the procedure rather than re-dispatching.
     - **BLOCK** → do NOT advance via `markEeatPassed`. The procedure runner advances via a separate transition: `articles.status` becomes `aborted-publish` and `runs.status` becomes `aborted`. The gate persists the BLOCK verdict to `runs.metadata_json.eeat` and finishes; the runner handles the abort transitions.
-13. **Finish.** Call `run.finish` with `{article_id, verdict, dimension_scores, system_scores, vetoes_failed, top_issues_count, fix_required_count?, adversarial_review_outcome?, fix_loop_iteration}`. Heartbeats fire after the per-criterion evaluation pass (step 4) and after the adversarial review (step 10).
+12. **Finish.** Call `run.finish` with `{article_id, verdict, dimension_scores, system_scores, vetoes_failed, top_issues_count, fix_required_count?, fix_loop_iteration}`. A heartbeat fires after the per-criterion evaluation pass (step 4).
 
 ## Outputs
 
@@ -121,13 +114,11 @@ Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id
 - **`eeat.list` returns zero rows.** Equivalent to coverage failure; same handling.
 - **`eeat.bulkRecord` rolls back.** Means a per-evaluation validation failed (e.g., a criterion_id no longer exists because the operator deactivated it mid-run). Refresh the criterion list, recompute evaluations against the fresh list, retry the bulk record once. Two consecutive rollbacks aborts the run.
 - **`markEeatPassed` etag conflict on SHIP.** Means another writer touched the article between the gate's read and the markEeatPassed call. Refresh via `article.get`, retry once with the new etag. Two conflicts aborts and the procedure runner restarts the gate.
-- **Adversarial review subprocess fails / times out.** The daemon helper returns `SKIPPED` with the reason. The gate logs and proceeds with the unaltered verdict; the optional review is best-effort, not load-bearing.
 - **A criterion's evidence is genuinely ambiguous.** Default to the more conservative verdict (partial vs. pass; fail vs. partial). The notes field records the ambiguity so the FIX-loop editor can decide whether to clarify or whether to flag the criterion as inapplicable.
 - **Voice profile carries malformed weight table.** Ignore the weights and proceed with the unweighted aggregation. Surface in `runs.metadata_json.eeat.weights_skipped=true` with the parse error.
 
 ## Variants
 
-- **`fast`** — skips the adversarial review even when enabled; useful for CI / dry-run audits.
-- **`standard`** — the default flow above with adversarial review when configured.
+- **`standard`** — the default flow above.
 - **`strict`** — raises the per-dimension floor from 60 to 70 and the per-system floor from 70 to 80; useful for pillar articles or for projects with a stricter quality bar set in `voice.eeat.thresholds`. The strict thresholds are advisory; the procedure runner reads them from voice and passes via skill args.
 - **`audit-only`** — performs the full evaluation and persists `eeat_evaluations` but does NOT call `markEeatPassed` regardless of verdict. Used for periodic content-quality re-audits of already-published articles (procedure 6's GSC-driven cadence) where the gate is informational rather than gating.

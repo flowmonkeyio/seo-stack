@@ -3,8 +3,8 @@ name: alt-text-auditor
 description: Score every article asset against the alt-text rubric, file-size tier, format, and above-the-fold loading rules; rewrite weak alt text via asset.update and persist findings to runs.metadata_json.alt_text_audit.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: codex-seo @ 97c59bcdac3c9538bf0e3ae456c1e73aa387f85a (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L856 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

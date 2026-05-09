@@ -68,8 +68,7 @@ One Python process. One SQLite database. Three transports:
         │   │ repositories  +  integrations              │   │
         │   │ (SQLModel)    (DataForSEO, Ahrefs,         │   │
         │   │                Firecrawl, GSC, OpenAI      │   │
-        │   │                Images, Reddit, PAA, Jina,  │   │
-        │   │                codex-plugin-cc)            │   │
+        │   │                Images, Reddit, PAA, Jina)  │   │
         │   └────────────────────┬───────────────────────┘   │
         │                        ▼                            │
         │   ┌──────────────────────────────────────┐         │
@@ -565,17 +564,7 @@ check (`tests/integration/test_skills_frontmatter.py`) enforces
 parity. The matrix is the security seam: a skill cannot reach an
 ungranted tool even if it wants to.
 
-### 9.3 Clean-room sourcing (D1 + D2)
-
-For skills derived from Cody (#4, #6, #7, #8, #9, #10, #24) and
-codex-seo (#1, #2, #3, #14, #16, #20, #21, #22), the skill author
-does NOT read upstream files. The skills are authored from PLAN.md +
-the strip-map's KEEP/ADAPT/Risks summary. CI's
-`tests/integration/test_no_upstream_substrings.py` rejects substring
-matches against `tests/fixtures/upstream-fingerprints.json`. See
-[`./extending.md`](./extending.md) section 6 for the workflow.
-
-### 9.4 Procedures
+### 9.3 Procedures
 
 Eight canonical playbooks plus the `_template/` scaffold:
 
@@ -836,7 +825,3 @@ them with `curl -H "Authorization: Bearer $(cat ~/.local/state/content-stack/aut
 - [`./security.md`](./security.md) — threat-model trade-offs.
 - [`./upgrade.md`](./upgrade.md) — pipx and clone-mode upgrade
   semantics.
-- [`./attribution.md`](./attribution.md) — upstream credit + license
-  posture.
-- [`./upstream-stripping-map.md`](./upstream-stripping-map.md) —
-  per-skill KEEP / STRIP / ADAPT.

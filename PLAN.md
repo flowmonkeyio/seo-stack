@@ -318,11 +318,12 @@ content-stack/
 │   └── doctor.sh                    # diagnose: daemon? skills? mcp? api keys?
 │
 ├── docs/
-│   ├── attribution.md               # upstream credit + license check
 │   ├── architecture.md
 │   ├── extending.md                 # adding skills / procedures / integrations
 │   ├── api-keys.md                  # required keys per integration
-│   └── procedures-guide.md          # how to author procedures
+│   ├── procedures-guide.md          # how to author procedures
+│   ├── security.md                  # threat model + hardening
+│   └── upgrade.md                   # version-to-version upgrade semantics
 │
 ├── tests/
 │   ├── unit/
@@ -607,9 +608,6 @@ POST  /api/v1/runs/{id}/abort             # ?cascade=true
 GET  /api/v1/projects/{id}/cost?month=YYYY-MM
                                            # → { by_integration, total_usd, period_start, period_end }
 
-# Adversarial review (codex-plugin-cc helper)
-POST  /api/v1/adversarial-review          # daemon-side helper; runtime-conditional
-
 # Procedures
 GET  /api/v1/procedures
 POST  /api/v1/procedures/{slug}/run        # 202 → { run_id, status_url, started_at }
@@ -835,45 +833,37 @@ seconds and code -32011. Bulk tools count as N calls.
 
 ---
 
-## Skills catalogue (24 skills, full upstream attribution)
+## Skills catalogue (24 skills)
 
 Each skill is a directory: `skills/<phase>/<name>/SKILL.md` plus optional `scripts/`.
 Same directory works for Codex (`~/.codex/skills/`) and Claude Code (`~/.claude/skills/`).
 
-| # | Skill | Upstream source | What we keep | What we change |
-|---|---|---|---|---|
-| 1 | `01-research/keyword-discovery` | codex-seo `seo-dataforseo` + `seo-cluster` + custom Reddit/PAA | API wiring, query templates | Add Reddit (PRAW) + PAA scrapers; persist results to `topics` |
-| 2 | `01-research/serp-analyzer` | codex-seo `seo-firecrawl` + `seo-page` | Scrape recipe, on-page audit checklist (word count, tone, LSI) | Output structured JSON to DB instead of file |
-| 3 | `01-research/topical-cluster` | codex-seo `seo-cluster` | Clustering algo (SERP-based) | Persist `clusters` + `topics` rows with parent/child relationships |
-| 4 | `01-research/content-brief` | cody-article-writer (Research Planning + Style + Title/Thesis) | Brief structure, citation handling | Read voice/compliance/EEAT from MCP; persist `articles.brief_json` |
-| 5 | `01-research/competitor-sitemap-shortcut` | original (AM Media's trick) | n/a | Authored from scratch — sitemap.xml + Ahrefs export → topical map |
-| 6 | `02-content/outline` | cody-article-writer (Outline phase) | H1/H2/H3 structure logic | Read brief from `articles.brief_json`; persist `articles.outline_md` |
-| 7 | `02-content/draft-intro` | cody-article-writer (Write phase, intro) | Hook patterns, thesis restatement | Separate skill per AM Media's "separate prompts for intro/body/outro" |
-| 8 | `02-content/draft-body` | cody-article-writer (Write phase, body) | Section expansion, evidence injection | Reads sources from `research_sources` |
-| 9 | `02-content/draft-conclusion` | cody-article-writer (Write phase, outro) | Summary + CTA pattern | Inserts compliance footer per `compliance_rules` |
-| 10 | `02-content/editor` | cody-article-writer (Editor Pass) | AI-pattern strip, white space, polish | Persist to `articles.edited_md` |
-| 11 | `02-content/eeat-gate` | aaron-he-zhu `content-quality-auditor` (CORE-EEAT 80-item) | The 80-item framework | Use **project-specific** criteria from `eeat_criteria` (not hardcoded) |
-| 12 | `02-content/humanizer` | original (AM Media's post-publish pass) | n/a | Authored — re-edit pass that varies sentence length, removes "AI tells". Runs **once per article version**: procedure 7 generates a new version (incrementing `articles.version`) and humanizer runs against it. Same applies to content-refresher (#24): each refresh = new version = humanizer can run. |
-| 13 | `03-assets/image-generator` | original | n/a | OpenAI Images API wrapper; persists to `article_assets` |
-| 14 | `03-assets/alt-text-auditor` | codex-seo `seo-images` (audit subset) | Alt-text rubric | Apply to `article_assets`; flag missing/weak |
-| 15 | `04-publishing/interlinker` | aaron-he-zhu `internal-linking-optimizer` | Anchor selection + relevance scoring | Use `internal_links` table for graph; suggest before apply |
-| 16 | `04-publishing/schema-emitter` | codex-seo `seo-schema` | JSON-LD generation for Article / Product / FAQ / Review / HowTo | Persist `schema_emits`, validate, attach to article |
-| 17 | `04-publishing/nuxt-content-publish` | original | n/a | Write `.md` + frontmatter to `content/` repo, git commit, git push |
-| 18 | `04-publishing/wordpress-publish` | original | n/a | WordPress REST API (`/wp-json/wp/v2/posts`) |
-| 19 | `04-publishing/ghost-publish` | original | n/a | Ghost Admin API |
-| 20 | `05-ongoing/gsc-opportunity-finder` | codex-seo `seo-google` + custom heuristics | API wiring | Detect "striking distance" queries, low-CTR rank-1, missing intents → write to `topics` queue with `source=gsc-opportunity` |
-| 21 | `05-ongoing/drift-watch` | codex-seo `seo-drift` | Baseline diff logic | Persist `drift_baselines`; flag articles whose live HTML drifted from `articles.edited_md` |
-| 22 | `05-ongoing/crawl-error-watch` | codex-seo `seo-google` (subset) | API wiring for indexing errors | Persist incidents to `runs`; raise alerts |
-| 23 | `05-ongoing/refresh-detector` | original | n/a | Authored — uses canonical query (Schema § "Canonical refresh-detector query") over `articles.last_refreshed_at`, GSC trend (via `gsc_metrics_daily`), drift score → marks `articles.status='refresh_due'`. Two entry points to `refresh_due`: (a) this skill (run weekly via `jobs/refresh_detector.py`); (b) human in UI clicks "flag for refresh" on `ArticleDetailView.vue`. Both converge on procedure 7 consuming `WHERE status='refresh_due'`. |
-| 24 | `05-ongoing/content-refresher` | cody-article-writer (Editor pass) + humanizer | Re-edit prompts | Persist new `articles.version`; bump `last_refreshed_at` |
-
-**Originals (skills #5, #12, #13, #17, #18, #19, #23) are documented in
-`docs/upstream-stripping-map.md#original-skills` with algorithm sketches, DB
-tables touched, MCP tools used, and key risks.** Skill authors do NOT read
-`cody-article-writer/` files when authoring skills #4, #6, #7, #8, #9, #10,
-#24 (clean-room re-author per D1); CI fingerprint check rejects substrings
-from cody verbatim text. Same clean-room rule applies to codex-seo–derived
-skills #1, #2, #3, #14, #16, #20, #21, #22.
+| # | Skill | Description | Notes |
+|---|---|---|---|
+| 1 | `01-research/keyword-discovery` | DataForSEO + Reddit (PRAW) + Google PAA scrape, query templates, persist results to `topics` | Persists topic rows with `source` provenance |
+| 2 | `01-research/serp-analyzer` | Firecrawl-based SERP scrape + on-page audit (word count, tone, LSI), structured JSON output | Output written to DB, not files |
+| 3 | `01-research/topical-cluster` | SERP-based topical clustering, persists `clusters` + `topics` rows with parent/child relationships | Operates on the topic queue from skills #1/#2 |
+| 4 | `01-research/content-brief` | Research-backed content brief (planning, style, title/thesis), citation handling | Reads voice/compliance/EEAT from MCP; persists `articles.brief_json` |
+| 5 | `01-research/competitor-sitemap-shortcut` | sitemap.xml + Ahrefs export → topical map shortcut | Useful when bootstrapping a new site without doing keyword work first |
+| 6 | `02-content/outline` | H1/H2/H3 hierarchical outline from the brief | Reads `articles.brief_json`; persists `articles.outline_md` |
+| 7 | `02-content/draft-intro` | Hook patterns, thesis restatement, intro section | Separate skill so each prompt stays tight |
+| 8 | `02-content/draft-body` | Section expansion + evidence injection from `research_sources` | One pass per outline section |
+| 9 | `02-content/draft-conclusion` | Summary + CTA + compliance footer | Inserts compliance footer per `compliance_rules` |
+| 10 | `02-content/editor` | AI-pattern strip, whitespace, polish, voice consistency | Persists to `articles.edited_md` |
+| 11 | `02-content/eeat-gate` | Score the edited article against the project's active EEAT criteria; SHIP / FIX / BLOCK verdict | Uses **project-specific** criteria from `eeat_criteria` (not hardcoded); coverage floor enforced |
+| 12 | `02-content/humanizer` | Re-edit pass that varies sentence length, removes "AI tells" | Runs **once per article version**: procedure 7 generates a new version (incrementing `articles.version`) and humanizer runs against it. Same applies to content-refresher (#24): each refresh = new version = humanizer can run. |
+| 13 | `03-assets/image-generator` | OpenAI Images API wrapper; persists to `article_assets` | Per-article aspect ratio + caption hint |
+| 14 | `03-assets/alt-text-auditor` | Alt-text rubric audit on `article_assets`; flags missing/weak | Writes verdicts back to `article_assets.alt_text_verdict` |
+| 15 | `04-publishing/interlinker` | Anchor selection + relevance scoring; suggest before apply | Uses `internal_links` table for graph |
+| 16 | `04-publishing/schema-emitter` | JSON-LD generation for Article / Product / FAQ / Review / HowTo | Persists `schema_emits`, validates, attaches to article |
+| 17 | `04-publishing/nuxt-content-publish` | Write `.md` + frontmatter to `content/` repo, git commit, git push | Cherry-picked target type |
+| 18 | `04-publishing/wordpress-publish` | WordPress REST API (`/wp-json/wp/v2/posts`) | Per-target credentials |
+| 19 | `04-publishing/ghost-publish` | Ghost Admin API | Per-target credentials |
+| 20 | `05-ongoing/gsc-opportunity-finder` | Detect "striking distance" queries, low-CTR rank-1, missing intents → topic queue | Writes to `topics` with `source=gsc-opportunity` |
+| 21 | `05-ongoing/drift-watch` | Baseline diff against live HTML; persists `drift_baselines` | Flags articles whose live HTML drifted from `articles.edited_md` |
+| 22 | `05-ongoing/crawl-error-watch` | GSC indexing-error monitor; persists incidents to `runs` and raises alerts | Daily cadence |
+| 23 | `05-ongoing/refresh-detector` | Canonical query (Schema § "Canonical refresh-detector query") over `articles.last_refreshed_at`, GSC trend (via `gsc_metrics_daily`), drift score → marks `articles.status='refresh_due'` | Two entry points to `refresh_due`: (a) this skill (run weekly via `jobs/refresh_detector.py`); (b) human in UI clicks "flag for refresh" on `ArticleDetailView.vue`. Both converge on procedure 7 consuming `WHERE status='refresh_due'`. |
+| 24 | `05-ongoing/content-refresher` | Re-edit prompts on stale content; bump `last_refreshed_at` | Persists a new `articles.version` |
 
 ---
 
@@ -960,8 +950,8 @@ Every skill's frontmatter declares:
 ---
 name: outline
 description: Generate a hierarchical H1/H2/H3 outline from the brief
-derived_from: cody-article-writer @ <commit-sha>   # or "original (n/a)"
-license: <upstream-license>                         # or "n/a (clean-room original)"
+derived_from: original
+license: project-internal
 inputs:
   - { name: project_id, source: env, var: CONTENT_STACK_PROJECT_ID, required: true }
   - { name: run_id, source: env, var: CONTENT_STACK_RUN_ID, required: true }
@@ -1054,7 +1044,6 @@ post-call.
 | **Reddit** (PRAW) | keyword-discovery | `kind='reddit'`: `{client_id, client_secret, user_agent}` | 5 qps |
 | **Google PAA** (scraper, no key) | keyword-discovery | n/a | 0.5 qps |
 | **Jina Reader** (markdown fallback) | serp-analyzer fallback | optional `kind='jina'`: `{api_key}` | 5 qps |
-| **Codex-plugin-cc** (adversarial review) | eeat-gate (Claude Code only) | `kind='codex-plugin-cc'`: `{config_json: {enabled: bool}}` (per project, default off) | n/a |
 
 **LLM credentials clarification.** The daemon needs LLM credentials directly
 to drive the **procedure runner** (per D4) — those are stored as
@@ -1082,12 +1071,8 @@ the daemon-side `kind='openai-images'` row regardless of runtime.
      401 surfaces "re-auth needed".
 - **OpenAI / Anthropic (procedure runner LLM)**: API key entry in UI; tested
   by dispatching a 1-token completion.
-- **OpenAI Images**: same; tested by generating a 1×1 dummy image and
-  refunding via API only if Avalon quota allows (otherwise just verifies
-  auth).
-- **codex-plugin-cc**: per-project toggle in UI (`integration_credentials`
-  row with `kind='codex-plugin-cc'`, `config_json.enabled=true`); requires
-  the user to have run `claude plugin install` separately.
+- **OpenAI Images**: same; tested by generating a 1×1 dummy image
+  (auth-only check; size is the smallest billable variant).
 
 ### OAuth refresh job
 
@@ -1160,83 +1145,6 @@ The HTTP middleware rejects any request whose `Host:` header is not
 rejects `--host 0.0.0.0` at parse time. CORS is `same-origin` only — the
 UI is served from the same origin; cross-origin browser fetches fail.
 `doctor.sh` verifies via `lsof` and a probe.
-
-### Adversarial-review prompt-injection hygiene
-
-The eeat-gate skill (#11) optional codex-plugin-cc adversarial review
-passes the article body via a temp file (`tempfile.NamedTemporaryFile`
-with mode 0600), referenced by path in the helper invocation, never via
-argv. The temp file is deleted in `finally`. The article body is wrapped
-in a `<article_under_review>` XML tag in the helper's prompt for prompt-
-injection hygiene. Wall-clock budget per call: 90 s; on timeout, the
-gate logs `runs.metadata_json.adversarial_review.skipped='timeout'` and
-proceeds — slow plugins do not block the article.
-
-### Codex-plugin-cc seam (runtime-conditional)
-
-The seam is invoked **daemon-side**, not via Bash from the skill prompt.
-The eeat-gate skill checks `runtime == 'claude-code' AND
-integration_credentials.kind='codex-plugin-cc'.config_json.enabled = true`
-before calling. The daemon helper at `integrations/codex_plugin_cc.py`
-POSTs to `/api/v1/adversarial-review` which spawns the codex-companion
-subprocess and returns a job_id; the eeat-gate polls. Default per-project
-toggle: **off**. The user enables in UI Integrations tab. NOTICE file at
-content-stack root credits OpenAI for the Apache-2.0 plugin.
-
----
-
-## Sourcing strategy: clean-room re-author, never vendor
-
-We **do not vendor** the upstream repos and we do not paraphrase them.
-Instead:
-
-1. **Each derived skill names its source** in its `SKILL.md` frontmatter:
-
-   ```yaml
-   ---
-   name: content-brief
-   description: Generate a research-backed content brief
-   derived_from: ibuildwith-ai/cody-article-writer @ <commit-sha>   # informational only
-   license: clean-room-original (n/a — never read upstream files)
-   ---
-   ```
-
-2. **Cody clean-room re-author (D1).** Skill authors for #4, #6, #7, #8,
-   #9, #10, #24 do **NOT** read any `cody-article-writer/` file. They
-   author from PLAN.md's data model + general editorial knowledge only.
-   The clean-room procedure is documented in `docs/attribution.md`. CI
-   fingerprint check (`tests/fixtures/upstream-fingerprints.json`) fails
-   the build if any `skills/02-content/*/SKILL.md` contains substrings
-   from cody verbatim text.
-
-3. **codex-seo clean-room re-author.** Same rule applies to skills #1, #2,
-   #3, #14, #16, #20, #21, #22 — authors do not paraphrase codex-seo's
-   prompt text. The upstream LICENSE is internally inconsistent (Avalon
-   Reset proprietary in `LICENSE`, MIT in metadata); we treat it as
-   proprietary and behave as if no license-grant exists.
-
-4. **No `--with-codex-seo` install flag.** Users who want codex-seo as a
-   peer install it themselves; documented in `docs/extending.md` with a
-   one-paragraph "license is unclear; install at your own risk" notice.
-   The install scripts will not clone or recommend cloning.
-
-5. **`docs/attribution.md`** lists every upstream reference repo, the
-   commit/version reviewed, and the license posture. Updated whenever a
-   derived skill is touched. Clean-room authors do NOT cite line ranges.
-
-6. **`docs/upstream-stripping-map.md`** uses "ideas, not lines" language;
-   no "approximate volume kept: ~N LOC" claims. Original-skill section
-   covers #5, #12, #13, #17, #18, #19, #23.
-
-**Upstream repositories referenced (informationally only):**
-
-| Repo | Role | Posture |
-|---|---|---|
-| `AgriciDaniel/codex-seo` | Idea source for: keyword-discovery, serp-analyzer, topical-cluster, alt-text-auditor, schema-emitter, gsc-opportunity-finder, drift-watch, crawl-error-watch | Clean-room; CI fingerprint check; no install induction |
-| `ibuildwith-ai/cody-article-writer` | Idea source for: content-brief, outline, draft-intro, draft-body, draft-conclusion, editor, content-refresher | Clean-room; CI fingerprint check; license forbids competing frameworks, so we author independently |
-| `aaron-he-zhu/seo-geo-claude-skills` | Idea source for: eeat-gate (CORE-EEAT framework), interlinker (internal-linking-optimizer) | Apache-2.0; clean-room re-author for prompt text; framework structure (8 dimensions, veto items) reused as common-domain knowledge |
-| `openai/codex-plugin-cc` | Optional adversarial EEAT review helper; runtime-conditional (Claude Code only) | Apache-2.0; NOTICE file at content-stack root credits OpenAI; daemon-side helper invocation, not Bash-from-skill |
-| `perplexityai/modelcontextprotocol` | **Explicitly not used** | Research via Firecrawl + DataForSEO + runtime's built-in WebSearch |
 
 ---
 
@@ -1539,11 +1447,11 @@ Not "MVP cuts" — full scope, sequenced by dependency:
 4. **MCP server** — all tools, transport mounted at `/mcp`, end-to-end test from a Codex session, idempotency keys, streaming, error model, result envelope, tool-grant matrix. (3d)
 5. **Integrations** — DataForSEO, Firecrawl, GSC (with OAuth flow + refresh job), OpenAI Images, OpenAI/Anthropic procedure-runner, Reddit, PAA, Jina wrappers. Each unit-tested with VCR-style cassettes. Token-bucket rate limits + budget caps. (3d)
 6. **UI** — all views per spec, ProjectSwitcher in sidebar, MarkdownView, MarkdownEditor (textarea + If-Match optimistic concurrency), DataTable. ArticleDetailView subviews (EEAT report, Activity, Interlinks). InterlinksView bulk apply/dismiss. (4d)
-7. **Skills (all 24)** — authored against schema; clean-room per D1; CI fingerprint check; each tested with a stub project. (5d)
+7. **Skills (all 24)** — authored against schema; each tested with a stub project. (5d)
 8. **Procedures (all 8)** — `PROCEDURE.md` for each, daemon-orchestrated runner, tested by running against a seed project. (3d)
 9. **Jobs + scheduling** — APScheduler in-process for weekly GSC review, monthly humanize, OAuth refresh, auto-backup; resumable runs; crash-recovery sweep. (2d)
-10. **Distribution** — install scripts (idempotent), MCP registration helpers (auth token injection), launchd plist, doctor.sh, attribution doc, NOTICE file, pipx wheel layout. (1d)
-11. **Documentation** — README, architecture, extending guide, procedures guide, api-keys guide (incl. GSC OAuth screenshots), attribution, PRIVACY.md. (1d)
+10. **Distribution** — install scripts (idempotent), MCP registration helpers (auth token injection), launchd plist, doctor.sh, pipx wheel layout. (1d)
+11. **Documentation** — README, architecture, extending guide, procedures guide, api-keys guide (incl. GSC OAuth screenshots), PRIVACY.md. (1d)
 
 **Total: ~29 working days for everything.** Sequencing is dependency-driven;
 some tracks parallelize across agents. Original audit baseline was 25d; the
@@ -1562,8 +1470,6 @@ document.
 
 | # | Decision | Locked at |
 |---|---|---|
-| D1 | **Cody license** — clean-room re-author from PLAN.md only; skill authors for #4, #6, #7, #8, #9, #10, #24 do NOT read `cody-article-writer/` files; CI fingerprint check rejects substrings from cody verbatim text | Sourcing strategy + Risks |
-| D2 | **codex-seo `--with-codex-seo` flag** — DROP entirely. Users who want codex-seo install it themselves; documented in `docs/extending.md` | Sourcing strategy |
 | D3 | **Multi-locale** — SINGULAR. `projects.locale TEXT NOT NULL`. Translation = separate project per locale | Schema § Core projects |
 | D4 | **Procedure orchestration** — DAEMON-ORCHESTRATED. Daemon holds its own LLM credentials (one of OpenAI/Anthropic, separate from the runtime's). LLM client only kicks off and polls | Procedures § Procedure orchestration model |
 | D5 | **Daemon auth** — per-install bearer token at `~/.local/state/content-stack/auth.token` (32 bytes, 0600). Every REST + MCP request requires `Authorization: Bearer <token>`. Host header check + same-origin CORS. Install scripts inject. Rotates on `make install` re-run | Architecture + Security |
@@ -1580,7 +1486,6 @@ Other previously-open items, all now locked:
 - **Encryption-at-rest** — AES-256-GCM with HKDF-derived key from per-machine seed (Security § Encryption-at-rest).
 - **DB location** — `~/.local/share/content-stack/content-stack.db` (XDG).
 - **Repo visibility** — operator's call; not a technical decision.
-- **codex-plugin-cc adoption** — wired runtime-conditionally; per-project opt-in default off (Security § Codex-plugin-cc seam).
 
 ---
 
@@ -1625,7 +1530,6 @@ Other previously-open items, all now locked:
 | Vue UI drifts from API shape | Auto-generate TS types via `openapi-typescript` from FastAPI OpenAPI; CI fails on diff |
 | Skills out of sync between Codex and Claude installs | Single `skills/` directory + `rsync --delete` install scripts; doctor.sh checks 6+7 verify count = 24 in both runtimes |
 | LLM corrupts DB via bad input | All MCP tools pydantic-validated; status enums enforced; tool-grant matrix per skill (-32007 forbidden); state-machine triggers; full audit via `run_steps` + `run_step_calls`; idempotency keys for replay safety |
-| Upstream license incompatibility (Cody, codex-seo) | Clean-room re-author per D1/D2; CI fingerprint check rejects substrings from upstream verbatim; no `--with-codex-seo` install induction; `docs/attribution.md` documents posture |
 | EEAT gate rubber-stamp by project owner | `eeat_criteria.tier` ENUM(`core`,`recommended`,`project`); rows with `tier='core'` cannot be deactivated (repository invariant + 422); EEAT gate refuses to score if any of 8 dimensions has 0 active items; coverage floor enforced |
 | Cost runaway on integrations | Pre-emptive `integration_budgets` table per project + kind; per-integration token-bucket rate limit; bulk-launch `--budget-cap-usd` flag refuses to start above cap; `run.abort(run_id, cascade=true)` for runaways; `GET /api/v1/projects/{id}/cost?month=` + `cost.queryProject` MCP for live monthly view |
 | Daemon crash mid-procedure leaves orphan `runs` | `runs.heartbeat_at` updated every 30 s; startup sweep marks `running AND heartbeat_at < now-5min` as `aborted` with `error='daemon-restart-orphan'`; cascade to children; `procedure_run_steps` cursor enables `procedure.resume(run_id)` for procedures with `resumable: true` |

@@ -226,7 +226,6 @@ def _build_lifespan(
         runner = ProcedureRunner(
             settings=settings,
             engine=engine,
-            plugin_root=os.environ.get("CLAUDE_PLUGIN_ROOT"),
             scheduler=scheduler,
         )
         app.state.procedure_runner = runner

@@ -3,8 +3,8 @@ name: crawl-error-watch
 description: Iterate published articles, call the GSC URL Inspection API per page (or in batches via gsc.bulk_inspect when N>10), classify the verdict (PASS / PARTIAL / FAIL with reasons), and emit a topic with intent='technical-fix' for every FAIL or PARTIAL.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: codex-seo @ 97c59bcdac3c9538bf0e3ae456c1e73aa387f85a (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L864 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

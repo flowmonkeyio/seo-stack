@@ -122,10 +122,9 @@ class LLMDispatcherError(RuntimeError):
 
 # A scripted handler function: ``(payload) -> dict`` produces the
 # ``output_json`` for a step. Synchronous because most stubs are tiny;
-# async stubs can ``await`` inside the body (e.g. to talk to the
-# adversarial-review helper). Returning ``None`` from the handler is
-# treated as "no scripted match"; the runner then uses the default
-# script for the skill.
+# async stubs can ``await`` inside the body. Returning ``None`` from
+# the handler is treated as "no scripted match"; the runner then uses
+# the default script for the skill.
 ScriptedHandler = Callable[[StepDispatch], dict[str, Any]]
 
 
@@ -357,8 +356,7 @@ class AnthropicSession:
         ``IntegrationCredentialRepository.get_decrypted_for`` semantics.
         Procedure runs always use the global row because the runner is
         a daemon-side actor, not a per-project actor; project-scoped
-        Anthropic creds are reserved for project-level adversarial-
-        review hooks (codex-plugin-cc) and similar.
+        Anthropic creds are reserved for future per-project hooks.
         """
         from sqlmodel import Session
 

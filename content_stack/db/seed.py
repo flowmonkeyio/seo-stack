@@ -3,7 +3,7 @@
 Two public entry points:
 
 - ``seed_eeat_criteria(session, project_id)`` — populates the canonical
-  80-item CORE-EEAT rubric for a *new* project. Idempotent on
+  80-item EEAT rubric for a *new* project. Idempotent on
   ``(project_id, code)``. T04, C01, R10 are seeded as ``tier='core'`` per
   D7; the repository layer (M1.B) refuses to deactivate or un-require
   these rows.
@@ -15,14 +15,11 @@ Two public entry points:
 Plus the migration-only helper ``seed_schema_emits_templates_via_op``
 which uses Alembic's ``op`` so the templates land at DB-init time.
 
-The 80 EEAT rows are derived from the *structure* of the canonical
-CORE-EEAT v3 benchmark (license: Apache-2.0; attribution noted in
-``docs/attribution.md``). The text strings are paraphrased one-line
-standards, not copied verbatim, in line with D1/D2 clean-room policy
-and the existing precedent for skill text. The codes (C01..C10,
+The 80 EEAT rows describe one-line standards across the 8-dimension
+rubric (C / O / R / E / Exp / Ept / A / T). The codes (C01..C10,
 O01..O10, R01..R10, E01..E10, Exp01..Exp10, Ept01..Ept10, A01..A10,
-T01..T10) are stable identifiers shared across the canonical rubric
-and our DB so future rubric renumbering doesn't break references.
+T01..T10) are stable identifiers so future rubric renumbering doesn't
+break references.
 """
 
 from __future__ import annotations
@@ -533,9 +530,8 @@ _EEAT_ITEMS: Final[tuple[tuple[str, EeatCategory, str, str], ...]] = (
 # Six per-task brief; PLAN.md L501-L502 lists 8 (adds HowTo, BreadcrumbList);
 # we stop at six per the M1.A acceptance criteria, leaving HowTo +
 # BreadcrumbList for the M3 publish skill once we know they remain in scope
-# (HowTo rich results were retired Sep 2023 — see codex-seo seo-schema
-# notes — keeping the wider list out of the seed avoids a guaranteed
-# DEPRECATED sweep).
+# (HowTo rich results were retired Sep 2023 — keeping the wider list out
+# of the seed avoids a guaranteed DEPRECATED sweep).
 _SCHEMA_EMIT_TEMPLATES: Final[tuple[tuple[str, dict[str, Any]], ...]] = (
     (
         "Article",

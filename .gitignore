@@ -67,9 +67,6 @@ ui/test-results/
 Thumbs.db
 desktop.ini
 
-# Upstream reference clones — read-only, not vendored, not redistributed
-.upstream/
-
 # Logs
 *.log
 logs/

@@ -4,7 +4,7 @@ description: Pull competitor sitemap.xml feeds (with optional Ahrefs ranking exp
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
 derived_from: original
-license: original (clean-room; concept reference is AM Media's "competitor sitemap trick" per PLAN.md L847)
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

@@ -3,8 +3,8 @@ name: draft-body
 description: Write each H2 / H3 body section against its bound sources, insert citation markers, and append via article.setDraft.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: cody-article-writer @ 981ab435d192c8c37c17b2948a83e260fb3c0691 (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L850 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

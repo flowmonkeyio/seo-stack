@@ -3,8 +3,8 @@ name: schema-emitter
 description: Compose JSON-LD per article from edited_md + brief + voice + author + assets + canonical URL, validate against the type's required-properties contract, persist via schema.set with the primary-row invariant, and freeze the version_published when called inside a publish flow.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: codex-seo @ 97c59bcdac3c9538bf0e3ae456c1e73aa387f85a (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L858 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

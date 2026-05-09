@@ -4,7 +4,7 @@ description: Vary sentence rhythm, strip second-order AI tells the editor missed
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
 derived_from: original
-license: original (clean-room; concept reference is AM Media's "post-publish humanization pass" per PLAN.md L854)
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

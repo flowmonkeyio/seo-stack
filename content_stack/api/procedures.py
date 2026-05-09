@@ -117,6 +117,11 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     for raw_line in match.group(1).splitlines():
+        # Only accept top-level keys (no leading indent). Nested keys inside
+        # YAML maps/lists (e.g. inputs.slug, variants[].name) must not shadow
+        # the top-level fields we care about.
+        if raw_line and raw_line[0] in (" ", "\t"):
+            continue
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -138,7 +143,7 @@ def _scan_procedures(root: Path) -> list[ProcedureSummary]:
         return []
     out: list[ProcedureSummary] = []
     for entry in sorted(root.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("."):
+        if not entry.is_dir() or entry.name.startswith((".", "_")):
             continue
         manifest = entry / "PROCEDURE.md"
         if not manifest.is_file():

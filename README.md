@@ -111,37 +111,9 @@ make uninstall                  # removes skills, procedures, MCP entries, launc
   PROCEDURE.md frontmatter + DSL + worked examples + failure modes.
 - [`docs/api-keys.md`](./docs/api-keys.md) — vendor credential setup
   (DataForSEO, Firecrawl, GSC OAuth, OpenAI Images, Reddit, Jina,
-  Ahrefs, codex-plugin-cc, daemon-side LLM keys).
+  Ahrefs, daemon-side LLM keys).
 - [`docs/security.md`](./docs/security.md) — threat-model trade-offs;
   bearer-token bootstrap, prompt-injection hygiene, rate limits.
 - [`docs/upgrade.md`](./docs/upgrade.md) — pipx + clone-mode upgrade
   semantics, breaking-change protocol, cross-machine moves.
-- [`docs/attribution.md`](./docs/attribution.md) — upstream credit +
-  license posture (clean-room rule per D1 / D2).
-- [`docs/upstream-stripping-map.md`](./docs/upstream-stripping-map.md) —
-  per-skill KEEP / ADAPT / Risks summary; drives clean-room
-  authoring.
 - [`CHANGELOG.md`](./CHANGELOG.md) — version history.
-
----
-
-## Acknowledgements
-
-content-stack is a stand-alone implementation. We do not vendor any
-upstream code or prompts; we learn from the upstream repos referenced
-below — patterns, taxonomies, threshold heuristics — and re-author
-every skill against our own DB schema and MCP contract. For two of
-the three skill-source repos (Cody, codex-seo) we apply a stricter
-**clean-room** rule: skill authors do not read upstream files at all
-when authoring the corresponding skills.
-
-| Upstream                                                          | Role                                                              | License posture                                                  |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [`AgriciDaniel/codex-seo`](https://github.com/AgriciDaniel/codex-seo)                           | Pattern reference for skills #1, #2, #3, #14, #16, #20, #21, #22  | Clean-room per locked decision **D2**.                            |
-| [`ibuildwith-ai/cody-article-writer`](https://github.com/ibuildwith-ai/cody-article-writer)     | Pattern reference for skills #4, #6, #7, #8, #9, #10, #24         | Clean-room per locked decision **D1**.                            |
-| [`aaron-he-zhu/seo-geo-claude-skills`](https://github.com/aaron-he-zhu/seo-geo-claude-skills)   | Pattern reference for skills #11 (eeat-gate) and #15 (interlinker) | Apache-2.0; reference with attribution.                            |
-| [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc)                             | Optional adversarial-EEAT-review feature seam                     | Apache-2.0; user-installed; runtime-conditional.                   |
-
-See [`docs/attribution.md`](./docs/attribution.md) for pinned SHAs,
-license analysis, and the clean-room procedure. See
-[`NOTICE`](./NOTICE) for the Apache-2.0 attributions.

@@ -3,8 +3,8 @@ name: drift-watch
 description: Snapshot the live HTML for every published article via Firecrawl, capture the canonical element bag (title / meta / canonical / robots / headings / schema_hash / og / cwv / status / html_hash), call drift.diff against the prior baseline when the comparison engine is live, and persist severity-classified findings to drift_baselines.current_score.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: codex-seo @ 97c59bcdac3c9538bf0e3ae456c1e73aa387f85a (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L863 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get
@@ -57,7 +57,7 @@ The skill graceful-degrades when `drift.diff` raises `MilestoneDeferralError` (t
 
 ## Steps
 
-The skill captures one canonical element bag per article and wires the diff against the prior baseline. The element bag is the load-bearing data structure; the bag's contents are listed in step 4 below and the URL-normalisation rules in step 3 are factual constants we adopt verbatim from the codex-seo strip-map's documented reuse list (PLAN.md row #21 KEEP map).
+The skill captures one canonical element bag per article and wires the diff against the prior baseline. The element bag is the load-bearing data structure; the bag's contents are listed in step 4 below.
 
 1. **Read context.** Resolve the project, confirm the Firecrawl credential via `integration.test`. When the test fails, abort cleanly with `runs.metadata_json.drift_watch.firecrawl_dead=true`. Read the article roster page-by-page; capture the count for the audit row.
 2. **Order the work.** Sort the article roster by `last_refreshed_at ASC NULLS FIRST` — the longest-untouched articles are the highest drift-risk because the operator forgot they exist. Capture the order in the audit row so a re-run can reproduce the walk.

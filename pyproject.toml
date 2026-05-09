@@ -81,7 +81,6 @@ include = [
     "alembic.ini",
     "PLAN.md",
     "README.md",
-    "NOTICE",
     "pyproject.toml",
 ]
 exclude = [
@@ -96,7 +95,6 @@ line-length = 100
 extend-exclude = [
     "content_stack/db/migrations/versions",
     "content_stack/ui_dist",
-    ".upstream",
 ]
 
 [tool.ruff.lint]

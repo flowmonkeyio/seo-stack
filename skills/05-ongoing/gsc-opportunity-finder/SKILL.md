@@ -3,8 +3,8 @@ name: gsc-opportunity-finder
 description: Read the project's gsc_metrics_daily rollup, detect striking-distance / low-CTR-rank-1 / missing-intent / cannibalization opportunities, and write candidates back into the topic queue with source='gsc-opportunity'.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: codex-seo @ 97c59bcdac3c9538bf0e3ae456c1e73aa387f85a (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L862 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

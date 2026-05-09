@@ -80,17 +80,6 @@ machines and want the file-mode-0600 isolation back can:
    runtime flag, to make sure any operator going down that path has read
    the implications.
 
-## Adversarial-review prompt-injection hygiene (PLAN.md §1162)
-
-The eeat-gate skill (#11) optional `codex-plugin-cc` adversarial-review
-helper passes the article body via a `tempfile.NamedTemporaryFile`
-(mode 0600) referenced by path, never via `argv`. The temp file is
-deleted in `finally`. The article body is wrapped in an
-`<article_under_review>` XML tag in the helper's prompt for prompt-
-injection hygiene. Wall-clock budget per call is 90 s; on timeout the
-gate logs `runs.metadata_json.adversarial_review.skipped='timeout'` and
-proceeds — slow plugins do not block the article.
-
 ## Per-tool rate limits (PLAN.md §828)
 
 Middleware enforces 100 calls/min per MCP tool and 1000 calls/min

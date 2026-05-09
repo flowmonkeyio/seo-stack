@@ -459,6 +459,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/sitemap-fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch Project Sitemap
+         * @description Fetch a list of competitor sitemap URLs and return parsed entries.
+         *
+         *     Companion to MCP ``sitemap.fetch`` — same payload, same response
+         *     shape; the REST endpoint exists so the UI can show a project-scoped
+         *     sitemap browser without going through MCP. We resolve the project
+         *     only to validate the path (the helper itself doesn't read project
+         *     rows).
+         */
+        post: operations["fetch_project_sitemap_api_v1_projects__project_id__sitemap_fetch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/schedules": {
         parameters: {
             query?: never;
@@ -1763,13 +1789,53 @@ export interface paths {
         put?: never;
         /**
          * Run Procedure
-         * @description Procedure runner — pending M7.
+         * @description Enqueue a procedure run via the daemon-orchestrated runner.
          *
-         *     PLAN.md L611-L617 + audit B-21 + D4: the runner is daemon-orchestrated
-         *     and lands in M7 with the procedure-runner subsystem. M2 surfaces a
-         *     501 so callers know the route exists but is not yet implemented.
+         *     Per locked decision D4 (PLAN.md L884-L900): the runner is daemon-side;
+         *     the client only kicks off + polls. Returns 202 + the envelope so
+         *     UI / MCP clients can navigate to ``status_url`` for live state.
          */
         post: operations["run_procedure_api_v1_procedures__slug__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/procedures/runs/{run_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Procedure Run
+         * @description Resume an aborted / paused procedure run from the next pending step.
+         */
+        post: operations["resume_procedure_run_api_v1_procedures_runs__run_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/procedures/runs/{run_id}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fork Procedure Run
+         * @description Fork a procedure run from a step index, copying prior outputs.
+         */
+        post: operations["fork_procedure_run_api_v1_procedures_runs__run_id__fork_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1796,62 +1862,10 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/adversarial-review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Post Adversarial Review
-         * @description Run the codex-plugin-cc adversarial review.
-         *
-         *     Always returns 200 with a verdict envelope:
-         *
-         *     - ``{"verdict": "PASS", "issues": []}`` — review approved.
-         *     - ``{"verdict": "FIX", "issues": [...]}`` / ``{"verdict": "BLOCK",
-         *       "issues": [...]}`` — needs work.
-         *     - ``{"verdict": "SKIPPED", "reason": "plugin-not-installed"|...}``
-         *       — helper short-circuited (plugin missing, timeout, etc.).
-         */
-        post: operations["post_adversarial_review_api_v1_adversarial_review_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * AdversarialReviewRequest
-         * @description Body for ``POST /adversarial-review``.
-         * @example {
-         *       "article_md": "# Sample article\n\nLorem ipsum.",
-         *       "eeat_criteria": [
-         *         {
-         *           "code": "T04",
-         *           "title": "Author bio present"
-         *         }
-         *       ],
-         *       "project_id": 1
-         *     }
-         */
-        AdversarialReviewRequest: {
-            /** Article Md */
-            article_md: string;
-            /** Eeat Criteria */
-            eeat_criteria?: {
-                [key: string]: unknown;
-            }[];
-            /** Project Id */
-            project_id: number;
-        };
         /**
          * ArticleAssetKind
          * @description Persists to ``article_assets.kind`` per PLAN.md L396.
@@ -2525,11 +2539,11 @@ export interface components {
          *
          *     PLAN.md L351 narrates "E/E/A/T" but L444 enumerates the rubric using
          *     8 dimensions ``C, O, R, E, Exp, Ept, A, T`` and the canonical 80-item
-         *     benchmark (`.upstream/seo-geo-claude-skills/references/core-eeat-benchmark.md`)
-         *     is structured as 8 x 10. We persist all 8 - the EEAT gate ("refuses
-         *     to score if any dimension has 0 active items", PLAN.md L1620) cannot
-         *     work with the collapsed 4-letter taxonomy. Surfaced as a deliberate
-         *     tightening of the schema in the M1 implementation report.
+         *     benchmark is structured as 8 x 10. We persist all 8 - the EEAT gate
+         *     ("refuses to score if any dimension has 0 active items", PLAN.md
+         *     L1620) cannot work with the collapsed 4-letter taxonomy. Surfaced
+         *     as a deliberate tightening of the schema in the M1 implementation
+         *     report.
          * @enum {string}
          */
         EeatCategory: EeatCategory;
@@ -3224,6 +3238,59 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * ProcedureForkRequest
+         * @description Wire shape for ``POST /procedures/runs/{run_id}/fork``.
+         * @example {
+         *       "from_step_index": 5
+         *     }
+         */
+        ProcedureForkRequest: {
+            /** From Step Index */
+            from_step_index: number;
+        };
+        /**
+         * ProcedureRunEnqueued
+         * @description Wire shape returned by the runner after ``start`` / ``resume`` / ``fork``.
+         */
+        ProcedureRunEnqueued: {
+            /** Run Id */
+            run_id: number;
+            /** Run Token */
+            run_token: string;
+            /** Status Url */
+            status_url: string;
+            /** Slug */
+            slug: string;
+            /** Project Id */
+            project_id: number;
+            /** Started */
+            started: boolean;
+            /** Parent Run Id */
+            parent_run_id?: number | null;
+        };
+        /**
+         * ProcedureRunRequest
+         * @description Wire shape for ``POST /procedures/{slug}/run``.
+         * @example {
+         *       "args": {
+         *         "topic_id": 1
+         *       },
+         *       "project_id": 1
+         *     }
+         */
+        ProcedureRunRequest: {
+            /** Project Id */
+            project_id: number;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /** Parent Run Id */
+            parent_run_id?: number | null;
+            /** Variant */
+            variant?: string | null;
+        };
+        /**
          * ProcedureRunResponse
          * @description Wire shape for ``GET /procedures/runs/{run_id}``.
          */
@@ -3652,6 +3719,71 @@ export interface components {
             expected_etag: string;
             /** Outline Md */
             outline_md: string;
+        };
+        /**
+         * SitemapFetchEntryResponse
+         * @description One URL row in the sitemap-fetch response.
+         */
+        SitemapFetchEntryResponse: {
+            /** Url */
+            url: string;
+            /** Lastmod */
+            lastmod?: string | null;
+            /** Changefreq */
+            changefreq?: string | null;
+            /** Priority */
+            priority?: string | null;
+            /** Source Sitemap */
+            source_sitemap?: string | null;
+        };
+        /**
+         * SitemapFetchErrorResponse
+         * @description One per-URL fetch failure in the sitemap-fetch response.
+         */
+        SitemapFetchErrorResponse: {
+            /** Url */
+            url: string;
+            /** Error */
+            error: string;
+        };
+        /**
+         * SitemapFetchRequest
+         * @description Body for ``POST /projects/{id}/sitemap-fetch``.
+         * @example {
+         *       "max_entries": 500,
+         *       "urls": [
+         *         "https://competitor.example/sitemap.xml"
+         *       ]
+         *     }
+         */
+        SitemapFetchRequest: {
+            /** Urls */
+            urls: string[];
+            /**
+             * Timeout S
+             * @default 15
+             */
+            timeout_s: number;
+            /**
+             * Max Index Depth
+             * @default 2
+             */
+            max_index_depth: number;
+            /**
+             * Max Entries
+             * @default 5000
+             */
+            max_entries: number;
+        };
+        /**
+         * SitemapFetchResponse
+         * @description Top-level shape of the sitemap-fetch response.
+         */
+        SitemapFetchResponse: {
+            /** Entries */
+            entries: components["schemas"]["SitemapFetchEntryResponse"][];
+            /** Errors */
+            errors: components["schemas"]["SitemapFetchErrorResponse"][];
         };
         /** SourceCreateRequest */
         SourceCreateRequest: {
@@ -4197,7 +4329,6 @@ export interface components {
     headers: never;
     pathItems: never;
 }
-export type SchemaAdversarialReviewRequest = components['schemas']['AdversarialReviewRequest'];
 export type SchemaArticleAssetOut = components['schemas']['ArticleAssetOut'];
 export type SchemaArticleCreateRequest = components['schemas']['ArticleCreateRequest'];
 export type SchemaArticleOut = components['schemas']['ArticleOut'];
@@ -4262,6 +4393,9 @@ export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseTopicOut = components['schemas']['PageResponse_TopicOut_'];
 export type SchemaPageResponseVoiceProfileOut = components['schemas']['PageResponse_VoiceProfileOut_'];
+export type SchemaProcedureForkRequest = components['schemas']['ProcedureForkRequest'];
+export type SchemaProcedureRunEnqueued = components['schemas']['ProcedureRunEnqueued'];
+export type SchemaProcedureRunRequest = components['schemas']['ProcedureRunRequest'];
 export type SchemaProcedureRunResponse = components['schemas']['ProcedureRunResponse'];
 export type SchemaProcedureRunStepOut = components['schemas']['ProcedureRunStepOut'];
 export type SchemaProcedureSummary = components['schemas']['ProcedureSummary'];
@@ -4284,6 +4418,10 @@ export type SchemaSetBriefRequest = components['schemas']['SetBriefRequest'];
 export type SchemaSetDraftRequest = components['schemas']['SetDraftRequest'];
 export type SchemaSetEditedRequest = components['schemas']['SetEditedRequest'];
 export type SchemaSetOutlineRequest = components['schemas']['SetOutlineRequest'];
+export type SchemaSitemapFetchEntryResponse = components['schemas']['SitemapFetchEntryResponse'];
+export type SchemaSitemapFetchErrorResponse = components['schemas']['SitemapFetchErrorResponse'];
+export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
+export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSourceCreateRequest = components['schemas']['SourceCreateRequest'];
 export type SchemaSuggestRequest = components['schemas']['SuggestRequest'];
 export type SchemaTopicCreateRequest = components['schemas']['TopicCreateRequest'];
@@ -5299,6 +5437,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fetch_project_sitemap_api_v1_projects__project_id__sitemap_fetch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SitemapFetchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SitemapFetchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7910,15 +8083,85 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedureRunRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProcedureRunEnqueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_procedure_run_api_v1_procedures_runs__run_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureRunEnqueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fork_procedure_run_api_v1_procedures_runs__run_id__fork_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedureForkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureRunEnqueued"];
                 };
             };
             /** @description Validation Error */
@@ -7950,41 +8193,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProcedureRunResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_adversarial_review_api_v1_adversarial_review_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdversarialReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -8113,8 +8321,7 @@ export enum RunKind {
     bulk_launch = "bulk-launch",
     interlink_suggest = "interlink-suggest",
     scheduled_job = "scheduled-job",
-    maintenance = "maintenance",
-    adversarial_review = "adversarial-review"
+    maintenance = "maintenance"
 }
 export enum RunStatus {
     running = "running",

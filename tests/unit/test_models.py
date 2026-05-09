@@ -75,7 +75,7 @@ def test_run_status_values() -> None:
 
 
 def test_run_kind_values() -> None:
-    # PLAN.md L391 declares 16 distinct values.
+    # PLAN.md L391 declares the run-kind enum.
     expected = {
         "procedure",
         "skill-run",
@@ -92,11 +92,10 @@ def test_run_kind_values() -> None:
         "interlink-suggest",
         "scheduled-job",
         "maintenance",
-        "adversarial-review",
     }
     actual = _values(RunKind)
     assert actual == expected
-    assert len(actual) == 16
+    assert len(actual) == 15
 
 
 def test_internal_link_status_values() -> None:

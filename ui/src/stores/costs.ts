@@ -35,7 +35,7 @@ export const INTEGRATION_KINDS = [
   'reddit',
   'paa',
   'jina',
-  'codex-plugin-cc',
+  'ahrefs',
 ] as const
 
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number]

@@ -228,13 +228,11 @@ class ProcedureRunner:
         engine: Engine,
         dispatcher: LLMDispatcher | None = None,
         procedures_dir: Path | None = None,
-        plugin_root: str | None = None,
         scheduler: AsyncIOScheduler | None = None,
     ) -> None:
         self._settings = settings
         self._engine = engine
         self._dispatcher = dispatcher or StubDispatcher()
-        self._plugin_root = plugin_root
         if procedures_dir is None:
             procedures_dir = _default_procedures_dir()
         self._procedures_dir = procedures_dir

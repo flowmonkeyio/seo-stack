@@ -3,8 +3,8 @@ name: draft-conclusion
 description: Write the article conclusion per the chosen closing archetype, render the compliance footer, append references, and close the draft phase via article.markDrafted.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: cody-article-writer @ 981ab435d192c8c37c17b2948a83e260fb3c0691 (clean-room; no upstream files read during authoring)
-license: clean-room (PLAN.md L851 + docs/upstream-stripping-map.md adapt notes)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

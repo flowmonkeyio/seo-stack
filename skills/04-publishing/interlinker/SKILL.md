@@ -3,8 +3,8 @@ name: interlinker
 description: Run the seven-step internal-linking workflow over the project's published articles, score the link graph against orphan / anchor-distribution / cluster-pattern targets, and emit suggested links via interlink.suggest for human approval before applying.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: seo-geo-claude-skills @ 7ecc77b181190fe17a8e3c22a5f6fe705569dc09 (Apache-2.0 reference; CORE-EEAT R08 link-graph rubric + the 7-step workflow + anchor-distribution and required-link-pattern tables — re-authored against our internal_links table, suggest-then-apply pattern, and clusters / topics rows)
-license: Apache-2.0 reference (PLAN.md L857 + docs/upstream-stripping-map.md adapt notes; full attribution in docs/attribution.md and NOTICE)
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get

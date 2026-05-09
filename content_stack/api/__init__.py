@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from content_stack.api.adversarial_review import router as adversarial_review_router
 from content_stack.api.articles import (
     article_router as articles_article_router,
 )
@@ -92,7 +91,6 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(gsc_article_router)
     app.include_router(authors_router)
     app.include_router(procedures_router)
-    app.include_router(adversarial_review_router)
 
 
 __all__ = ["register_routers"]

@@ -52,8 +52,8 @@ name: my-new-skill
 description: One-line summary of what the skill does, surfaced in MCP tool listings.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
-derived_from: original (n/a)             # or "<repo> @ <SHA> (clean-room; no upstream files read)"
-license: clean-room-original (n/a)       # or "Apache-2.0" / "MIT" / etc.
+derived_from: original
+license: project-internal
 allowed_tools:
   - meta.enums
   - project.get
@@ -91,16 +91,9 @@ Fields:
   output and the UI's procedures detail view.
 - `version` — semver; bumps when the prompt or the I/O contract
   changes.
-- `runtime_compat` — `["codex", "claude-code"]` for both runtimes;
-  `["claude-code"]` when the skill needs Claude-only features (e.g.
-  the optional codex-plugin-cc adversarial-review seam).
-- `derived_from` — names the upstream pattern source, or `"original
-  (n/a)"` when authored from scratch. Records the upstream commit SHA
-  for the audit trail; we never copy or paraphrase prompt text.
-- `license` — names the license posture. Cody-derived skills carry
-  `clean-room-original (D1; no upstream files read)`; Apache-2.0
-  derivatives (eeat-gate, interlinker) carry `Apache-2.0` and
-  acknowledge the upstream in `NOTICE`.
+- `runtime_compat` — `["codex", "claude-code"]` for both runtimes.
+- `derived_from` — set to `original` for in-house skills.
+- `license` — set to `project-internal` for in-house skills.
 - `allowed_tools` — full tool-grant list for this skill. Must mirror
   `content_stack/mcp/permissions.py:SKILL_TOOL_GRANTS[<phase>/<name>]`
   verbatim. The startup smoke check + the unit test
@@ -177,38 +170,7 @@ The `_RUN_LIFECYCLE` shared frozenset (`run.start`, `run.heartbeat`,
 `run.finish`, `run.recordStepCall`) is union'd in for every real
 skill so a future author doesn't accidentally drop one.
 
-### 1.6 Clean-room rule (D1 / D2)
-
-Per locked decisions D1 and D2:
-
-- **Cody-derived skills (#4, #6, #7, #8, #9, #10, #24)** — author
-  does NOT read any `.upstream/cody-article-writer/` file. Author from
-  PLAN.md's data model + general editorial knowledge only.
-- **codex-seo-derived skills (#1, #2, #3, #14, #16, #20, #21, #22)** —
-  same rule against `.upstream/codex-seo/`.
-- **Apache-2.0 derivatives (#11 eeat-gate, #15 interlinker)** — read
-  freely, paraphrase patterns and tables, do not copy verbatim.
-  Acknowledge in `NOTICE` and the per-skill `derived_from:`
-  frontmatter.
-- **Original skills (#5, #12, #13, #17, #18, #19, #23)** — authored
-  from scratch. `derived_from: original (n/a)`.
-
-CI's `tests/integration/test_no_upstream_substrings.py` loads
-`tests/fixtures/upstream-fingerprints.json` and rejects any match in
-`skills/**/*.md`. To add a new fingerprint:
-
-```json
-{
-  "phrase": "<distinctive phrase from upstream>",
-  "source": "<repo>",
-  "severity": "block"
-}
-```
-
-`severity: "block"` fails the build; `severity: "warn"` surfaces a
-warning but does not fail.
-
-### 1.7 Tests
+### 1.6 Tests
 
 `tests/unit/test_skills_frontmatter.py` validates every `SKILL.md`
 automatically:
@@ -223,7 +185,7 @@ automatically:
 No fixture changes needed — the test discovers new skills by
 walking `skills/`.
 
-### 1.8 Cross-runtime support
+### 1.7 Cross-runtime support
 
 `SKILL.md` works with both Codex CLI and Claude Code unmodified. No
 code generation, no per-runtime variants. The runner sets the same
@@ -505,8 +467,8 @@ covers each handler. Conventions:
 ## 4. Adding an integration
 
 An integration is a vendor wrapper — DataForSEO, Firecrawl, GSC,
-OpenAI Images, Reddit, PAA, Jina, codex-plugin-cc. Adding a new one
-means three things: implement the wrapper, register it, document the
+OpenAI Images, Reddit, PAA, Jina, Ahrefs. Adding a new one means
+three things: implement the wrapper, register it, document the
 credential.
 
 ### 4.1 Implement the wrapper
@@ -657,68 +619,11 @@ same commit.
 
 ---
 
-## 6. Clean-room rule (D1 + D2)
-
-For Cody-derived (#4, #6, #7, #8, #9, #10, #24) and codex-seo-derived
-(#1, #2, #3, #14, #16, #20, #21, #22) skills the author does NOT
-read upstream files at all. The workflow:
-
-### 6.1 Read these only
-
-- [`../PLAN.md`](../PLAN.md) — the data model + the procedure
-  context the skill operates in.
-- [`./upstream-stripping-map.md`](./upstream-stripping-map.md) — the
-  KEEP / ADAPT / Risks summary for the skill in question. The
-  strip-map uses "ideas, not lines" language; no
-  "approximate volume kept: ~N LOC" claims.
-- The author's own editorial-workflow knowledge.
-
-### 6.2 Do NOT read
-
-- `.upstream/cody-article-writer/`
-- `.upstream/codex-seo/`
-- The upstream's SKILL.md / README / LICENSE for the relevant
-  derivative skill.
-
-### 6.3 CI fingerprint check
-
-`tests/integration/test_no_upstream_substrings.py` walks
-`skills/**/*.md` and rejects any substring match against
-`tests/fixtures/upstream-fingerprints.json`. To add a new fingerprint:
-
-```json
-{
-  "phrase": "<distinctive phrase from upstream>",
-  "source": "cody-article-writer",
-  "severity": "block"
-}
-```
-
-`severity: "block"` fails the build. `severity: "warn"` surfaces a
-warning only (used for phrases that are common-domain enough to
-appear coincidentally; the build does not fail).
-
-### 6.4 Apache-2.0 derivatives (#11, #15)
-
-Different posture: read freely, paraphrase patterns and tables, do
-not copy verbatim. Acknowledge in `NOTICE` and the per-skill
-`derived_from:` SHA. The Apache-2.0 grant is permissive enough that
-the clean-room rule does not apply.
-
-### 6.5 Originals (#5, #12, #13, #17, #18, #19, #23)
-
-Authored from scratch. `derived_from: original (n/a)`.
-[`./upstream-stripping-map.md#original-skills`](./upstream-stripping-map.md)
-documents algorithm sketches, DB tables touched, MCP tools used,
-and key risks for each.
-
----
-
-## 7. Adding an MCP tool
+## 6. Adding an MCP tool
 
 When a new repository operation needs MCP exposure:
 
-### 7.1 Add the tool definition
+### 6.1 Add the tool definition
 
 Pick the resource's tools file:
 `content_stack/mcp/tools/<resource>.py` (e.g., `articles.py`,
@@ -762,7 +667,7 @@ async def _foo_set_bar(
     )
 ```
 
-### 7.2 Register the tool
+### 6.2 Register the tool
 
 ```python
 def register(registry: ToolRegistry) -> None:
@@ -779,21 +684,21 @@ def register(registry: ToolRegistry) -> None:
     # ... other foo.* tools ...
 ```
 
-### 7.3 Update the tool-grant matrix
+### 6.3 Update the tool-grant matrix
 
 Add `foo.setBar` to every skill's `allowed_tools` (in `SKILL.md`)
 and the corresponding `_SKILL_<NAME>` set in
 `content_stack/mcp/permissions.py` that needs it. Skills that don't
 need the tool stay narrow.
 
-### 7.4 Update CI gen-types
+### 6.4 Update CI gen-types
 
 `make gen-types` regenerates `ui/src/api.ts` from the daemon's
 OpenAPI spec. The MCP tool itself doesn't change OpenAPI (MCP and
 REST are separate transports); but if you also add a REST route
 (see section 8 below) the types need to match.
 
-### 7.5 Mutating-verb discipline
+### 6.5 Mutating-verb discipline
 
 The CI envelope check (`assert_envelope_discipline` at
 `content_stack/mcp/server.py`) verifies every mutating-verb tool
@@ -807,7 +712,7 @@ data. Mismatch refuses the daemon to boot.
 
 ---
 
-## 8. Adding a REST route
+## 7. Adding a REST route
 
 Same flow as MCP but under `content_stack/api/<resource>.py`:
 
@@ -854,7 +759,7 @@ def register_routers(app: FastAPI) -> None:
 Run `make gen-types` after adding the route so the UI's `api.ts`
 picks up the new shape. CI fails on diff if you forget.
 
-### 8.1 Permissive vs. state-machine
+### 7.1 Permissive vs. state-machine
 
 REST patches accept arbitrary column updates and write a `runs` row
 with `kind='manual-edit'`. This is the human escape hatch in the UI.
@@ -865,14 +770,11 @@ tool wrapper, not the repository.
 
 ---
 
-## 9. Common pitfalls
+## 8. Common pitfalls
 
 - **Forgetting the `_RUN_LIFECYCLE` union.** Every real skill needs
   `run.start`, `run.heartbeat`, `run.finish`, `run.recordStepCall`.
   Use the shared frozenset; don't enumerate them per skill.
-- **Reading upstream files for clean-room skills.** The CI
-  fingerprint check usually catches paraphrase, but the discipline
-  is "don't read the file at all." When in doubt, ask in chat.
 - **Forward jumps in `loop_back_to`.** Parser rejects at load time;
   use a separate variant or `human_review` if you need to skip
   forward.
@@ -894,8 +796,4 @@ tool wrapper, not the repository.
 - [`./procedures-guide.md`](./procedures-guide.md) — PROCEDURE.md
   authoring contract.
 - [`./api-keys.md`](./api-keys.md) — vendor credential setup.
-- [`./upstream-stripping-map.md`](./upstream-stripping-map.md) —
-  per-skill KEEP / STRIP / ADAPT.
-- [`./attribution.md`](./attribution.md) — upstream credit + license
-  posture.
 - [`../PLAN.md`](../PLAN.md) — the canonical spec.
