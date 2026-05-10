@@ -22,6 +22,7 @@ from content_stack.mcp.tools import (
     projects,
     runs,
     sitemap,
+    workspaces,
 )
 
 
@@ -37,6 +38,7 @@ def register_all(registry: ToolRegistry) -> None:
     cost.register(registry)
     meta.register(registry)
     sitemap.register(registry)
+    workspaces.register(registry)
 
 
 __all__ = ["register_all"]

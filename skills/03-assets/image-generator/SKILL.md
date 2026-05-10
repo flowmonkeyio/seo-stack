@@ -13,6 +13,7 @@ allowed_tools:
   - article.get
   - asset.create
   - asset.list
+  - asset.update
   - cost.queryProject
   - integration.test
   - run.start
@@ -40,6 +41,13 @@ outputs:
   - table: runs
     write: per-image cost rolled into runs.metadata_json.cost.by_integration.openai-images, prompt log + image_count + skip reasons in runs.metadata_json.image_generator.
 ---
+
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
 
 ## When to use
 
@@ -91,7 +99,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
 9. **Compose alt text.** For each successfully generated image, draft a candidate alt text:
    - Length 10–125 characters (the auditor enforces this floor + ceiling; the generator aims for the middle).
    - Describes the subject concretely (e.g., "Two laptop screens showing line-graph dashboards with Q3 revenue").
-   - Naturally includes the article's `primary_kw` or one `secondary_kws` entry when the subject permits — never stuffed.
+   - Naturally includes the article's `primary_kw` or one `secondary_kws` entry only when the subject permits — accessibility and accurate description come first.
    - Uses the brief's `image_directives.alt_text_hints[<slot>]` as priming when supplied; the hint biases vocabulary, not phrasing.
    - Avoids the word "image", "photo", "picture", "graphic" — screen readers already announce the role.
    The alt text is a candidate; the auditor (#14) is the final gate and may rewrite via `asset.update`.

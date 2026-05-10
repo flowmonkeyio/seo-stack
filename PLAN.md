@@ -34,7 +34,7 @@ multi-site coordination. The five phases:
 ```
 Phase 1 — Research & Planning   (keyword discovery, SERP analysis,
                                  topical clustering, content briefs)
-Phase 2 — Content Production    (outline → draft → editor → EEAT gate)
+Phase 2 — Content Production    (outline → draft → editor → humanizer → EEAT gate)
 Phase 3 — Assets                (image generation, alt-text audit)
 Phase 4 — Publishing            (interlinking, schema emit, CMS push)
 Phase 5 — Ongoing Operations    (GSC opportunities, drift detection,
@@ -159,15 +159,16 @@ unless noted.
 
 | Target | Idempotent | Daemon-required | Semantics |
 |---|---|---|---|
-| `install` | yes | no | Wraps: `uv sync`, `alembic upgrade head`, `make build-ui`, `make register-codex`, `make register-claude`, `make install-skills-codex`, `make install-skills-claude`, `make install-procedures-codex`, `make install-procedures-claude`, `scripts/doctor.sh --json`. Re-running rotates the auth token and updates MCP configs. |
+| `install` | yes | no | Wraps: `uv sync`, `alembic upgrade head`, `make build-ui`, `make register-codex`, `make register-claude`, `make install-plugins`, `scripts/doctor.sh --json`. Re-running is idempotent; auth token rotation is explicit via `rotate-token`. |
 | `serve` | n/a | starts it | `python -m content_stack serve --port 5180`. Foreground; `Ctrl-C` graceful. |
 | `build-ui` | yes | no | `cd ui && pnpm install --frozen-lockfile && pnpm build`. Output committed at `content_stack/ui_dist/`. CI verifies the committed bundle matches `ui/src/`. |
 | `register-codex` | yes | no | `scripts/register-mcp-codex.sh`: idempotent upsert of `content-stack` MCP server with current auth token. |
 | `register-claude` | yes | no | `scripts/register-mcp-claude.sh`: parse `.mcp.json`, upsert `content-stack`, atomic write with `.bak`. |
-| `install-skills-codex` | yes | no | `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. Retired skills removed; user-customised files preserved with `.bak` suffix on conflict. |
-| `install-skills-claude` | yes | no | Same against `~/.claude/skills/content-stack/`. |
-| `install-procedures-codex` | yes | no | `rsync -a --delete procedures/ ~/.codex/procedures/content-stack/`, excluding `_template/`. |
-| `install-procedures-claude` | yes | no | Same against `~/.claude/procedures/content-stack/`. |
+| `install-plugins` | yes | no | `rsync -a --delete plugins/content-stack/ ~/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, and upsert `~/.agents/plugins/marketplace.json`. |
+| `install-skills-codex` | yes | no | Legacy compatibility: `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. Not part of default install. |
+| `install-skills-claude` | yes | no | Legacy compatibility against `~/.claude/skills/content-stack/`. Not part of default install. |
+| `install-procedures-codex` | yes | no | Legacy compatibility: `rsync -a --delete procedures/ ~/.codex/procedures/content-stack/`, excluding `_template/`. |
+| `install-procedures-claude` | yes | no | Legacy compatibility against `~/.claude/procedures/content-stack/`. |
 | `install-launchd` | yes | no | Writes plist to `~/Library/LaunchAgents/com.content-stack.daemon.plist`. If present and identical, no-op; if different, `--force` overwrites with `.bak`. |
 | `doctor` | yes | optional | `scripts/doctor.sh`; see "doctor.sh check list" below. |
 | `test` | yes | no | `uv run pytest`. |
@@ -308,10 +309,11 @@ content-stack/
 │   └── _template/
 │
 ├── scripts/
-│   ├── install-codex.sh             # cp -R skills/* ~/.codex/skills/
-│   ├── install-claude.sh            # cp -R skills/* ~/.claude/skills/
-│   ├── install-procedures-codex.sh  # cp -R procedures/* ~/.codex/procedures/
-│   ├── install-procedures-claude.sh
+│   ├── install-plugins.sh           # hydrate ~/plugins/content-stack/
+│   ├── install-codex.sh             # legacy loose skills installer
+│   ├── install-claude.sh            # legacy loose skills installer
+│   ├── install-procedures-codex.sh  # legacy loose procedures installer
+│   ├── install-procedures-claude.sh # legacy loose procedures installer
 │   ├── register-mcp-codex.sh        # codex mcp add ...
 │   ├── register-mcp-claude.sh       # writes .mcp.json
 │   ├── install-launchd.sh           # macOS auto-start
@@ -339,7 +341,7 @@ content-stack/
 
 ---
 
-## Database schema (28 tables — full scope)
+## Database schema (30 tables — full scope)
 
 ### Core project + content tables
 
@@ -365,6 +367,8 @@ content-stack/
 | `gsc_metrics_daily` | id, project_id, article_id, day, impressions_sum, clicks_sum, ctr_avg, avg_position_avg, queries_count | Aggregation for fast UI reads. Populated by nightly job after raw pull. UNIQUE(`project_id`, `article_id`, `day`). |
 | `eeat_evaluations` | id, article_id, criterion_id, run_id, verdict (pass/partial/fail), notes, evaluated_at | Per-criterion EEAT result grain. Computed dimension/system scores still in `runs.metadata_json.eeat`; per-item rows queryable for trend ("our R10 fail rate dropped"). Index `(article_id, run_id)`. |
 | `publish_targets` | id, project_id, kind, config_json, is_primary, is_active, created_at | Per-project publish destinations. `kind` enum: `nuxt-content | wordpress | ghost | hugo | astro | custom-webhook`. Exactly one `is_primary=true` per project (CHECK). Procedure 4 publishes to primary first; secondaries via `publish_target.replicate`. |
+| `workspace_bindings` | id, project_id, repo_fingerprint (UNIQUE), git_remote_url, normalized_repo_name, last_known_root, framework, content_model_json, created_at, updated_at, last_seen_at | Daemon-owned mapping from an external website repository to a content-stack project. Plugin MCP bridges send repo hints; no required `.env`, `.mcp.json`, `AGENTS.md`, or checked-in content-stack setup file is written into the website repo. |
+| `agent_sessions` | id, project_id, workspace_binding_id, runtime, cwd, repo_fingerprint, git_remote_url, thread_id, client_session_id, created_at, last_seen_at | One row per disposable plugin/agent bridge session. Multiple Codex/Claude sessions can attach to the same singleton daemon DB without owning separate state. |
 | `integration_credentials` | id, project_id (nullable for global), kind, encrypted_payload, nonce (BLOB, 12 bytes), expires_at, last_refreshed_at, config_json, created_at, updated_at | API keys per integration. Resolution order project-scoped → global; project-scoped overrides global. AES-256-GCM with per-row nonce; AAD = `f'project_id={p}|kind={k}'`. `kind` discriminates wire format (e.g., `gsc` payload holds `{access_token, refresh_token, oauth_redirect_uri}`). |
 | `integration_budgets` | id, project_id, kind, monthly_budget_usd, alert_threshold_pct, current_month_spend, current_month_calls, qps, last_reset, created_at, updated_at | Pre-emptive cost cap + rate limit tokens. Per-integration token bucket reads `qps`. Defaults: DataForSEO 5 qps, Firecrawl 2 qps, GSC 1 qps, OpenAI Images 10 qps. UNIQUE(`project_id`, `kind`). |
 
@@ -379,7 +383,7 @@ content-stack/
 | `idempotency_keys` | id, project_id, tool_name, idempotency_key, run_id, response_json, created_at | Mutating-tool dedup. UNIQUE(`project_id`, `tool_name`, `idempotency_key`). Replays within 24 h short-circuit to the cached response. |
 | `scheduled_jobs` | id, project_id, kind, cron_expr, next_run_at, last_run_at, last_run_status, enabled | Per-project schedules. UI tab "Schedules" toggles `enabled`. APScheduler reads on startup. |
 
-**28 tables total.**
+**30 tables total.**
 
 ### Status enums (string columns, validated by pydantic)
 
@@ -419,7 +423,7 @@ content-stack/
   "outline_hint_md": "...",
   "research_summary": "...",
   "compliance_jurisdictions": ["GB", "DE"],
-  "schema_types": ["Article", "FAQPage"]
+  "schema_types": ["Article", "BlogPosting"]
 }
 ```
 
@@ -499,10 +503,11 @@ identifiers) and runs on every daemon start. It populates:
    carries `text` (the human-readable standard) so future rubric renumbering
    doesn't break references.
 3. Default `schema_emits` templates per project: `Article`, `BlogPosting`,
-   `FAQPage`, `Product`, `Organization`, `Review` placeholders. (HowTo
-   was deprecated by Google in 2023-09 and is no longer eligible for
-   rich results; BreadcrumbList is generated per-article inline by the
-   schema-emitter rather than seeded as a project-level template.)
+   `Product`, `Organization`, `Review` placeholders. `FAQPage` is not
+   seeded by default after Google's 2026-05-07 FAQ rich-result removal;
+   `HowTo` was deprecated by Google in 2023-09 and is no longer eligible
+   for rich results; BreadcrumbList is generated per-article inline by
+   the schema-emitter rather than seeded as a project-level template.
 4. Default `integration_budgets` per kind on first integration setup (monthly
    $50 cap, 80% alert threshold by default).
 5. No default voice / compliance / publish targets — those are user-supplied
@@ -841,7 +846,7 @@ Same directory works for Codex (`~/.codex/skills/`) and Claude Code (`~/.claude/
 | # | Skill | Description | Notes |
 |---|---|---|---|
 | 1 | `01-research/keyword-discovery` | DataForSEO + Reddit (PRAW) + Google PAA scrape, query templates, persist results to `topics` | Persists topic rows with `source` provenance |
-| 2 | `01-research/serp-analyzer` | Firecrawl-based SERP scrape + on-page audit (word count, tone, LSI), structured JSON output | Output written to DB, not files |
+| 2 | `01-research/serp-analyzer` | Integration-backed SERP/crawl audit (intent, coverage, title/snippet, structured data, source opportunities), structured JSON output | Output written to DB, not files |
 | 3 | `01-research/topical-cluster` | SERP-based topical clustering, persists `clusters` + `topics` rows with parent/child relationships | Operates on the topic queue from skills #1/#2 |
 | 4 | `01-research/content-brief` | Research-backed content brief (planning, style, title/thesis), citation handling | Reads voice/compliance/EEAT from MCP; persists `articles.brief_json` |
 | 5 | `01-research/competitor-sitemap-shortcut` | sitemap.xml + Ahrefs export → topical map shortcut | Useful when bootstrapping a new site without doing keyword work first |
@@ -855,7 +860,7 @@ Same directory works for Codex (`~/.codex/skills/`) and Claude Code (`~/.claude/
 | 13 | `03-assets/image-generator` | OpenAI Images API wrapper; persists to `article_assets` | Per-article aspect ratio + caption hint |
 | 14 | `03-assets/alt-text-auditor` | Alt-text rubric audit on `article_assets`; flags missing/weak | Writes verdicts back to `article_assets.alt_text_verdict` |
 | 15 | `04-publishing/interlinker` | Anchor selection + relevance scoring; suggest before apply | Uses `internal_links` table for graph |
-| 16 | `04-publishing/schema-emitter` | JSON-LD generation for Article / Product / FAQ / Review / HowTo | Persists `schema_emits`, validates, attaches to article |
+| 16 | `04-publishing/schema-emitter` | JSON-LD generation for Article / BlogPosting / Product / Review / Organization, with FAQ only for explicit non-Google consumers | Persists `schema_emits`, validates, attaches to article |
 | 17 | `04-publishing/nuxt-content-publish` | Write `.md` + frontmatter to `content/` repo, git commit, git push | Cherry-picked target type |
 | 18 | `04-publishing/wordpress-publish` | WordPress REST API (`/wp-json/wp/v2/posts`) | Per-target credentials |
 | 19 | `04-publishing/ghost-publish` | Ghost Admin API | Per-target credentials |
@@ -976,7 +981,7 @@ allowed_tools: [article.get, voice.get, article.setOutline]
 | 1 | `bootstrap-project` | First run for a new site | `project.create` → prompt for + persist voice → compliance rules → EEAT criteria (seeded with `tier='core'` rows for T04/C01/R10) → publish target → integration creds | New project row + seeded `eeat_criteria` + default `integration_budgets` |
 | 2 | `one-site-shortcut` | User has 1 site, wants topical map fast | Pull competitor sitemap.xml → Ahrefs ranking export → cluster via skill 3 → write `clusters` + `topics` → present queue for approval | Approved topic queue |
 | 3 | `keyword-to-topic-queue` | Periodic / on demand | keyword-discovery (skill 1) → serp-analyzer (skill 2) on top 10 → topical-cluster (skill 3) → human approves topics in UI | Approved topic queue; briefs deferred to procedure 4 |
-| 4 | `topic-to-published` | Per topic; the workhorse | content-brief (4) → outline (6) → draft-intro (7) → draft-body (8) → draft-conclusion (9) → **editor (10) runs once per draft cycle on the assembled `articles.draft_md`** → **eeat-gate (11) three-way verdict: SHIP advances; FIX writes `runs.metadata_json.fix_required=[…]` and loops back to editor (10); BLOCK aborts with `articles.status='aborted-publish'` and `runs.status='aborted'`** → image-generator (13) → alt-text-auditor (14) → schema-emitter (16) → interlinker (15) → **publish to `is_primary` target first; secondary targets queued via `publish_target.replicate(article_id, target_id)`** → `article.markPublished` (writes one `article_publishes` row per target) | Published URL(s), full audit trail in `runs` + `run_steps` + `run_step_calls`; `eeat_evaluations` per criterion |
+| 4 | `topic-to-published` | Per topic; the workhorse | content-brief (4) → outline (6) → draft-intro (7) → draft-body (8) → draft-conclusion (9) → **editor (10) runs once per draft cycle on the assembled `articles.draft_md`** → humanizer (12) once for this article version → **eeat-gate (11) three-way verdict: SHIP advances; FIX writes `runs.metadata_json.fix_required=[…]` and loops back to editor (10); BLOCK aborts with `articles.status='aborted-publish'` and `runs.status='aborted'`** → image-generator (13) → alt-text-auditor (14) → schema-emitter (16) → interlinker (15) → **publish to `is_primary` target first; secondary targets queued via `publish_target.replicate(article_id, target_id)`** → `article.markPublished` (writes one `article_publishes` row per target) | Published URL(s), full audit trail in `runs` + `run_steps` + `run_step_calls`; `eeat_evaluations` per criterion |
 | 5 | `bulk-content-launch` | First 20–100 articles for a new site | For each approved topic: spawn procedure 4 as a child run (`runs.parent_run_id=<bulk_id>`); `concurrency_limit` from frontmatter (default 4); `--budget-cap-usd` flag refuses to start if estimated cost > cap; `run.abort(parent_run_id, cascade=true)` aborts all children | N published articles, parent + N child run rows |
 | 6 | `weekly-gsc-review` | Weekly cron | gsc-pull job (raw + `gsc_metrics_daily` rollup) → gsc-opportunity-finder (20) → drift-watch (21) → crawl-error-watch (22) → write opportunities to `topics` queue with `source=gsc-opportunity`; flag drifted articles | Refreshed topic queue + drift list |
 | 7 | `monthly-humanize-pass` | Monthly cron | refresh-detector (23) selects N candidates `WHERE status='refresh_due'` → for each: `article.createVersion` (snapshots live row → `article_versions`) → humanizer (12) on the new version's `edited_md` → editor (10) → republish via primary target (writes new `article_publishes` row, `version_published+1`); slug change pre-publish writes `redirects` row | New article versions (incrementing `articles.version`) |
@@ -1351,17 +1356,19 @@ re-running ``mcp add`` on rotation.
 ```
 
 Both wired by `scripts/register-mcp-{codex,claude}.sh`. The scripts read the
-auth token at registration time; on `make install` re-run the token rotates
-and the configs are rewritten.
+auth token at registration time. Token rotation is explicit via
+`content-stack rotate-token --yes` / `make rotate-token`; that command rewrites
+the configs.
 
 ### Install script semantics
 
 | Script | Behaviour | Idempotency |
 |---|---|---|
-| `install-codex.sh` | `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. User-customised files preserved with `.bak` suffix on conflict. | yes |
-| `install-claude.sh` | Same against `~/.claude/skills/content-stack/`. | yes |
-| `install-procedures-codex.sh` | `rsync -a --delete --exclude='_template' procedures/ ~/.codex/procedures/content-stack/`. | yes |
-| `install-procedures-claude.sh` | Same against `~/.claude/procedures/content-stack/`. | yes |
+| `install-plugins.sh` | `rsync -a --delete plugins/content-stack/ ~/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, upsert marketplace. | yes |
+| `install-codex.sh` | Legacy compatibility: `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. | yes |
+| `install-claude.sh` | Legacy compatibility against `~/.claude/skills/content-stack/`. | yes |
+| `install-procedures-codex.sh` | Legacy compatibility: `rsync -a --delete --exclude='_template' procedures/ ~/.codex/procedures/content-stack/`. | yes |
+| `install-procedures-claude.sh` | Legacy compatibility against `~/.claude/procedures/content-stack/`. | yes |
 | `register-mcp-codex.sh` | `codex mcp list \| grep -q content-stack && codex mcp remove content-stack; codex mcp add content-stack ... --header Authorization`. Effectively upsert. | yes |
 | `register-mcp-claude.sh` | Reads target `.mcp.json` (or per-project), parses JSON, upserts the `content-stack` key, writes back atomically with `.bak` backup. Never `>` overwrites. | yes |
 | `install-launchd.sh` | Writes plist if absent. If present, diffs: identical → no-op; different → prompts user; `--force` overwrites with `.bak`. | yes |
@@ -1375,11 +1382,11 @@ be regenerated from the Makefile target list to stay in sync.
 
 - **Daemon upgrades** via `uv pip install -U content-stack` (or
   `pipx upgrade content-stack`). Re-running `make install` is idempotent
-  and rotates the auth token.
-- **Skills / procedures** ship with the wheel. `install-{codex,claude}.sh`
-  uses `rsync --delete` so retired skills disappear. User-customised skills
-  should live under a separate `<runtime>/skills/<user-name>/` directory;
-  this constraint is documented in `docs/extending.md`.
+  and does not rotate the auth token.
+- **Plugin catalog** ships with the wheel. `install-plugins.sh` uses
+  `rsync --delete` so retired skills/procedures disappear from the hydrated
+  plugin. User-customised runtime skills should live outside the
+  `content-stack` plugin directory.
 - **Schema** migrates via `alembic upgrade head` on daemon start.
   Down-migrations supported but discouraged. Breaking changes bump the
   major version; release notes call out manual migrations.
@@ -1416,15 +1423,17 @@ fresh development checkouts look broken.
 
 - **The daemon** is installable via `uv pip install -e .` or
   `pipx install content-stack` (post-publish).
-- **`pipx` mode**: skills + procedures are bundled in the wheel under
-  `content_stack/_assets/skills/` and `content_stack/_assets/procedures/`.
-  The console script wraps `install-codex` / `install-claude` /
-  `install-procedures-{codex,claude}` as Python subcommands that copy from
-  the wheel. `make install` (clone-mode) and `content-stack install`
-  (pipx-mode) call the same code paths.
-- **Skills + procedures** are copied into the runtime's expected paths by
-  `scripts/install-{codex,claude}.sh` (clone-mode) or the equivalent
-  console-script subcommands (pipx-mode). Each runs in ~2 seconds.
+- **`pipx` mode**: skills, procedures, and plugins are bundled in the wheel under
+  `content_stack/_assets/skills/`, `content_stack/_assets/procedures/`, and
+  `content_stack/_assets/plugins/`.
+  The console script hydrates `~/plugins/content-stack/` from those bundled
+  assets. `make install` (clone-mode) and `content-stack install` (pipx-mode)
+  call the same code paths.
+- **Plugins** are copied into `~/plugins/content-stack/` by
+  `scripts/install-plugins.sh` (clone-mode) or the equivalent console-script
+  helper (pipx-mode), then hydrated with the skills and procedures catalog.
+  Legacy loose skill/procedure installers remain as explicit compatibility
+  commands but are not the default runtime surface.
 - **The UI** is built at `make build-ui` and **committed** to
   `content_stack/ui_dist/` (D8). `ui_dist/` is NOT in `.gitignore`. CI
   verifies the committed bundle matches `ui/src/` source by rebuilding and
@@ -1441,7 +1450,7 @@ fresh development checkouts look broken.
 Not "MVP cuts" — full scope, sequenced by dependency:
 
 1. **Foundation** — repo init, pyproject, FastAPI app factory, alembic, Makefile, CI, doctor script, auth-token generation, seed-file generation. (1d)
-2. **DB + repositories** — all 28 tables, SQLModel models, migrations, indexes, seed. Repository layer tested against in-memory SQLite. JSON column shape contracts. M2 acceptance benchmark: 100 sequential `article.setDraft` of 200 KB markdown each completes < 2 s on a 2020 MBP. (3d)
+2. **DB + repositories** — all 30 tables, SQLModel models, migrations, indexes, seed. Repository layer tested against in-memory SQLite. JSON column shape contracts. M2 acceptance benchmark: 100 sequential `article.setDraft` of 200 KB markdown each completes < 2 s on a 2020 MBP. (3d)
 3. **REST API** — all routers, OpenAPI generation, UI type generation, pagination/filter conventions, REST/MCP parity table. (3d)
 4. **MCP server** — all tools, transport mounted at `/mcp`, end-to-end test from a Codex session, idempotency keys, streaming, error model, result envelope, tool-grant matrix. (3d)
 5. **Integrations** — DataForSEO, Firecrawl, GSC (with OAuth flow + refresh job), OpenAI Images, Reddit, PAA, Jina wrappers. Each unit-tested with mocked HTTP contract tests. Token-bucket rate limits + budget caps. (3d)
@@ -1527,7 +1536,7 @@ Other previously-open items, all now locked:
 | MCP Streamable HTTP not yet supported by all client versions | stdio fallback documented; can be added in <1d if needed; doctor.sh check 15 verifies runtime version pin |
 | SQLite WAL contention + same-article concurrent writes | Per-step etag (`articles.step_etag`); every `article.set*` requires `expected_etag`; mismatch → 409 conflict (-32008). `MAX_CONCURRENCY` env caps procedure runs (default 4). M2 acceptance benchmark: 100 sequential 200 KB `setDraft` calls < 2 s. `articles.lock_token` for procedure-duration advisory locks. UI `If-Match` header for optimistic concurrency on manual edits |
 | Vue UI drifts from API shape | Auto-generate TS types via `openapi-typescript` from FastAPI OpenAPI; CI fails on diff |
-| Skills out of sync between Codex and Claude installs | Single `skills/` directory + `rsync --delete` install scripts; doctor.sh checks 6+7 verify count = 24 in both runtimes |
+| Skills/plugins out of sync between Codex and Claude installs | Single `skills/` and `plugins/` directories plus delete-aware install scripts; doctor.sh checks verify installed counts in both runtimes |
 | LLM corrupts DB via bad input | All MCP tools pydantic-validated; status enums enforced; tool-grant matrix per skill (-32007 forbidden); state-machine triggers; full audit via `run_steps` + `run_step_calls`; idempotency keys for replay safety |
 | EEAT gate rubber-stamp by project owner | `eeat_criteria.tier` ENUM(`core`,`recommended`,`project`); rows with `tier='core'` cannot be deactivated (repository invariant + 422); EEAT gate refuses to score if any of 8 dimensions has 0 active items; coverage floor enforced |
 | Cost runaway on integrations | Pre-emptive `integration_budgets` table per project + kind; per-integration token-bucket rate limit; bulk-launch `--budget-cap-usd` flag refuses to start above cap; `run.abort(run_id, cascade=true)` for runaways; `GET /api/v1/projects/{id}/cost?month=` + `cost.queryProject` MCP for live monthly view |
@@ -1542,7 +1551,7 @@ Other previously-open items, all now locked:
 ## What "done" looks like for v1
 
 - `make install` prepares the daemon, generates the auth token + seed file,
-  registers MCP for both runtimes, copies skills + procedures, and runs
+  registers MCP for both runtimes, installs the hydrated plugin, and runs
   doctor. `make serve` then brings the daemon up on localhost.
 - `http://localhost:5180` shows the UI; I can register a project end-to-end
   (procedure 1) including voice, compliance, EEAT seed (3 `tier='core'`
@@ -1550,7 +1559,7 @@ Other previously-open items, all now locked:
   creds (encrypted).
 - Codex CLI (and Claude Code) auto-discover all 24 skills + 8 procedures.
 - I can run `/procedure topic-to-published <topic-id>` and the article goes
-  brief → outline → draft → editor → EEAT (three-verdict; FIX loops back) →
+  brief → outline → draft → editor → humanizer → EEAT (three-verdict; FIX loops back) →
   image → schema → interlink → published, all logged to `runs` + `run_steps`
   + `run_step_calls`.
 - The UI's ArticleDetailView shows the EEAT report (per-dimension scores,

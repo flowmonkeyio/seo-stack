@@ -14,6 +14,7 @@ allowed_tools:
   - article.get
   - article.setDraft
   - source.list
+  - source.update
   - run.start
   - run.heartbeat
   - run.finish
@@ -40,6 +41,13 @@ outputs:
     write: chosen archetype, hook excerpt, citation insertions in runs.metadata_json.draft_intro.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill immediately after `outline` (#6). The intro is written first because it locks the voice the body and conclusion will match: the opening archetype, the reading level, the implied reader, the level of formality. Skills #8 (body) and #9 (conclusion) read the intro back to maintain continuity.
@@ -52,12 +60,12 @@ The intro is `article.setDraft(append=false)`: it overwrites whatever `draft_md`
 - `voice.get(project_id)` — the active `voice_md`. The intro inherits the voice's tone, person (first / second / third), formality slider, and any explicit prohibitions (e.g., "no exclamation points", "no rhetorical questions"). When the voice clashes with the chosen archetype, voice wins; the outline skill should have flagged the mismatch but enforce here too.
 - `compliance.list(project_id, position='header')` and `compliance.list(project_id, position='after-intro')` — the rules that surface near the top of the article. Header rules render before the H1 (rare; mostly hidden-meta); after-intro rules render as a one-line callout immediately after the intro paragraph (e.g., affiliate disclosure for review content, age-gate notice for regulated jurisdictions).
 - `eeat.list(project_id)` — surface the `tier='core'` and `required=true` rows so the intro can plant the right signals (a credentialed-author byline; a primary-source citation in the thesis statement; a compliance disclosure right after the hook).
-- `source.list(article_id, used=false)` — the research-source rows the brief seeded. The intro typically cites one to three sources to anchor the thesis; mark each cited source `used=true` (via the source repository) by passing the new used flag through `source.add` semantics — the daemon handles the upsert.
+- `source.list(article_id)` — the research-source rows the brief seeded. The intro typically cites one to three sources to anchor the thesis; mark each cited source `used=true` with `source.update(source_id, used=true)`.
 - `meta.enums` — surfaces `intent`, `compliance_position`, and other enum values that intro composition references.
 
 ## Steps
 
-1. **Read the outline + brief + run metadata.** Resolve the article and parse `outline_md` for the archetype HTML comment at the bottom (`<!-- opening: ...; closing: ... -->`). Pull the brief's title, thesis, audience, intent, and target word count. Capture the live `step_etag`. Read `runs.metadata_json.outline.archetypes` and `eeat_placement` from the previous run step so the intro inherits the outline's plan.
+1. **Read the outline + brief + run metadata.** Resolve the article and parse `outline_md` for the archetype HTML comment at the bottom (`<!-- opening: ...; closing: ... -->`). Pull the brief's title, thesis, audience, intent, and editorial depth/target length hint. Capture the live `step_etag`. Read `runs.metadata_json.outline.archetypes` and `eeat_placement` from the previous run step so the intro inherits the outline's plan.
 2. **Choose the hook concretely.** The outline named the archetype; the intro names the specific hook. Each archetype has a fingerprint:
    - **Direct** — first sentence states the thesis. Second sentence names the reader's stake. Third sentence sets the article's promise. No throat-clearing.
    - **Contextual** — first paragraph (3–5 sentences) frames why this matters now: a recent shift, a stat that names the problem, a concrete scenario the reader is in. Second paragraph states the thesis and the article's promise.
@@ -88,7 +96,7 @@ The intro is `article.setDraft(append=false)`: it overwrites whatever `draft_md`
 - **Status not `outlined`.** Abort. `set_draft` accepts `outlined` or `drafted`, but a fresh intro on `drafted` would clobber the body — refuse and let the procedure runner reset by calling `mark_drafted` reversal (M7's responsibility).
 - **Outline missing archetype comment.** Abort with a message asking the runner to re-run skill #6. The intro cannot pick a hook without knowing the archetype the outline planned.
 - **Voice / archetype clash unresolvable.** Surface in `runs.metadata_json.draft_intro.voice_archetype_conflict` with both values; pick voice (it's higher authority); proceed.
-- **Source `used=true` flip fails (concurrent writer).** The intro itself succeeded; record the failure in metadata and continue. The body skill will refresh the source list and re-mark.
+- **Source `used=true` flip fails (concurrent writer).** The intro itself succeeded; record the failure in metadata and continue. The body skill will refresh the source list and re-mark with `source.update`.
 - **Etag mismatch.** Refuse to write. Procedure runner refreshes by reading the article again.
 
 ## Variants

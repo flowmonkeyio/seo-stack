@@ -51,6 +51,13 @@ outputs:
     write: per-competitor counts + parsed URL lists in runs.metadata_json.competitor_sitemap.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 The "shortcut" is the AM Media observation that a competitor's published sitemap is the highest-signal seed corpus available for free: every URL on it is a content investment the competitor was willing to commit to. Procedure 2 (`one-site-shortcut`) wires this skill as its first step, then hands the discovered URLs to the cluster skill (#3) so the operator gets a working topical map in one run instead of a multi-step keyword sweep.
@@ -71,8 +78,8 @@ The skill does not read `projects.competitors_json` because no such column exist
    - `https://<domain>/sitemap.xml` — the canonical location.
    - `https://<domain>/sitemap_index.xml` — the WordPress convention.
    - `https://<domain>/robots.txt` — parse the `Sitemap:` directive (one or more lines may be present); add every URL listed there to the work queue.
-   When the daemon's `sitemap.fetch` tool is invoked it handles redirects and follows up to two levels of sitemap-index recursion automatically. For the `robots.txt` fallback, the skill issues a plain HTTP GET via the LLM client's native fetch capability (or via Firecrawl's `scrape` op) since the daemon does not expose a generic HTTP fetcher.
-2. **Honor robots.txt.** Before any fetch, read `robots.txt`. If the competitor's robots disallows sitemap.xml access, mark the competitor as "blocked", log the reason, and skip to the next competitor. Persist the blocked list in `runs.metadata_json.competitor_sitemap.blocked[]` so the operator can supply the URLs by hand if they want to.
+   `sitemap.fetch` handles redirects and follows up to two levels of sitemap-index recursion automatically. If robots discovery is needed and no granted fetch helper is exposed, stop with `NEEDS_INPUT` for operator-supplied sitemap URLs rather than using native browser/fetch calls.
+2. **Honor robots.txt.** Before any fetch, use only daemon-exposed sitemap/robots results. If the competitor's robots disallows sitemap.xml access, mark the competitor as "blocked", log the reason, and skip to the next competitor. Do not map around a blocked competitor with Firecrawl or another crawler. Persist the blocked list in `runs.metadata_json.competitor_sitemap.blocked[]` so the operator can supply URLs from a licensed export if they want to.
 3. **Parse and filter.** The `sitemap.fetch` tool returns parsed `{url, lastmod, changefreq, priority}` rows. Filter out non-content paths using URL pattern heuristics:
    - Drop tag/category archive pages (`/tag/...`, `/category/...`, `/topics/...`).
    - Drop author archives (`/author/...`).
@@ -88,9 +95,7 @@ The skill does not read `projects.competitors_json` because no such column exist
    - `intent` — heuristic from URL pattern: `/blog/` and informational paths default to `informational`; `/review/`, `/best-`, `/vs-` paths default to `commercial`; `/buy/`, `/pricing/`, `/discount/` default to `transactional`. Tag low-confidence guesses with `metadata_json.intent_confidence='low'` so the cluster skill knows to re-classify.
    - `source` — fixed at `'competitor-sitemap'` to keep the audit trail clean.
    - `priority` — when Ahrefs joined, derive from the keyword's volume; otherwise leave null so cluster scoring decides later.
-   - `metadata_json.source_competitor` — the competitor domain.
-   - `metadata_json.source_url` — the original URL on the competitor's site.
-   - `metadata_json.lastmod` — the sitemap's lastmod when present (helps the refresh-detector later spot stale candidates).
+   The topic table does not carry per-row metadata yet, so persist `source_competitor`, `source_url`, `lastmod`, `unique_reader_value`, `original_evidence_plan`, `audience_fit`, and `thin_content_risk` under `runs.metadata_json.competitor_sitemap.value_gate[source_url]` so the human approval step can reject thin competitor rewrites.
 6. **Dedupe and persist.** Run the candidate set through the same dedupe pass that `keyword-discovery` uses: skip rows whose `(project_id, primary_kw)` collides with an existing topic. Persist the survivors via `topic.bulkCreate`; the streaming progress emitter fires every 50 inserts when the batch exceeds 50 rows.
 7. **Hand off to clustering.** This skill does NOT cluster on its own — it explicitly defers to skill #3 (`topical-cluster`). The procedure runner schedules `topical-cluster` as the next step; the cluster skill reads the freshly-inserted topics and runs its SERP-overlap pass against them. Document this handoff in the skill's run metadata so the operator can trace the chain.
 8. **Finish.** `run.finish` with `{competitors_processed, urls_discovered, urls_filtered_out, topics_created, blocked_competitors[]}`. Heartbeats fire after each competitor completes so a partial failure (one competitor down) is visible without waiting for the whole run.
@@ -112,4 +117,4 @@ The skill does not read `projects.competitors_json` because no such column exist
 
 - **`fast`** — sitemap-only, one competitor at a time, no Ahrefs, lower per-competitor cap (200). Use when the operator wants to scan a single competitor quickly.
 - **`standard`** — the default flow above; up to 5 competitors, optional Ahrefs, default cap 500.
-- **`deep`** — Ahrefs always enabled, per-competitor cap raised to 2000, includes a Firecrawl `map` pass when a competitor's sitemap is missing or blocked (uses `firecrawl_map` to enumerate the site's URLs from the homepage instead).
+- **`deep`** — Ahrefs always enabled, per-competitor cap raised to 2000. Firecrawl mapping is allowed only when robots permits crawling and the daemon exposes an auditable integration call for this run; never use it to bypass a missing or blocked sitemap.

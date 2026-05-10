@@ -46,6 +46,13 @@ outputs:
     write: heartbeat + finish on the existing skill-run row; cost rolled up under runs.metadata_json.cost.by_integration
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Run this skill when a project needs a fresh queue of topic candidates and the operator has at least one seed keyword in mind. Procedure 3 (`keyword-to-topic-queue`) drives this skill as its first step. The procedure runner sets `CONTENT_STACK_PROJECT_ID` + `CONTENT_STACK_RUN_ID` and forwards `seed_keywords` as a structured argument.
@@ -70,7 +77,7 @@ The seed keywords arrive as a JSON list on the procedure step argument (e.g., `[
    - **Modifier overlay.** Append a small modifier vocabulary to the seed: how-to, best, vs, comparison, guide, examples, mistakes, checklist, free, alternative, pricing, review, beginners, tools, template, pros and cons. The exact list is paraphrased and may be tuned per niche; document any niche-specific adds inline so the run is reproducible.
    - **Question mining.** Generate who/what/when/where/why/how variants of the seed.
    - **Intent overlay.** Layer commercial intent modifiers (review, alternative, pricing, comparison) and informational intent modifiers (guide, tutorial, learn).
-   - **Related-search lift.** If the LLM client has a native search tool, pull "related searches" and "people also search for" rows and feed them back in as additional seeds for one more pass; otherwise lean on the DataForSEO `keyword_ideas` endpoint described below.
+   - **Related-search lift.** Use only the content-stack integration path exposed to this run. If related-search/PAA data is not available through the daemon, skip this strategy and record the gap instead of using a native browser or search tool.
    Normalise variants to lower case, strip leading articles (a/an/the), and remove duplicates inside the seed's batch and against the project's existing `topics`.
 3. **DataForSEO sweep.** For each de-duplicated variant batch:
    - Hit the SERP endpoint to capture the top organic results — the URL list will be reused by skills #2 (`serp-analyzer`) and #3 (`topical-cluster`).
@@ -84,8 +91,9 @@ The seed keywords arrive as a JSON list on the procedure step argument (e.g., `[
 4. **Reddit mining (optional).** When the project's `integration_credentials` carries a Reddit row, expand the seed pool with community-sourced long-tails. For each seed, pick 1–3 niche-relevant subreddits (the project bootstrap procedure should have captured them; if not, prompt the operator). Issue `search_subreddit` and `top_questions` calls and extract candidate keywords from titles, especially titles ending in `?` (those are PAA-class questions). Tag rows `source='reddit'` so the cluster step weights them appropriately.
 5. **People-Also-Ask harvest (optional).** Call the daemon's `google-paa` integration on each seed. The wrapper delegates to Firecrawl under the hood; cost is reckoned against the Firecrawl budget, not a separate PAA line. Each return shape is `{questions: [str, ...]}`. Convert each question into a topic candidate; tag rows `source='paa'`.
 6. **Intent classification.** For every candidate keyword (DataForSEO + Reddit + PAA), assign one of five intents: informational, commercial, transactional, navigational, mixed. Where DataForSEO returned an explicit intent, trust it. For Reddit/PAA rows, infer from the keyword surface form: `how`/`what`/`why`/`guide`/`tutorial` patterns lean informational; `best`/`top`/`vs`/`review`/`alternative` lean commercial; `buy`/`price`/`coupon`/`sign up` lean transactional; brand/product names lean navigational. Drop pure-navigational rows from the queue — they are not topic candidates.
-7. **Dedupe and persist.** Build the final candidate set: every row carries `title`, `primary_kw`, optional `secondary_kws[]`, `intent`, `source`, optional `priority`, and an optional `cluster_id` (left null at this stage; skill #3 fills it). Run a final dedupe pass against the project's existing topics by `(project_id, primary_kw)` so collisions are caught before the database's unique index rejects the batch. Persist via `topic.bulkCreate(project_id, items=[...])`. The streaming progress emitter fires every 50 inserts when N>50 so the procedure runner can render a progress bar.
-8. **Roll up cost and finish.** Heartbeat after each external integration so the runs UI shows progress. On step exit, write the cost-of-truth into the existing `runs.metadata_json.cost.by_integration` map (`dataforseo`, `reddit`, `firecrawl` for PAA). Call `run.finish` with the summary `{topics_created, topics_skipped_duplicate, integrations_used}`.
+7. **Unique-value gate.** Before persistence, capture queue-review metadata under `runs.metadata_json.keyword_discovery.value_gate[primary_kw]`: `unique_reader_value`, `original_evidence_plan`, `audience_fit`, `existing_expertise`, and `thin_content_risk`. Reject or downgrade topics whose only rationale is "competitors rank for it" or whose unique value cannot be explained in one sentence.
+8. **Dedupe and persist.** Build the final candidate set: every row carries `title`, `primary_kw`, optional `secondary_kws[]`, `intent`, `source`, optional `priority`, and an optional `cluster_id` (left null at this stage; skill #3 fills it). Run a final dedupe pass against the project's existing topics by `(project_id, primary_kw)` so collisions are caught before the database's unique index rejects the batch. Persist via `topic.bulkCreate(project_id, items=[...])`. The streaming progress emitter fires every 50 inserts when N>50 so the procedure runner can render a progress bar.
+9. **Roll up cost and finish.** Heartbeat after each external integration so the runs UI shows progress. On step exit, write the cost-of-truth into the existing `runs.metadata_json.cost.by_integration` map (`dataforseo`, `reddit`, `firecrawl` for PAA). Call `run.finish` with the summary `{topics_created, topics_skipped_duplicate, integrations_used, downgraded_thin_content_risk}`.
 
 ## Outputs
 

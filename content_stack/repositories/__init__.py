@@ -96,8 +96,15 @@ from content_stack.repositories.runs import (
     RunStepOut,
     RunStepRepository,
 )
+from content_stack.repositories.workspaces import (
+    AgentSessionOut,
+    WorkspaceBindingOut,
+    WorkspaceRepository,
+    WorkspaceResolutionOut,
+)
 
 __all__ = [
+    "AgentSessionOut",
     "ArticleAssetOut",
     "ArticleAssetRepository",
     "ArticleOut",
@@ -166,6 +173,9 @@ __all__ = [
     "ValidationError",
     "VoiceProfileOut",
     "VoiceProfileRepository",
+    "WorkspaceBindingOut",
+    "WorkspaceRepository",
+    "WorkspaceResolutionOut",
     "cursor_paginate",
     "validate_transition",
 ]

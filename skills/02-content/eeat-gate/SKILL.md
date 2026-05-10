@@ -14,6 +14,7 @@ allowed_tools:
   - eeat.bulkRecord
   - article.get
   - article.markEeatPassed
+  - article.markAbortedPublish
   - compliance.list
   - run.start
   - run.heartbeat
@@ -42,6 +43,13 @@ outputs:
   - table: runs
     write: per-criterion verdicts, dimension scores, system scores, vetoes_failed, top_issues, final verdict in runs.metadata_json.eeat.
 ---
+
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
 
 ## When to use
 
@@ -99,7 +107,7 @@ Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id
 11. **Verdict-specific persistence.**
     - **SHIP** → call `article.markEeatPassed(article_id, expected_etag=<live etag>, run_id, eeat_criteria_version=<current rubric version>)`. The repository advances `articles.status` from `edited` to `eeat_passed`, freezes the rubric version (so future rubric edits don't retroactively invalidate the audit), and rotates `step_etag`. The next claimed step uses the fresh etag.
     - **FIX** → do NOT advance status. Persist `runs.metadata_json.eeat.fix_required[]` so the operator agent can loop back to skill #10 with focused repair instructions. The fix-loop counter is procedure state; if it exceeds the cap (default 3), the operator agent aborts the procedure rather than repeating the loop.
-    - **BLOCK** → do NOT advance via `markEeatPassed`. Mark the article `aborted-publish` through the allowed article state transition, persist the BLOCK verdict to `runs.metadata_json.eeat`, and record the step as failed/aborted for the procedure.
+    - **BLOCK** → do NOT advance via `markEeatPassed`. Call `article.markAbortedPublish(article_id, expected_etag=<live etag>, run_id)` to move the article into the terminal `aborted-publish` state, persist the BLOCK verdict to `runs.metadata_json.eeat`, and record the step as failed/aborted for the procedure.
 12. **Finish.** Call `procedure.recordStep` with `{article_id, verdict, dimension_scores, system_scores, vetoes_failed, top_issues_count, fix_required_count?, fix_loop_iteration}`. A heartbeat fires after the per-criterion evaluation pass (step 4).
 
 ## Outputs

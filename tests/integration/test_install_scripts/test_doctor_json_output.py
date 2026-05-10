@@ -73,9 +73,7 @@ def test_doctor_json_emits_documented_schema(
         "codex_mcp_registered",
         "claude_mcp_registered",
         "launchd_plist_present",
-        "codex_skills_installed",
-        "claude_skills_installed",
-        "codex_procedures_installed",
-        "claude_procedures_installed",
+        "plugins_installed",
+        "plugin_marketplace_registered",
     ):
         assert k in payload["checks"], f"missing optional check: {k}"

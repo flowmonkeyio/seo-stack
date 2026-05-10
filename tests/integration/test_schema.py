@@ -1,4 +1,4 @@
-"""Integration tests for the M1.A schema (28 tables + seed)."""
+"""Integration tests for the M1.A schema (30 tables + seed)."""
 
 from __future__ import annotations
 
@@ -29,9 +29,10 @@ from content_stack.db.models import (
 )
 from content_stack.db.seed import seed_eeat_criteria
 
-# Names of all 28 tables expected to exist after `alembic upgrade head`.
+# Names of all 30 tables expected to exist after `alembic upgrade head`.
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
+        "agent_sessions",
         "article_assets",
         "article_publishes",
         "article_versions",
@@ -60,6 +61,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "schema_emits",
         "topics",
         "voice_profiles",
+        "workspace_bindings",
     }
 )
 
@@ -104,13 +106,13 @@ def _list_tables(db_path: Path) -> set[str]:
         conn.close()
 
 
-def test_alembic_upgrade_creates_28_tables(isolated_alembic: Path) -> None:
+def test_alembic_upgrade_creates_30_tables(isolated_alembic: Path) -> None:
     _run_alembic(["upgrade", "head"])
     tables = _list_tables(isolated_alembic)
     assert tables == EXPECTED_TABLES, (
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )
-    assert len(tables) == 28
+    assert len(tables) == 30
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:
@@ -122,7 +124,7 @@ def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> No
     assert _list_tables(isolated_alembic) == EXPECTED_TABLES
 
 
-def test_schema_emits_seed_populates_6_templates(isolated_alembic: Path) -> None:
+def test_schema_emits_seed_populates_default_templates(isolated_alembic: Path) -> None:
     _run_alembic(["upgrade", "head"])
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
@@ -130,7 +132,7 @@ def test_schema_emits_seed_populates_6_templates(isolated_alembic: Path) -> None
             select(SchemaEmit).where(SchemaEmit.article_id.is_(None))  # type: ignore[union-attr]
         ).all()
     types = sorted(r.type for r in rows)
-    assert types == ["Article", "BlogPosting", "FAQPage", "Organization", "Product", "Review"]
+    assert types == ["Article", "BlogPosting", "Organization", "Product", "Review"]
 
 
 def test_eeat_seed_populates_80_items_with_3_cores(isolated_alembic: Path) -> None:

@@ -466,11 +466,11 @@ def test_load_all_procedures_missing_dir_returns_empty(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_procedure_04_parses_with_twelve_steps() -> None:
+def test_procedure_04_parses_with_thirteen_steps() -> None:
     """Procedure 04 — the M7.A proof-of-concept — has the expected shape."""
     repo_root = Path(__file__).resolve().parents[2]
     spec = load_procedure(repo_root / "procedures" / "04-topic-to-published")
-    assert len(spec.steps) == 12
+    assert len(spec.steps) == 13
     expected_ids = [
         "brief",
         "outline",
@@ -478,6 +478,7 @@ def test_procedure_04_parses_with_twelve_steps() -> None:
         "draft-body",
         "draft-conclusion",
         "editor",
+        "humanizer",
         "eeat-gate",
         "image-generator",
         "alt-text-auditor",

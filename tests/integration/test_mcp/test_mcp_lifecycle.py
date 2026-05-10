@@ -13,7 +13,7 @@ from .conftest import MCPClient
 # Per-namespace expected counts — derived from the registrations in
 # ``content_stack.mcp.tools``. Update intentionally when adding tools.
 EXPECTED_NAMESPACE_COUNTS = {
-    "article": 17,
+    "article": 18,
     "asset": 4,
     "author": 5,
     "budget": 4,
@@ -32,18 +32,18 @@ EXPECTED_NAMESPACE_COUNTS = {
     "redirect": 3,
     "run": 14,
     "schedule": 3,
-    "schema": 3,
+    "schema": 4,
     "sitemap": 1,
-    "source": 2,
+    "source": 3,
     "target": 5,
-    "topic": 7,
+    "topic": 8,
     "voice": 4,
+    "workspace": 5,
 }
 
 # Total = sum of values; locked here to flag accidental drops.
 EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
-# 125 at M3 land; 126 at M6.A (added ``sitemap.fetch`` for skill #5).
-# Agent-led procedures add current/claim/record/execute control tools.
+# 139 after adding plugin-first workspace binding/session tools.
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:

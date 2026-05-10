@@ -4,7 +4,8 @@ Per PLAN.md "Distribution model" (~L1499): clone installs reach into
 ``${REPO_ROOT}/skills`` and ``${REPO_ROOT}/procedures`` directly via the
 bash scripts under ``scripts/``. pipx installs cannot — there is no repo
 on disk, only a wheel — so the assets are bundled at
-``content_stack/_assets/skills`` and ``content_stack/_assets/procedures``
+``content_stack/_assets/skills``, ``content_stack/_assets/procedures``, and
+``content_stack/_assets/plugins``
 (audit P-G4) and resolved through ``importlib.resources``.
 
 The two install paths copy from different *sources* but write to the same
@@ -16,8 +17,9 @@ Public surface:
 - :func:`detect_mode` — returns ``"clone"`` if the package import points at
   a checked-out repo with ``skills/`` + ``procedures/`` siblings, else
   ``"pipx"``.
-- :func:`copy_skills` / :func:`copy_procedures` — mirror assets into
-  ``~/.codex/...`` or ``~/.claude/...`` with mtime-aware copy and
+- :func:`copy_skills` / :func:`copy_procedures` / :func:`copy_plugins` —
+  mirror assets into ``~/.codex/...``, ``~/.claude/...``, or ``~/plugins`` with
+  mtime-aware copy and
   ``--delete``-style cleanup of stale files.
 - :func:`register_mcp_codex` / :func:`register_mcp_claude` — Python
   equivalents of the bash registration scripts. Used by ``content-stack
@@ -102,7 +104,7 @@ def _bundled_assets_root() -> Traversable:
     return root
 
 
-def _resolve_source(kind: Literal["skills", "procedures"]) -> Path | Traversable:
+def _resolve_source(kind: Literal["skills", "procedures", "plugins"]) -> Path | Traversable:
     """Return the source root for ``kind`` based on detected mode.
 
     Returns a :class:`Path` in clone mode (so callers can use ``rsync`` /
@@ -261,6 +263,93 @@ def copy_procedures(
     return target, count
 
 
+def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
+    """Mirror and hydrate plugin packages into the home-local plugin directory."""
+    home_dir = home if home is not None else Path.home()
+    target = home_dir / "plugins" / "content-stack"
+    source_root = _resolve_source("plugins")
+    if isinstance(source_root, Path):
+        _mirror_path(source_root / "content-stack", target, exclude_dirs=())
+    else:
+        _mirror_traversable(source_root.joinpath("content-stack"), target, exclude_dirs=())
+
+    skills_source = _resolve_source("skills")
+    skills_target = target / "skills" / "catalog"
+    if isinstance(skills_source, Path):
+        _mirror_path(skills_source, skills_target, exclude_dirs=())
+    else:
+        _mirror_traversable(skills_source, skills_target, exclude_dirs=())
+
+    procedures_source = _resolve_source("procedures")
+    procedures_target = target / "procedures"
+    if isinstance(procedures_source, Path):
+        _mirror_path(procedures_source, procedures_target, exclude_dirs=("_template",))
+    else:
+        _mirror_traversable(procedures_source, procedures_target, exclude_dirs=("_template",))
+
+    count = sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
+    return target, count
+
+
+def register_plugin_marketplace(
+    *,
+    home: Path | None = None,
+    remove: bool = False,
+) -> str:
+    """Upsert the home-local plugin marketplace entry for content-stack."""
+    home_dir = home if home is not None else Path.home()
+    target = home_dir / ".agents" / "plugins" / "marketplace.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    existing: dict[str, object] = {
+        "name": "local-content-stack",
+        "interface": {"displayName": "Local content-stack Plugins"},
+        "plugins": [],
+    }
+    if target.exists():
+        text = target.read_text(encoding="utf-8").strip()
+        if text:
+            loaded = json.loads(text)
+            if not isinstance(loaded, dict):
+                raise ValueError(f"existing {target} is not a JSON object")
+            existing = loaded
+
+    plugins = existing.setdefault("plugins", [])
+    if not isinstance(plugins, list):
+        raise ValueError(f"`plugins` in {target} must be a list")
+
+    plugins[:] = [
+        p for p in plugins if not (isinstance(p, dict) and p.get("name") == "content-stack")
+    ]
+    if remove:
+        msg = f"Unregistered plugin 'content-stack' from {target}"
+    else:
+        plugins.append(
+            {
+                "name": "content-stack",
+                "source": {"source": "local", "path": "./plugins/content-stack"},
+                "policy": {
+                    "installation": "INSTALLED_BY_DEFAULT",
+                    "authentication": "ON_USE",
+                },
+                "category": "Productivity",
+            }
+        )
+        msg = f"Registered plugin 'content-stack' in {target}"
+
+    fd, tmp = tempfile.mkstemp(prefix=".marketplace.", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, target)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    return msg
+
+
 # ---------------------------------------------------------------------------
 # MCP registration
 # ---------------------------------------------------------------------------
@@ -414,9 +503,11 @@ def register_mcp_claude(
 
 __all__ = [
     "InstallMode",
+    "copy_plugins",
     "copy_procedures",
     "copy_skills",
     "detect_mode",
     "register_mcp_claude",
     "register_mcp_codex",
+    "register_plugin_marketplace",
 ]

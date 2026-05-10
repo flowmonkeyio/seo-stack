@@ -4,7 +4,7 @@ slug: 04-topic-to-published
 version: 0.1.0
 description: |
   The workhorse procedure — full pipeline from approved topic to
-  published article. Twelve steps, three-verdict EEAT gate with FIX
+  published article. Thirteen steps, three-verdict EEAT gate with FIX
   loop-back to the editor, BLOCK aborts the procedure, image generation
   + alt-text + interlinks are skip-on-failure (the article ships
   without them when the integration is unavailable), schema-emitter
@@ -60,6 +60,10 @@ steps:
   - id: editor
     skill: 02-content/editor
     on_failure: abort
+  - id: humanizer
+    skill: 02-content/humanizer
+    on_failure: retry
+    max_retries: 1
   - id: eeat-gate
     skill: 02-content/eeat-gate
     on_failure: loop_back
@@ -100,7 +104,7 @@ resumable: true
 # 04 — Topic to Published
 
 The workhorse pipeline: an approved topic comes in, a published
-article comes out. Twelve sequential steps, one EEAT FIX loop, three
+article comes out. Thirteen sequential steps, one EEAT FIX loop, three
 absorbing terminal states (`success`, `failed`, `aborted`).
 
 ## When to use
@@ -131,7 +135,13 @@ child results.
    advances `articles.status=edited`. `on_failure=abort`: an editor
    failure is structural (missing voice / criteria / source rows) and
    shouldn't loop.
-5. **eeat-gate** (#11 eeat-gate) — Score the edited article against the
+5. **humanizer** (#12 humanizer) — Run once on this article version
+   after the editor and before the gate. Writes back to
+   `articles.edited_md` without changing status. `on_failure=retry(1)`:
+   a recoverable rhythm/citation invariant failure gets one re-shot;
+   a second failure ships the editor-only body to the gate only if the
+   failure handler records `DONE_WITH_CONCERNS`.
+6. **eeat-gate** (#11 eeat-gate) — Score the edited article against the
    project's active criteria. Three verdicts:
    - `SHIP` → advance.
    - `FIX` → loop back to **editor** with the gate's fix list. The
@@ -142,21 +152,21 @@ child results.
    - `BLOCK` → abort the procedure. The agent records
      `articles.status=aborted-publish` and `runs.status=aborted`
      per audit BLOCKER-09.
-6. **image-generator** (#13 image-generator) — Generate the hero image
+7. **image-generator** (#13 image-generator) — Generate the hero image
    via OpenAI Images. `on_failure=skip`: a missing image doesn't block
    publishing; the article ships with no `article_assets` rows and the
    schema-emitter handles the `image:` JSON-LD field accordingly.
-7. **alt-text-auditor** (#14 alt-text-auditor) — Audit / generate alt
+8. **alt-text-auditor** (#14 alt-text-auditor) — Audit / generate alt
    text for any image assets. `on_failure=skip`: an alt-text gap is a
    warning, not a blocker.
-8. **schema-emitter** (#16 schema-emitter) — Build the article's
+9. **schema-emitter** (#16 schema-emitter) — Build the article's
    JSON-LD payload (Article + Author + Image refs). Writes one
    `schema_emits` row, sets `is_primary=true`. `on_failure=abort`: a
    missing schema means the publish step would fall over downstream.
-9. **interlinker** (#15 interlinker) — Suggest internal links from the
+10. **interlinker** (#15 interlinker) — Suggest internal links from the
    project's existing articles. `on_failure=skip`: suggestions are
    advisory and the publish step works without them.
-10. **publish** (#17/#18/#19) — Push the article to the project's
+11. **publish** (#17/#18/#19) — Push the article to the project's
     primary publish target. The controller inspects
     `project.publish_targets WHERE is_primary=true AND is_active=true`
     and selects the appropriate skill (`#17 nuxt-content-publish`,

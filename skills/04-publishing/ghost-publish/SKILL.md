@@ -53,6 +53,13 @@ outputs:
     write: per-step diagnostics (HTML conversion log, image upload URLs, Admin API response, post id and URL, JWT lifecycle notes) + cost (zero — REST API calls are free) in runs.metadata_json.ghost_publish.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable, and the publish target is a `kind='ghost'` row whose `config_json` carries the Ghost site's URL, the default post status, the format preference (HTML / Lexical / mobiledoc), tag and author mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to Ghost's image endpoint, POSTs (or PUTs) the post to the Admin API with `?source=html`, records the publish row, and — when the run is for the primary target — advances `articles.status` to `published`.
@@ -87,7 +94,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 ## Steps
 
 1. **Read context.** Resolve the article. Confirm the status is `eeat_passed` or `published`. Pull the target row, confirm `kind='ghost'` and `is_active=true`. Compute `version_published` per the same rule as the Nuxt and WordPress skills.
-2. **Pre-flight credential check.** Call `integration.test` against the target's `integration_credential_id`. The probe confirms the daemon's HTTP helper can mint a JWT from the Admin API key and reach `GET /ghost/api/admin/users/me/`. Surface the response (the user's role and slug) in `runs.metadata_json.ghost_publish.role_check`. Refuse to proceed when the response is 401 (invalid key) or when the user's role is `Owner` (publishing with the owner credential is over-privileged for automation; the operator should provision an `Editor` or `Author` integration). Default `Editor` role is the recommended setting.
+2. **Pre-flight credential and SEO preview.** Call `integration.test` against the target's `integration_credential_id`. The probe confirms the daemon's HTTP helper can mint a JWT from the Admin API key and reach `GET /ghost/api/admin/users/me/`. Surface the response (the user's role and slug) in `runs.metadata_json.ghost_publish.role_check`. Refuse to proceed when the response is 401 (invalid key) or when the user's role is `Owner` (publishing with the owner credential is over-privileged for automation; the operator should provision an `Editor` or `Author` integration). Then call `publish.preview(article_id, target_id)` and block on indexability, canonical, robots/noindex, public image, paid-link `rel`, structured-data, or sitemap/lastmod regressions. Default `Editor` role is the recommended setting.
 3. **Render markdown to HTML.** Convert `edited_md` to HTML via `markdown-it` configured for Ghost's HTML dialect:
    - Tables → `<table class="kg-card-no-border">` (or the project's preferred table card class).
    - Code blocks → `<pre><code class="language-…">` (Ghost's themes consume the `language-…` class for syntax highlighting).
@@ -100,7 +107,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 4. **Upload assets.** For each asset row in `asset.list`:
    - Resolve the source bytes from the daemon's local filesystem.
    - PUT the bytes to `<ghost_url>/ghost/api/admin/images/upload/` as multipart form-data with the `file` part carrying the bytes and a `purpose` field (`image` for hero / inline / og, `profile_image` for author avatars — the skill only uploads article assets, not avatars). Capture the response's `url` field as the Ghost-hosted URL.
-   - On 4xx capture the error and continue without that asset (the body's image reference remains pointing at the daemon URL — the live site renders it as a remote image). Hero upload failure is hard fail because the post's `feature_image` would be invalid.
+   - On 4xx capture the error. Hero upload failure is hard fail because the post's `feature_image` would be invalid. For inline assets, either remove the image reference with an audit warning or abort when the image is load-bearing. Never publish daemon-local asset URLs into the live Ghost post.
    - On 5xx retry once. Two consecutive 5xx aborts that asset's upload but not the run.
    The JWT minted in step 2 may have expired between assets when an upload pass takes longer than 5 minutes; the daemon's HTTP helper auto-mints a fresh JWT mid-flow. The skill does not handle the lifecycle.
 5. **Rewrite image references.** Walk the rendered HTML body and replace every `<img src="<daemon-url>" …>` with `<img src="<ghost-source-url>" …>` matching the asset. The hero asset's Ghost URL is captured separately for the `feature_image` field. When the target format is `lexical` or `mobiledoc`, the rewrite happens in the converted format's image-node fields rather than in HTML strings.
@@ -148,7 +155,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 - **Target row not found / `kind` mismatch.** Abort. Procedure runner's per-target replication should have filtered.
 - **Credential probe fails (step 2 — auth).** Abort. The operator fixes the integration_credentials row and re-runs.
 - **Credential role is `Owner`.** Abort with a clear message asking the operator to provision an `Editor` integration.
-- **Image upload returns 4xx for a single asset.** Capture, mark failed in audit, continue. Body image reference falls back to the daemon URL. Hero failure is hard fail.
+- **Image upload returns 4xx for a single asset.** Capture and mark failed in audit. Hero failure is hard fail. For inline/body images, remove the unresolved reference or abort according to the target policy; never publish daemon-local asset URLs.
 - **Image upload returns 5xx.** Retry once. Two consecutive 5xx aborts that asset; same hero rule applies.
 - **JWT expires mid-upload (step 4).** The daemon's HTTP helper auto-mints a fresh JWT and retries the upload transparently. When the helper itself fails to mint (e.g., the credential has been rotated server-side and our copy is stale), the skill aborts with `runs.metadata_json.ghost_publish.jwt_refresh_failed=true`.
 - **POST returns 4xx (step 7).** Capture, mark `status='failed'`, surface, do not retry. Common 4xx reasons: invalid slug (Ghost returns the canonicalised version), permission denied (covered by role check), invalid `published_at` (when scheduling and the time is in the past), invalid `tags` shape (when auto-create is off and a tag slug is missing).

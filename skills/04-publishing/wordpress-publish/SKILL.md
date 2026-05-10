@@ -53,6 +53,13 @@ outputs:
     write: per-step diagnostics (HTML conversion log, media upload IDs, REST response, post ID, post URL) + cost (zero — REST API calls are free) in runs.metadata_json.wordpress_publish.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable from the primary target, and the publish target is a `kind='wordpress'` row whose `config_json` carries the WordPress site's REST URL, auth method, default status, category / tag id mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to the WordPress Media Library, POSTs the composed post payload to the REST API, records the publish row, and — when the run is for the project's primary target — advances `articles.status` to `published`.
@@ -85,7 +92,7 @@ The skill also runs in two non-procedure-driven modes the operator can invoke fr
 ## Steps
 
 1. **Read context.** Resolve the article. Confirm the status is one of `eeat_passed` or `published`. Pull the target row, confirm `kind='wordpress'` and `is_active=true`. Compute `version_published` per the same rule as the Nuxt skill (article.version + 1 on first publish; article.version + 1 on republish where procedure 7 has already created a new version).
-2. **Pre-flight credential check.** Call `integration.test` against the target's `integration_credential_id`. The probe goes through the daemon's HTTP helper which mints the auth header (Basic for application_password, Bearer for JWT) and calls `GET /wp-json/wp/v2/users/me`. The response carries the user's roles; the skill confirms the user has `editor` or `author` role at minimum. Refuse to proceed when the role is `administrator` (the operator should never publish with an admin credential — the blast radius of a leaked admin token is too large). Refuse to proceed when the user has none of `editor` / `author` (insufficient privileges). Surface the role check in `runs.metadata_json.wordpress_publish.role_check`.
+2. **Pre-flight credential and SEO preview.** Call `integration.test` against the target's `integration_credential_id`. The probe goes through the daemon's HTTP helper which mints the auth header (Basic for application_password, Bearer for JWT) and calls `GET /wp-json/wp/v2/users/me`. The response carries the user's roles; the skill confirms the user has `editor` or `author` role at minimum. Refuse to proceed when the role is `administrator` (the operator should never publish with an admin credential — the blast radius of a leaked admin token is too large). Refuse to proceed when the user has none of `editor` / `author` (insufficient privileges). Then call `publish.preview(article_id, target_id)` and block on indexability, canonical, robots/noindex, public image, paid-link `rel`, structured-data, or sitemap/lastmod regressions. Surface the role and preview checks in `runs.metadata_json.wordpress_publish`.
 3. **Render markdown to HTML.** Convert `edited_md` to HTML via `markdown-it` (or the equivalent) configured for the WordPress dialect:
    - Tables → `<table>` with WordPress-friendly classes the theme styles.
    - Code blocks → `<pre><code>` with no language hint inline (WordPress's default code highlighter consumes a separate `class="language-…"` attribute).
@@ -98,7 +105,7 @@ The skill also runs in two non-procedure-driven modes the operator can invoke fr
    - Resolve the source bytes from the daemon's local filesystem path (per skill #13's documented layout).
    - Compose the multipart form-data body: the file bytes, plus a JSON metadata object with `title`, `alt_text` (from the asset row), `caption`, and `description`. The alt_text is what the alt-text-auditor refined.
    - POST to `<wp_url>/wp-json/wp/v2/media` via the daemon's HTTP helper. Capture the returned media id and `source_url`.
-   - When the upload returns a 4xx for a permission reason, capture the error and continue without that asset's media id; the body's image reference remains pointing at the daemon's URL (the WordPress site renders it as a remote image, which is suboptimal but not a hard failure).
+   - When the upload returns a 4xx for a permission reason, fail the hero upload and abort the publish. For inline assets, either remove the image reference with an audit warning or abort when the image is load-bearing. Never publish daemon-local asset URLs into the live WordPress post.
    - When the upload returns a 5xx, retry once. Two consecutive 5xx aborts that asset's upload but not the run.
    Capture the media id list as `runs.metadata_json.wordpress_publish.media_ids[]` so a failure-mode rollback can delete the uploaded media on a failed post creation.
 5. **Rewrite image references.** Walk the rendered HTML body and replace every `<img src="<daemon-url>" …>` with `<img src="<wp-source-url>" data-wp-id="<media-id>" …>` matching the asset's media id. The hero asset's media id is captured separately for the post payload's `featured_media` field.
@@ -143,7 +150,7 @@ The skill also runs in two non-procedure-driven modes the operator can invoke fr
 - **Credential probe fails (step 2 — auth).** Abort. The operator fixes the integration_credentials row via the Settings UI and re-runs.
 - **Credential role is `administrator`.** Abort with a clear message asking the operator to switch to a role-restricted account. Document in `docs/api-keys.md`.
 - **Credential role insufficient (no editor / author).** Abort with the role check surfaced; the operator escalates the WP user's role.
-- **Media upload returns 4xx for a single asset (step 4).** Capture the error, mark the asset failed in the audit row, continue. The body's image reference falls back to the daemon URL; the publish proceeds in degraded mode. Hero failure is hard fail (the post would have no `featured_media`).
+- **Media upload returns 4xx for a single asset (step 4).** Capture the error and mark the asset failed in the audit row. Hero failure is hard fail (the post would have no `featured_media`). For inline/body images, remove the unresolved reference or abort according to the target policy; never publish daemon-local asset URLs.
 - **Media upload returns 5xx for a single asset.** Retry once. Two consecutive 5xx aborts that asset; same hero-vs-non-hero rule applies.
 - **POST returns 4xx (step 7).** Capture the error in the publish row's `error` field, mark `status='failed'`, surface, do not retry. Common 4xx reasons: permission denied (covered by the role check), invalid slug (auto-collide; WordPress should append `-2` rather than reject), invalid meta keys (some SEO plugins lock down meta updates).
 - **POST returns 5xx.** Capture, mark `status='failed'`, surface, and let the procedure agent decide whether to retry.

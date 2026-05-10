@@ -91,7 +91,9 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.resume",
         "run.start",
         "sitemap.fetch",
+        "source.update",
         "topic.approve",
+        "topic.assignCluster",
         "topic.bulkCreate",
         "topic.bulkUpdateStatus",
         "topic.create",
@@ -100,6 +102,11 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "topic.reject",
         "voice.set",
         "voice.setActive",
+        "workspace.connect",
+        "workspace.listBindings",
+        "workspace.resolve",
+        "workspace.startSession",
+        "workspace.updateProfile",
     }
 )
 
@@ -205,6 +212,7 @@ _SKILL_TOPICAL_CLUSTER: frozenset[str] = _RUN_LIFECYCLE | {
     "cluster.list",
     "cluster.get",
     "topic.list",
+    "topic.assignCluster",
     "topic.bulkUpdateStatus",
 }
 
@@ -212,6 +220,7 @@ _SKILL_TOPICAL_CLUSTER: frozenset[str] = _RUN_LIFECYCLE | {
 _SKILL_CONTENT_BRIEF: frozenset[str] = _RUN_LIFECYCLE | {
     "meta.enums",
     "project.get",
+    "cluster.get",
     "voice.get",
     "compliance.list",
     "eeat.list",
@@ -267,6 +276,7 @@ _SKILL_DRAFT_INTRO: frozenset[str] = _RUN_LIFECYCLE | {
     "article.get",
     "article.setDraft",
     "source.list",
+    "source.update",
 }
 
 
@@ -279,6 +289,7 @@ _SKILL_DRAFT_BODY: frozenset[str] = _RUN_LIFECYCLE | {
     "article.get",
     "article.setDraft",
     "source.list",
+    "source.update",
 }
 
 
@@ -292,6 +303,7 @@ _SKILL_DRAFT_CONCLUSION: frozenset[str] = _RUN_LIFECYCLE | {
     "article.setDraft",
     "article.markDrafted",
     "source.list",
+    "source.update",
 }
 
 
@@ -316,6 +328,7 @@ _SKILL_EEAT_GATE: frozenset[str] = _RUN_LIFECYCLE | {
     "eeat.bulkRecord",
     "article.get",
     "article.markEeatPassed",
+    "article.markAbortedPublish",
     "compliance.list",
 }
 
@@ -351,6 +364,7 @@ _SKILL_IMAGE_GENERATOR: frozenset[str] = _RUN_LIFECYCLE | {
     "article.get",
     "asset.create",
     "asset.list",
+    "asset.update",
     "cost.queryProject",
     "integration.test",
 }
@@ -387,6 +401,7 @@ _SKILL_SCHEMA_EMITTER: frozenset[str] = _RUN_LIFECYCLE | {
     "author.get",
     "schema.set",
     "schema.get",
+    "schema.list",
     "schema.validate",
 }
 
@@ -475,6 +490,7 @@ _SKILL_CRAWL_ERROR_WATCH: frozenset[str] = _RUN_LIFECYCLE | {
     "meta.enums",
     "project.get",
     "article.list",
+    "topic.list",
     "topic.bulkCreate",
     "gsc.queryArticle",
     "integration.test",
@@ -519,6 +535,7 @@ _SKILL_CONTENT_REFRESHER: frozenset[str] = _RUN_LIFECYCLE | {
     "target.list",
     "publish.preview",
     "publish.recordPublish",
+    "redirect.create",
 }
 
 

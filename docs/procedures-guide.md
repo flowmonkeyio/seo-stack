@@ -222,7 +222,7 @@ See section 4 below for walked examples.
 
 ## 3. Walked example: procedure 4 (`topic-to-published`)
 
-The workhorse procedure. Twelve steps, three-verdict EEAT gate with
+The workhorse procedure. Thirteen steps, three-verdict EEAT gate with
 loop-back to the editor, three failure-mode classes (`abort`,
 `retry`, `skip`).
 
@@ -266,6 +266,10 @@ steps:
   - id: editor
     skill: 02-content/editor
     on_failure: abort
+  - id: humanizer
+    skill: 02-content/humanizer
+    on_failure: retry
+    max_retries: 1
   - id: eeat-gate
     skill: 02-content/eeat-gate
     on_failure: loop_back
@@ -294,27 +298,28 @@ resumable: true
 
 | # | Step                | Skill                         | Purpose                                                          | MCP verbs                                          | `articles.status` after  |
 | - | ------------------- | ----------------------------- | ---------------------------------------------------------------- | -------------------------------------------------- | ------------------------ |
-| 1 | `brief`             | `01-research/content-brief`   | Resolve voice + compliance + EEAT + sources; persist brief_json. | `voice.get`, `compliance.list`, `eeat.list`, `article.setBrief`, `source.list` | `briefing`               |
+| 1 | `brief`             | `01-research/content-brief`   | Resolve voice + compliance + EEAT + sources; persist brief_json. | `voice.get`, `compliance.list`, `eeat.list`, `article.setBrief`, `source.list` | `outlined`               |
 | 2 | `outline`           | `02-content/outline`          | Generate H1/H2/H3 from the brief.                                | `article.get`, `voice.get`, `article.setOutline`   | `outlined`               |
 | 3 | `draft-intro`       | `02-content/draft-intro`      | First drafting pass — hook + thesis.                              | `article.get`, `voice.get`, `article.setDraft`     | (still `outlined`)       |
 | 4 | `draft-body`        | `02-content/draft-body`       | Second drafting pass — section expansion, evidence injection.    | `article.get`, `source.list`, `article.setDraft`   | (still `outlined`)       |
 | 5 | `draft-conclusion`  | `02-content/draft-conclusion` | Third drafting pass — summary + CTA + compliance footer.         | `article.get`, `compliance.list`, `article.setDraft`, `article.markDrafted` | `drafted`               |
 | 6 | `editor`            | `02-content/editor`           | Polish the stitched draft against voice + criteria.              | `article.get`, `voice.get`, `article.setEdited`    | `edited`                 |
-| 7 | `eeat-gate`         | `02-content/eeat-gate`        | Score against project's active criteria.                          | `eeat.score`, `eeat.bulkRecord`, `article.markEeatPassed` | `eeat_passed` (on SHIP)  |
-| 8 | `image-generator`   | `03-assets/image-generator`   | Generate hero image.                                              | `article.get`, `asset.create`                      | (unchanged)              |
-| 9 | `alt-text-auditor`  | `03-assets/alt-text-auditor`  | Audit + complete alt text on any assets.                          | `asset.list`, `asset.update`                       | (unchanged)              |
-| 10| `schema-emitter`    | `04-publishing/schema-emitter`| Build JSON-LD payload (Article + Author + Image refs).           | `article.get`, `schema.set`, `schema.validate`     | (unchanged)              |
-| 11| `interlinker`       | `04-publishing/interlinker`   | Suggest internal links from existing articles.                    | `interlink.suggest`, `interlink.list`              | (unchanged)              |
-| 12| `publish`           | `04-publishing/nuxt-content-publish` (or wordpress / ghost) | Push to primary publish target. | `article.get`, `schema.get`, `target.list`, `publish.preview`, `article.markPublished`, `publish.recordPublish` | `published` |
+| 7 | `humanizer`         | `02-content/humanizer`        | One pass of rhythm/AI-tell cleanup for the current article version. | `article.get`, `voice.get`, `article.setEdited`    | `edited`                 |
+| 8 | `eeat-gate`         | `02-content/eeat-gate`        | Score against project's active criteria.                          | `eeat.score`, `eeat.bulkRecord`, `article.markEeatPassed` | `eeat_passed` (on SHIP)  |
+| 9 | `image-generator`   | `03-assets/image-generator`   | Generate hero image.                                              | `article.get`, `asset.create`                      | (unchanged)              |
+| 10| `alt-text-auditor`  | `03-assets/alt-text-auditor`  | Audit + complete alt text on any assets.                          | `asset.list`, `asset.update`                       | (unchanged)              |
+| 11| `schema-emitter`    | `04-publishing/schema-emitter`| Build JSON-LD payload (Article + Author + Image refs).           | `article.get`, `schema.list`, `schema.set`, `schema.validate` | (unchanged)              |
+| 12| `interlinker`       | `04-publishing/interlinker`   | Suggest internal links from existing articles.                    | `interlink.suggest`, `interlink.list`              | (unchanged)              |
+| 13| `publish`           | `04-publishing/nuxt-content-publish` (or wordpress / ghost) | Push to primary publish target. | `article.get`, `schema.get`, `target.list`, `publish.preview`, `article.markPublished`, `publish.recordPublish` | `published` |
 
-### 3.2 EEAT three-verdict logic (step 7)
+### 3.2 EEAT three-verdict logic (step 8)
 
 The eeat-gate step is the only step the runner branches on a verdict
 for. Per audit BLOCKER-09:
 
 - **`SHIP`** — all `tier='core'` criteria pass + no required criterion
-  fails + all 8 dimensions ≥ 70. Runner advances to step 8
-  (`image-generator`).
+  fails + all 8 dimensions ≥ 70. Runner advances to step 9
+  (`image-generator`) after the humanizer has completed.
 - **`FIX`** — ≥1 required criterion fails OR a dimension score < 70.
   Runner stamps `runs.metadata_json.eeat.fix_required[]` with the
   failure list, then `loop_back_to: editor` (step 6). Editor reads

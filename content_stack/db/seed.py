@@ -125,7 +125,10 @@ _EEAT_ITEMS: Final[tuple[tuple[str, EeatCategory, str, str], ...]] = (
         "O05",
         EeatCategory.O,
         "Schema Markup",
-        "Appropriate JSON-LD (Article / FAQ / HowTo / etc.) is emitted.",
+        (
+            "Appropriate visible-content-backed JSON-LD is emitted; "
+            "deprecated Google rich-result types are skipped by default."
+        ),
     ),
     (
         "O06",
@@ -527,11 +530,9 @@ _EEAT_ITEMS: Final[tuple[tuple[str, EeatCategory, str, str], ...]] = (
 
 
 # Default schema-emit templates seeded at DB init (PLAN.md L500-L502).
-# Six per-task brief; PLAN.md L501-L502 lists 8 (adds HowTo, BreadcrumbList);
-# we stop at six per the M1.A acceptance criteria, leaving HowTo +
-# BreadcrumbList for the M3 publish skill once we know they remain in scope
-# (HowTo rich results were retired Sep 2023 — keeping the wider list out
-# of the seed avoids a guaranteed DEPRECATED sweep).
+# FAQPage and HowTo are not seeded by default. Google retired broad FAQ
+# visibility in 2026 and HowTo rich results earlier, so these stay
+# opt-in/non-Google rather than becoming default project templates.
 _SCHEMA_EMIT_TEMPLATES: Final[tuple[tuple[str, dict[str, Any]], ...]] = (
     (
         "Article",
@@ -552,20 +553,6 @@ _SCHEMA_EMIT_TEMPLATES: Final[tuple[tuple[str, dict[str, Any]], ...]] = (
             "headline": "{{ title }}",
             "author": {"@type": "Person", "name": "{{ author_name }}"},
             "datePublished": "{{ published_at_iso }}",
-        },
-    ),
-    (
-        "FAQPage",
-        {
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": "{{ question }}",
-                    "acceptedAnswer": {"@type": "Answer", "text": "{{ answer }}"},
-                }
-            ],
         },
     ),
     (

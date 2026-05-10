@@ -39,6 +39,13 @@ outputs:
     write: section roster + source-binding map in runs.metadata_json.outline.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 (`topic-to-published`) runs this skill immediately after `content-brief` (#4). The brief locks the title, thesis, audience, and citable sources; the outline turns those into a section roster the three draft skills (#7 intro, #8 body, #9 conclusion) execute against. The outline is the contract between research and writing — every load-bearing claim in the brief should map to a section, and every required source should map to the section that will cite it.
@@ -47,7 +54,7 @@ Skip this skill only when the operator hand-authored an outline through `PATCH /
 
 ## Inputs
 
-- `article.get(article_id)` — returns the current row including `brief_json` (the title, thesis, audience, intent, target word count, outline hint, EEAT plan, schema types, image directives, compliance jurisdictions) and the live `step_etag` the next call must echo back.
+- `article.get(article_id)` — returns the current row including `brief_json` (the title, thesis, audience, intent, editorial depth/target length hint, outline hint, EEAT plan, schema types, image directives, compliance jurisdictions) and the live `step_etag` the next call must echo back.
 - `voice.get(project_id)` — the active voice profile's `voice_md`. The skill consults voice for two outline-level decisions: which `opening` archetype the intro should target (the brief usually nominates one but voice can override), and which `closing` archetype the conclusion should aim for. Both choices land in `runs.metadata_json.outline` so the draft skills don't have to re-derive them.
 - `eeat.list(project_id)` — the active criteria. Surface during outlining the criteria with `tier='core'` (T04 / C01 / R10 by default) and any other `required=true` rows so each section can plan how it satisfies them. Sections that lack a credible plan for a load-bearing criterion get flagged before drafting starts.
 - `source.list(article_id)` — the research-source rows the brief seeded with `used=false`. Every source the brief marked `required=true` must be assigned to at least one outline section in step 5; voluntary sources may remain unbound until drafting picks them up.
@@ -70,7 +77,7 @@ Skip this skill only when the operator hand-authored an outline through `PATCH /
    - **Key_takeaways** — a bulleted "if you remember nothing else" list, tuned for skim readers.
    Persist both choices in `runs.metadata_json.outline.archetypes = {opening, closing}` so the draft skills inherit them without re-deriving.
 3. **Sketch the H1.** The H1 is the article title. Pull `brief_json.title` as the starting point; refine only when the brief title obviously fails the voice tone (too generic, too clickbaity, too long for SERP). When refining, capture the original in `runs.metadata_json.outline.h1_alternates[]` so the operator can audit the change. The final H1 lands at the top of `outline_md` as a single `# ` line.
-4. **Draft the H2 roster.** Translate the brief's `outline_hint_md` into 4–10 H2 sections. Each H2 owns one load-bearing claim from the brief or one stage in the reader's journey from problem to resolution. Aim for sections that are roughly equal in expected word weight — a 1800-word target with 6 H2 sections gives each section ~300 words after the intro and conclusion budget. Sections to consider in standard ordering:
+4. **Draft the H2 roster.** Translate the brief's `outline_hint_md` into 4–10 H2 sections. Each H2 owns one load-bearing claim from the brief or one stage in the reader's journey from problem to resolution. Aim for sections that carry comparable editorial weight without padding to a fixed word count; the length hint is a scope guard, not a ranking signal. Sections to consider in standard ordering:
    - **Definition / orientation** — what is the topic and why should the reader care.
    - **Stake / evidence** — the central claim and the data that backs it.
    - **Comparative / breakdown** — sub-cases, options, trade-offs.
@@ -105,7 +112,7 @@ Skip this skill only when the operator hand-authored an outline through `PATCH /
 ## Failure handling
 
 - **Status not `outlined`.** Abort with `articles.status` mismatch; the procedure runner routes to either `set_brief` (if briefing) or `set_edited`-class repair (if drafted/edited). Do not silently force the status.
-- **Brief missing required keys.** Abort. The brief skill should have populated title, thesis, intent, audience, target word count, sources, EEAT plan, and compliance jurisdictions. A truncated brief means a misordered procedure run; surface the missing keys so the runner knows what to repair.
+- **Brief missing required keys.** Abort. The brief skill should have populated title, thesis, intent, audience, editorial depth/target length hint, sources, EEAT plan, and compliance jurisdictions. A truncated brief means a misordered procedure run; surface the missing keys so the runner knows what to repair.
 - **Required source has no plausible section home.** Pause for operator review (interactive mode) or write `runs.metadata_json.outline.unbound_sources[]` and continue (headless mode). The body skill will surface the unbound list again at draft time.
 - **Iterations exceed cap.** Default cap is 4 iterations; once exceeded, persist the current best roster, mark `partial=true`, and finish so the operator can audit. The cap is generous on purpose — outline iteration is cheap relative to drafting.
 - **Etag mismatch.** Means another writer touched the article between read and write. Refuse to overwrite; the procedure runner refreshes by calling `article.get` again and retries.

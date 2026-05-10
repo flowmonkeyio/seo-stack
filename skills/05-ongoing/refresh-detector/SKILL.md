@@ -35,6 +35,13 @@ outputs:
     write: per-article score breakdowns (age / gsc trend / drift sub-scores), the candidate roster, and the marked-for-refresh roster in runs.metadata_json.refresh_detector.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 The refresh-detector is the seed of procedure 7 (`monthly-humanize-pass`). The skill consumes the canonical query from PLAN.md Schema § "Canonical refresh-detector query" — published articles whose `last_refreshed_at` is older than the project's age floor (or null) and whose `last_evaluated_for_refresh_at` is older than 7 days (the per-audit-B-15 thrash guard). For each candidate it computes a refresh_score from three sub-scores, marks the article `refresh_due` when the score crosses the project floor, and writes a structured audit row.
@@ -63,7 +70,7 @@ The skill also runs in operator-invoked one-off mode when the operator wants to 
 The skill's job is to compute three numeric sub-scores per candidate, sum them, compare against the project floor, and either mark or skip. The sub-scores are weighted-by-design — age and GSC are the canonical drivers; drift is a tie-breaker that elevates ageing articles whose live HTML has actually changed.
 
 1. **Read context.** Resolve the project and the tuning knobs. When `schedule_json.refresh.*` is absent (the project bootstrap did not seed defaults), apply the defaults documented above and surface `runs.metadata_json.refresh_detector.defaults_applied=true` so the operator can decide whether to lock the values into the project row.
-2. **Compute the windows.** Today's date (or the run's `started_at` clipped to date) is `today`. The two GSC windows are `(today - 56 days, today - 28 days)` (the prior window) and `(today - 28 days, today)` (the trailing window). The age cutoff is `today - schedule_json.refresh.refresh_age_days`. The thrash cutoff is `today - schedule_json.refresh.thrash_guard_days`.
+2. **Compute the windows.** Today's date (or the run's `started_at` clipped to date) is `today`. Use final Search Console data by default: `gsc_until = today - schedule_json.gsc.final_data_lag_days` (default 3). The two GSC windows are `(gsc_until - 56 days, gsc_until - 28 days)` (the prior window) and `(gsc_until - 28 days, gsc_until)` (the trailing window). The age cutoff is `today - schedule_json.refresh.refresh_age_days`. The thrash cutoff is `today - schedule_json.refresh.thrash_guard_days`. If fresh/incomplete GSC data is explicitly requested, record `first_incomplete_date` and lower confidence.
 3. **Build the candidate roster.** Run the canonical query (paraphrased in this prose; the SQL lives in PLAN.md Schema § "Canonical refresh-detector query"):
    - `articles WHERE status='published' AND project_id=:project_id`
    - AND (`last_refreshed_at IS NULL OR last_refreshed_at < <age_cutoff>`)

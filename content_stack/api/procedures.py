@@ -330,9 +330,7 @@ async def fork_procedure_run(
     """Fork a procedure run from a step index, copying prior outputs."""
     runner = _runner_from(request)
     try:
-        envelope = await runner.fork(
-            run_id=run_id, from_step_index=payload.from_step_index
-        )
+        envelope = await runner.fork(run_id=run_id, from_step_index=payload.from_step_index)
     except NotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

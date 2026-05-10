@@ -12,6 +12,7 @@ allowed_tools:
   - cluster.list
   - cluster.get
   - topic.list
+  - topic.assignCluster
   - topic.bulkUpdateStatus
   - run.start
   - run.heartbeat
@@ -38,10 +39,17 @@ outputs:
   - table: clusters
     write: one row per pillar plus one per spoke; parent_id wires spokes to their pillar.
   - table: topics
-    write: cluster_id assigned via the topic repository (a clustering update path that does not require status transitions).
+    write: cluster_id assigned via topic.assignCluster without changing topic lifecycle status.
   - table: runs
     write: cluster scorecard in runs.metadata_json.topical_cluster.scorecard.
 ---
+
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
 
 ## When to use
 
@@ -65,9 +73,9 @@ Skip this skill when the operator is doing a one-off article and has already cho
    - **2 to 3 shared** — adjacent clusters, interlink candidates. Different `cluster_id` rows; the interlinker (#15) will recommend cross-links.
    - **0 to 1 shared** — separate territories. Different clusters; no relationship signal.
    The bucket-edge sweep handles the rare cross-intent overlap (a "best beginner X" query that ranks both informational guides and commercial reviews).
-3. **Pick the pillar per cluster.** Within each cluster (set of keywords with mutual 4-to-6 overlap), the pillar is the keyword with the highest search volume AND the broadest intent (informational beats commercial beats transactional for pillar duty). Tie-break by SERP-overlap centrality: the keyword whose SERP overlaps with the most other cluster members. Persist the pillar via `cluster.create(name=<pillar primary_kw>, type='pillar')`. Set the pillar topic's `cluster_id` to the new cluster's id.
-4. **Add spokes.** Each remaining cluster member becomes a spoke. Create a child cluster row via `cluster.create(name=<spoke primary_kw>, type='spoke', parent_id=<pillar cluster id>)` and assign the topic to it. Cap each pillar at 4 spokes; a fifth candidate either folds into an existing spoke (if SERP-overlap merits) or gets promoted to its own pillar.
-5. **Word-count targets.** The cluster row carries an implicit content-length expectation that the brief skill reads from `meta.enums` defaults: pillar pages target 2500–4000 words, spoke pages target 1200–1800. The procedure-4 brief variant (`pillar` vs `spoke`) overrides this when the operator wants a different shape. Document the targets in the cluster's metadata so the brief skill doesn't have to re-derive them.
+3. **Pick the pillar per cluster.** Within each cluster (set of keywords with mutual 4-to-6 overlap), the pillar is the keyword with the highest search volume AND the broadest intent (informational beats commercial beats transactional for pillar duty). Tie-break by SERP-overlap centrality: the keyword whose SERP overlaps with the most other cluster members. Persist the pillar via `cluster.create(name=<pillar primary_kw>, type='pillar')`, then call `topic.assignCluster(topic_id=<pillar topic>, cluster_id=<new cluster>)`.
+4. **Add spokes.** Each remaining cluster member becomes a spoke. Create a child cluster row via `cluster.create(name=<spoke primary_kw>, type='spoke', parent_id=<pillar cluster id>)` and assign the topic with `topic.assignCluster`. Cap each pillar at 4 spokes; a fifth candidate either folds into an existing spoke (if SERP-overlap merits) or gets promoted to its own pillar.
+5. **Editorial depth targets.** Store an editorial-depth hint, not a ranking word-count target. Pillars usually need broader task coverage, original examples, and more source roles than spokes; spokes usually need narrower intent satisfaction and fewer claims. Document the depth hint in the cluster metadata so the brief skill can scope completeness without padding to a fixed length.
 6. **Cannibalisation guard.** A topical map is only valuable if no two posts target the same `primary_kw`. After cluster assignment, run a pass over the project's `topics WHERE status IN ('queued','approved','drafting','published')` and reject any newly-clustered row whose `primary_kw` matches an existing approved-or-drafted topic. Use `topic.bulkUpdateStatus` to flip those to `rejected` with a metadata note pointing to the conflicting topic.
 7. **Internal-link plan.** The cluster topology implies a mandatory link matrix: every spoke must link up to its pillar; every pillar must link down to every direct spoke; spokes within a cluster should cross-link 2–3 times each; cross-cluster links are rare (0–1 per spoke). The skill does not call the interlinker — it persists the topology, and the interlinker (#15) reads it later.
 8. **Cluster scorecard.** Compute a small scorecard per cluster: total search volume across pillar + spokes, average difficulty, intent split, expected CPC range when DataForSEO returned that field, and an "opportunity rating" (low/medium/high) based on volume vs difficulty. Persist into `runs.metadata_json.topical_cluster.scorecard[<cluster_id>]` so the UI can sort the queue.
@@ -76,7 +84,7 @@ Skip this skill when the operator is doing a one-off article and has already cho
 ## Outputs
 
 - `clusters` — one pillar row per cluster, plus one spoke row per spoke topic, with `parent_id` wiring spokes to their pillar.
-- `topics` — `cluster_id` populated; rejected duplicates flipped to `status='rejected'`.
+- `topics` — `cluster_id` populated via `topic.assignCluster`; rejected duplicates flipped to `status='rejected'`.
 - `runs.metadata_json.topical_cluster` — the scorecard, the merge log, and the cannibalisation rejections.
 
 ## Failure handling

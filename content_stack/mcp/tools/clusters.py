@@ -157,6 +157,18 @@ class TopicBulkUpdateStatusInput(MCPInput):
     status: TopicStatus
 
 
+class TopicAssignClusterInput(MCPInput):
+    """Assign one topic to a cluster without changing status."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"topic_id": 1, "cluster_id": 2}},
+    )
+
+    topic_id: int
+    cluster_id: int | None
+
+
 # ---------------------------------------------------------------------------
 # Handlers.
 # ---------------------------------------------------------------------------
@@ -280,6 +292,13 @@ async def _topic_bulk_update_status(
     )
 
 
+async def _topic_assign_cluster(
+    inp: TopicAssignClusterInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[TopicOut]:
+    env = TopicRepository(ctx.session).assign_cluster(inp.topic_id, inp.cluster_id)
+    return WriteEnvelope[TopicOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
+
+
 # ---------------------------------------------------------------------------
 # Registration.
 # ---------------------------------------------------------------------------
@@ -365,6 +384,15 @@ def register(registry: ToolRegistry) -> None:
             TopicBulkUpdateStatusInput,
             WriteEnvelope[list[TopicOut]],
             _topic_bulk_update_status,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "topic.assignCluster",
+            "Assign one topic to a cluster without changing status.",
+            TopicAssignClusterInput,
+            WriteEnvelope[TopicOut],
+            _topic_assign_cluster,
         )
     )
 

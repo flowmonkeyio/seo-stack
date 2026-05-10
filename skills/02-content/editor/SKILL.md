@@ -40,6 +40,13 @@ outputs:
     write: per-pass change counts, AI-tell removal log, voice-calibration deltas in runs.metadata_json.editor.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill once per draft cycle, after `draft-conclusion` (#9) closes the draft phase. The editor is the single most important quality gate before the EEAT pass: it scrubs the surface tells that mark LLM-authored prose, calibrates emphasis and visual breaks against the project's voice profile, and tightens clauses that the section-by-section drafting necessarily left baggy. The EEAT gate (#11) reads `articles.edited_md` directly — it does not see the raw `draft_md`.

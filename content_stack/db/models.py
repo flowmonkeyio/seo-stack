@@ -1,7 +1,7 @@
-"""SQLModel declarations for the 28 content-stack tables.
+"""SQLModel declarations for the 30 content-stack tables.
 
 Single-file layout per PLAN.md L137 / L202. Each table maps 1:1 to a
-section in PLAN.md "Database schema (28 tables — full scope)". Status
+section in PLAN.md "Database schema (30 tables — full scope)". Status
 enums are declared next to the table they serialise to; column-level
 docstrings explain non-obvious *why* (per CLAUDE.md style guidance).
 
@@ -624,6 +624,75 @@ class PublishTarget(SQLModel, table=True):
     is_primary: bool = Field(default=False)
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class WorkspaceBinding(SQLModel, table=True):
+    """Daemon-owned mapping from an external repo/workspace to a project.
+
+    Plugin-provided MCP bridges run from arbitrary site repositories. They send
+    repo fingerprints and framework hints to the singleton daemon; this table
+    is the durable, non-invasive binding back to ``projects``. No required
+    ``.env`` / ``.mcp.json`` / repo-local content-stack file is needed.
+    """
+
+    __tablename__ = "workspace_bindings"
+    __table_args__ = (
+        Index("ix_workspace_bindings_project", "project_id"),
+        Index("ix_workspace_bindings_git_remote", "git_remote_url"),
+        UniqueConstraint("repo_fingerprint", name="uq_workspace_bindings_fingerprint"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    repo_fingerprint: str = Field(max_length=128)
+    git_remote_url: str | None = Field(default=None, max_length=500)
+    normalized_repo_name: str | None = Field(default=None, max_length=200)
+    last_known_root: str | None = Field(default=None, max_length=1000)
+    framework: str | None = Field(default=None, max_length=120)
+    content_model_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    last_seen_at: datetime | None = Field(default=None)
+
+
+class AgentSession(SQLModel, table=True):
+    """Ephemeral-ish record for a plugin MCP bridge connected to the daemon."""
+
+    __tablename__ = "agent_sessions"
+    __table_args__ = (
+        Index("ix_agent_sessions_project", "project_id"),
+        Index("ix_agent_sessions_fingerprint", "repo_fingerprint"),
+        Index("ix_agent_sessions_last_seen", "last_seen_at"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    workspace_binding_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("workspace_bindings.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    runtime: str = Field(default="unknown", max_length=40)
+    cwd: str | None = Field(default=None, max_length=1000)
+    repo_fingerprint: str | None = Field(default=None, max_length=128)
+    git_remote_url: str | None = Field(default=None, max_length=500)
+    thread_id: str | None = Field(default=None, max_length=160)
+    client_session_id: str | None = Field(default=None, max_length=160)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    last_seen_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class Run(SQLModel, table=True):
@@ -1325,6 +1394,7 @@ __all__ = [
     "INTERNAL_LINK_STATUS_TRANSITIONS",
     "RUN_STATUS_TRANSITIONS",
     "TOPIC_STATUS_TRANSITIONS",
+    "AgentSession",
     "Article",
     "ArticleAsset",
     "ArticleAssetKind",
@@ -1372,4 +1442,5 @@ __all__ = [
     "TopicSource",
     "TopicStatus",
     "VoiceProfile",
+    "WorkspaceBinding",
 ]

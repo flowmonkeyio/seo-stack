@@ -1,8 +1,9 @@
-"""Per audit P-G4: the wheel must bundle skills + procedures.
+"""Per audit P-G4: the wheel must bundle skills, procedures, and plugins.
 
 A pipx-mode install has no checked-out repo on disk, so
 `content-stack install` resolves assets via `importlib.resources` from
-``content_stack/_assets/skills/`` and ``content_stack/_assets/procedures/``.
+``content_stack/_assets/skills/``, ``content_stack/_assets/procedures/``,
+and ``content_stack/_assets/plugins/``.
 We verify the wheel produced by `python -m build` contains those paths
 with the same skill / procedure counts as the source repo.
 """
@@ -71,6 +72,14 @@ def test_wheel_includes_assets_procedures(built_wheel: Path) -> None:
     assert len(bundled) == expected, (
         f"wheel has {len(bundled)} PROCEDURE.md files; source has {expected}"
     )
+
+
+def test_wheel_includes_content_stack_plugin(built_wheel: Path) -> None:
+    names = _wheel_names(built_wheel)
+
+    assert "content_stack/_assets/plugins/content-stack/.codex-plugin/plugin.json" in names
+    assert "content_stack/_assets/plugins/content-stack/.claude-plugin/plugin.json" in names
+    assert "content_stack/_assets/plugins/content-stack/.mcp.json" in names
 
 
 def test_wheel_assets_path_namespace_is_under_content_stack(built_wheel: Path) -> None:

@@ -130,9 +130,7 @@ def test_agent_led_claim_and_record_step(mcp_client: MCPClient, seeded_project: 
     assert status["steps"][0]["output_json"]["article_id"] == 123
 
 
-def test_agent_led_execute_programmatic_step(
-    mcp_client: MCPClient, seeded_project: dict
-) -> None:
+def test_agent_led_execute_programmatic_step(mcp_client: MCPClient, seeded_project: dict) -> None:
     """A procedure run token can execute deterministic programmatic steps explicitly."""
     started = mcp_client.call_tool_structured(
         "procedure.run",

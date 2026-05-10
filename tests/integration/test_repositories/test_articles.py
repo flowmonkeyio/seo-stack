@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import Session
 
 from content_stack.db.models import ArticleStatus
-from content_stack.repositories.articles import ArticleRepository
+from content_stack.repositories.articles import ArticleRepository, ResearchSourceRepository
 from content_stack.repositories.base import (
     ConflictError,
     NotFoundError,
@@ -72,6 +72,12 @@ def test_full_procedure_4_happy_path(session: Session, project_id: int) -> None:
     # Editor pass.
     out = repo.set_edited(art.id, "Edited text.", expected_etag=etag)
     assert out.data.status == ArticleStatus.EDITED
+    etag = out.data.step_etag
+
+    # Humanizer pass replaces the edited body without changing status.
+    out = repo.set_edited(art.id, "Humanized text.", expected_etag=etag)
+    assert out.data.status == ArticleStatus.EDITED
+    assert out.data.edited_md == "Humanized text."
     etag = out.data.step_etag
 
     # EEAT gate verdict=SHIP.
@@ -181,6 +187,21 @@ def test_list_filters(session: Session, project_id: int) -> None:
     repo.create(project_id=project_id, topic_id=None, title="L2", slug="l2")
     page = repo.list(project_id, status=ArticleStatus.BRIEFING)
     assert len(page.items) == 2
+
+
+def test_research_source_list_can_filter_used(session: Session, project_id: int) -> None:
+    art = (
+        ArticleRepository(session)
+        .create(project_id=project_id, topic_id=None, title="Sources", slug="sources-filter")
+        .data
+    )
+    repo = ResearchSourceRepository(session)
+    unused = repo.add(article_id=art.id, url="https://example.com/a", used=False).data
+    used = repo.add(article_id=art.id, url="https://example.com/b", used=True).data
+
+    assert [row.id for row in repo.list(art.id)] == [unused.id, used.id]
+    assert [row.id for row in repo.list(art.id, used=True)] == [used.id]
+    assert [row.id for row in repo.list(art.id, used=False)] == [unused.id]
 
 
 def test_get_missing_article(session: Session) -> None:

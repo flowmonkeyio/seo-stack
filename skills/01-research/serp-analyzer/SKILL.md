@@ -49,6 +49,13 @@ outputs:
     write: per-URL audit blob in runs.metadata_json.serp_analyzer.audits[]; aggregate scores in runs.metadata_json.serp_analyzer.summary.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Two-phase pattern: scrape → audit. Run this skill when you need to understand what is currently ranking for a target keyword and how those pages stack up against the on-page rubric. Procedure 3 (`keyword-to-topic-queue`) drives the project-scope variant after `keyword-discovery`; procedure 4 (`topic-to-published`) runs the article-scope variant during research planning.
@@ -65,14 +72,14 @@ Skip this skill for purely informational meta-research where you only need URL c
 ## Steps
 
 1. **Resolve target keyword.** If `article_id` is supplied, read the article and use its `brief_json.primary_kw`. Otherwise the procedure runner passed `primary_kw` directly. Refuse to start if neither is present.
-2. **Map the SERP cheaply.** Call DataForSEO's SERP endpoint to get the top organic URLs for the keyword (up to `top_n`, default 10). Filter out paid results, featured snippets, and PAA boxes — only organic positions count. Persist the URL list as a heartbeat payload so the audit step is resumable.
-3. **Map-then-crawl discipline.** The audit costs scale linearly with URLs. Start with the cheapest signal (`firecrawl_map`) only when you need to enumerate site structure; for each ranking URL call the daemon's Firecrawl wrapper at `op='scrape'` with `formats=['markdown']` and `onlyMainContent=True`. The wrapper handles budget pre-emption per audit M-25; a single map call is roughly half a credit, scrape is one credit per page. The procedure runner sets `args.budget_cap_usd` if the operator wants a hard ceiling — read it from the step args and skip remaining URLs once the cap is hit.
+2. **Map the SERP cheaply.** Use the organic URL list supplied by the procedure args or by the prior keyword-discovery run. Filter out paid results, featured snippets, and PAA boxes when that metadata is available — only organic positions count. If no SERP URL list is present and the active tool grant does not expose a SERP-fetch tool, stop with `BLOCKED` instead of calling an ungranted vendor endpoint or native browser fetch.
+3. **Map-then-crawl discipline.** The audit costs scale linearly with URLs. Use only the content-stack integration path exposed to this run; do not bypass the daemon with direct Firecrawl/Jina/native fetch calls. When a crawl payload is unavailable, downgrade that URL to a SERP-only finding and mark confidence `low`. The procedure runner sets `args.budget_cap_usd` if the operator wants a hard ceiling — read it from the step args and skip remaining URLs once the cap is hit.
 4. **Per-URL on-page audit.** For every scraped URL, run the rubric. The rubric has six categories — score each on a 0–100 scale and capture concrete findings:
-   - **On-page SEO** — title length (50–60 chars target), meta description length (150–160 chars), H1 presence and uniqueness, H2/H3 hierarchy depth, URL slug hygiene, canonical tag presence, meta robots correctness, hreflang correctness when locale != en-US.
-   - **Content quality** — total word count vs the page-type minimum (informational long-form: 1500+; comparison/review: 1200+; transactional: 600+), readability proxy (sentence-length variance, paragraph density), evidence of first-hand experience or expertise markers, freshness signals (publication date, last-updated date).
+   - **On-page SEO** — title and meta description quality (unique, descriptive, not stuffed, not boilerplate; length is only a truncation heuristic), H1 presence and uniqueness, H2/H3 hierarchy depth, URL slug hygiene, canonical tag presence, meta robots correctness, hreflang correctness when locale != en-US.
+   - **Content quality** — completeness against the query intent, not a fixed word-count rule; readability proxy (sentence-length variance, paragraph density), evidence of first-hand experience or expertise markers, freshness signals (publication date, last-updated date), and whether the page adds original value beyond summarising the SERP.
    - **Technical** — canonical correctness, Open Graph completeness, Twitter Card completeness, status code, redirect chain length.
-   - **Schema** — JSON-LD detection, required-properties validation, deprecated-type flags (avoid recommending HowTo or restricted FAQ types).
-   - **Images** — alt-text presence + length window (10–125 chars), file format (WebP/AVIF preferred), explicit width/height for CLS prevention.
+   - **Schema** — JSON-LD detection, required-properties validation, and stale/deprecated-type flags (do not recommend FAQPage for Google rich-result targeting after the 2026-05-07 deprecation; do not recommend HowTo for Google rich-result targeting).
+   - **Images** — useful contextual alt text (no keyword stuffing), descriptive filenames when visible, file format (WebP/AVIF preferred), explicit width/height for CLS prevention.
    - **Core Web Vitals proxy** — flag obvious red flags from the markdown alone: huge hero images, render-blocking inline scripts visible in source, missing image dimensions. The audit cannot replace a real Lighthouse run; document its limitations in the per-URL finding.
    For each category, emit a structured `{score: int, findings: [str], recommendations: [str]}` blob.
 5. **Aggregate.** Roll the per-URL scores into a per-keyword summary: average score per category across the top-N URLs, bottom-quartile category (the gap to attack), top-quartile (the floor to clear). Capture an unranked list of structural patterns common to the top-3 (e.g., "every top-3 page has a comparison table; ours should too").

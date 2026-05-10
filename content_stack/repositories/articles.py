@@ -442,11 +442,16 @@ class ArticleRepository:
         *,
         expected_etag: str,
     ) -> Envelope[ArticleOut]:
-        """Write ``edited_md`` and advance ``drafted → edited``."""
+        """Write ``edited_md`` and advance/remain at ``edited``.
+
+        The editor advances ``drafted → edited``; the humanizer may then
+        replace the edited body while the article is already ``edited``.
+        Both writes still rotate the etag for audit/concurrency.
+        """
         return self._mutate(
             article_id,
             expected_etag=expected_etag,
-            from_status=ArticleStatus.DRAFTED,
+            from_status=(ArticleStatus.DRAFTED, ArticleStatus.EDITED),
             to_status=ArticleStatus.EDITED,
             patch={"edited_md": edited_md},
             step="set_edited",
@@ -498,6 +503,29 @@ class ArticleRepository:
             to_status=ArticleStatus.PUBLISHED,
             patch={"owner_run_id": run_id},
             step="mark_published",
+        )
+
+    def mark_aborted_publish(
+        self,
+        article_id: int,
+        *,
+        expected_etag: str,
+        run_id: int,
+    ) -> Envelope[ArticleOut]:
+        """Move a pre-publish article into the terminal aborted-publish state."""
+        return self._mutate(
+            article_id,
+            expected_etag=expected_etag,
+            from_status=(
+                ArticleStatus.BRIEFING,
+                ArticleStatus.OUTLINED,
+                ArticleStatus.DRAFTED,
+                ArticleStatus.EDITED,
+                ArticleStatus.EEAT_PASSED,
+            ),
+            to_status=ArticleStatus.ABORTED_PUBLISH,
+            patch={"owner_run_id": run_id},
+            step="mark_aborted_publish",
         )
 
     def mark_refresh_due(
@@ -915,14 +943,26 @@ class ResearchSourceRepository:
         self._s.refresh(row)
         return Envelope(data=ResearchSourceOut.model_validate(row))
 
-    def list(self, article_id: int) -> list[ResearchSourceOut]:
-        """All sources for an article."""
+    def list(self, article_id: int, *, used: bool | None = None) -> list[ResearchSourceOut]:
+        """All sources for an article, optionally filtered by citation use."""
+        stmt = select(ResearchSource).where(ResearchSource.article_id == article_id)
+        if used is not None:
+            stmt = stmt.where(ResearchSource.used.is_(used))  # type: ignore[union-attr]
         rows = self._s.exec(
-            select(ResearchSource)
-            .where(ResearchSource.article_id == article_id)
-            .order_by(ResearchSource.id.asc())  # type: ignore[union-attr,attr-defined]
+            stmt.order_by(ResearchSource.id.asc())  # type: ignore[union-attr,attr-defined]
         ).all()
         return [ResearchSourceOut.model_validate(r) for r in rows]
+
+    def update_used(self, source_id: int, *, used: bool) -> Envelope[ResearchSourceOut]:
+        """Patch the ``used`` flag on a research-source row."""
+        row = self._s.get(ResearchSource, source_id)
+        if row is None:
+            raise NotFoundError(f"research source {source_id} not found")
+        row.used = used
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        return Envelope(data=ResearchSourceOut.model_validate(row))
 
 
 # ---------------------------------------------------------------------------

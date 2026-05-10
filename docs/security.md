@@ -107,10 +107,10 @@ Both the clone-mode `make install` and the pipx-mode
   `seed.bin.new` before committing re-encrypted rows; if a crash leaves
   that staged file behind, daemon startup refuses to continue until the
   operator finishes or restores the rotation.
-- **Wheel layout (pipx)**: skills + procedures are bundled under
-  `content_stack/_assets/`. The console script copies them via
-  `importlib.resources` so users without the repo on disk get the
-  same install. The committed `ui_dist/` ships inside the package
+- **Wheel layout (pipx)**: skills, procedures, and plugins are bundled under
+  `content_stack/_assets/`. The console script hydrates the user-local plugin
+  from those assets via `importlib.resources` so users without the repo on disk
+  get the same install. The committed `ui_dist/` ships inside the package
   (D8) — no `pnpm` needed at user install time.
 - **launchd plist**: optional. The plist runs the daemon as the
   invoking user; never as root. `make install-launchd` writes the

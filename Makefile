@@ -11,6 +11,7 @@ UV ?= uv
 .PHONY: help install serve dev-ui build-ui register-codex register-claude \
         install-skills-codex install-skills-claude \
         install-procedures-codex install-procedures-claude \
+        install-plugins \
         install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
         rotate-seed rotate-token oauth-refresh
@@ -18,7 +19,7 @@ UV ?= uv
 help: ## Show this help with all targets
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-26s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-install: ## (M9) Full install pipeline — deps + migrate + UI + skills + procedures + MCP + doctor
+install: ## (M9) Full install pipeline — deps + migrate + UI + plugin + MCP + doctor
 	@echo "==> Installing Python deps"
 	$(UV) sync --all-extras
 	@echo "==> Bootstrapping daemon state (creates seed + auth.token if absent)"
@@ -36,12 +37,8 @@ install: ## (M9) Full install pipeline — deps + migrate + UI + skills + proced
 	@bash scripts/register-mcp-codex.sh
 	@echo "==> Registering MCP for Claude Code"
 	@bash scripts/register-mcp-claude.sh
-	@echo "==> Installing skills (Codex + Claude Code)"
-	@bash scripts/install-codex.sh
-	@bash scripts/install-claude.sh
-	@echo "==> Installing procedures (Codex + Claude Code)"
-	@bash scripts/install-procedures-codex.sh
-	@bash scripts/install-procedures-claude.sh
+	@echo "==> Installing plugins"
+	@bash scripts/install-plugins.sh
 	@echo "==> Running doctor (post-install diagnose; daemon-up checks may FAIL until \`make serve\` runs)"
 	@bash scripts/doctor.sh || echo "  (doctor surfaced issues — see output above)"
 	@echo "==> install complete"
@@ -107,6 +104,9 @@ install-procedures-codex: ## (M9) Install procedures into ~/.codex/procedures/co
 install-procedures-claude: ## (M9) Install procedures into ~/.claude/procedures/content-stack/
 	@bash scripts/install-procedures-claude.sh
 
+install-plugins: ## Install content-stack plugin into ~/plugins and ~/.agents marketplace
+	@bash scripts/install-plugins.sh
+
 install-launchd: ## (M9) Write launchd plist for auto-start (macOS, optional)
 	@bash scripts/install-launchd.sh
 
@@ -117,6 +117,8 @@ uninstall: ## (M9) Remove installed skills/procedures/MCP entries; preserve DB +
 	@rm -rf "$(HOME)/.codex/skills/content-stack" "$(HOME)/.claude/skills/content-stack"
 	@echo "==> Removing procedures"
 	@rm -rf "$(HOME)/.codex/procedures/content-stack" "$(HOME)/.claude/procedures/content-stack"
+	@echo "==> Removing plugins"
+	@bash scripts/install-plugins.sh --remove || true
 	@echo "==> Unregistering MCP for Codex CLI"
 	@bash scripts/register-mcp-codex.sh --remove || true
 	@echo "==> Unregistering MCP for Claude Code"

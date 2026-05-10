@@ -14,6 +14,7 @@ allowed_tools:
   - article.get
   - article.setDraft
   - source.list
+  - source.update
   - run.start
   - run.heartbeat
   - run.finish
@@ -40,6 +41,13 @@ outputs:
     write: per-section status, source-utilisation, citation-insertion log in runs.metadata_json.draft_body.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill after `draft-intro` (#7). The body fills the H2 / H3 frame the outline drew, citing the research sources the brief seeded. The body is the largest single chunk of word count in any article — typically 70–80% of the target — so this skill iterates section-by-section with heartbeats so the procedure controller can show progress and the operator can intervene if a section drifts.
@@ -63,7 +71,7 @@ The body uses `article.setDraft(append=true)`: each section appends to the exist
    1. Mark the tracker `in_progress` and emit a heartbeat.
    2. Render the section heading exactly as the outline did (`## ` line). Strip the HTML-comment line — the rendered draft does not surface the planning metadata to readers.
    3. **Render `position='every-section'` compliance** at the top of the section if any active rule applies (typically gambling-affiliate disclosures or supplement-claim disclaimers).
-   4. **Write the section prose.** Aim for the per-section word weight implied by the outline's section count and the brief's target word count (e.g., 1800-word target with 6 H2 sections = ~250 words per body section after the intro and conclusion budget). Open with a sentence that names the section's load-bearing claim from the HTML-comment metadata. Develop the claim with evidence drawn from the bound sources. Close with a transition sentence that points the reader at the next section without explicitly naming it.
+   4. **Write the section prose.** Give each section enough room to satisfy its claim and source obligations, using the brief's depth/target length hint only as a scope guard. Do not pad thin sections to hit a number; expand only when the reader needs evidence, examples, comparisons, or caveats. Open with a sentence that names the section's load-bearing claim from the HTML-comment metadata. Develop the claim with evidence drawn from the bound sources. Close with a transition sentence that points the reader at the next section without explicitly naming it.
    5. **Insert citation markers** at the end of every load-bearing sentence. The marker syntax is `[^N]` where N is the stable index from `source.list`. A sentence may carry multiple markers when multiple sources support the claim: `... a 23% drop in retention.[^4][^11]`. The body never writes the footnote definitions; those land at the end of the draft once the conclusion skill closes out, and the editor pass tightens.
    6. **Render H3 subsections** when the outline declared them. Each H3 follows the same pattern: render heading, write prose, cite. H3 word weight is roughly H2 weight divided by the number of H3 children; sum to the H2's total.
    7. **Choose `voice.structure.example_density` examples.** Pick a list, table, diagram (rendered as ASCII or referenced as an image directive), code block, blockquote, or case-study sketch. Use no more than one example block per H2 in `low` density, two in `moderate`, three in `generous`. Examples must serve the section's claim, not decorate.
@@ -71,7 +79,7 @@ The body uses `article.setDraft(append=true)`: each section appends to the exist
 4. **Render unbound-source warnings.** Walk `runs.metadata_json.outline.unbound_sources[]` (if any) and check whether the body drafting absorbed them into a section. Sources the body never cited get logged in `runs.metadata_json.draft_body.unused_sources[]` so a downstream EEAT-FIX loop can decide whether to add a section or relax the requirement.
 5. **Plant deeper EEAT signals.** Beyond R10 (citation density), the body is where Expertise (Ept) and Authority (A) get their best evidence: original analysis, comparison tables, named experts quoted by source. Surface in `runs.metadata_json.draft_body.eeat_signals[]` which sections planted which signals so skill #11 can audit. Do not invent expertise the brief did not declare; `unmet_signals` propagates from skill #7.
 6. **Compose the section markdown and append.** After each section completes, call `article.setDraft(article_id, draft_md=<section markdown only>, append=true, expected_etag=<live etag>)`. Each call rotates the etag — capture the new value before the next section's setDraft. Appending per section instead of writing the entire body in one call keeps the procedure runner's progress surface accurate and lets a section-level failure recover at the section boundary instead of the whole body.
-7. **Mark `used=true` on cited sources.** For every source whose `[^N]` marker landed in the draft, flip `research_sources.used=true` so the conclusion skill's references section knows which to render and the EEAT gate (#11) can detect the "required source went uncited" failure mode. Use `source.add` semantics with the upsert; the daemon handles the round-trip.
+7. **Mark `used=true` on cited sources.** For every source whose `[^N]` marker landed in the draft, call `source.update(source_id=<id>, used=true)` so the conclusion skill's references section knows which to render and the EEAT gate (#11) can detect the "required source went uncited" failure mode.
 8. **Final consistency pass.** Walk the appended sections and check:
    - Every required source bound to the body in the outline has at least one citation marker.
    - No section opened with a filler stem (the editor pass will catch most of these but flagging them now reduces editor work).
@@ -94,7 +102,7 @@ The body uses `article.setDraft(append=true)`: each section appends to the exist
 - **Per-section `set_draft` returns conflict.** Means another writer touched `draft_md` between sections (rare in headless procedure runs; possible during an interactive override). Refresh the article via `article.get`, capture the new etag, retry the failed section once. Two consecutive conflicts on the same section means the procedure runner restarts the body skill from the intro boundary.
 - **Voice drift detected.** Log in `consistency_warnings`; do not abort. The editor pass cleans most drift; the EEAT gate's tone-consistency check can downgrade if drift is severe.
 - **Compliance rule body missing.** Persist a `runs.metadata_json.draft_body.compliance_render_failures[]` entry and continue rendering remaining rules; the EEAT gate flags the section.
-- **Cited source's `used=true` flip fails.** Continue; the conclusion skill re-flips during its own pass.
+- **Cited source's `used=true` flip fails.** Continue; the conclusion skill re-flips with `source.update` during its own pass.
 
 ## Variants
 

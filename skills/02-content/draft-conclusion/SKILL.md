@@ -15,6 +15,7 @@ allowed_tools:
   - article.setDraft
   - article.markDrafted
   - source.list
+  - source.update
   - run.start
   - run.heartbeat
   - run.finish
@@ -41,6 +42,13 @@ outputs:
     write: closing archetype, footer rules rendered, footnote count in runs.metadata_json.draft_conclusion.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill after `draft-body` (#8). The conclusion seals the article: it closes whichever rhetorical loop the intro opened, surfaces the compliance footer, materialises the footnote definitions for every `[^N]` marker the intro and body planted, and explicitly advances `articles.status` from `outlined` to `drafted` via `markDrafted`. After this skill returns, the editor (#10) takes over.
@@ -49,11 +57,12 @@ Re-running this skill replaces the conclusion (overwrites whatever follows the l
 
 ## Inputs
 
-- `article.get(article_id)` — returns `outline_md` (with archetype HTML comments), `brief_json` (closing archetype hint, target word count, references-section directive for `heavy` depth), the live `step_etag`, and `draft_md` (the H1 + intro + body sections from the prior skills). Confirm `status='outlined'` (the body did not advance status).
+- `article.get(article_id)` — returns `outline_md` (with archetype HTML comments), `brief_json` (closing archetype hint, editorial depth/target length hint, references-section directive for `heavy` depth), the live `step_etag`, and `draft_md` (the H1 + intro + body sections from the prior skills). Confirm `status='outlined'` (the body did not advance status).
 - `voice.get(project_id)` — the active voice's `voice_md`. The conclusion inherits the voice the intro and body set; no last-minute drift. Surface the voice's `closing_preference` if set (some voices default to `summary` regardless of archetype).
 - `compliance.list(project_id, position='footer')` — the rules that render in the conclusion's footer block (responsible-gambling notices, age-gate notices, affiliate disclosures, jurisdiction-specific YMYL disclaimers).
 - `eeat.list(project_id)` — the active criteria. The conclusion's primary EEAT job is C01 (compliance disclosure rendered correctly per active jurisdictions) and one half of T04 (credentialed-author byline if the voice profile prefers it in the footer instead of the byline).
 - `source.list(article_id, used=true)` — the research sources cited in the intro and body. The conclusion renders their footnote definitions in a `## References` section so the citation markers resolve. Sources with `used=false` are not rendered (the brief seeded them but the article never cited them).
+- `source.update(source_id, used=true)` — used only when the conclusion cites a fresh source that was not already marked used by the intro/body passes.
 - `meta.enums` — surfaces enum values for compliance positions and EEAT categories.
 
 ## Steps
@@ -66,7 +75,7 @@ Re-running this skill replaces the conclusion (overwrites whatever follows the l
    - **Callback** — return to the intro's hook (anecdote, scene, contradiction) and close the loop. Two paragraphs: the first revisits the hook with new context, the second names the lesson. Default when the intro used a `narrative` opening.
    - **Provocation** — sharpen the thesis into a memorable claim. One paragraph, ending on a single declarative sentence. Useful when the brief's voice profile prefers strong opinions.
    - **Key_takeaways** — bulleted "if you remember nothing else" list. Five to seven bullets, each one short sentence. Tuned for skim readers and SEO featured-snippet eligibility.
-3. **Write the closing.** Aim for ~120–250 words for `standard` and `short` variants, ~250–400 for `pillar`. The closing inherits the voice of the body; do not introduce new tone or formality. Cite at most one fresh research source `[^N]` here — the conclusion is for synthesis, not new evidence; if the source list is short on used sources, surface in `runs.metadata_json.draft_conclusion.unmet_signals[]` rather than fabricate.
+3. **Write the closing.** Aim for ~120–250 words for `standard` and `short` variants, ~250–400 for `pillar`. The closing inherits the voice of the body; do not introduce new tone or formality. Cite at most one fresh research source `[^N]` here — the conclusion is for synthesis, not new evidence; if the source list is short on used sources, surface in `runs.metadata_json.draft_conclusion.unmet_signals[]` rather than fabricate. When a fresh source is cited, call `source.update(source_id=<id>, used=true)` before rendering references.
 4. **Render the compliance footer.** For each rule in `compliance.list(project_id, position='footer')`:
    - Render the rule's `body` verbatim (markdown blockquote, bold callout, or plain paragraph depending on the rule's shape).
    - When multiple jurisdictions apply, render the rules in the order returned by the repository (the repository sorts by jurisdiction code for stability).

@@ -59,6 +59,20 @@ def test_copy_procedures_excludes_template(sandbox: Path) -> None:
     assert not (target / "_template").exists(), "template must not be installed"
 
 
+def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
+    target, count = installer.copy_plugins(home=sandbox)
+
+    assert target == sandbox / "plugins" / "content-stack"
+    assert count == 1
+    assert (target / ".codex-plugin" / "plugin.json").is_file()
+    assert (target / "skills" / "content-stack" / "SKILL.md").is_file()
+    assert (
+        target / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"
+    ).is_file()
+    assert (target / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
+    assert not (target / "procedures" / "_template").exists()
+
+
 def test_copy_skills_idempotent(sandbox: Path) -> None:
     installer.copy_skills("codex", home=sandbox)
     target = sandbox / ".codex" / "skills" / "content-stack"
@@ -150,6 +164,19 @@ def test_cli_install_procedures_only_subcommand(sandbox: Path) -> None:
     assert result.exit_code == 0, result.stdout
     assert (sandbox / ".codex" / "procedures" / "content-stack").is_dir()
     assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
+
+
+def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["install", "--skip-doctor"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.stdout
+    assert (sandbox / "plugins" / "content-stack" / ".codex-plugin" / "plugin.json").is_file()
+    assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
+    assert not (sandbox / ".codex" / "procedures" / "content-stack").exists()
 
 
 def test_cli_install_rejects_multiple_only_flags(sandbox: Path) -> None:

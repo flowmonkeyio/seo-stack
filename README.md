@@ -31,9 +31,8 @@ open http://localhost:5180
 
 `make install` is idempotent: re-running produces the same end state.
 It runs every install step (Python deps, state bootstrap, migrations, UI
-bundle, skills + procedures into Codex + Claude Code, MCP registration,
-doctor). It creates the auth token on first install; rotate later with
-`make rotate-token`.
+bundle, user-local content-stack plugin, MCP registration, doctor). It creates
+the auth token on first install; rotate later with `make rotate-token`.
 
 ### pipx mode (post-publish)
 
@@ -75,8 +74,9 @@ Doctor exit codes:
 0 (ok), 1 (daemon down), 4 (DB schema out of date), 7 (auth token
 missing or wrong mode), 8 (seed file missing, wrong mode, or unable to
 decrypt stored credentials). Optional MCP, skills, procedures, and
-launchd checks appear in the JSON `checks`/`info` payload without
-changing the exit code.
+launchd checks/counts appear in the JSON `checks`/`info` payload without
+changing the exit code; plugin install and marketplace registration are the
+default runtime checks.
 
 ### Upgrade
 
@@ -88,7 +88,7 @@ See [`docs/upgrade.md`](./docs/upgrade.md). Quick reference:
 ### Uninstall
 
 ```bash
-make uninstall                  # removes skills, procedures, MCP entries, launchd
+make uninstall                  # removes plugin, legacy assets, MCP entries, launchd
                                 # plist; preserves DB + seed + auth.token
 ```
 
@@ -100,8 +100,9 @@ make uninstall                  # removes skills, procedures, MCP entries, launc
 | ------------------ | ------------------------------------------------------------------- |
 | `content_stack/`   | Python package — FastAPI app, MCP tools, repositories, SQLite models |
 | `ui/`              | Vue 3 + Vite source for the management UI                            |
-| `skills/`          | 24 SKILL.md skill bundles, dual-runtime (Codex + Claude Code)       |
-| `procedures/`      | 8 PROCEDURE.md playbooks + `_template/` scaffold                    |
+| `skills/`          | 24 SKILL.md source catalog bundled into the plugin                   |
+| `plugins/`         | Installable runtime plugin exposing content-stack repo workflows     |
+| `procedures/`      | 8 PROCEDURE.md source playbooks bundled into the plugin              |
 | `scripts/`         | Install + register + doctor helpers                                  |
 | `docs/`            | Architecture, extending, procedures-guide, api-keys, security, …    |
 | `tests/`           | Unit + integration                                                   |
@@ -111,7 +112,7 @@ make uninstall                  # removes skills, procedures, MCP entries, launc
 ## Documentation
 
 - [`PLAN.md`](./PLAN.md) — the canonical spec. 1650+ lines; vision,
-  schema, REST + MCP surface, skills + procedures, distribution.
+  schema, REST + MCP surface, skills + procedures + plugins, distribution.
 - [`docs/architecture.md`](./docs/architecture.md) — system overview;
   process model, lifespan, repository layer, integration seam,
   operational invariants.

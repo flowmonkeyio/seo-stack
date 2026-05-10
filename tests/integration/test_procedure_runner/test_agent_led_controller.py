@@ -91,6 +91,7 @@ async def test_recording_all_steps_success_marks_run_success(
         "draft-body",
         "draft-conclusion",
         "editor",
+        "humanizer",
         "eeat-gate",
         "image-generator",
         "alt-text-auditor",

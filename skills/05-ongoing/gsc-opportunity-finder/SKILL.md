@@ -38,6 +38,13 @@ outputs:
     write: per-detector counts + the four opportunity buckets + the cannibalization map + cost.by_integration.gsc in runs.metadata_json.gsc_opportunity_finder.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 6 (`weekly-gsc-review`) calls this skill once per project, immediately after `jobs/gsc_pull.py` lands the latest 28-day rollup into `gsc_metrics_daily`. The skill reads the rollup, detects four classes of opportunity that the rolling daily aggregate makes cheap to compute, and writes a row per opportunity into the `topics` queue with `source='gsc-opportunity'`. Drift-watch (#21) and crawl-error-watch (#22) then run against the same project, completing the weekly trio before the operator opens the topic queue for triage.
@@ -57,7 +64,7 @@ The skill also runs as an operator-invoked one-off when the operator clicks "fin
 
 ## Steps
 
-1. **Read context.** Resolve the project and its `schedule_json` tuning knobs. Compute the window: `until = today - 1 day` (GSC has a one-day reporting lag), `since = until - schedule_json.gsc.window_days` (default 28). Record the window in the audit row so a future re-run can produce reproducible results. Run `integration.test` and `integration.testGsc` to confirm the credential is live; abort cleanly when the credential is dead and surface `runs.metadata_json.gsc_opportunity_finder.credential_dead=true` so procedure 6 can flag the project for re-auth.
+1. **Read context.** Resolve the project and its `schedule_json` tuning knobs. Compute the window using final Search Console data by default: `until = today - schedule_json.gsc.final_data_lag_days` (default 3), `since = until - schedule_json.gsc.window_days` (default 28). If the operator explicitly enables fresh data, record `data_state='fresh'`, `first_incomplete_date`, and a confidence downgrade in the audit row. Run `integration.test` and `integration.testGsc` to confirm the credential is live; abort cleanly when the credential is dead and surface `runs.metadata_json.gsc_opportunity_finder.credential_dead=true` so procedure 6 can flag the project for re-auth.
 2. **Hydrate the article roster.** Page through `article.list(project_id, status='published')` until the listing is exhausted. For each article, capture `id`, `slug`, `title`, `primary_kw`, `secondary_kws[]`, and the canonical URL (computed from the project's `is_primary=true` `publish_targets` row's `public_url_pattern` or `articles.canonical_target_id` when set). Build a URL-to-article-id map and a primary-keyword-to-article-id map. Both maps are used by the four detectors below.
 3. **Pull the rollup.** Call `gsc.queryProject(project_id, since, until)`. Capture the row count, the unique-page count, and the unique-query count for the audit row. When the rollup returns zero rows, surface `runs.metadata_json.gsc_opportunity_finder.empty_rollup=true` and finish cleanly — a project newer than the window has nothing to detect.
 4. **Detector 1 — Striking-distance queries.** A striking-distance query is one where the project's article ranks in positions 4 through 10 with high impression volume but a CTR below what the article would earn at position 1 to 3. The detector iterates the `(query, page)` rows and flags rows where `avg_position` is between 4.0 and 10.99 inclusive AND `impressions >= schedule_json.gsc.striking_distance.min_impressions` (default 100). For each flagged row, derive the opportunity:

@@ -37,6 +37,13 @@ outputs:
     write: per-article diff verdicts, severity counts, response-time targets, the URL-normalisation log, and any Firecrawl fetch failures in runs.metadata_json.drift_watch.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 6 (`weekly-gsc-review`) calls this skill once per project, after gsc-opportunity-finder (#20) has filed the week's queue updates. The skill walks every `articles WHERE status='published' AND project_id=:p` row, fetches the canonical published URL via Firecrawl, captures the element bag the comparison framework operates on, and either calls `drift.diff` (when the M6 comparison engine is live) or stops at snapshot capture (the M6 deferral path; the skill remains useful even without the diff because the snapshot history is what the engine eventually compares against).
@@ -75,11 +82,15 @@ The skill captures one canonical element bag per article and wires the diff agai
    - **meta_description** — the `<meta name="description" content="…">` content, trimmed and NFC-normalised. Empty string when absent.
    - **canonical** — the `<link rel="canonical" href="…">` value. The drift signal is canonical-mismatch (the page declares a different canonical than its own URL); the diff returns CRITICAL severity for any change here because canonical drift breaks search-engine indexing.
    - **meta_robots** — the `<meta name="robots" content="…">` directives (lowercase, comma-split, sorted). The drift signal is `noindex` appearing where it was previously absent (a rogue edit can deindex a page silently).
+   - **x_robots_tag** — the HTTP `X-Robots-Tag` header when the integration exposes it. Treat new `noindex`, `none`, or restrictive directives as CRITICAL.
+   - **hreflang[]** — every `<link rel="alternate" hreflang="…">` pair when the project is multilingual. Missing self-referential hreflang or changed locale targets are WARNING/CRITICAL depending on project config.
    - **h1[]** — the H1 elements' text in document order. Most pages have exactly one; multiple H1s are an SEO smell and the diff flags them.
    - **h2[]** — the H2 elements' text in document order.
    - **h3[]** — the H3 elements' text in document order.
    - **schema_emits_hash** — SHA-256 of the canonical-sorted JSON of every JSON-LD `<script type="application/ld+json">` block on the page, concatenated. Schema drift is one of the most actionable signals because rich-result eligibility depends on the JSON-LD shape.
    - **open_graph** — a key-sorted dict of every `<meta property="og:*">` attribute the page declared.
+   - **paid_link_rels** — audit affiliate/sponsored/user-generated outbound links for `rel` values. Missing `sponsored`/`nofollow` on paid links is a compliance and spam-policy risk.
+   - **rendered_internal_link_counts** — rendered inbound/outbound counts for the article body so template or renderer drift does not silently strip links.
    - **cwv** — Core Web Vitals (`lcp`, `fid_or_inp`, `cls`) from Firecrawl's CWV endpoint when the integration tier permits and `schedule_json.drift.cwv.enabled=true`. Captured as a numeric triple plus a fetch timestamp; null when unavailable.
    - **status_code** — the HTTP response status. Anything outside 200 is a diff signal (a 404 / 410 / 500 on a published URL is an outage).
    - **html_hash** — SHA-256 of the body HTML after stripping scripts, styles, comments, and whitespace runs. The hash is the cheap "did anything change" signal; the bag's other fields explain what.
@@ -97,7 +108,7 @@ The skill captures one canonical element bag per article and wires the diff agai
    - The skill emits a single warning to the operator (visible on `RunsView.vue`'s detail panel) summarising the deferral so they understand the audit ran but the comparison did not.
    - When the operator runs the skill again after the engine lands, the prior baseline is still on disk; the diff comparison runs against the most recent prior snapshot.
 8. **Severity-driven response queueing.** For each CRITICAL or WARNING verdict, the skill emits a `runs.metadata_json.drift_watch.response_queue[]` entry with `{article_id, severity, response_time_target_iso, recommended_action, rules_fired}`. The actions map per severity:
-   - CRITICAL → procedure 7's content-refresher (#24) is the responder; the article gets pushed to `refresh_due` via `article.markRefreshDue` so the next pass picks it up. (The `markRefreshDue` call is the responsibility of skill #23 (refresh-detector) when its scoring window picks the article up; drift-watch surfaces the recommendation via the response-queue without writing to `articles` directly.)
+   - CRITICAL → route immediately to the operator queue with `recommended_action='technical-triage-now'` for noindex, 4xx/5xx, canonical, x-robots-tag, or paid-link compliance drift. Procedure 7's content-refresher (#24) may be the responder for content drift, but technical/indexing drift should not wait for the later refresh-detector scoring window.
    - WARNING → the operator's UI surfaces the article on `DriftView.vue` for human triage; the human decides whether to refresh or override.
    - INFO → logged only; no operator action.
    The split is intentional: drift-watch's job is to detect drift, not to drive the refresh pipeline. Refresh-detector (#23) reads drift baselines as one of its three inputs and consolidates the signal.

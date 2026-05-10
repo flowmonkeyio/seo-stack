@@ -1,6 +1,6 @@
 """Smoke checks for ``skills/**/SKILL.md`` frontmatter.
 
-Two invariants:
+Three invariants:
 
 1. Frontmatter parses as valid YAML and carries the seven contract
    keys named in PLAN.md L957-L968: ``name``, ``description``,
@@ -10,6 +10,9 @@ Two invariants:
    ``content_stack.mcp.permissions.SKILL_TOOL_GRANTS`` — the
    frontmatter is human-readable docs; the registry is the canonical
    enforcement (audit B-10), and the two MUST agree.
+3. Every skill links the shared operating contract + SEO quality
+   baseline so the operator-agent flow and SEO rules do not drift
+   between individual prompts.
 
 Skip the tests when ``skills/`` is empty (pre-M6 clones).
 """
@@ -25,6 +28,15 @@ from content_stack.mcp.permissions import SKILL_TOOL_GRANTS
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SKILLS_ROOT = REPO_ROOT / "skills"
+SHARED_REFERENCE_PATHS: tuple[Path, ...] = (
+    SKILLS_ROOT / "references" / "skill-operating-contract.md",
+    SKILLS_ROOT / "references" / "seo-quality-baseline.md",
+)
+SHARED_REFERENCE_MARKERS: tuple[str, ...] = (
+    "## Shared operating contract",
+    "../../references/skill-operating-contract.md",
+    "../../references/seo-quality-baseline.md",
+)
 
 REQUIRED_FRONTMATTER_KEYS: frozenset[str] = frozenset(
     {
@@ -126,6 +138,29 @@ def test_allowed_tools_matches_permissions_matrix() -> None:
                 f"{skill_key}: frontmatter ↔ registry mismatch — "
                 f"only in frontmatter: {sorted(only_in_frontmatter)}; "
                 f"only in registry: {sorted(only_in_registry)}"
+            )
+
+    assert not failures, "\n".join(failures)
+
+
+def test_skills_link_shared_operating_references() -> None:
+    """Every skill must load the shared agent-flow and SEO-quality rules."""
+    files = _iter_skill_files()
+    if not files:
+        pytest.skip("skills/ tree empty")
+
+    missing_reference_files = [
+        str(path.relative_to(REPO_ROOT)) for path in SHARED_REFERENCE_PATHS if not path.exists()
+    ]
+    assert not missing_reference_files, f"missing shared references: {missing_reference_files}"
+
+    failures: list[str] = []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in SHARED_REFERENCE_MARKERS if marker not in text]
+        if missing:
+            failures.append(
+                f"{path.relative_to(REPO_ROOT)}: missing shared-reference markers {missing}"
             )
 
     assert not failures, "\n".join(failures)

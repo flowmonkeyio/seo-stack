@@ -236,6 +236,19 @@ class ArticleMarkPublishedInput(MCPInput):
     run_id: int
 
 
+class ArticleMarkAbortedPublishInput(MCPInput):
+    """Advance a pre-publish article to aborted-publish."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"article_id": 1, "expected_etag": "uuid", "run_id": 1}},
+    )
+
+    article_id: int
+    expected_etag: str  # type: ignore[assignment]
+    run_id: int
+
+
 class ArticleMarkRefreshDueInput(MCPInput):
     """Advance published → refresh_due."""
 
@@ -416,6 +429,15 @@ async def _article_mark_published(
     return WriteEnvelope[ArticleOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
 
 
+async def _article_mark_aborted_publish(
+    inp: ArticleMarkAbortedPublishInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ArticleOut]:
+    env = ArticleRepository(ctx.session).mark_aborted_publish(
+        inp.article_id, expected_etag=inp.expected_etag, run_id=inp.run_id
+    )
+    return WriteEnvelope[ArticleOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
+
+
 async def _article_mark_refresh_due(
     inp: ArticleMarkRefreshDueInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[ArticleOut]:
@@ -568,9 +590,23 @@ class SourceAddInput(MCPInput):
 class SourceListInput(MCPInput):
     """List sources for an article."""
 
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"article_id": 1}})
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"article_id": 1, "used": True}}
+    )
 
     article_id: int
+    used: bool | None = None
+
+
+class SourceUpdateInput(MCPInput):
+    """Patch the used flag on a research-source row."""
+
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"example": {"source_id": 1, "used": True}}
+    )
+
+    source_id: int
+    used: bool
 
 
 async def _source_add(
@@ -587,7 +623,16 @@ async def _source_add(
 async def _source_list(
     inp: SourceListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[ResearchSourceOut]:
-    return ResearchSourceRepository(ctx.session).list(inp.article_id)
+    return ResearchSourceRepository(ctx.session).list(inp.article_id, used=inp.used)
+
+
+async def _source_update(
+    inp: SourceUpdateInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ResearchSourceOut]:
+    env = ResearchSourceRepository(ctx.session).update_used(inp.source_id, used=inp.used)
+    return WriteEnvelope[ResearchSourceOut](
+        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +670,14 @@ class SchemaGetInput(MCPInput):
     schema_id: int
 
 
+class SchemaListInput(MCPInput):
+    """List schema-emit rows for an article."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"article_id": 1}})
+
+    article_id: int
+
+
 class SchemaValidateInput(MCPInput):
     """Mark a schema-emit row as validated (M5 will add real JSON-LD validation)."""
 
@@ -651,6 +704,12 @@ async def _schema_get(
     inp: SchemaGetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> SchemaEmitOut:
     return SchemaEmitRepository(ctx.session).get(inp.schema_id)
+
+
+async def _schema_list(
+    inp: SchemaListInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> list[SchemaEmitOut]:
+    return SchemaEmitRepository(ctx.session).list_for_article(inp.article_id)
 
 
 async def _schema_validate(
@@ -988,6 +1047,15 @@ def register(registry: ToolRegistry) -> None:
     )
     registry.register(
         ToolSpec(
+            "article.markAbortedPublish",
+            "Advance a pre-publish article to aborted-publish.",
+            ArticleMarkAbortedPublishInput,
+            WriteEnvelope[ArticleOut],
+            _article_mark_aborted_publish,
+        )
+    )
+    registry.register(
+        ToolSpec(
             "article.markRefreshDue",
             "Advance published → refresh_due.",
             ArticleMarkRefreshDueInput,
@@ -1089,6 +1157,15 @@ def register(registry: ToolRegistry) -> None:
             _source_list,
         )
     )
+    registry.register(
+        ToolSpec(
+            "source.update",
+            "Patch a research-source citation.",
+            SourceUpdateInput,
+            WriteEnvelope[ResearchSourceOut],
+            _source_update,
+        )
+    )
 
     # schema.*
     registry.register(
@@ -1107,6 +1184,15 @@ def register(registry: ToolRegistry) -> None:
             SchemaGetInput,
             SchemaEmitOut,
             _schema_get,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "schema.list",
+            "List schema-emit rows for an article.",
+            SchemaListInput,
+            list[SchemaEmitOut],
+            _schema_list,
         )
     )
     registry.register(

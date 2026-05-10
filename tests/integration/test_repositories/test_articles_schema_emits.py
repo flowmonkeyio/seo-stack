@@ -23,14 +23,14 @@ def test_set_primary_unsets_others(session: Session, project_id: int) -> None:
     )
     se_repo.set(
         article_id=art.id,
-        type="FAQPage",
-        schema_json={"@type": "FAQPage"},
+        type="Product",
+        schema_json={"@type": "Product"},
         is_primary=True,
     )
     rows = se_repo.list_for_article(art.id)
     primaries = [r for r in rows if r.is_primary]
     assert len(primaries) == 1
-    assert primaries[0].type == "FAQPage"
+    assert primaries[0].type == "Product"
 
 
 def test_validate_marks_validated_at(session: Session, project_id: int) -> None:

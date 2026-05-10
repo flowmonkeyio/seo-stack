@@ -18,8 +18,8 @@ non-trivial claim points at a code path so you can verify it.
 content-stack is a globally-installed Python daemon that gives any
 LLM client a stateful CRUD seam for managing multi-project SEO
 content pipelines end-to-end, plus a minimal Vue 3 UI for human
-inspection and edits, plus a curated catalogue of skills + procedures
-the LLM follows.
+inspection and edits, plus installable plugins that expose the curated
+skills and procedures the LLM follows.
 
 Three audiences:
 
@@ -235,7 +235,7 @@ crash-recovery sweep (step 8) handles whatever was still running.
 
 ## 4. Schema
 
-28 tables, grouped by domain. Full row-by-row spec lives in
+30 tables, grouped by domain. Full row-by-row spec lives in
 [`../PLAN.md:341-486`](../PLAN.md); the summary below names the
 tables and what they're for.
 
@@ -249,6 +249,7 @@ tables and what they're for.
 | GSC + drift                   | `gsc_metrics` (raw, 90-day retention), `gsc_metrics_daily` (aggregated), `drift_baselines`                 |
 | Per-criterion EEAT            | `eeat_evaluations`                                                                                         |
 | Integration creds + budgets   | `integration_credentials`, `integration_budgets`                                                           |
+| Workspace + plugins           | `workspace_bindings`, `agent_sessions`                                                                     |
 
 ### 4.2 Run + audit-trail tables
 
@@ -260,6 +261,8 @@ tables and what they're for.
 | `run_step_calls`     | Per-MCP-call audit grain inside a skill step.                                             |
 | `idempotency_keys`   | Mutating-tool dedup. UNIQUE(project_id, tool_name, idempotency_key); 24 h replay window.  |
 | `scheduled_jobs`     | Per-project schedules. UI Schedules tab toggles `enabled`. APScheduler reads on startup.  |
+| `workspace_bindings` | Daemon-owned repo fingerprint → project mapping for plugin-first workflows.               |
+| `agent_sessions`     | Disposable bridge/session records from Codex, Claude Code, or another runtime.            |
 
 ### 4.3 Loaded indexes
 
@@ -366,7 +369,7 @@ Caps blast radius if a token is exfiltrated.
 
 ## 7. MCP server
 
-130 tools registered (`content_stack/mcp/tools/*.py`) over
+139 tools registered (`content_stack/mcp/tools/*.py`) over
 Streamable HTTP at `/mcp`. The MCP server is a single
 `mcp.server.lowlevel.Server` instance built in
 `content_stack/mcp/server.py`; the FastAPI sub-app mount means the
@@ -516,7 +519,7 @@ package:
 
 ### 8.5 EEAT three-verdict branch
 
-The eeat-gate step (procedure 4 step 7) is the only step the runner
+The eeat-gate step (procedure 4 step 8) is the only step the runner
 branches on a verdict for. Per audit BLOCKER-09:
 
 - `SHIP` → advance.
@@ -579,7 +582,7 @@ Eight canonical playbooks plus the `_template/` scaffold:
 | 1    | `bootstrap-project`           | First run           | Project + voice + compliance + EEAT seed + targets.    |
 | 2    | `one-site-shortcut`           | Manual              | Sitemap + Ahrefs → topic queue, fast.                  |
 | 3    | `keyword-to-topic-queue`      | Periodic / on-demand | Keyword discovery → SERP → cluster → approve.          |
-| 4    | `topic-to-published`          | Per topic           | Brief → outline → draft → editor → EEAT → publish.     |
+| 4    | `topic-to-published`          | Per topic           | Brief → outline → draft → editor → humanizer → EEAT → publish. |
 | 5    | `bulk-content-launch`         | Batch               | Fan-out procedure 4 across approved topics.            |
 | 6    | `weekly-gsc-review`           | Weekly cron         | GSC pull → opportunity finder → drift / crawl errors.  |
 | 7    | `monthly-humanize-pass`       | Monthly cron        | Refresh detector → humanizer → editor → republish.     |
@@ -694,27 +697,26 @@ The Makefile orchestrator:
    committed).
 5. `register-mcp-codex.sh` + `register-mcp-claude.sh` — upsert MCP
    server entries with current bearer token.
-6. `install-codex.sh` + `install-claude.sh` — `rsync -a --delete
-   skills/` to `~/.codex/skills/content-stack/` and
-   `~/.claude/skills/content-stack/`.
-7. `install-procedures-codex.sh` + `install-procedures-claude.sh` —
-   same against `procedures/`, excluding `_template/`.
-8. `scripts/doctor.sh` — post-install diagnose.
+6. `install-plugins.sh` — mirrors `plugins/content-stack/` into
+   `~/plugins/content-stack/`, hydrates it with `skills/catalog/` and
+   `procedures/`, and upserts the local plugin marketplace.
+7. `scripts/doctor.sh` — post-install diagnose.
 
-Re-running rotates the auth token (per locked decision D5) and
+Re-running is idempotent. Auth token rotation is explicit via
+`content-stack rotate-token --yes` / `make rotate-token`, which
 regenerates the MCP configs to match.
 
 ### 12.2 pipx mode
 
-`pipx install content-stack` then `content-stack install` mirrors
-the wheel's bundled `content_stack/_assets/skills/` and
-`content_stack/_assets/procedures/` into the runtime paths via the
-same code paths. The wheel includes the committed `ui_dist/` (it's
-inside the package), so end users never need pnpm.
+`pipx install content-stack` then `content-stack install` hydrates
+`~/plugins/content-stack/` from the wheel's bundled
+`content_stack/_assets/{plugins,skills,procedures}/` via the same code
+paths. The wheel includes the committed `ui_dist/` (it's inside the
+package), so end users never need pnpm.
 
 `pyproject.toml:[tool.hatch.build.targets.wheel.force-include]`
-copies `skills/` → `content_stack/_assets/skills` and `procedures/`
-→ `content_stack/_assets/procedures` at wheel-build time.
+copies `plugins/`, `skills/`, and `procedures/` under
+`content_stack/_assets/` at wheel-build time.
 
 ### 12.3 launchd plist (optional)
 
@@ -808,7 +810,7 @@ db_status, scheduler_running, ...}`. Auth-whitelisted so
 `scripts/doctor.sh` performs read-only local checks per
 [`../PLAN.md`](../PLAN.md): daemon up, auth token mode, seed file mode,
 DB presence, alembic head, credential decryptability, scheduler health,
-and optional install/runtime hints for MCP, skills, procedures, and
+and optional install/runtime hints for MCP, skills, procedures, plugins, and
 launchd. JSON output is `{ok, code, checks, info}`.
 
 ### 15.4 Swagger + OpenAPI

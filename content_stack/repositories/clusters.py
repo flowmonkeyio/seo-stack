@@ -318,6 +318,10 @@ class TopicRepository:
             project_id=project_id,
         )
 
+    def assign_cluster(self, topic_id: int, cluster_id: int | None) -> Envelope[TopicOut]:
+        """Assign a topic to a cluster without changing lifecycle status."""
+        return self.update(topic_id, cluster_id=cluster_id)
+
     def approve(self, topic_id: int) -> Envelope[TopicOut]:
         """Convenience: ``status='approved'``. Wraps ``update``."""
         return self.update(topic_id, status=TopicStatus.APPROVED)

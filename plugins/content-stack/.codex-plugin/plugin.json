@@ -1,0 +1,27 @@
+{
+  "name": "content-stack",
+  "version": "0.1.0",
+  "description": "Repo-agnostic SEO content operations for Codex, backed by the local content-stack daemon.",
+  "author": {
+    "name": "content-stack",
+    "url": "https://github.com/flowmonkey-io/content-stack"
+  },
+  "repository": "https://github.com/flowmonkey-io/content-stack",
+  "license": "project-internal",
+  "keywords": ["seo", "content", "mcp", "publishing"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "content-stack",
+    "shortDescription": "Manage SEO content pipelines from any website repo.",
+    "longDescription": "Run content-stack procedures from the current repository while the singleton local daemon owns projects, credentials, runs, and publishing audit trails.",
+    "developerName": "content-stack",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Use content-stack to connect this repository to a project.",
+      "Use content-stack to run the next SEO content procedure from this repo."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

@@ -13,6 +13,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -126,6 +127,103 @@ def serve(
         log_level=log_level.lower(),
         reload=False,
     )
+
+
+# ---- plugin bridge --------------------------------------------------------
+
+
+def _bridge_response_text(text: str) -> str:
+    """Extract a JSON-RPC body from either JSON or single-event SSE text."""
+    stripped = text.strip()
+    if not stripped.startswith("event:"):
+        return stripped
+    for line in stripped.splitlines():
+        if line.startswith("data:"):
+            return line.removeprefix("data:").strip()
+    return stripped
+
+
+def _bridge_error(request_id: object, code: int, message: str) -> str:
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": code, "message": message},
+        }
+    )
+
+
+@app.command(name="mcp-bridge")
+def mcp_bridge(
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Daemon host; defaults to configured loopback host."),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
+    ] = None,
+) -> None:
+    """Bridge plugin stdio MCP traffic to the singleton HTTP daemon.
+
+    The plugin runs this command from the website repo, but all state and
+    credentials stay in the daemon. The bridge reads the daemon token from
+    the user's content-stack state dir rather than from project files.
+    """
+    import httpx
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    bridge_host = host or settings.host
+    bridge_port = port or settings.port
+    url = f"http://{bridge_host}:{bridge_port}/mcp"
+
+    try:
+        token = settings.token_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        typer.echo(
+            f"mcp-bridge: auth token missing at {settings.token_path}; run `content-stack init`.",
+            err=True,
+        )
+        raise typer.Exit(code=7) from None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+
+    with httpx.Client(timeout=None) as client:
+        for raw in sys.stdin:
+            line = raw.strip()
+            if not line:
+                continue
+
+            request_id: object = None
+            try:
+                payload = json.loads(line)
+                if isinstance(payload, dict):
+                    request_id = payload.get("id")
+            except json.JSONDecodeError as exc:
+                sys.stdout.write(_bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
+                sys.stdout.flush()
+                continue
+
+            try:
+                response = client.post(url, content=line, headers=headers)
+                response.raise_for_status()
+                out = _bridge_response_text(response.text)
+            except Exception as exc:
+                if request_id is None:
+                    typer.echo(f"mcp-bridge: daemon request failed: {exc}", err=True)
+                    continue
+                out = _bridge_error(request_id, -32000, f"Daemon request failed: {exc}")
+
+            if out:
+                sys.stdout.write(out)
+                if not out.endswith("\n"):
+                    sys.stdout.write("\n")
+                sys.stdout.flush()
 
 
 # ---- doctor ---------------------------------------------------------------
@@ -271,7 +369,33 @@ def _count_traversable_named(
     return count
 
 
-def _expected_asset_count(kind: Literal["skills", "procedures"]) -> int | None:
+def _count_expected_plugins(source: object) -> int:
+    if isinstance(source, Path):
+        return sum(1 for p in source.rglob("plugin.json") if p.parent.name == ".codex-plugin")
+
+    count = 0
+
+    def walk(node: object, *, in_codex_plugin: bool = False) -> None:
+        nonlocal count
+        try:
+            children = list(node.iterdir())  # type: ignore[attr-defined]
+        except Exception:
+            return
+        for child in children:
+            name = getattr(child, "name", "")
+            try:
+                if child.is_dir():  # type: ignore[attr-defined]
+                    walk(child, in_codex_plugin=name == ".codex-plugin")
+                elif name == "plugin.json" and in_codex_plugin:
+                    count += 1
+            except Exception:
+                continue
+
+    walk(source)
+    return count
+
+
+def _expected_asset_count(kind: Literal["skills", "procedures", "plugins"]) -> int | None:
     """Return source asset count for doctor install checks."""
     try:
         from content_stack import install as installer
@@ -279,6 +403,8 @@ def _expected_asset_count(kind: Literal["skills", "procedures"]) -> int | None:
         source = installer._resolve_source(kind)  # type: ignore[attr-defined]
     except Exception:
         return None
+    if kind == "plugins":
+        return _count_expected_plugins(source)
     filename = "SKILL.md" if kind == "skills" else "PROCEDURE.md"
     if isinstance(source, Path):
         paths = source.rglob(filename)
@@ -298,26 +424,58 @@ def _installed_asset_count(home: Path, runtime: Literal["codex", "claude"], kind
     return sum(1 for _ in target.rglob(filename))
 
 
+def _installed_plugin_count(home: Path) -> int:
+    target = home / "plugins"
+    if not target.is_dir():
+        return 0
+    return sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
+
+
+def _plugin_marketplace_has_content_stack(home: Path) -> bool:
+    target = home / ".agents" / "plugins" / "marketplace.json"
+    if not target.exists():
+        return False
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    plugins = payload.get("plugins") if isinstance(payload, dict) else None
+    if not isinstance(plugins, list):
+        return False
+    return any(
+        isinstance(p, dict)
+        and p.get("name") == "content-stack"
+        and (p.get("source") or {}).get("path") == "./plugins/content-stack"
+        for p in plugins
+    )
+
+
 def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, object]]:
-    """Return optional install mirror checks for skills/procedures."""
+    """Return install mirror checks for plugin-first assets."""
     expected_skills = _expected_asset_count("skills")
     expected_procedures = _expected_asset_count("procedures")
+    expected_plugins = _expected_asset_count("plugins")
     checks: dict[str, bool] = {}
     details: dict[str, object] = {
         "expected_skills": expected_skills,
         "expected_procedures": expected_procedures,
+        "expected_plugins": expected_plugins,
     }
     for runtime in ("codex", "claude"):
         skills_count = _installed_asset_count(home, runtime, "skills")
         procedures_count = _installed_asset_count(home, runtime, "procedures")
-        checks[f"{runtime}_skills_installed"] = (
-            expected_skills is not None and skills_count == expected_skills
-        )
-        checks[f"{runtime}_procedures_installed"] = (
-            expected_procedures is not None and procedures_count == expected_procedures
-        )
         details[f"{runtime}_skills_count"] = skills_count
         details[f"{runtime}_procedures_count"] = procedures_count
+        details[f"{runtime}_legacy_skills_installed"] = (
+            expected_skills is not None and skills_count == expected_skills
+        )
+        details[f"{runtime}_legacy_procedures_installed"] = (
+            expected_procedures is not None and procedures_count == expected_procedures
+        )
+    plugins_count = _installed_plugin_count(home)
+    checks["plugins_installed"] = expected_plugins is not None and plugins_count == expected_plugins
+    checks["plugin_marketplace_registered"] = _plugin_marketplace_has_content_stack(home)
+    details["plugins_count"] = plugins_count
     return checks, details
 
 
@@ -541,15 +699,21 @@ def migrate() -> None:
 def install(
     skills_only: Annotated[
         bool,
-        typer.Option("--skills-only", help="Only mirror skills/ into the runtimes."),
+        typer.Option("--skills-only", help="Only mirror legacy loose skills/ into runtimes."),
     ] = False,
     procedures_only: Annotated[
         bool,
-        typer.Option("--procedures-only", help="Only mirror procedures/ into the runtimes."),
+        typer.Option(
+            "--procedures-only", help="Only mirror legacy loose procedures/ into runtimes."
+        ),
     ] = False,
     mcp_only: Annotated[
         bool,
         typer.Option("--mcp-only", help="Only register the MCP server."),
+    ] = False,
+    plugins_only: Annotated[
+        bool,
+        typer.Option("--plugins-only", help="Only mirror plugins and register marketplace."),
     ] = False,
     launchd: Annotated[
         bool,
@@ -567,22 +731,24 @@ def install(
     bundled assets via ``importlib.resources``). The two paths land at
     the same end state.
 
-    Re-running is idempotent (audit B-24): skills + procedures use
-    rsync-style ``--delete`` mirroring, and MCP registration upserts
-    existing entries.
+    Re-running is idempotent (audit B-24): plugins are the default runtime
+    surface, MCP registration upserts existing entries, and legacy loose
+    skills/procedures remain available through explicit ``--*-only`` flags.
     """
     from content_stack import install as installer
 
-    selectors = [skills_only, procedures_only, mcp_only]
+    selectors = [skills_only, procedures_only, mcp_only, plugins_only]
     if sum(1 for s in selectors if s) > 1:
         typer.echo(
-            "error: --skills-only, --procedures-only, and --mcp-only are mutually exclusive.",
+            "error: --skills-only, --procedures-only, --mcp-only, and --plugins-only "
+            "are mutually exclusive.",
             err=True,
         )
         raise typer.Exit(code=2)
-    do_skills = skills_only or not (procedures_only or mcp_only)
-    do_procedures = procedures_only or not (skills_only or mcp_only)
-    do_mcp = mcp_only or not (skills_only or procedures_only)
+    do_skills = skills_only
+    do_procedures = procedures_only
+    do_mcp = mcp_only or not (skills_only or procedures_only or plugins_only)
+    do_plugins = plugins_only or not (skills_only or procedures_only or mcp_only)
 
     mode = installer.detect_mode()
     typer.echo(f"==> Install mode: {mode}")
@@ -607,6 +773,12 @@ def install(
         for runtime in runtimes:
             target, count = installer.copy_procedures(runtime, home=home)
             typer.echo(f"==> Installed {count} procedures -> {target}")
+
+    if do_plugins:
+        target, count = installer.copy_plugins(home=home)
+        typer.echo(f"==> Installed {count} plugins -> {target}")
+        msg = installer.register_plugin_marketplace(home=home)
+        typer.echo(f"==> {msg}")
 
     if do_mcp:
         # Codex first; it prints its own skip-line if not on PATH.

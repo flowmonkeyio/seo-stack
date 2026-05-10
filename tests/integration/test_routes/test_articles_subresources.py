@@ -53,8 +53,8 @@ def test_schema_set_is_primary_invariant(api: TestClient, article_id: int) -> No
         json={"schema_json": {"@type": "Article"}, "is_primary": True},
     )
     api.put(
-        f"/api/v1/articles/{article_id}/schema/FAQPage",
-        json={"schema_json": {"@type": "FAQPage"}, "is_primary": True},
+        f"/api/v1/articles/{article_id}/schema/Product",
+        json={"schema_json": {"@type": "Product"}, "is_primary": True},
     )
     rows = api.get(f"/api/v1/articles/{article_id}/schema").json()
     primaries = [r for r in rows if r["is_primary"]]

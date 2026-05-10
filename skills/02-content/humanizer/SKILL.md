@@ -37,6 +37,13 @@ outputs:
     write: per-paragraph rhythm deltas, second-order tell removals, asides injected in runs.metadata_json.humanizer.
 ---
 
+## Shared operating contract
+
+Before executing, read `../../references/skill-operating-contract.md` and
+`../../references/seo-quality-baseline.md`. Apply the shared status, validation,
+evidence, handoff, people-first, anti-spam, and tool-discipline rules before the
+skill-specific steps below.
+
 ## When to use
 
 Procedure 4 calls this skill once per article version, between the editor (#10) and the EEAT gate (#11). The editor scrubs the surface tells (filler stems, transition overuse, weak structures) and calibrates against the voice profile; the humanizer is the second pass that handles what survives — rhythm uniformity (the most reliable AI-tell signal), second-order phrase patterns the editor's blacklist did not catch, and the absence of voice-appropriate asides where the brief permits them. The output is rewritten in place: `articles.edited_md` is replaced (not appended), `articles.status` does not change, and the article remains in the `edited` state for the gate to score.
