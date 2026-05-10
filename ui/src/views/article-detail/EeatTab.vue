@@ -179,7 +179,7 @@ watch(() => props.articleId, load)
         :key="dim"
         class="rounded border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
       >
-        <div class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        <div class="text-xs uppercase text-gray-500 dark:text-gray-400">
           {{ dim }}
         </div>
         <div class="mt-1 text-2xl font-semibold">

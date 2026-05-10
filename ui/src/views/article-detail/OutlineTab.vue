@@ -62,7 +62,7 @@ async function onSave(body: string): Promise<{ updated_at?: string }> {
   >
     <h2
       id="cs-outline-tab-title"
-      class="text-base font-semibold"
+      class="text-base font-semibold text-fg-strong"
     >
       Outline
     </h2>

@@ -11,7 +11,17 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiBulkActionBar,
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiEmptyState,
+  UiPageShell,
+  UiSegmentedControl,
+} from '@/components/ui'
 import { useArticlesStore, type Article, type ArticleStatus } from '@/stores/articles'
 import { useTopicsStore } from '@/stores/topics'
 import { useToastsStore } from '@/stores/toasts'
@@ -110,6 +120,10 @@ watch(
 function setStatusFilter(opt: 'all' | `${ArticleStatusEnum}`): void {
   articlesStore.setFilter('status', opt === 'all' ? null : (opt as ArticleStatus))
   void articlesStore.refresh(projectId.value)
+}
+
+function onStatusSelect(key: string | number): void {
+  setStatusFilter(String(key) as 'all' | `${ArticleStatusEnum}`)
 }
 
 function onSortChange(ev: Event): void {
@@ -258,70 +272,54 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Articles
-      </h1>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-gray-700 dark:hover:bg-gray-800"
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Articles"
+      description="Move articles through brief, outline, draft, editorial, EEAT, publishing, and refresh workflows."
+      :breadcrumbs="[{ label: 'Articles' }]"
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
           :aria-pressed="showRefreshDue"
           @click="showRefreshDue ? showRefreshDue = false : loadRefreshDue()"
         >
           {{ showRefreshDue ? 'Show all' : 'Due for refresh' }}
-        </button>
-        <button
-          type="button"
-          class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        </UiButton>
+        <UiButton
+          variant="primary"
           @click="openCreate"
         >
           New article
-        </button>
-      </div>
-    </header>
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
+
+    <UiSegmentedControl
+      v-if="!showRefreshDue"
+      :model-value="filters.status ?? 'all'"
+      :options="STATUS_OPTIONS"
+      label="Article status filter"
+      @select="onStatusSelect"
+    />
 
     <div
       v-if="!showRefreshDue"
-      role="tablist"
-      aria-label="Article status filter"
-      class="mb-3 flex flex-wrap gap-1"
-    >
-      <button
-        v-for="opt in STATUS_OPTIONS"
-        :key="opt.key"
-        type="button"
-        role="tab"
-        :aria-selected="(filters.status === null && opt.key === 'all') || filters.status === opt.key"
-        class="rounded-full border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        :class="
-          (filters.status === null && opt.key === 'all') || filters.status === opt.key
-            ? 'border-blue-600 bg-blue-50 font-medium text-blue-800 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-200'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
-        "
-        @click="setStatusFilter(opt.key)"
-      >
-        {{ opt.label }}
-      </button>
-    </div>
-
-    <div
-      v-if="!showRefreshDue"
-      class="mb-3 flex flex-wrap items-center gap-3 text-sm"
+      class="flex flex-wrap items-center gap-3 text-sm"
     >
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Author</span>
+        <span class="text-fg-muted">Author</span>
         <select
           :value="filters.author_id !== null ? String(filters.author_id) : ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="setAuthorFilter(($event.target as HTMLSelectElement).value)"
         >
           <option value="">
@@ -337,10 +335,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Topic</span>
+        <span class="text-fg-muted">Topic</span>
         <select
           :value="filters.topic_id !== null ? String(filters.topic_id) : ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="setTopicFilter(($event.target as HTMLSelectElement).value)"
         >
           <option value="">
@@ -356,10 +354,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Sort</span>
+        <span class="text-fg-muted">Sort</span>
         <select
           :value="articlesStore.sort"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="onSortChange"
         >
           <option value="-created_at">
@@ -381,49 +379,37 @@ watch(projectId, load)
       </label>
     </div>
 
-    <div
+    <UiBulkActionBar
       v-if="selection.size > 0 && !showRefreshDue"
-      class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-300 bg-blue-50 p-2 text-sm dark:border-blue-700 dark:bg-blue-900/30"
-      role="status"
-      aria-live="polite"
+      :count="selection.size"
+      aria-label="Selected articles"
+      @clear="selection = new Set()"
     >
-      <span class="font-medium">{{ selection.size }} selected</span>
-      <button
-        type="button"
-        class="rounded border border-blue-300 bg-white px-2 py-1 text-xs hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/60"
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="bulkActionPending"
         @click="bulkMarkRefreshDue"
       >
         Mark refresh-due
-      </button>
-      <button
-        type="button"
-        class="ml-auto rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900"
-        @click="selection = new Set()"
-      >
-        Clear
-      </button>
-    </div>
+      </UiButton>
+    </UiBulkActionBar>
 
-    <div
+    <UiEmptyState
       v-if="empty && !showRefreshDue"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      title="No articles yet"
+      description="Articles are created from approved topics and progress through brief, outline, draft, edit, EEAT, and publish states."
+      size="lg"
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No articles yet
-      </p>
-      <p class="mb-4">
-        Articles are created from approved topics and progress through a state
-        machine: briefing → outlined → drafted → edited → EEAT-passed → published.
-      </p>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        @click="openCreate"
-      >
-        Create article
-      </button>
-    </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openCreate"
+        >
+          Create article
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <DataTable
       v-if="!showRefreshDue && !empty"
@@ -475,130 +461,117 @@ watch(projectId, load)
       </template>
     </DataTable>
 
-    <!-- New article modal -->
-    <div
-      v-if="showCreate"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-new-article-title"
-      @click.self="closeCreate"
+    <UiDialog
+      :model-value="showCreate"
+      title="New article"
+      description="Create an article shell from a topic, voice profile, and author assignment."
+      size="lg"
+      @update:model-value="(open: boolean) => open ? showCreate = true : closeCreate()"
     >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <form
+        class="space-y-3"
+        @submit.prevent="submitCreate"
       >
-        <h2
-          id="cs-new-article-title"
-          class="mb-3 text-lg font-semibold"
-        >
-          New article
-        </h2>
-        <form
-          class="space-y-3"
-          @submit.prevent="submitCreate"
-        >
+        <label class="block text-sm">
+          <span class="font-medium">Title</span>
+          <input
+            v-model="draft.title"
+            type="text"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Slug</span>
+          <input
+            v-model="draft.slug"
+            type="text"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Topic</span>
+          <select
+            v-model="draft.topic_id"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option :value="null">
+              — none —
+            </option>
+            <option
+              v-for="t in topicsStore.items"
+              :key="t.id"
+              :value="t.id"
+            >
+              {{ t.title }}
+            </option>
+          </select>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
           <label class="block text-sm">
-            <span class="font-medium">Title</span>
-            <input
-              v-model="draft.title"
-              type="text"
-              required
+            <span class="font-medium">Voice</span>
+            <select
+              v-model="draft.voice_id"
               class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
             >
+              <option :value="null">
+                default
+              </option>
+              <option
+                v-for="v in voices"
+                :key="v.id"
+                :value="v.id"
+              >
+                {{ v.name }}
+              </option>
+            </select>
           </label>
           <label class="block text-sm">
-            <span class="font-medium">Slug</span>
-            <input
-              v-model="draft.slug"
-              type="text"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Topic</span>
+            <span class="font-medium">Author</span>
             <select
-              v-model="draft.topic_id"
+              v-model="draft.author_id"
               class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
             >
               <option :value="null">
                 — none —
               </option>
               <option
-                v-for="t in topicsStore.items"
-                :key="t.id"
-                :value="t.id"
+                v-for="a in authors"
+                :key="a.id"
+                :value="a.id"
               >
-                {{ t.title }}
+                {{ a.name }}
               </option>
             </select>
           </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block text-sm">
-              <span class="font-medium">Voice</span>
-              <select
-                v-model="draft.voice_id"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option :value="null">
-                  default
-                </option>
-                <option
-                  v-for="v in voices"
-                  :key="v.id"
-                  :value="v.id"
-                >
-                  {{ v.name }}
-                </option>
-              </select>
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium">Author</span>
-              <select
-                v-model="draft.author_id"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option :value="null">
-                  — none —
-                </option>
-                <option
-                  v-for="a in authors"
-                  :key="a.id"
-                  :value="a.id"
-                >
-                  {{ a.name }}
-                </option>
-              </select>
-            </label>
-          </div>
-          <label class="block text-sm">
-            <span class="font-medium">EEAT criteria version</span>
-            <input
-              v-model.number="draft.eeat_criteria_version"
-              type="number"
-              min="1"
-              class="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-          </label>
-          <div class="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :disabled="submitting"
-              @click="closeCreate"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              :disabled="submitting"
-            >
-              {{ submitting ? 'Creating…' : 'Create article' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
+        </div>
+        <label class="block text-sm">
+          <span class="font-medium">EEAT criteria version</span>
+          <input
+            v-model.number="draft.eeat_criteria_version"
+            type="number"
+            min="1"
+            class="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+      </form>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submitting"
+          @click="closeCreate"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submitting"
+          @click="submitCreate"
+        >
+          Create article
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

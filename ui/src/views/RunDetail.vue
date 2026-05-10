@@ -20,6 +20,14 @@ import { RouterLink } from 'vue-router'
 
 import KvList from '@/components/KvList.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiEmptyState,
+  UiJsonBlock,
+  UiPanel,
+  UiSectionHeader,
+} from '@/components/ui'
 import { useRunsStore, type Run } from '@/stores/runs'
 import { useToastsStore } from '@/stores/toasts'
 import type { ProcedureRunStep } from '@/stores/procedures'
@@ -127,95 +135,89 @@ watch(() => props.runId, load)
 </script>
 
 <template>
-  <div
+  <UiEmptyState
     v-if="loading && !run"
-    class="rounded border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400"
-  >
-    Loading run #{{ runId }}…
-  </div>
-  <div
+    :title="`Loading run #${runId}`"
+    description="Fetching run metadata, children, and procedure steps."
+    size="md"
+  />
+  <UiEmptyState
     v-else-if="!run"
-    class="rounded border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400"
-  >
-    Run not found.
-  </div>
+    title="Run not found"
+    :description="`Run #${runId} is not available in the local daemon.`"
+    size="md"
+  />
   <div
     v-else
-    class="space-y-6"
+    class="space-y-4"
   >
-    <section
-      class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
+    <UiPanel
       aria-labelledby="cs-run-summary-title"
+      class="p-4"
     >
-      <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2
-          id="cs-run-summary-title"
-          class="text-base font-semibold"
-        >
-          Summary
-        </h2>
-        <div class="flex gap-2">
-          <button
+      <UiSectionHeader
+        id="cs-run-summary-title"
+        title="Summary"
+      >
+        <template #actions>
+          <UiButton
             v-if="run.status === 'running'"
-            type="button"
-            class="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+            size="sm"
+            variant="secondary"
             @click="heartbeat"
           >
             Heartbeat
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="run.status === 'running'"
-            type="button"
-            class="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30"
+            size="sm"
+            variant="danger"
             @click="abort(true)"
           >
             Abort (cascade)
-          </button>
+          </UiButton>
           <StatusBadge
             :status="run.status"
             kind="run"
           />
-        </div>
-      </div>
+        </template>
+      </UiSectionHeader>
       <KvList
         :items="summary"
         :two-column="true"
       />
-    </section>
+    </UiPanel>
 
-    <section
+    <UiPanel
       v-if="metadataKv.length > 0"
-      class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
       aria-labelledby="cs-run-metadata-title"
+      class="p-4"
     >
-      <h2
+      <UiSectionHeader
         id="cs-run-metadata-title"
-        class="mb-3 text-base font-semibold"
-      >
-        Metadata
-      </h2>
+        title="Metadata"
+      />
       <KvList :items="metadataKv" />
-    </section>
+    </UiPanel>
 
-    <section
-      class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
+    <UiPanel
       aria-labelledby="cs-run-steps-title"
+      class="p-4"
     >
-      <h2
+      <UiSectionHeader
         id="cs-run-steps-title"
-        class="mb-3 text-base font-semibold"
-      >
-        Steps timeline
-      </h2>
-      <p
+        title="Steps timeline"
+      />
+      <UiCallout
         v-if="procedureSteps.length === 0"
-        class="rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+        tone="info"
+        density="compact"
       >
         Per-step grain (run_steps + run_step_calls) is exposed via
         <code>/api/v1/procedures/runs/{id}</code> for procedure-kind runs. Skill-run
         steps surface in M7 once the procedure runner records them. Use the
         children panel below to drill into nested runs.
-      </p>
+      </UiCallout>
       <ol
         v-else
         class="space-y-2"
@@ -223,27 +225,27 @@ watch(() => props.runId, load)
         <li
           v-for="(step, idx) in procedureSteps"
           :key="step.id"
-          class="rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/60"
+          class="rounded-md border border-default bg-bg-surface"
         >
           <button
             type="button"
-            class="flex w-full items-center justify-between gap-3 p-3 text-left text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-gray-800"
+            class="focus-ring flex w-full items-center justify-between gap-3 p-3 text-left text-sm hover:bg-bg-surface-alt"
             :aria-expanded="expandedStep === idx"
             :aria-controls="`cs-run-step-panel-${idx}`"
             @click="toggleStep(idx)"
           >
             <span class="flex flex-wrap items-center gap-2">
-              <span class="font-mono text-xs text-gray-500 dark:text-gray-400">
+              <span class="font-mono text-xs text-fg-muted">
                 #{{ step.step_index }}
               </span>
-              <span class="font-medium">{{ step.step_id }}</span>
+              <span class="font-medium text-fg-default">{{ step.step_id }}</span>
               <StatusBadge
                 :status="step.status"
                 kind="job"
                 :small="true"
               />
             </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
+            <span class="text-xs text-fg-muted">
               {{ step.started_at ? new Date(step.started_at).toLocaleTimeString() : 'pending' }}
               {{ step.ended_at ? '→ ' + new Date(step.ended_at).toLocaleTimeString() : '' }}
               <span aria-hidden="true">{{ expandedStep === idx ? '▴' : '▾' }}</span>
@@ -252,44 +254,48 @@ watch(() => props.runId, load)
           <div
             v-if="expandedStep === idx"
             :id="`cs-run-step-panel-${idx}`"
-            class="border-t border-gray-200 bg-white p-3 text-xs dark:border-gray-700 dark:bg-gray-900"
+            class="border-t border-subtle bg-bg-surface-alt p-3 text-xs"
           >
-            <div
+            <UiCallout
               v-if="step.error"
-              class="mb-2 rounded bg-red-50 p-2 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-200"
+              tone="danger"
+              density="compact"
+              class="mb-2"
             >
               {{ step.error }}
-            </div>
+            </UiCallout>
             <div v-if="step.output_json && Object.keys(step.output_json).length > 0">
               <h3 class="mb-1 font-semibold">
                 output_json
               </h3>
-              <pre class="overflow-x-auto rounded bg-gray-100 p-2 font-mono text-[11px] dark:bg-gray-800">{{ JSON.stringify(step.output_json, null, 2) }}</pre>
+              <UiJsonBlock
+                :data="step.output_json"
+                density="compact"
+                max-height="16rem"
+              />
             </div>
             <p
               v-else
-              class="text-gray-500 dark:text-gray-400"
+              class="text-fg-muted"
             >
               No output recorded.
             </p>
           </div>
         </li>
       </ol>
-    </section>
+    </UiPanel>
 
-    <section
-      class="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
+    <UiPanel
       aria-labelledby="cs-run-children-title"
+      class="p-4"
     >
-      <h2
+      <UiSectionHeader
         id="cs-run-children-title"
-        class="mb-3 text-base font-semibold"
-      >
-        Children runs
-      </h2>
+        title="Children runs"
+      />
       <p
         v-if="children.length === 0"
-        class="text-sm text-gray-600 dark:text-gray-400"
+        class="text-sm text-fg-muted"
       >
         No child runs.
       </p>
@@ -300,11 +306,11 @@ watch(() => props.runId, load)
         <li
           v-for="c in children"
           :key="c.id"
-          class="flex items-center justify-between rounded border border-gray-200 p-2 dark:border-gray-700"
+          class="flex items-center justify-between rounded-sm border border-default bg-bg-surface p-2"
         >
           <RouterLink
             :to="`/projects/${projectId}/runs/${c.id}`"
-            class="text-blue-700 hover:underline dark:text-blue-300"
+            class="text-fg-link hover:underline"
           >
             #{{ c.id }} · {{ c.kind }}
           </RouterLink>
@@ -315,6 +321,6 @@ watch(() => props.runId, load)
           />
         </li>
       </ul>
-    </section>
+    </UiPanel>
   </div>
 </template>

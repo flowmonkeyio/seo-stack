@@ -27,6 +27,8 @@ const drawerOpen = ref(false)
 function applyTheme(): void {
   if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('dark', theme.value === 'dark')
+  document.documentElement.dataset.theme = theme.value
+  document.documentElement.style.colorScheme = theme.value
 }
 
 function toggleTheme(): void {
@@ -86,7 +88,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
   <div class="flex min-h-screen flex-col md:flex-row">
     <button
       type="button"
-      class="m-2 inline-flex items-center justify-center rounded border border-gray-300 px-3 py-1.5 text-sm md:hidden dark:border-gray-700"
+      class="m-2 inline-flex items-center justify-center rounded-sm border border-default bg-bg-surface px-3 py-1.5 text-sm text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden"
       :aria-expanded="drawerOpen"
       aria-controls="cs-sidebar"
       @click="drawerOpen = !drawerOpen"
@@ -96,20 +98,20 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
     <aside
       id="cs-sidebar"
-      class="border-b border-gray-200 bg-white md:w-60 md:flex-shrink-0 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-900"
+      class="border-b border-default bg-bg-surface md:w-60 md:flex-shrink-0 md:border-b-0 md:border-r"
       :class="drawerOpen ? 'block' : 'hidden md:block'"
       aria-label="Primary navigation"
     >
       <div class="flex items-center gap-2 px-4 py-4 md:px-6">
         <span
-          class="inline-flex h-8 w-8 items-center justify-center rounded bg-gray-900 font-mono text-sm font-bold text-white dark:bg-gray-100 dark:text-gray-900"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-sm bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
           aria-hidden="true"
         >cs</span>
         <div>
           <div class="text-sm font-semibold leading-tight">
             content-stack
           </div>
-          <div class="text-xs text-gray-500 dark:text-gray-400">
+          <div class="text-xs text-fg-muted">
             M5 build
           </div>
         </div>
@@ -124,8 +126,8 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           <li>
             <RouterLink
               to="/projects"
-              class="block rounded px-3 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-              active-class="bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-white"
+              class="block rounded-sm px-3 py-2 text-fg-default hover:bg-bg-surface-alt"
+              active-class="bg-bg-surface-alt font-medium text-fg-strong"
               @click="closeDrawer"
             >
               All projects
@@ -135,7 +137,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
         <p
           v-if="projectNav.length === 0"
-          class="mt-4 px-3 text-xs text-gray-500 dark:text-gray-400"
+          class="mt-4 px-3 text-xs text-fg-muted"
         >
           Pick a project to see the navigation.
         </p>
@@ -149,14 +151,14 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           >
             <RouterLink
               :to="item.to"
-              class="flex items-center justify-between rounded px-3 py-2 text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-              active-class="bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-white"
+              class="flex items-center justify-between rounded-sm px-3 py-2 text-fg-default hover:bg-bg-surface-alt"
+              active-class="bg-bg-surface-alt font-medium text-fg-strong"
               @click="closeDrawer"
             >
               <span>{{ item.label }}</span>
               <span
                 v-if="item.milestone"
-                class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                class="rounded-xs bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning-fg"
               >
                 {{ item.milestone }}
               </span>
@@ -165,14 +167,13 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
         </ul>
       </nav>
 
-      <div class="border-t border-gray-100 px-4 py-3 dark:border-gray-800">
+      <div class="border-t border-subtle px-4 py-3">
         <button
           type="button"
-          class="inline-flex items-center gap-2 rounded border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-gray-700 dark:hover:bg-gray-800"
+          class="inline-flex items-center gap-2 rounded-sm border border-default px-3 py-1.5 text-xs text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           :aria-pressed="theme === 'dark'"
           @click="toggleTheme"
         >
-          <span aria-hidden="true">{{ theme === 'dark' ? '☾' : '☀' }}</span>
           <span>{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
         </button>
       </div>
@@ -188,13 +189,13 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           v-for="t in toastItems"
           :key="t.id"
           role="status"
-          class="pointer-events-auto rounded border p-3 text-sm shadow"
+          class="pointer-events-auto rounded-md border p-3 text-sm shadow-sm"
           :class="
             t.kind === 'error'
-              ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-900/40 dark:text-red-100'
+              ? 'border-danger-border bg-danger-subtle text-danger-fg'
               : t.kind === 'success'
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100'
-                : 'border-gray-300 bg-gray-50 text-gray-900 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100'
+                ? 'border-success-border bg-success-subtle text-success-fg'
+                : 'border-neutral-border bg-neutral-subtle text-neutral-fg'
           "
         >
           <div class="flex items-start justify-between gap-3">
@@ -211,7 +212,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             </div>
             <button
               type="button"
-              class="rounded p-1 text-xs opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
+              class="rounded-xs p-1 text-xs opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
               :aria-label="`Dismiss ${t.title}`"
               @click="dismissToast(t.id)"
             >
@@ -223,7 +224,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
       <div
         v-if="!auth.ready && !isAuthErrorRoute"
-        class="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-100"
+        class="rounded-md border border-warning-border bg-warning-subtle p-3 text-sm text-warning-fg"
         role="alert"
       >
         Authenticating with the daemon…

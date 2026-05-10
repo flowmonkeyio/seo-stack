@@ -54,14 +54,14 @@ const rendered = computed<string>(() => {
 <template>
   <div
     v-if="rendered.length === 0"
-    class="text-sm italic text-gray-500 dark:text-gray-400"
+    class="text-sm italic text-fg-muted"
   >
     {{ emptyMessage }}
   </div>
   <!-- eslint-disable vue/no-v-html — `rendered` runs through DOMPurify in the script. -->
   <div
     v-else
-    class="cs-markdown max-w-none text-sm text-gray-900 dark:text-gray-100"
+    class="cs-markdown max-w-none text-sm text-fg-default"
     v-html="rendered"
   />
 </template>
@@ -95,15 +95,15 @@ const rendered = computed<string>(() => {
   margin: 0.15rem 0;
 }
 .cs-markdown :deep(code) {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  background: rgba(15, 23, 42, 0.06);
-  border-radius: 0.25rem;
+  font-family: var(--font-mono);
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-sm);
   padding: 0.05rem 0.3rem;
   font-size: 0.9em;
 }
 .cs-markdown :deep(pre) {
-  background: rgba(15, 23, 42, 0.05);
-  border-radius: 0.4rem;
+  background: var(--color-bg-sunken);
+  border-radius: var(--radius-md);
   padding: 0.75rem;
   overflow-x: auto;
   margin: 0.75rem 0;

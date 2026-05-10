@@ -14,10 +14,16 @@
 //      publishes/eeat/versions/interlinks/drift). Each tab is a child route.
 
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
+import { useRoute, useRouter, RouterView } from 'vue-router'
 
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
+import {
+  UiBreadcrumbs,
+  UiButton,
+  UiPageHeader,
+  UiPageShell,
+} from '@/components/ui'
 import {
   useArticlesStore,
   ArticleEtagError,
@@ -92,14 +98,14 @@ const currentStepIndex = computed<number>(() => {
 
 function stepClasses(idx: number, current: number): string {
   if (idx < current)
-    return 'bg-emerald-500 text-white border-emerald-500'
+    return 'bg-success text-fg-on-accent border-success'
   if (idx === current)
-    return 'bg-blue-600 text-white border-blue-600 ring-2 ring-blue-300 dark:ring-blue-800'
-  return 'bg-white text-gray-500 border-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-700'
+    return 'bg-accent text-fg-on-accent border-accent ring-2 ring-focus'
+  return 'bg-bg-surface text-fg-muted border-default'
 }
 
 function lineClasses(idx: number, current: number): string {
-  return idx < current ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'
+  return idx < current ? 'bg-success' : 'bg-border-default'
 }
 
 const actionBusy = ref<string | null>(null)
@@ -208,6 +214,16 @@ async function loadAll(): Promise<void> {
 
 const isUnscored = computed(() => article.value?.status === 'briefing')
 
+const breadcrumbItems = computed(() => [
+  { label: 'Projects', to: '/projects' },
+  {
+    label: project.value?.name ?? `Project ${projectId.value}`,
+    to: `/projects/${projectId.value}/overview`,
+  },
+  { label: 'Articles', to: `/projects/${projectId.value}/articles` },
+  { label: article.value?.title ?? 'Article' },
+])
+
 onMounted(async () => {
   await loadAll()
   // If the URL is /projects/:id/articles/:aid (no tab), redirect to brief.
@@ -222,54 +238,12 @@ watch(articleId, loadAll)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <nav
-      aria-label="Breadcrumb"
-      class="mb-2 text-sm text-gray-600 dark:text-gray-400"
-    >
-      <ol class="flex flex-wrap items-center gap-1">
-        <li>
-          <RouterLink
-            :to="`/projects/${projectId}/overview`"
-            class="hover:underline"
-          >
-            {{ project?.name ?? 'Project' }}
-          </RouterLink>
-        </li>
-        <li
-          aria-hidden="true"
-          class="text-gray-400"
-        >
-          /
-        </li>
-        <li>
-          <RouterLink
-            :to="`/projects/${projectId}/articles`"
-            class="hover:underline"
-          >
-            Articles
-          </RouterLink>
-        </li>
-        <li
-          aria-hidden="true"
-          class="text-gray-400"
-        >
-          /
-        </li>
-        <li
-          class="truncate"
-          aria-current="page"
-        >
-          {{ article?.title ?? '…' }}
-        </li>
-      </ol>
-    </nav>
-
-    <header class="mb-4">
-      <div class="flex flex-wrap items-baseline gap-3">
-        <h1 class="text-2xl font-bold tracking-tight">
-          {{ article?.title ?? 'Loading…' }}
-        </h1>
+  <UiPageShell>
+    <UiPageHeader :title="article?.title ?? 'Loading…'">
+      <template #breadcrumbs>
+        <UiBreadcrumbs :items="breadcrumbItems" />
+      </template>
+      <template #titleMeta>
         <StatusBadge
           v-if="article"
           :status="article.status"
@@ -277,28 +251,24 @@ watch(articleId, loadAll)
         />
         <span
           v-if="article"
-          class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          class="rounded-xs bg-neutral-subtle px-2 py-0.5 text-xs text-neutral-fg"
         >
           v{{ article.version }}
         </span>
-      </div>
-      <p
+      </template>
+      <template
         v-if="article"
-        class="mt-1 text-sm text-gray-600 dark:text-gray-400"
+        #meta
       >
         <span class="font-mono">{{ article.slug }}</span>
-        <template v-if="author">
-          · author <strong>{{ author.name }}</strong>
-        </template>
-        <template v-if="reviewer">
-          · reviewer <strong>{{ reviewer.name }}</strong>
-        </template>
-      </p>
-    </header>
+        <span v-if="author">author <strong class="font-medium text-fg-default">{{ author.name }}</strong></span>
+        <span v-if="reviewer">reviewer <strong class="font-medium text-fg-default">{{ reviewer.name }}</strong></span>
+      </template>
+    </UiPageHeader>
 
     <ol
       v-if="article"
-      class="mb-4 flex items-center gap-2 overflow-x-auto pb-1"
+      class="flex items-center gap-2 overflow-x-auto rounded-md border border-subtle bg-bg-surface px-3 py-3"
       tabindex="0"
       aria-label="Article status timeline"
     >
@@ -315,7 +285,7 @@ watch(articleId, loadAll)
             <template v-if="idx < currentStepIndex">✓</template>
             <template v-else>{{ idx + 1 }}</template>
           </span>
-          <span class="mt-1 whitespace-nowrap text-[11px] text-gray-600 dark:text-gray-400">
+          <span class="mt-1 whitespace-nowrap text-[11px] text-fg-muted">
             {{ step.label }}
           </span>
         </li>
@@ -330,95 +300,95 @@ watch(articleId, loadAll)
 
     <div
       v-if="article"
-      class="mb-4 flex flex-wrap items-center gap-2"
+      class="flex flex-wrap items-center gap-2"
     >
-      <button
+      <UiButton
         v-if="article.status === 'briefing'"
-        type="button"
-        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        size="sm"
+        variant="primary"
         @click="gotoTab('brief')"
       >
         Edit brief
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'outlined'"
-        type="button"
-        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        size="sm"
+        variant="primary"
         @click="gotoTab('draft')"
       >
         Continue to draft
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'outlined'"
-        type="button"
-        class="rounded border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+        size="sm"
+        variant="secondary"
         :disabled="actionBusy !== null"
         @click="actionMarkDrafted"
       >
         {{ actionBusy === 'mark drafted' ? 'Marking…' : 'Mark drafted' }}
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'drafted'"
-        type="button"
-        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        size="sm"
+        variant="primary"
         @click="gotoTab('edited')"
       >
         Continue to editor
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'edited'"
-        type="button"
-        class="rounded border border-purple-300 bg-purple-50 px-3 py-1.5 text-sm font-medium text-purple-800 hover:bg-purple-100 disabled:opacity-50 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200"
+        size="sm"
+        variant="secondary"
         :disabled="actionBusy !== null"
         @click="actionMarkEeatPassed"
       >
         {{ actionBusy === 'mark EEAT passed' ? 'Marking…' : 'Mark EEAT passed (manual)' }}
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'eeat_passed'"
-        type="button"
-        class="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+        size="sm"
+        variant="primary"
         :disabled="actionBusy !== null"
         @click="actionMarkPublished"
       >
         {{ actionBusy === 'publish' ? 'Publishing…' : 'Publish' }}
-      </button>
+      </UiButton>
 
-      <button
+      <UiButton
         v-if="article.status === 'published'"
-        type="button"
-        class="rounded border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-800 hover:bg-orange-100 disabled:opacity-50 dark:border-orange-700 dark:bg-orange-900/40 dark:text-orange-200"
+        size="sm"
+        variant="secondary"
         :disabled="actionBusy !== null"
         @click="actionMarkRefreshDue"
       >
         Mark refresh due
-      </button>
+      </UiButton>
 
-      <button
-        type="button"
-        class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="actionBusy !== null"
         @click="actionCreateVersion"
       >
         New version
-      </button>
+      </UiButton>
     </div>
 
     <p
       v-if="!article && !loadingArticle"
-      class="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
     >
       Article not found.
     </p>
 
     <p
       v-else-if="loadingArticle && !article"
-      class="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
     >
       Loading article…
     </p>
@@ -434,7 +404,7 @@ watch(articleId, loadAll)
         :id="`cs-tabpanel-${activeKey}`"
         role="tabpanel"
         :aria-labelledby="`cs-tab-${activeKey}`"
-        class="mt-4"
+        class="pt-3"
       >
         <RouterView
           v-if="article"
@@ -446,10 +416,10 @@ watch(articleId, loadAll)
 
     <p
       v-if="isUnscored"
-      class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+      class="text-xs text-fg-muted"
     >
       Article is in <code>briefing</code>. Save the brief to advance the
       timeline.
     </p>
-  </div>
+  </UiPageShell>
 </template>

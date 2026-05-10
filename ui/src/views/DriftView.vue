@@ -14,6 +14,14 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiEmptyState,
+  UiPageShell,
+} from '@/components/ui'
 import { useDriftStore, type DriftRow } from '@/stores/drift'
 import { useArticlesStore } from '@/stores/articles'
 import { useToastsStore } from '@/stores/toasts'
@@ -129,39 +137,43 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Drift Watch
-      </h1>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        :disabled="snapshotPending"
-        @click="snapshotAll"
-      >
-        {{ snapshotPending ? 'Snapshotting…' : 'Snapshot all published articles' }}
-      </button>
-    </header>
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Drift Watch"
+      description="Snapshot published content baselines and inspect drift scores as the comparison engine updates them."
+      :breadcrumbs="[{ label: 'Drift Watch' }]"
+    >
+      <template #actions>
+        <UiButton
+          variant="primary"
+          :loading="snapshotPending"
+          :disabled="snapshotPending"
+          @click="snapshotAll"
+        >
+          Snapshot all published articles
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
-      class="mb-3 rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+    <UiCallout
+      tone="info"
     >
       The drift comparison engine ships in M6. M5.C records baselines via the
       <code>drift.snapshot</code> endpoint; <code>current_score</code> is
       populated by the M6 watcher.
-    </p>
+    </UiCallout>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
 
-    <div class="mb-3 flex items-center gap-3 text-sm">
+    <div class="flex items-center gap-3 text-sm">
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Threshold</span>
+        <span class="text-fg-muted">Threshold</span>
         <input
           :value="thresholdScore"
           type="range"
@@ -172,25 +184,29 @@ watch(projectId, load)
           aria-label="Drift threshold"
           @input="driftStore.setThreshold(Number.parseFloat(($event.target as HTMLInputElement).value))"
         >
-        <span class="w-8 text-right text-xs text-gray-500 dark:text-gray-400">{{ thresholdScore.toFixed(2) }}</span>
+        <span class="w-8 text-right text-xs text-fg-muted">{{ thresholdScore.toFixed(2) }}</span>
       </label>
-      <span class="text-xs text-gray-500 dark:text-gray-400">
+      <span class="text-xs text-fg-muted">
         Hide rows whose <code>current_score</code> is below the slider.
       </span>
     </div>
 
-    <div
+    <UiEmptyState
       v-if="empty"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      title="No drift baselines yet"
+      description="Snapshot a published article, or all published articles, to start tracking content drift."
+      size="lg"
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No drift baselines yet
-      </p>
-      <p class="mb-4">
-        Snapshot a published article (or all of them) to start tracking drift.
-        The M6 watcher will compute <code>current_score</code> nightly.
-      </p>
-    </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          :loading="snapshotPending"
+          @click="snapshotAll"
+        >
+          Snapshot all published articles
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <DataTable
       v-if="!empty"
@@ -213,59 +229,52 @@ watch(projectId, load)
       <template #cell:current_score="{ row }">
         <div class="flex items-center gap-2">
           <span>{{ (row as DriftRow).current_score === null ? '—' : Number((row as DriftRow).current_score).toFixed(3) }}</span>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+          <UiButton
+            size="sm"
+            variant="secondary"
             :aria-label="`Snapshot baseline for ${articleTitle((row as DriftRow).parent_article_id)}`"
             @click.stop="snapshotRow(row as DriftRow)"
           >
             Snapshot
-          </button>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="secondary"
             :aria-label="`View diff for ${articleTitle((row as DriftRow).parent_article_id)}`"
             @click.stop="openDiff(row as DriftRow)"
           >
             View Diff
-          </button>
+          </UiButton>
         </div>
       </template>
     </DataTable>
 
-    <!-- Diff modal — M6 deferral. We surface the baseline_md so users can
-         eyeball what was captured; the diff engine is M6 territory. -->
-    <div
-      v-if="diffOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-drift-diff-title"
-      @click.self="closeDiff"
+    <UiDialog
+      :model-value="diffOpen !== null"
+      :title="diffOpen ? `Drift baseline — ${articleTitle(diffOpen.parent_article_id)}` : 'Drift baseline'"
+      size="xl"
+      scroll-body
+      @update:model-value="(open: boolean) => open ? undefined : closeDiff()"
     >
-      <div
-        class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <UiCallout
+        tone="info"
+        density="compact"
+        class="mb-3"
       >
-        <h2
-          id="cs-drift-diff-title"
-          class="mb-3 text-lg font-semibold"
+        Drift comparison engine coming in M6. Baseline body shown below.
+      </UiCallout>
+      <pre
+        v-if="diffOpen"
+        class="max-h-[60vh] overflow-y-auto rounded-md border border-subtle bg-bg-sunken p-3 font-mono text-xs text-fg-default"
+      >{{ diffOpen.baseline_md }}</pre>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          @click="closeDiff"
         >
-          Drift baseline — {{ articleTitle(diffOpen.parent_article_id) }}
-        </h2>
-        <p class="mb-3 rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
-          Drift comparison engine coming in M6. Baseline body shown below.
-        </p>
-        <pre class="max-h-[60vh] overflow-y-auto rounded bg-gray-100 p-3 font-mono text-xs dark:bg-gray-800">{{ diffOpen.baseline_md }}</pre>
-        <div class="mt-3 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            @click="closeDiff"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+          Close
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

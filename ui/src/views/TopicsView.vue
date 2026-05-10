@@ -13,7 +13,17 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiBulkActionBar,
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiEmptyState,
+  UiPageShell,
+  UiSegmentedControl,
+} from '@/components/ui'
 import { useClustersStore } from '@/stores/clusters'
 import {
   useTopicsStore,
@@ -111,6 +121,10 @@ const bulkDraft = ref<BulkDraft>({
 function setStatusFilter(opt: 'all' | `${TopicStatusEnum}`): void {
   topicsStore.setFilter('status', opt === 'all' ? null : (opt as TopicStatus))
   void topicsStore.refresh(projectId.value)
+}
+
+function onStatusSelect(key: string | number): void {
+  setStatusFilter(String(key) as 'all' | `${TopicStatusEnum}`)
 }
 
 function setSourceFilter(value: string): void {
@@ -344,67 +358,49 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Topics
-      </h1>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-gray-700 dark:hover:bg-gray-800"
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Topics"
+      description="Review, approve, cluster, reject, and bulk-manage the topic queue before articles are created."
+      :breadcrumbs="[{ label: 'Topics' }]"
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
           @click="openBulkCreate"
         >
           Bulk create
-        </button>
-        <button
-          type="button"
-          class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        </UiButton>
+        <UiButton
+          variant="primary"
           @click="openCreate"
         >
           New topic
-        </button>
-      </div>
-    </header>
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
 
-    <!-- Status pill bar -->
-    <div
-      role="tablist"
-      aria-label="Topic status filter"
-      class="mb-3 flex flex-wrap gap-1"
-    >
-      <button
-        v-for="opt in STATUS_OPTIONS"
-        :key="opt.key"
-        type="button"
-        role="tab"
-        :aria-selected="(filters.status === null && opt.key === 'all') || filters.status === opt.key"
-        class="rounded-full border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        :class="
-          (filters.status === null && opt.key === 'all') || filters.status === opt.key
-            ? 'border-blue-600 bg-blue-50 font-medium text-blue-800 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-200'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
-        "
-        @click="setStatusFilter(opt.key)"
-      >
-        {{ opt.label }}
-      </button>
-    </div>
+    <UiSegmentedControl
+      :model-value="filters.status ?? 'all'"
+      :options="STATUS_OPTIONS"
+      label="Topic status filter"
+      @select="onStatusSelect"
+    />
 
-    <!-- Other filters -->
-    <div class="mb-3 flex flex-wrap items-center gap-3 text-sm">
+    <div class="flex flex-wrap items-center gap-3 text-sm">
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Source</span>
+        <span class="text-fg-muted">Source</span>
         <select
           :value="filters.source ?? ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="setSourceFilter(($event.target as HTMLSelectElement).value)"
         >
           <option value="">
@@ -420,10 +416,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Intent</span>
+        <span class="text-fg-muted">Intent</span>
         <select
           :value="filters.intent ?? ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="setIntentFilter(($event.target as HTMLSelectElement).value)"
         >
           <option value="">
@@ -439,10 +435,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Cluster</span>
+        <span class="text-fg-muted">Cluster</span>
         <select
           :value="filters.cluster_id !== null ? String(filters.cluster_id) : ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="setClusterFilter(($event.target as HTMLSelectElement).value)"
         >
           <option value="">
@@ -458,10 +454,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Sort</span>
+        <span class="text-fg-muted">Sort</span>
         <select
           :value="sort"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           @change="onSortChange"
         >
           <option value="priority">
@@ -480,34 +476,32 @@ watch(projectId, load)
       </label>
     </div>
 
-    <!-- Bulk actions bar -->
-    <div
+    <UiBulkActionBar
       v-if="selection.size > 0"
-      class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-300 bg-blue-50 p-2 text-sm dark:border-blue-700 dark:bg-blue-900/30"
-      role="status"
-      aria-live="polite"
+      :count="selection.size"
+      aria-label="Selected topics"
+      @clear="selection = new Set()"
     >
-      <span class="font-medium">{{ selection.size }} selected</span>
-      <button
-        type="button"
-        class="rounded border border-blue-300 bg-white px-2 py-1 text-xs hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/60 dark:hover:bg-blue-900"
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="bulkActionPending"
         @click="bulkApprove"
       >
         Approve selected
-      </button>
-      <button
-        type="button"
-        class="rounded border border-blue-300 bg-white px-2 py-1 text-xs hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/60 dark:hover:bg-blue-900"
+      </UiButton>
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="bulkActionPending"
         @click="bulkReject"
       >
         Reject selected
-      </button>
-      <label class="flex items-center gap-1 text-xs">
+      </UiButton>
+      <label class="flex items-center gap-1 text-xs text-fg-muted">
         Set status…
         <select
-          class="rounded border border-blue-300 bg-white px-1 py-0.5 text-xs dark:border-blue-700 dark:bg-blue-900/40"
+          class="h-7 rounded-sm border border-default bg-bg-surface px-2 text-xs text-fg-default focus-ring"
           :disabled="bulkActionPending"
           @change="onBulkSetStatusChange"
         >
@@ -531,33 +525,23 @@ watch(projectId, load)
           </option>
         </select>
       </label>
-      <button
-        type="button"
-        class="ml-auto rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-        @click="selection = new Set()"
-      >
-        Clear
-      </button>
-    </div>
+    </UiBulkActionBar>
 
-    <div
+    <UiEmptyState
       v-if="empty"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      title="No topics yet"
+      description="Topics seed the article queue. Create one manually, or paste a list."
+      size="lg"
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No topics yet
-      </p>
-      <p class="mb-4">
-        Topics seed the article queue. Create one manually, or paste a list.
-      </p>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        @click="openCreate"
-      >
-        Create topic
-      </button>
-    </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openCreate"
+        >
+          Create topic
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <DataTable
       v-else
@@ -586,249 +570,203 @@ watch(projectId, load)
       </template>
     </DataTable>
 
-    <!-- New topic modal -->
-    <div
-      v-if="showCreate"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-new-topic-title"
-      @click.self="closeCreate"
+    <UiDialog
+      :model-value="showCreate"
+      title="New topic"
+      description="Add one topic to the queue with optional keyword, cluster, source, and priority metadata."
+      size="lg"
+      @update:model-value="(open: boolean) => open ? showCreate = true : closeCreate()"
     >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <form
+        class="space-y-3"
+        @submit.prevent="submitCreate"
       >
-        <h2
-          id="cs-new-topic-title"
-          class="mb-3 text-lg font-semibold"
-        >
-          New topic
-        </h2>
-        <form
-          class="space-y-3"
-          @submit.prevent="submitCreate"
-        >
+        <label class="block text-sm">
+          <span class="font-medium">Title</span>
+          <input
+            v-model="draft.title"
+            type="text"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Primary keyword</span>
+          <input
+            v-model="draft.primary_kw"
+            type="text"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Secondary keywords</span>
+          <input
+            v-model="draft.secondary_kws"
+            type="text"
+            placeholder="comma, separated, list"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+        </label>
+        <div class="grid grid-cols-2 gap-3">
           <label class="block text-sm">
-            <span class="font-medium">Title</span>
-            <input
-              v-model="draft.title"
-              type="text"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Primary keyword</span>
-            <input
-              v-model="draft.primary_kw"
-              type="text"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Secondary keywords</span>
-            <input
-              v-model="draft.secondary_kws"
-              type="text"
-              placeholder="comma, separated, list"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block text-sm">
-              <span class="font-medium">Intent</span>
-              <select
-                v-model="draft.intent"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option
-                  v-for="i in INTENT_OPTIONS"
-                  :key="i"
-                  :value="i"
-                >
-                  {{ i }}
-                </option>
-              </select>
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium">Source</span>
-              <select
-                v-model="draft.source"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option
-                  v-for="s in SOURCE_OPTIONS"
-                  :key="s"
-                  :value="s"
-                >
-                  {{ s }}
-                </option>
-              </select>
-            </label>
-          </div>
-          <label class="block text-sm">
-            <span class="font-medium">Cluster</span>
+            <span class="font-medium">Intent</span>
             <select
-              v-model="draft.cluster_id"
+              v-model="draft.intent"
               class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
             >
-              <option :value="null">
-                — none —
-              </option>
               <option
-                v-for="c in clustersStore.items"
-                :key="c.id"
-                :value="c.id"
+                v-for="i in INTENT_OPTIONS"
+                :key="i"
+                :value="i"
               >
-                {{ c.name }}
+                {{ i }}
               </option>
             </select>
           </label>
           <label class="block text-sm">
-            <span class="font-medium">Priority {{ draft.priority }}</span>
-            <input
-              v-model.number="draft.priority"
-              type="range"
-              min="0"
-              max="100"
-              class="mt-1 w-full"
+            <span class="font-medium">Source</span>
+            <select
+              v-model="draft.source"
+              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
             >
-          </label>
-          <div class="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :disabled="submitting"
-              @click="closeCreate"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              :disabled="submitting"
-            >
-              {{ submitting ? 'Creating…' : 'Create topic' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Bulk create modal -->
-    <div
-      v-if="showBulkCreate"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-bulk-topic-title"
-      @click.self="closeBulkCreate"
-    >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
-      >
-        <h2
-          id="cs-bulk-topic-title"
-          class="mb-3 text-lg font-semibold"
-        >
-          Bulk create topics
-        </h2>
-        <form
-          class="space-y-3"
-          @submit.prevent="submitBulkCreate"
-        >
-          <label class="block text-sm">
-            <span class="font-medium">Titles (one per line)</span>
-            <textarea
-              v-model="bulkDraft.titles"
-              rows="8"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-800"
-            />
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block text-sm">
-              <span class="font-medium">Intent</span>
-              <select
-                v-model="bulkDraft.intent"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+              <option
+                v-for="s in SOURCE_OPTIONS"
+                :key="s"
+                :value="s"
               >
-                <option
-                  v-for="i in INTENT_OPTIONS"
-                  :key="i"
-                  :value="i"
-                >
-                  {{ i }}
-                </option>
-              </select>
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium">Source</span>
-              <select
-                v-model="bulkDraft.source"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option
-                  v-for="s in SOURCE_OPTIONS"
-                  :key="s"
-                  :value="s"
-                >
-                  {{ s }}
-                </option>
-              </select>
-            </label>
-          </div>
-          <div class="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :disabled="submitting"
-              @click="closeBulkCreate"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              :disabled="submitting"
-            >
-              {{ submitting ? 'Creating…' : 'Create batch' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Preview modal -->
-    <div
-      v-if="previewTopic"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-topic-preview-title"
-      @click.self="closePreview"
-    >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
-      >
-        <div class="mb-3 flex items-baseline justify-between">
-          <h2
-            id="cs-topic-preview-title"
-            class="text-lg font-semibold"
-          >
-            {{ previewTopic.title }}
-          </h2>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            @click="closePreview"
-          >
-            Close
-          </button>
+                {{ s }}
+              </option>
+            </select>
+          </label>
         </div>
+        <label class="block text-sm">
+          <span class="font-medium">Cluster</span>
+          <select
+            v-model="draft.cluster_id"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option :value="null">
+              — none —
+            </option>
+            <option
+              v-for="c in clustersStore.items"
+              :key="c.id"
+              :value="c.id"
+            >
+              {{ c.name }}
+            </option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Priority {{ draft.priority }}</span>
+          <input
+            v-model.number="draft.priority"
+            type="range"
+            min="0"
+            max="100"
+            class="mt-1 w-full"
+          >
+        </label>
+      </form>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submitting"
+          @click="closeCreate"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submitting"
+          @click="submitCreate"
+        >
+          Create topic
+        </UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog
+      :model-value="showBulkCreate"
+      title="Bulk create topics"
+      description="Paste one title per line and apply shared intent/source metadata to the batch."
+      size="lg"
+      @update:model-value="(open: boolean) => open ? showBulkCreate = true : closeBulkCreate()"
+    >
+      <form
+        class="space-y-3"
+        @submit.prevent="submitBulkCreate"
+      >
+        <label class="block text-sm">
+          <span class="font-medium">Titles (one per line)</span>
+          <textarea
+            v-model="bulkDraft.titles"
+            rows="8"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-800"
+          />
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block text-sm">
+            <span class="font-medium">Intent</span>
+            <select
+              v-model="bulkDraft.intent"
+              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option
+                v-for="i in INTENT_OPTIONS"
+                :key="i"
+                :value="i"
+              >
+                {{ i }}
+              </option>
+            </select>
+          </label>
+          <label class="block text-sm">
+            <span class="font-medium">Source</span>
+            <select
+              v-model="bulkDraft.source"
+              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+            >
+              <option
+                v-for="s in SOURCE_OPTIONS"
+                :key="s"
+                :value="s"
+              >
+                {{ s }}
+              </option>
+            </select>
+          </label>
+        </div>
+      </form>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submitting"
+          @click="closeBulkCreate"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submitting"
+          @click="submitBulkCreate"
+        >
+          Create batch
+        </UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog
+      :model-value="previewTopic !== null"
+      :title="previewTopic?.title ?? 'Topic'"
+      size="lg"
+      @update:model-value="(open: boolean) => open ? undefined : closePreview()"
+    >
+      <template v-if="previewTopic">
         <dl class="grid gap-2 text-sm">
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Status
             </dt>
             <dd>
@@ -839,7 +777,7 @@ watch(projectId, load)
             </dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Primary KW
             </dt>
             <dd class="font-mono text-xs">
@@ -847,7 +785,7 @@ watch(projectId, load)
             </dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Secondary KWs
             </dt>
             <dd class="text-right text-xs">
@@ -859,55 +797,58 @@ watch(projectId, load)
               </span>
               <span
                 v-else
-                class="text-gray-500"
+                class="text-fg-muted"
               >—</span>
             </dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Intent
             </dt>
             <dd>{{ previewTopic.intent }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Source
             </dt>
             <dd>{{ previewTopic.source }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Priority
             </dt>
             <dd>{{ previewTopic.priority ?? '—' }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Cluster
             </dt>
             <dd>{{ clusterName(previewTopic.cluster_id) }}</dd>
           </div>
         </dl>
-        <div
-          v-if="previewTopic.status === 'queued'"
-          class="mt-4 flex justify-end gap-2"
+      </template>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          @click="closePreview"
         >
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+          Close
+        </UiButton>
+        <template v-if="previewTopic?.status === 'queued'">
+          <UiButton
+            variant="secondary"
             @click="rejectOne(previewTopic); closePreview()"
           >
             Reject
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          </UiButton>
+          <UiButton
+            variant="primary"
             @click="approveOne(previewTopic); closePreview()"
           >
             Approve
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+          </UiButton>
+        </template>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

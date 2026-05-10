@@ -5,6 +5,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import {
+  UiBadge,
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiFormField,
+  UiInput,
+  UiPanel,
+  UiSectionHeader,
+} from '@/components/ui'
 import { apiFetch, apiWrite, ApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import type { components } from '@/api'
@@ -270,14 +280,14 @@ function statusLabel(kind: VendorKind): string {
   return 'Not connected'
 }
 
-function statusClass(kind: VendorKind): string {
+function statusTone(kind: VendorKind): 'success' | 'warning' | 'neutral' {
   if (isConnected(kind)) {
-    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+    return 'success'
   }
   if (requiredKinds.value.includes(kind)) {
-    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+    return 'warning'
   }
-  return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+  return 'neutral'
 }
 
 function initialFields(vendor: VendorSpec, cred?: Cred): Record<string, string> {
@@ -484,81 +494,76 @@ watch(projectId, load)
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h2 class="text-base font-semibold">
-          Vendor connections
-        </h2>
-        <p class="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
-          Connect the services this project needs. Secrets are encrypted in the local daemon
-          and never written to the website repository.
-        </p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+  <section class="space-y-4">
+    <UiSectionHeader
+      title="Vendor connections"
+      description="Connect the services this project needs. Secrets are encrypted in the local daemon and never written to the website repository."
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
           @click="copySetupLink"
         >
           Copy setup link
-        </button>
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          size="sm"
           :disabled="loading"
           @click="load"
         >
           {{ loading ? 'Refreshing…' : 'Refresh' }}
-        </button>
-      </div>
-    </div>
+        </UiButton>
+      </template>
+    </UiSectionHeader>
 
-    <div
+    <UiCallout
       v-if="requiredVendors.length > 0"
-      class="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/70 dark:bg-amber-950/30"
+      tone="warning"
+      title="Needed for the current agent flow"
     >
-      <h3 class="text-sm font-semibold text-amber-900 dark:text-amber-100">
-        Needed for the current agent flow
-      </h3>
       <ul class="mt-2 flex flex-wrap gap-2 text-sm">
         <li
           v-for="vendor in requiredVendors"
           :key="vendor.kind"
-          class="rounded bg-white px-2 py-1 text-amber-900 shadow-sm dark:bg-amber-900/40 dark:text-amber-50"
         >
-          {{ vendor.name }} · {{ statusLabel(vendor.kind) }}
+          <UiBadge
+            tone="warning"
+            variant="outline"
+          >
+            {{ vendor.name }} · {{ statusLabel(vendor.kind) }}
+          </UiBadge>
         </li>
       </ul>
-    </div>
+    </UiCallout>
 
     <div class="grid gap-4 xl:grid-cols-2">
-      <article
+      <UiPanel
         v-for="vendor in vendors"
         :key="vendor.kind"
-        class="rounded-md border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
-        :class="requiredKinds.includes(vendor.kind) && !isConnected(vendor.kind) ? 'ring-2 ring-amber-300 dark:ring-amber-700' : ''"
+        class="p-4"
+        :class="requiredKinds.includes(vendor.kind) && !isConnected(vendor.kind) ? 'ring-2 ring-warning-border' : ''"
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div class="flex flex-wrap items-center gap-2">
-              <h3 class="text-base font-semibold">
+              <h3 class="text-base font-semibold text-fg-strong">
                 {{ vendor.name }}
               </h3>
-              <span
-                class="rounded px-2 py-0.5 text-xs font-medium"
-                :class="statusClass(vendor.kind)"
+              <UiBadge
+                :tone="statusTone(vendor.kind)"
               >
                 {{ statusLabel(vendor.kind) }}
-              </span>
-              <span
+              </UiBadge>
+              <UiBadge
                 v-if="vendor.optional"
-                class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                tone="neutral"
               >
                 Optional
-              </span>
+              </UiBadge>
             </div>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            <p class="mt-1 text-sm text-fg-muted">
               {{ vendor.summary }}
             </p>
           </div>
@@ -566,18 +571,18 @@ watch(projectId, load)
 
         <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <dt class="text-xs uppercase text-fg-muted">
               Used by
             </dt>
-            <dd class="mt-0.5 text-gray-800 dark:text-gray-200">
+            <dd class="mt-0.5 text-fg-default">
               {{ vendor.usedBy }}
             </dd>
           </div>
           <div>
-            <dt class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            <dt class="text-xs uppercase text-fg-muted">
               Agent tool key
             </dt>
-            <dd class="mt-0.5 font-mono text-xs text-gray-700 dark:text-gray-300">
+            <dd class="mt-0.5 font-mono text-xs text-fg-muted">
               {{ vendor.kind }}
             </dd>
           </div>
@@ -585,130 +590,121 @@ watch(projectId, load)
 
         <p
           v-if="vendor.dependsOn?.length"
-          class="mt-3 text-sm text-gray-600 dark:text-gray-400"
+          class="mt-3 text-sm text-fg-muted"
         >
           Uses {{ vendor.dependsOn.map((kind) => vendorByKind.get(kind)?.name ?? kind).join(', ') }}.
         </p>
 
         <div class="mt-4 flex flex-wrap gap-2">
-          <button
+          <UiButton
             v-if="vendor.setup === 'manual'"
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            variant="primary"
+            size="sm"
             @click="openSetup(vendor.kind)"
           >
             {{ isProjectCredential(vendor.kind) ? 'Update connection' : 'Connect' }}
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-else-if="vendor.setup === 'oauth'"
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            variant="primary"
+            size="sm"
             :disabled="connectingGsc"
             @click="connectGsc"
           >
             {{ connectingGsc ? 'Opening…' : isConnected(vendor.kind) ? 'Reconnect Google' : 'Connect Google' }}
-          </button>
-          <a
+          </UiButton>
+          <UiButton
             v-if="vendor.docsHref"
             :href="vendor.docsHref"
+            variant="secondary"
+            size="sm"
             target="_blank"
             rel="noreferrer"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
           >
             Get credentials
-          </a>
-          <button
+          </UiButton>
+          <UiButton
             v-if="credentialFor(vendor.kind) && vendor.setup !== 'none'"
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            variant="secondary"
+            size="sm"
             :disabled="testingIds.has(credentialFor(vendor.kind)!.id)"
             @click="testCredential(credentialFor(vendor.kind)!, vendor)"
           >
             {{ testingIds.has(credentialFor(vendor.kind)!.id) ? 'Testing…' : 'Test' }}
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="isProjectCredential(vendor.kind)"
-            type="button"
-            class="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30"
+            variant="danger"
+            size="sm"
             @click="remove(projectCredByKind.get(vendor.kind)!, vendor)"
           >
             Remove
-          </button>
+          </UiButton>
         </div>
 
         <p
           v-if="globalCredByKind.has(vendor.kind) && !projectCredByKind.has(vendor.kind)"
-          class="mt-3 text-xs text-gray-500 dark:text-gray-400"
+          class="mt-3 text-xs text-fg-muted"
         >
           This project is using a global credential. Connect here to override it for this project.
         </p>
-      </article>
+      </UiPanel>
     </div>
 
-    <div
-      v-if="activeVendor"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-integration-form-title"
-      @click.self="closeSetup"
+    <UiDialog
+      :model-value="activeVendor !== null"
+      :title="activeVendor ? activeCredential ? `Update ${activeVendor.name}` : `Connect ${activeVendor.name}` : ''"
+      description="Paste the credential here. The daemon encrypts it before storing it."
+      size="lg"
+      @update:model-value="(open: boolean) => open ? undefined : closeSetup()"
     >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <UiCallout
+        tone="info"
+        density="compact"
       >
-        <h3
-          id="cs-integration-form-title"
-          class="text-lg font-semibold"
-        >
-          {{ activeCredential ? `Update ${activeVendor.name}` : `Connect ${activeVendor.name}` }}
-        </h3>
-        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
-          Paste the credential here. The daemon encrypts it before storing it.
-          Existing secret values cannot be displayed, so updates require pasting the secret again.
-        </p>
+        Existing secret values cannot be displayed, so updates require pasting the secret again.
+      </UiCallout>
 
-        <div class="mt-4 space-y-3">
-          <label
+      <div class="mt-4 space-y-3">
+        <template v-if="activeVendor">
+          <UiFormField
             v-for="field in activeVendor.fields"
             :key="field.key"
-            class="block text-sm"
+            v-slot="{ id, describedBy, invalid, required }"
+            :label="field.label"
+            :required="field.required"
+            :help="field.help"
           >
-            <span class="font-medium">{{ field.label }}</span>
-            <input
+            <UiInput
+              :id="id"
               v-model="formFields[field.key]"
               :type="field.type ?? 'text'"
               :placeholder="field.placeholder"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              :required="required"
               :autocomplete="field.type === 'password' ? 'new-password' : 'off'"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-            <span
-              v-if="field.help"
-              class="mt-1 block text-xs text-gray-500 dark:text-gray-400"
-            >
-              {{ field.help }}
-            </span>
-          </label>
-        </div>
-
-        <div class="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="saving"
-            @click="closeSetup"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="saving"
-            @click="saveManual"
-          >
-            {{ saving ? 'Saving…' : activeCredential ? 'Save connection' : 'Connect vendor' }}
-          </button>
-        </div>
+            />
+          </UiFormField>
+        </template>
       </div>
-    </div>
+
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="saving"
+          @click="closeSetup"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="saving"
+          @click="saveManual"
+        >
+          {{ activeCredential ? 'Save connection' : 'Connect vendor' }}
+        </UiButton>
+      </template>
+    </UiDialog>
   </section>
 </template>

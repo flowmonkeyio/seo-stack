@@ -9,8 +9,9 @@ import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
-import StatusBadge from '@/components/StatusBadge.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TabBar from '@/components/TabBar.vue'
+import { UiPageShell } from '@/components/ui'
 import { useProjectsStore } from '@/stores/projects'
 
 const route = useRoute()
@@ -52,39 +53,28 @@ watch(projectId, ensureLoaded)
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <header class="mb-4">
-      <div class="flex flex-wrap items-baseline gap-3">
-        <h1 class="text-2xl font-bold tracking-tight">
-          {{ project?.name ?? 'Project' }}
-        </h1>
-        <StatusBadge
-          v-if="project"
-          :status="project.is_active ? 'active' : 'inactive'"
-          kind="project"
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      :title="project?.name"
+      description="Project settings, publishing targets, integrations, schedules, and operating controls."
+      show-project-status
+    >
+      <template #tabs>
+        <TabBar
+          :tabs="tabs"
+          :active-key="activeKey"
+          aria-label="Project sections"
+          @change="onTabChange"
         />
-      </div>
-      <p
-        v-if="project"
-        class="mt-1 text-sm text-gray-600 dark:text-gray-400"
-      >
-        <span class="font-mono">{{ project.slug }}</span> · {{ project.domain }} ·
-        {{ project.locale }}
-      </p>
-    </header>
-    <TabBar
-      :tabs="tabs"
-      :active-key="activeKey"
-      aria-label="Project sections"
-      @change="onTabChange"
-    />
+      </template>
+    </ProjectPageHeader>
     <div
       :id="`cs-tabpanel-${activeKey}`"
       role="tabpanel"
       :aria-labelledby="`cs-tab-${activeKey}`"
-      class="mt-4"
     >
       <RouterView />
     </div>
-  </div>
+  </UiPageShell>
 </template>

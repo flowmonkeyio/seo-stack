@@ -19,6 +19,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiEmptyState,
+  UiPageShell,
+  UiPanel,
+  UiSectionHeader,
+} from '@/components/ui'
 import { useClustersStore } from '@/stores/clusters'
 import { useTopicsStore } from '@/stores/topics'
 import { useToastsStore } from '@/stores/toasts'
@@ -128,11 +138,11 @@ function closeSidePanel(): void {
 }
 
 const TYPE_BADGE: Record<string, string> = {
-  pillar: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  spoke: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  hub: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  comparison: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  resource: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+  pillar: 'bg-eeat-subtle text-eeat-fg',
+  spoke: 'bg-info-subtle text-info-fg',
+  hub: 'bg-warning-subtle text-warning-fg',
+  comparison: 'bg-success-subtle text-success-fg',
+  resource: 'bg-neutral-subtle text-neutral-fg',
 }
 
 async function load(): Promise<void> {
@@ -145,60 +155,61 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Clusters
-      </h1>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        @click="openCreate(null)"
-      >
-        New cluster
-      </button>
-    </header>
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Clusters"
+      description="Shape topical architecture with pillar, spoke, hub, comparison, and resource clusters."
+      :breadcrumbs="[{ label: 'Clusters' }]"
+    >
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openCreate(null)"
+        >
+          New cluster
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
 
-    <div
+    <UiEmptyState
       v-if="empty"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      title="No clusters yet"
+      description="Create a pillar first, then add spokes, hubs, comparison, or resource pages underneath it."
+      size="lg"
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No clusters yet
-      </p>
-      <p class="mb-4">
-        Pillars are top-level topical clusters; spokes / hubs / comparison /
-        resource pages live underneath them. Create one to start the
-        information architecture.
-      </p>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        @click="openCreate(null)"
-      >
-        Create cluster
-      </button>
-    </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openCreate(null)"
+        >
+          Create cluster
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <div
       v-else
-      class="grid gap-6 lg:grid-cols-[1fr_22rem]"
+      :class="[
+        'grid gap-6',
+        selected ? 'lg:grid-cols-[1fr_22rem]' : 'lg:grid-cols-1',
+      ]"
     >
       <ul
-        class="divide-y divide-gray-200 rounded border border-gray-200 dark:divide-gray-800 dark:border-gray-800"
+        class="divide-y divide-border-subtle rounded-md border border-default bg-bg-surface shadow-xs"
         :aria-busy="loading"
       >
         <li
           v-for="row in flatRows"
           :key="row.node.id"
-          class="flex flex-wrap items-center justify-between gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-900"
+          class="flex flex-wrap items-center justify-between gap-3 px-3 py-2 hover:bg-bg-surface-alt"
           :style="{ paddingLeft: `${0.75 + row.depth * 1.25}rem` }"
         >
           <button
@@ -210,9 +221,9 @@ watch(projectId, load)
             <span
               v-if="row.depth > 0"
               aria-hidden="true"
-              class="text-gray-400"
+              class="text-fg-subtle"
             >└</span>
-            <span class="font-medium">{{ row.node.name }}</span>
+            <span class="font-medium text-fg-default">{{ row.node.name }}</span>
             <span
               :class="['rounded-full px-2 py-0.5 text-xs font-medium', TYPE_BADGE[row.node.type] ?? TYPE_BADGE.resource]"
             >
@@ -220,7 +231,7 @@ watch(projectId, load)
             </span>
             <span
               v-if="row.node.children.length > 0"
-              class="text-xs text-gray-500 dark:text-gray-400"
+              class="text-xs text-fg-muted"
             >
               {{ row.node.children.length }} child{{ row.node.children.length === 1 ? '' : 'ren' }}
             </span>
@@ -228,7 +239,7 @@ watch(projectId, load)
           <div class="flex gap-1">
             <button
               type="button"
-              class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+              class="focus-ring rounded-sm border border-default px-2 py-0.5 text-xs text-fg-default hover:bg-bg-surface-alt"
               :aria-label="`Add child cluster under ${row.node.name}`"
               @click="openCreate(row.node)"
             >
@@ -238,31 +249,30 @@ watch(projectId, load)
         </li>
       </ul>
 
-      <aside
+      <UiPanel
         v-if="selected"
-        class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+        class="p-4"
         aria-labelledby="cs-cluster-side-title"
       >
-        <div class="mb-3 flex items-baseline justify-between gap-2">
-          <h2
-            id="cs-cluster-side-title"
-            class="text-base font-semibold"
-          >
-            {{ selected.name }}
-          </h2>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            aria-label="Close cluster panel"
-            @click="closeSidePanel"
-          >
-            Close
-          </button>
-        </div>
+        <UiSectionHeader
+          id="cs-cluster-side-title"
+          :title="selected.name"
+        >
+          <template #actions>
+            <UiButton
+              size="sm"
+              variant="secondary"
+              aria-label="Close cluster panel"
+              @click="closeSidePanel"
+            >
+              Close
+            </UiButton>
+          </template>
+        </UiSectionHeader>
 
         <dl class="mb-3 grid gap-1 text-sm">
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Type
             </dt>
             <dd>
@@ -274,25 +284,26 @@ watch(projectId, load)
             </dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Parent
             </dt>
             <dd>{{ selected.parent_id ? clustersStore.getById(selected.parent_id)?.name ?? '—' : '—' }}</dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-600 dark:text-gray-400">
+            <dt class="text-fg-muted">
               Created
             </dt>
             <dd>{{ new Date(selected.created_at).toLocaleString() }}</dd>
           </div>
         </dl>
 
-        <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-          Topics in this cluster
-        </h3>
+        <UiSectionHeader
+          title="Topics in this cluster"
+          as="h3"
+        />
         <p
           v-if="sidePanelTopicsLoading"
-          class="text-sm text-gray-500"
+          class="text-sm text-fg-muted"
         >
           Loading…
         </p>
@@ -303,116 +314,104 @@ watch(projectId, load)
           <li
             v-for="t in topicsStore.items"
             :key="t.id"
-            class="rounded border border-gray-200 px-2 py-1 text-sm dark:border-gray-800"
+            class="rounded-sm border border-default bg-bg-surface px-2 py-1 text-sm"
           >
             <div class="font-medium">
               {{ t.title }}
             </div>
-            <div class="text-xs text-gray-600 dark:text-gray-400">
+            <div class="text-xs text-fg-muted">
               {{ t.status }} · {{ t.intent }}
             </div>
           </li>
         </ul>
         <p
           v-else
-          class="text-sm text-gray-500 dark:text-gray-400"
+          class="text-sm text-fg-muted"
         >
           No topics in this cluster yet.
         </p>
-      </aside>
+      </UiPanel>
     </div>
 
-    <div
-      v-if="showCreate"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-new-cluster-title"
-      @click.self="closeCreate"
+    <UiDialog
+      :model-value="showCreate"
+      title="New cluster"
+      description="Create a pillar cluster or add a child cluster under an existing pillar."
+      size="md"
+      @update:model-value="(open: boolean) => open ? showCreate = true : closeCreate()"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <form
+        class="space-y-3"
+        @submit.prevent="submitCreate"
       >
-        <h2
-          id="cs-new-cluster-title"
-          class="mb-3 text-lg font-semibold"
+        <label class="block text-sm">
+          <span class="font-medium">Name</span>
+          <input
+            v-model="draft.name"
+            type="text"
+            required
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+            autocomplete="off"
+          >
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Type</span>
+          <select
+            v-model="draft.type"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option value="pillar">
+              pillar
+            </option>
+            <option value="spoke">
+              spoke
+            </option>
+            <option value="hub">
+              hub
+            </option>
+            <option value="comparison">
+              comparison
+            </option>
+            <option value="resource">
+              resource
+            </option>
+          </select>
+        </label>
+        <label class="block text-sm">
+          <span class="font-medium">Parent (optional)</span>
+          <select
+            v-model="draft.parent_id"
+            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          >
+            <option :value="null">
+              — none —
+            </option>
+            <option
+              v-for="p in pillarOptions"
+              :key="p.id"
+              :value="p.id"
+            >
+              {{ p.name }}
+            </option>
+          </select>
+        </label>
+      </form>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submitting"
+          @click="closeCreate"
         >
-          New cluster
-        </h2>
-        <form
-          class="space-y-3"
-          @submit.prevent="submitCreate"
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submitting"
+          @click="submitCreate"
         >
-          <label class="block text-sm">
-            <span class="font-medium">Name</span>
-            <input
-              v-model="draft.name"
-              type="text"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              autocomplete="off"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Type</span>
-            <select
-              v-model="draft.type"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-              <option value="pillar">
-                pillar
-              </option>
-              <option value="spoke">
-                spoke
-              </option>
-              <option value="hub">
-                hub
-              </option>
-              <option value="comparison">
-                comparison
-              </option>
-              <option value="resource">
-                resource
-              </option>
-            </select>
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Parent (optional)</span>
-            <select
-              v-model="draft.parent_id"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-            >
-              <option :value="null">
-                — none —
-              </option>
-              <option
-                v-for="p in pillarOptions"
-                :key="p.id"
-                :value="p.id"
-              >
-                {{ p.name }}
-              </option>
-            </select>
-          </label>
-          <div class="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :disabled="submitting"
-              @click="closeCreate"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              :disabled="submitting"
-            >
-              {{ submitting ? 'Creating…' : 'Create cluster' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
+          Create cluster
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

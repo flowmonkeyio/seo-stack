@@ -15,8 +15,15 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiPageShell,
+} from '@/components/ui'
 import {
   ProcedureNotImplementedError,
   useProceduresStore,
@@ -175,26 +182,29 @@ watch(activeTab, async (tab) => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Procedures
-      </h1>
-    </header>
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Procedures"
+      description="Browse available content operations and inspect recent procedure runs for this project."
+      :breadcrumbs="[{ label: 'Procedures' }]"
+    >
+      <template #tabs>
+        <TabBar
+          :tabs="tabs"
+          :active-key="activeTab"
+          aria-label="Procedure sections"
+          @change="(key: string) => activeTab = key as 'list' | 'recent'"
+        />
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
-
-    <TabBar
-      :tabs="tabs"
-      :active-key="activeTab"
-      aria-label="Procedure sections"
-      @change="(key: string) => activeTab = key as 'list' | 'recent'"
-    />
+    </UiCallout>
 
     <div
       :id="`cs-tabpanel-${activeTab}`"
@@ -213,14 +223,14 @@ watch(activeTab, async (tab) => {
         <template #cell:description="{ row }">
           <div class="flex items-center justify-between gap-3">
             <span>{{ (row as ProcedureRow).description ?? '—' }}</span>
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+            <UiButton
+              size="sm"
+              variant="secondary"
               :aria-label="`Run procedure ${(row as ProcedureRow).slug}`"
               @click.stop="openRunModal(row as ProcedureRow)"
             >
               Run
-            </button>
+            </UiButton>
           </div>
         </template>
       </DataTable>
@@ -243,54 +253,43 @@ watch(activeTab, async (tab) => {
       </DataTable>
     </div>
 
-    <!-- Run procedure modal -->
-    <div
-      v-if="runOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-procedure-run-title"
-      @click.self="closeRunModal"
+    <UiDialog
+      :model-value="runOpen !== null"
+      :title="runOpen ? `Run procedure: ${runOpen.name}` : 'Run procedure'"
+      size="lg"
+      @update:model-value="(open: boolean) => open ? undefined : closeRunModal()"
     >
-      <div
-        class="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <UiCallout
+        tone="info"
+        density="compact"
+        class="mb-3"
       >
-        <h2
-          id="cs-procedure-run-title"
-          class="mb-3 text-lg font-semibold"
+        Runs start immediately using the JSON args below.
+      </UiCallout>
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">Args (JSON)</span>
+        <textarea
+          v-model="argsJson"
+          rows="6"
+          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-800"
+        />
+      </label>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submittingRun"
+          @click="closeRunModal"
         >
-          Run procedure: {{ runOpen.name }}
-        </h2>
-        <p class="mb-3 rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
-          Runs start immediately using the JSON args below.
-        </p>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">Args (JSON)</span>
-          <textarea
-            v-model="argsJson"
-            rows="6"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-800"
-          />
-        </label>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="submittingRun"
-            @click="closeRunModal"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="submittingRun"
-            @click="submitRun"
-          >
-            {{ submittingRun ? 'Submitting…' : 'Run procedure' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submittingRun"
+          @click="submitRun"
+        >
+          Run procedure
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

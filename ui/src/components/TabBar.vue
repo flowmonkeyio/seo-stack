@@ -87,7 +87,7 @@ function onSelect(tab: Tab): void {
   <div
     role="tablist"
     :aria-label="props.ariaLabel"
-    class="flex flex-wrap gap-1 border-b border-gray-200 dark:border-gray-800"
+    class="flex flex-wrap gap-1 border-b border-default"
   >
     <button
       v-for="(tab, i) in props.tabs"
@@ -100,11 +100,11 @@ function onSelect(tab: Tab): void {
       :aria-controls="`cs-tabpanel-${tab.key}`"
       :tabindex="tab.key === props.activeKey ? 0 : -1"
       :disabled="tab.disabled"
-      class="relative -mb-px px-3 py-2 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+      class="relative -mb-px px-3 py-2 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-60"
       :class="
         tab.key === props.activeKey
-          ? 'border-b-2 border-blue-600 text-gray-900 dark:text-white'
-          : 'border-b-2 border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+          ? 'border-b-2 border-accent text-fg-strong'
+          : 'border-b-2 border-transparent text-fg-muted hover:text-fg-strong'
       "
       @click="onSelect(tab)"
       @keydown="onKeydown($event, i)"
@@ -112,7 +112,7 @@ function onSelect(tab: Tab): void {
       {{ tab.label }}
       <span
         v-if="typeof tab.count === 'number'"
-        class="ml-1 inline-block min-w-[1.25rem] rounded-full bg-gray-100 px-1.5 py-0 text-center text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+        class="ml-1 inline-block min-w-[1.25rem] rounded-full bg-bg-sunken px-1.5 py-0 text-center text-xs font-medium text-fg-muted"
       >
         {{ tab.count }}
       </span>

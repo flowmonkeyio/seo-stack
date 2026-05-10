@@ -135,16 +135,16 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
 <template>
   <div class="cs-datatable-wrapper relative">
     <div
-      class="overflow-x-auto rounded border border-gray-200 dark:border-gray-800"
+      class="overflow-x-auto rounded-md border border-default"
       tabindex="0"
     >
       <table
-        class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800"
+        class="min-w-full divide-y divide-border-subtle text-sm"
         :aria-label="ariaLabel"
         :aria-busy="loading"
         :aria-rowcount="displayItems.length"
       >
-        <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900">
+        <thead class="sticky top-0 z-10 bg-bg-surface-alt">
           <tr>
             <th
               v-if="selection"
@@ -157,14 +157,14 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
               v-for="col in columns"
               :key="col.key"
               scope="col"
-              class="whitespace-nowrap px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-200"
+              class="whitespace-nowrap px-3 py-2 text-left font-medium text-fg-default"
               :class="[col.widthClass]"
               :aria-sort="ariaSortFor(col)"
             >
               <button
                 v-if="col.sortable"
                 type="button"
-                class="inline-flex items-center gap-1 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:text-white"
+                class="inline-flex items-center gap-1 hover:text-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 @click="onSortClick(col)"
               >
                 {{ col.label }}
@@ -183,15 +183,15 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
         </thead>
         <tbody
           ref="tbodyRef"
-          class="divide-y divide-gray-100 bg-white dark:divide-gray-900 dark:bg-gray-950"
+          class="divide-y divide-border-subtle bg-bg-surface"
         >
           <tr
             v-for="(row, idx) in displayItems"
             :key="String(keyOf(row))"
             tabindex="0"
-            class="cursor-pointer hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-500 dark:hover:bg-gray-900"
+            class="cursor-pointer hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-focus"
             :class="{
-              'bg-blue-50 dark:bg-blue-900/30': isSelected(row),
+              'bg-accent-subtle': isSelected(row),
             }"
             :aria-selected="isSelected(row)"
             @click="emit('row-click', row)"
@@ -206,14 +206,14 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
                 type="checkbox"
                 :checked="isSelected(row)"
                 :aria-label="`Select row ${idx + 1}`"
-                class="h-4 w-4 rounded border-gray-300"
+                class="h-4 w-4 rounded-xs border-border-default accent-accent"
                 @click.stop="toggleSelection(row)"
               >
             </td>
             <td
               v-for="col in columns"
               :key="col.key"
-              class="px-3 py-2 align-top text-gray-800 dark:text-gray-200"
+              class="px-3 py-2 align-top text-fg-default"
               :class="col.cellClass"
             >
               <slot
@@ -228,7 +228,7 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
           <tr v-if="!loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-12 text-center text-gray-500 dark:text-gray-400"
+              class="px-3 py-12 text-center text-fg-muted"
             >
               {{ emptyMessage }}
             </td>
@@ -236,7 +236,7 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
           <tr v-if="loading && displayItems.length === 0">
             <td
               :colspan="columns.length + (selection ? 1 : 0)"
-              class="px-3 py-12 text-center text-gray-500 dark:text-gray-400"
+              class="px-3 py-12 text-center text-fg-muted"
             >
               Loading…
             </td>
@@ -250,7 +250,7 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
     >
       <button
         type="button"
-        class="rounded border border-gray-300 px-3 py-1 text-sm hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+        class="rounded-sm border border-default px-3 py-1 text-sm text-fg-default hover:bg-bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="loading"
         @click="emit('load-more')"
       >

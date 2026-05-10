@@ -10,6 +10,16 @@ import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiBreadcrumbs,
+  UiButton,
+  UiDialog,
+  UiEmptyState,
+  UiFormField,
+  UiInput,
+  UiPageHeader,
+  UiPageShell,
+} from '@/components/ui'
 import { useProjectsStore } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
 import type { DataTableColumn } from '@/components/types'
@@ -145,38 +155,39 @@ watch(
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Projects
-      </h1>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        @click="openModal"
-      >
-        New project
-      </button>
-    </header>
-
-    <div
-      v-if="empty"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+  <UiPageShell>
+    <UiPageHeader
+      title="Projects"
+      description="Create and manage the sites content-stack can research, write, publish, and monitor."
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No projects yet
-      </p>
-      <p class="mb-4">
-        Create your first project to get started — slug, domain, and a niche label.
-      </p>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        @click="openModal"
-      >
-        Create project
-      </button>
-    </div>
+      <template #breadcrumbs>
+        <UiBreadcrumbs :items="[{ label: 'Projects' }]" />
+      </template>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openModal"
+        >
+          New project
+        </UiButton>
+      </template>
+    </UiPageHeader>
+
+    <UiEmptyState
+      v-if="empty"
+      title="No projects yet"
+      description="Create your first project to define its slug, domain, locale, and niche."
+      size="lg"
+    >
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="openModal"
+        >
+          Create project
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <DataTable
       v-else
@@ -197,98 +208,109 @@ watch(
       </template>
     </DataTable>
 
-    <div
-      v-if="showModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-new-project-title"
-      @click.self="closeModal"
+    <UiDialog
+      :model-value="showModal"
+      title="New project"
+      description="Set the base project identity. Publishing and integrations can be configured after creation."
+      size="md"
+      @update:model-value="(open: boolean) => open ? showModal = true : closeModal()"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <form
+        class="space-y-3"
+        @submit.prevent="submit"
       >
-        <h2
-          id="cs-new-project-title"
-          class="mb-3 text-lg font-semibold"
+        <UiFormField
+          v-slot="{ id, describedBy, invalid, required }"
+          label="Name"
+          required
         >
-          New project
-        </h2>
-        <form
-          class="space-y-3"
-          @submit.prevent="submit"
+          <UiInput
+            :id="id"
+            v-model="draft.name"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :required="required"
+            autocomplete="off"
+          />
+        </UiFormField>
+
+        <UiFormField
+          v-slot="{ id, describedBy, invalid, required }"
+          label="Slug"
+          required
         >
-          <label class="block text-sm">
-            <span class="font-medium">Name</span>
-            <input
-              v-model="draft.name"
-              type="text"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          <UiInput
+            :id="id"
+            v-model="draft.slug"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :required="required"
+            class="[&_.ui-input__field]:font-mono"
+            autocomplete="off"
+          />
+        </UiFormField>
+
+        <UiFormField
+          v-slot="{ id, describedBy, invalid, required }"
+          label="Domain"
+          required
+        >
+          <UiInput
+            :id="id"
+            v-model="draft.domain"
+            :aria-describedby="describedBy"
+            :invalid="invalid"
+            :required="required"
+            placeholder="example.com"
+            autocomplete="off"
+          />
+        </UiFormField>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <UiFormField
+            v-slot="{ id, describedBy, invalid }"
+            label="Niche"
+          >
+            <UiInput
+              :id="id"
+              v-model="draft.niche"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
               autocomplete="off"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Slug</span>
-            <input
-              v-model="draft.slug"
-              type="text"
-              required
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
+            />
+          </UiFormField>
+          <UiFormField
+            v-slot="{ id, describedBy, invalid }"
+            label="Locale"
+          >
+            <UiInput
+              :id="id"
+              v-model="draft.locale"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              placeholder="en-US"
               autocomplete="off"
-            >
-          </label>
-          <label class="block text-sm">
-            <span class="font-medium">Domain</span>
-            <input
-              v-model="draft.domain"
-              type="text"
-              required
-              placeholder="example.com"
-              class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-              autocomplete="off"
-            >
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label class="block text-sm">
-              <span class="font-medium">Niche</span>
-              <input
-                v-model="draft.niche"
-                type="text"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-                autocomplete="off"
-              >
-            </label>
-            <label class="block text-sm">
-              <span class="font-medium">Locale</span>
-              <input
-                v-model="draft.locale"
-                type="text"
-                class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-                placeholder="en-US"
-                autocomplete="off"
-              >
-            </label>
-          </div>
-          <div class="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :disabled="submitting"
-              @click="closeModal"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              :disabled="submitting"
-            >
-              {{ submitting ? 'Creating…' : 'Create project' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
+            />
+          </UiFormField>
+        </div>
+      </form>
+
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submitting"
+          @click="closeModal"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submitting"
+          @click="submit"
+        >
+          Create project
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

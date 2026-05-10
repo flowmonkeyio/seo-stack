@@ -16,7 +16,14 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TabBar from '@/components/TabBar.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiPageShell,
+} from '@/components/ui'
 import { useGscStore, type GscMetric, type Redirect } from '@/stores/gsc'
 import { useArticlesStore } from '@/stores/articles'
 import { useToastsStore } from '@/stores/toasts'
@@ -168,55 +175,60 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        GSC Metrics
-      </h1>
-      <div class="flex flex-wrap items-center gap-2 text-sm">
-        <label class="flex items-center gap-1">
-          <span class="text-gray-600 dark:text-gray-400">Since</span>
-          <input
-            type="date"
-            :value="dateOnly(filters.since)"
-            class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-            aria-label="Since date"
-            @change="setSince(($event.target as HTMLInputElement).value)"
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="GSC Metrics"
+      description="Inspect Search Console rows, daily rollups, and redirect coverage for the project."
+      :breadcrumbs="[{ label: 'GSC Metrics' }]"
+    >
+      <template #actions>
+        <div class="flex flex-wrap items-center justify-end gap-2 text-sm">
+          <label class="flex items-center gap-1">
+            <span class="text-fg-muted">Since</span>
+            <input
+              type="date"
+              :value="dateOnly(filters.since)"
+              class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
+              aria-label="Since date"
+              @change="setSince(($event.target as HTMLInputElement).value)"
+            >
+          </label>
+          <label class="flex items-center gap-1">
+            <span class="text-fg-muted">Until</span>
+            <input
+              type="date"
+              :value="dateOnly(filters.until)"
+              class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
+              aria-label="Until date"
+              @change="setUntil(($event.target as HTMLInputElement).value)"
+            >
+          </label>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            @click="showRollup = true"
           >
-        </label>
-        <label class="flex items-center gap-1">
-          <span class="text-gray-600 dark:text-gray-400">Until</span>
-          <input
-            type="date"
-            :value="dateOnly(filters.until)"
-            class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-            aria-label="Until date"
-            @change="setUntil(($event.target as HTMLInputElement).value)"
-          >
-        </label>
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          @click="showRollup = true"
-        >
-          Run rollup now
-        </button>
-      </div>
-    </header>
+            Run rollup now
+          </UiButton>
+        </div>
+      </template>
+      <template #tabs>
+        <TabBar
+          :tabs="tabs"
+          :active-key="activeTab"
+          aria-label="GSC sections"
+          @change="(key: string) => activeTab = key as 'raw' | 'daily' | 'redirects'"
+        />
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
-
-    <TabBar
-      :tabs="tabs"
-      :active-key="activeTab"
-      aria-label="GSC sections"
-      @change="(key: string) => activeTab = key as 'raw' | 'daily' | 'redirects'"
-    />
+    </UiCallout>
 
     <div
       :id="`cs-tabpanel-${activeTab}`"
@@ -244,13 +256,12 @@ watch(projectId, load)
 
       <div v-if="activeTab === 'redirects'">
         <div class="mb-3 flex justify-end">
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          <UiButton
+            variant="primary"
             @click="showCreateRedirect = true"
           >
             New Redirect
-          </button>
+          </UiButton>
         </div>
         <DataTable
           :items="redirects"
@@ -266,136 +277,110 @@ watch(projectId, load)
       </div>
     </div>
 
-    <!-- Rollup modal -->
-    <div
-      v-if="showRollup"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-gsc-rollup-title"
-      @click.self="showRollup = false"
+    <UiDialog
+      :model-value="showRollup"
+      title="Run GSC rollup"
+      description="Aggregate gsc_metrics for one day into gsc_metrics_daily."
+      size="md"
+      @update:model-value="(open: boolean) => showRollup = open"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <UiCallout
+        tone="info"
+        density="compact"
+        class="mb-3"
       >
-        <h2
-          id="cs-gsc-rollup-title"
-          class="mb-3 text-lg font-semibold"
+        M9 schedules this nightly; this is the operator escape hatch.
+      </UiCallout>
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">Day</span>
+        <input
+          v-model="rollupDay"
+          type="date"
+          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
         >
-          Run GSC rollup
-        </h2>
-        <p class="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Aggregate <code>gsc_metrics</code> for one day into
-          <code>gsc_metrics_daily</code>. M9 schedules this nightly; this is
-          the operator escape hatch.
-        </p>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">Day</span>
-          <input
-            v-model="rollupDay"
-            type="date"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-          >
-        </label>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="rollupPending"
-            @click="showRollup = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="rollupPending"
-            @click="submitRollup"
-          >
-            {{ rollupPending ? 'Rolling up…' : 'Run rollup' }}
-          </button>
-        </div>
-      </div>
-    </div>
+      </label>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="rollupPending"
+          @click="showRollup = false"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="rollupPending"
+          @click="submitRollup"
+        >
+          Run rollup
+        </UiButton>
+      </template>
+    </UiDialog>
 
-    <!-- Create redirect modal -->
-    <div
-      v-if="showCreateRedirect"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-redirect-title"
-      @click.self="showCreateRedirect = false"
+    <UiDialog
+      :model-value="showCreateRedirect"
+      title="New redirect"
+      description="Create a redirect from an old URL to a tracked article."
+      size="md"
+      @update:model-value="(open: boolean) => showCreateRedirect = open"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
-      >
-        <h2
-          id="cs-redirect-title"
-          class="mb-3 text-lg font-semibold"
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">From URL</span>
+        <input
+          v-model="newRedirect.from_url"
+          type="text"
+          placeholder="/old-path"
+          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
         >
-          New redirect
-        </h2>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">From URL</span>
-          <input
-            v-model="newRedirect.from_url"
-            type="text"
-            placeholder="/old-path"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
+      </label>
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">To article</span>
+        <select
+          v-model="newRedirect.to_article_id"
+          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+        >
+          <option :value="null">
+            — none —
+          </option>
+          <option
+            v-for="a in articlesStore.items"
+            :key="a.id"
+            :value="a.id"
           >
-        </label>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">To article</span>
-          <select
-            v-model="newRedirect.to_article_id"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-          >
-            <option :value="null">
-              — none —
-            </option>
-            <option
-              v-for="a in articlesStore.items"
-              :key="a.id"
-              :value="a.id"
-            >
-              {{ a.title }}
-            </option>
-          </select>
-        </label>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">Kind</span>
-          <select
-            v-model="newRedirect.kind"
-            class="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-          >
-            <option value="301">
-              301
-            </option>
-            <option value="302">
-              302
-            </option>
-          </select>
-        </label>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="submittingRedirect"
-            @click="showCreateRedirect = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="submittingRedirect"
-            @click="submitRedirect"
-          >
-            {{ submittingRedirect ? 'Adding…' : 'Add redirect' }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+            {{ a.title }}
+          </option>
+        </select>
+      </label>
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">Kind</span>
+        <select
+          v-model="newRedirect.kind"
+          class="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+        >
+          <option value="301">
+            301
+          </option>
+          <option value="302">
+            302
+          </option>
+        </select>
+      </label>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="submittingRedirect"
+          @click="showCreateRedirect = false"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="submittingRedirect"
+          @click="submitRedirect"
+        >
+          Add redirect
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

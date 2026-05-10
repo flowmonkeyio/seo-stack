@@ -11,6 +11,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 
+import './design/colors_and_type.css'
 import './style.css'
 import { ApiError, clearAuthStore } from '@/lib/client'
 import { registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'

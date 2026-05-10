@@ -5,6 +5,11 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 
+import {
+  UiButton,
+  UiEmptyState,
+  UiPageShell,
+} from '@/components/ui'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -33,25 +38,20 @@ async function retry(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center text-center">
-    <h1 class="text-2xl font-bold tracking-tight">
-      Daemon unreachable
-    </h1>
-    <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">
-      {{ errorMessage }}
-      <span v-if="errorStatus !== null"> (HTTP {{ errorStatus }})</span>
-    </p>
-    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-      Make sure the content-stack daemon is running on
-      <code class="font-mono">127.0.0.1:5180</code>. Try
-      <code class="font-mono">make serve</code> from the repo root.
-    </p>
-    <button
-      type="button"
-      class="mt-6 rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-      @click="retry"
+  <UiPageShell class="flex min-h-[60vh] items-center justify-center">
+    <UiEmptyState
+      title="Daemon unreachable"
+      :description="`${errorMessage}${errorStatus !== null ? ` (HTTP ${errorStatus})` : ''}`"
+      size="lg"
     >
-      Retry
-    </button>
-  </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="retry"
+        >
+          Retry
+        </UiButton>
+      </template>
+    </UiEmptyState>
+  </UiPageShell>
 </template>

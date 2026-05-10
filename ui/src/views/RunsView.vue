@@ -15,7 +15,14 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiButton,
+  UiCallout,
+  UiPageShell,
+  UiSegmentedControl,
+} from '@/components/ui'
 import RunDetail from './RunDetail.vue'
 import { useRunsStore, type Run } from '@/stores/runs'
 import { useToastsStore } from '@/stores/toasts'
@@ -78,6 +85,10 @@ function setStatusFilter(opt: 'all' | `${RunStatusEnum}`): void {
   void runsStore.refresh(projectId.value)
 }
 
+function onStatusSelect(key: string | number): void {
+  setStatusFilter(String(key) as 'all' | `${RunStatusEnum}`)
+}
+
 function setKindFilter(value: string): void {
   runsStore.setFilter('kind', value === '' ? null : (value as RunKindEnum))
   void runsStore.refresh(projectId.value)
@@ -138,37 +149,32 @@ watch(runId, () => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Runs
-        <span
-          v-if="runId !== null"
-          class="text-sm font-normal text-gray-500 dark:text-gray-400"
-        >
-          / #{{ runId }}
-        </span>
-      </h1>
-      <div
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      :title="runId !== null ? `Run #${runId}` : 'Runs'"
+      :description="runId !== null ? 'Inspect run metadata, steps, heartbeats, and execution output.' : 'Audit procedure, skill, and tool runs with status, kind, parent, and date filters.'"
+      :breadcrumbs="runId !== null ? [{ label: 'Runs', to: `/projects/${projectId}/runs` }, { label: `Run #${runId}` }] : [{ label: 'Runs' }]"
+    >
+      <template
         v-if="runId !== null"
-        class="flex flex-wrap gap-2"
+        #actions
       >
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+        <UiButton
+          variant="secondary"
           @click="router.push(`/projects/${projectId}/runs`)"
         >
-          ← Back to list
-        </button>
-      </div>
-    </header>
+          Back to list
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
 
     <RunDetail
       v-if="runId !== null"
@@ -178,35 +184,19 @@ watch(runId, () => {
     />
 
     <div v-else>
-      <div
-        role="tablist"
-        aria-label="Run status filter"
-        class="mb-3 flex flex-wrap gap-1"
-      >
-        <button
-          v-for="opt in STATUS_OPTIONS"
-          :key="opt.key"
-          type="button"
-          role="tab"
-          :aria-selected="(filters.status === null && opt.key === 'all') || filters.status === opt.key"
-          class="rounded-full border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-          :class="
-            (filters.status === null && opt.key === 'all') || filters.status === opt.key
-              ? 'border-blue-600 bg-blue-50 font-medium text-blue-800 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-200'
-              : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
-          "
-          @click="setStatusFilter(opt.key)"
-        >
-          {{ opt.label }}
-        </button>
-      </div>
+      <UiSegmentedControl
+        :model-value="filters.status ?? 'all'"
+        :options="STATUS_OPTIONS"
+        label="Run status filter"
+        @select="onStatusSelect"
+      />
 
-      <div class="mb-3 flex flex-wrap items-center gap-3 text-sm">
+      <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
         <label class="flex items-center gap-2">
-          <span class="text-gray-600 dark:text-gray-400">Kind</span>
+          <span class="text-fg-muted">Kind</span>
           <select
             :value="filters.kind ?? ''"
-            class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
             aria-label="Filter kind"
             @change="setKindFilter(($event.target as HTMLSelectElement).value)"
           >
@@ -223,30 +213,30 @@ watch(runId, () => {
           </select>
         </label>
         <label class="flex items-center gap-2">
-          <span class="text-gray-600 dark:text-gray-400">Parent run id</span>
+          <span class="text-fg-muted">Parent run id</span>
           <input
             type="number"
             min="1"
             :value="filters.parent_run_id ?? ''"
-            class="w-24 rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+            class="h-8 w-24 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
             aria-label="Parent run id"
             @change="setParentFilter(($event.target as HTMLInputElement).value)"
           >
         </label>
         <label class="flex items-center gap-2">
-          <span class="text-gray-600 dark:text-gray-400">Since</span>
+          <span class="text-fg-muted">Since</span>
           <input
             type="date"
-            class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
             aria-label="Since date"
             @change="setSince(($event.target as HTMLInputElement).value)"
           >
         </label>
         <label class="flex items-center gap-2">
-          <span class="text-gray-600 dark:text-gray-400">Until</span>
+          <span class="text-fg-muted">Until</span>
           <input
             type="date"
-            class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
             aria-label="Until date"
             @change="setUntil(($event.target as HTMLInputElement).value)"
           >
@@ -305,5 +295,5 @@ watch(runId, () => {
         </template>
       </DataTable>
     </div>
-  </div>
+  </UiPageShell>
 </template>

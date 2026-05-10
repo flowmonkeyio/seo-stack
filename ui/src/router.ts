@@ -33,6 +33,7 @@ import GscView from './views/GscView.vue'
 import DriftView from './views/DriftView.vue'
 import RunsView from './views/RunsView.vue'
 import ProceduresView from './views/ProceduresView.vue'
+import DesignSystemView from './views/DesignSystemView.vue'
 
 // Routes per PLAN.md L185-L194 + the M5.B article-detail tabs.
 // Each article-detail tab is its own child route so the URL preserves the
@@ -149,6 +150,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/runs', name: 'project-runs', component: RunsView },
   { path: '/projects/:id/runs/:run_id', name: 'project-run-detail', component: RunsView },
   { path: '/projects/:id/procedures', name: 'project-procedures', component: ProceduresView },
+  { path: '/__design-system', name: 'design-system', component: DesignSystemView },
 ]
 
 const router = createRouter({

@@ -7,6 +7,12 @@ import { useRoute } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import KvList from '@/components/KvList.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiCallout,
+  UiJsonBlock,
+  UiPanel,
+  UiSectionHeader,
+} from '@/components/ui'
 import { apiFetch } from '@/lib/client'
 import { useProjectsStore } from '@/stores/projects'
 import type { components } from '@/api'
@@ -79,43 +85,40 @@ watch(projectId, loadRuns)
 </script>
 
 <template>
-  <section class="space-y-6">
-    <div
+  <section class="space-y-4">
+    <UiPanel
       v-if="project"
-      class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      class="p-4"
     >
-      <h2 class="mb-3 text-base font-semibold">
-        Project details
-      </h2>
+      <UiSectionHeader title="Project details" />
       <KvList :items="kvItems">
         <template #item:schedule="{ value }">
-          <pre
+          <UiJsonBlock
             v-if="value"
-            class="overflow-x-auto rounded bg-gray-50 p-2 font-mono text-xs dark:bg-gray-800"
-          >{{ JSON.stringify(value, null, 2) }}</pre>
+            :data="value"
+            density="compact"
+            max-height="12rem"
+          />
           <span
             v-else
-            class="text-gray-500 dark:text-gray-400"
+            class="text-fg-muted"
           >—</span>
         </template>
       </KvList>
-    </div>
+    </UiPanel>
 
-    <div
-      class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
-    >
-      <div class="mb-3 flex items-baseline justify-between">
-        <h2 class="text-base font-semibold">
-          Recent activity
-        </h2>
-        <span class="text-xs text-gray-500 dark:text-gray-400">last 10 runs</span>
-      </div>
-      <p
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Recent activity"
+        description="Last 10 runs"
+      />
+      <UiCallout
         v-if="runsError"
-        class="rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+        tone="danger"
+        class="mb-3"
       >
         {{ runsError }}
-      </p>
+      </UiCallout>
       <DataTable
         :items="runs"
         :columns="runColumns"
@@ -130,6 +133,6 @@ watch(projectId, loadRuns)
           />
         </template>
       </DataTable>
-    </div>
+    </UiPanel>
   </section>
 </template>

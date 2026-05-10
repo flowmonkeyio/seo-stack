@@ -1,112 +1,72 @@
+<!--
+  StatusBadge — domain-aware status rendering.
+  Reads from src/design/status.ts so backend status strings resolve to
+  consistent label + tone + icon across the app.
+
+  <StatusBadge domain="article" status="published" />
+  <StatusBadge domain="run"     status="running" />
+-->
 <script setup lang="ts">
-// StatusBadge — single-purpose pill rendering a colored status label.
-//
-// `kind` selects the table of allowed statuses (per PLAN.md status enums
-// in §"Status enums"). Unknown statuses fall through to a neutral grey
-// so we never silently render an empty/transparent badge.
-//
-// Color mapping is high-contrast Tailwind 100/800 (light) +
-// 900/40 + 300 (dark) which clears axe AA contrast on every shade.
+import { computed } from 'vue';
+import UiBadge from './ui/UiBadge.vue';
+import { resolveStatus, type StatusDomain } from '../design/status';
 
-import { computed } from 'vue'
+type LegacyKind = StatusDomain | 'job';
 
-type Kind = 'topic' | 'article' | 'run' | 'interlink' | 'project' | 'publish' | 'job'
-
-interface Props {
-  status: string
-  kind: Kind
-  /** When true, renders a smaller variant suitable for inline rows. */
-  small?: boolean
+export interface StatusBadgeProps {
+  domain?: StatusDomain;
+  /** Backward-compatible alias used by the pre-design-system UI. */
+  kind?: LegacyKind;
+  status: string;
+  /** Override label rendering. */
+  label?: string;
+  /** Force tone (rare — escape hatch). */
+  tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'eeat';
+  size?: 'sm' | 'md';
+  variant?: 'subtle' | 'solid' | 'outline';
+  /** Backward-compatible small variant used by current tables. */
+  small?: boolean;
+  /** Hide icon. */
+  noIcon?: boolean;
+  /** Hide label, show icon + dot only (use with title attr). */
+  iconOnly?: boolean;
 }
 
-const props = withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<StatusBadgeProps>(), {
+  domain: undefined,
+  kind: undefined,
+  label: undefined,
+  tone: undefined,
+  size: 'sm',
+  variant: 'subtle',
   small: false,
-})
+});
 
-// Each table value is a tailwind class name pair: bg + text.
-type Pair = [string, string]
+const domain = computed<StatusDomain>(() => {
+  const value = props.domain ?? props.kind ?? 'topic';
+  return value === 'job' ? 'procedure' : value;
+});
 
-const TOPIC: Record<string, Pair> = {
-  queued: ['bg-gray-100 dark:bg-gray-800', 'text-gray-700 dark:text-gray-300'],
-  approved: ['bg-blue-100 dark:bg-blue-900/40', 'text-blue-800 dark:text-blue-300'],
-  drafting: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  published: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  rejected: ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-}
-
-const ARTICLE: Record<string, Pair> = {
-  briefing: ['bg-blue-100 dark:bg-blue-900/40', 'text-blue-800 dark:text-blue-300'],
-  outlined: ['bg-blue-100 dark:bg-blue-900/40', 'text-blue-800 dark:text-blue-300'],
-  drafted: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  edited: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  eeat_passed: ['bg-purple-100 dark:bg-purple-900/40', 'text-purple-800 dark:text-purple-300'],
-  published: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  refresh_due: ['bg-orange-100 dark:bg-orange-900/40', 'text-orange-800 dark:text-orange-300'],
-  'aborted-publish': ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-}
-
-const RUN: Record<string, Pair> = {
-  running: ['bg-blue-100 dark:bg-blue-900/40', 'text-blue-800 dark:text-blue-300'],
-  success: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  failed: ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-  aborted: ['bg-gray-200 dark:bg-gray-700', 'text-gray-700 dark:text-gray-200'],
-}
-
-const INTERLINK: Record<string, Pair> = {
-  suggested: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  applied: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  dismissed: ['bg-gray-100 dark:bg-gray-800', 'text-gray-700 dark:text-gray-300'],
-  broken: ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-}
-
-const PROJECT: Record<string, Pair> = {
-  active: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  inactive: ['bg-gray-100 dark:bg-gray-800', 'text-gray-700 dark:text-gray-300'],
-}
-
-const PUBLISH: Record<string, Pair> = {
-  pending: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  published: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  failed: ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-  reverted: ['bg-gray-200 dark:bg-gray-700', 'text-gray-700 dark:text-gray-200'],
-}
-
-const JOB: Record<string, Pair> = {
-  pending: ['bg-amber-100 dark:bg-amber-900/40', 'text-amber-800 dark:text-amber-300'],
-  running: ['bg-blue-100 dark:bg-blue-900/40', 'text-blue-800 dark:text-blue-300'],
-  success: ['bg-emerald-100 dark:bg-emerald-900/40', 'text-emerald-800 dark:text-emerald-300'],
-  failed: ['bg-red-100 dark:bg-red-900/40', 'text-red-800 dark:text-red-300'],
-  skipped: ['bg-gray-100 dark:bg-gray-800', 'text-gray-700 dark:text-gray-300'],
-}
-
-const TABLES: Record<Kind, Record<string, Pair>> = {
-  topic: TOPIC,
-  article: ARTICLE,
-  run: RUN,
-  interlink: INTERLINK,
-  project: PROJECT,
-  publish: PUBLISH,
-  job: JOB,
-}
-
-const NEUTRAL: Pair = ['bg-gray-100 dark:bg-gray-800', 'text-gray-700 dark:text-gray-300']
-
-const classes = computed<string>(() => {
-  const table = TABLES[props.kind] ?? {}
-  const [bg, fg] = table[props.status] ?? NEUTRAL
-  const size = props.small
-    ? 'px-1.5 py-0.5 text-[10px]'
-    : 'px-2.5 py-0.5 text-xs'
-  return `inline-flex items-center gap-1 rounded-full font-medium ${size} ${bg} ${fg}`
-})
+const def = computed(() => resolveStatus(domain.value, props.status));
+const tone = computed(() => props.tone ?? def.value.tone);
+const label = computed(() => props.label ?? def.value.label);
+const size = computed(() => props.size ?? (props.small ? 'sm' : 'sm'));
 </script>
 
 <template>
-  <span
-    :class="classes"
+  <UiBadge
+    :tone="tone"
+    :variant="variant"
+    :size="size"
+    :dot="def.dot"
+    :pulse="def.inFlight"
+    :title="def.description ?? label"
+    :aria-label="iconOnly ? label : undefined"
     :data-status="status"
-    :data-kind="kind"
+    :data-kind="kind ?? domain"
   >
-    <slot>{{ status }}</slot>
-  </span>
+    <template v-if="!iconOnly">
+      <slot>{{ label }}</slot>
+    </template>
+  </UiBadge>
 </template>

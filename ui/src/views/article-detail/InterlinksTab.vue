@@ -89,7 +89,7 @@ watch(() => props.articleId, load)
 
     <div class="grid gap-4 lg:grid-cols-2">
       <div>
-        <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+        <h3 class="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-gray-300">
           Incoming
         </h3>
         <DataTable
@@ -108,7 +108,7 @@ watch(() => props.articleId, load)
         </DataTable>
       </div>
       <div>
-        <h3 class="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+        <h3 class="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-gray-300">
           Outgoing
         </h3>
         <DataTable

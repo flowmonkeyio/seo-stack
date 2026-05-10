@@ -164,16 +164,16 @@ const charCount = computed<number>(() => localValue.value.length)
 </script>
 
 <template>
-  <div class="cs-markdown-editor">
-    <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-      <div class="inline-flex rounded border border-gray-200 dark:border-gray-700">
+  <div class="cs-markdown-editor overflow-hidden rounded-md border border-default bg-bg-surface shadow-xs">
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-subtle bg-bg-surface-alt px-3 py-2 text-sm">
+      <div class="inline-flex overflow-hidden rounded-sm border border-default bg-bg-surface">
         <button
           type="button"
-          class="px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          class="h-8 px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           :class="
             previewMode
-              ? 'text-gray-600 dark:text-gray-300'
-              : 'bg-gray-100 font-medium dark:bg-gray-800'
+              ? 'text-fg-muted hover:bg-bg-surface-alt'
+              : 'bg-accent text-fg-on-accent font-medium'
           "
           @click="previewMode = false"
         >
@@ -181,11 +181,11 @@ const charCount = computed<number>(() => localValue.value.length)
         </button>
         <button
           type="button"
-          class="px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          class="h-8 border-l border-subtle px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           :class="
             previewMode
-              ? 'bg-gray-100 font-medium dark:bg-gray-800'
-              : 'text-gray-600 dark:text-gray-300'
+              ? 'bg-accent text-fg-on-accent font-medium'
+              : 'text-fg-muted hover:bg-bg-surface-alt'
           "
           @click="previewMode = true"
         >
@@ -195,7 +195,7 @@ const charCount = computed<number>(() => localValue.value.length)
       <button
         v-if="props.onSave"
         type="button"
-        class="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        class="h-8 rounded-sm bg-accent px-3 text-sm font-medium text-fg-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="props.saving || !dirty"
         @click="manualSave"
       >
@@ -203,20 +203,23 @@ const charCount = computed<number>(() => localValue.value.length)
       </button>
     </div>
 
-    <div v-if="!previewMode">
+    <div
+      v-if="!previewMode"
+      class="p-3"
+    >
       <textarea
         :value="localValue"
         :aria-label="props.ariaLabel"
         :placeholder="props.placeholder"
         :disabled="props.saving"
-        class="block min-h-[12rem] w-full rounded border border-gray-300 bg-white p-3 font-mono text-sm leading-relaxed text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+        class="block min-h-[28rem] w-full resize-y rounded-sm border border-default bg-bg-surface p-3 font-mono text-[13px] leading-6 text-fg-default shadow-inset focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus"
         @input="onInput"
         @keydown="onKeydown"
       />
     </div>
     <div
       v-else
-      class="rounded border border-gray-200 p-3 dark:border-gray-800"
+      class="m-3 min-h-[28rem] rounded-sm border border-default bg-bg-surface p-4"
     >
       <MarkdownView
         :source="localValue"
@@ -224,17 +227,17 @@ const charCount = computed<number>(() => localValue.value.length)
       />
     </div>
 
-    <div class="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+    <div class="flex items-center justify-between border-t border-subtle bg-bg-surface-alt px-3 py-2 text-xs text-fg-muted">
       <span>
         <span aria-live="polite">{{ wordCount }} words</span> · {{ charCount }} chars
       </span>
       <span
         v-if="dirty"
-        class="text-amber-700 dark:text-amber-400"
+        class="text-warning-fg"
       >unsaved changes</span>
       <span
         v-else-if="lastSavedAt"
-        class="text-emerald-700 dark:text-emerald-400"
+        class="text-success-fg"
       >
         saved at {{ lastSavedAt }}
       </span>
@@ -242,17 +245,17 @@ const charCount = computed<number>(() => localValue.value.length)
 
     <div
       v-if="conflictOpen"
-      class="mt-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/30"
+      class="mt-2 rounded-md border border-warning-border bg-warning-subtle p-3 text-sm"
       role="alertdialog"
       aria-labelledby="cs-md-conflict-title"
     >
       <div
         id="cs-md-conflict-title"
-        class="mb-1 font-medium text-amber-800 dark:text-amber-200"
+        class="mb-1 font-medium text-warning-fg"
       >
         Remote copy changed
       </div>
-      <p class="mb-2 text-amber-800 dark:text-amber-200">
+      <p class="mb-2 text-warning-fg">
         Someone else updated this content while you were editing. Reload to
         replace your draft with the remote version, or overwrite to push
         your local changes anyway.
@@ -260,14 +263,14 @@ const charCount = computed<number>(() => localValue.value.length)
       <div class="flex gap-2">
         <button
           type="button"
-          class="rounded border border-amber-400 px-3 py-1 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-amber-900/40"
+          class="rounded-sm border border-warning-border px-3 py-1 text-sm font-medium text-warning-fg hover:bg-bg-surface"
           @click="reloadFromRemote"
         >
           Reload remote
         </button>
         <button
           type="button"
-          class="rounded bg-amber-700 px-3 py-1 text-sm font-medium text-white hover:bg-amber-800"
+          class="rounded-sm bg-warning px-3 py-1 text-sm font-medium text-fg-on-accent hover:opacity-90"
           @click="overwriteRemote"
         >
           Overwrite

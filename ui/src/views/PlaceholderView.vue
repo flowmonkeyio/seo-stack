@@ -3,6 +3,13 @@
 // Displays a heading + milestone tag so the route is browseable while
 // the real implementation is incoming.
 
+import {
+  UiBadge,
+  UiEmptyState,
+  UiPageHeader,
+  UiPageShell,
+} from '@/components/ui'
+
 interface Props {
   title: string
   milestone: string
@@ -15,29 +22,24 @@ withDefaults(defineProps<Props>(), {
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl">
-    <header class="mb-4 flex items-baseline gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        {{ title }}
-      </h1>
-      <span
-        class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-      >
-        coming in {{ milestone }}
-      </span>
-    </header>
-    <p
-      v-if="description"
-      class="text-sm text-gray-600 dark:text-gray-400"
+  <UiPageShell>
+    <UiPageHeader
+      :title="title"
+      :description="description || `This view is part of milestone ${milestone}. The route is wired; the real content lands when ${milestone} ships.`"
     >
-      {{ description }}
-    </p>
-    <p
-      v-else
-      class="text-sm text-gray-500 dark:text-gray-400"
-    >
-      This view is part of milestone {{ milestone }}. The route is wired so
-      navigation works; the real content lands when {{ milestone }} ships.
-    </p>
-  </div>
+      <template #titleMeta>
+        <UiBadge
+          tone="warning"
+          variant="subtle"
+        >
+          coming in {{ milestone }}
+        </UiBadge>
+      </template>
+    </UiPageHeader>
+    <UiEmptyState
+      title="Not implemented yet"
+      :description="description || `Milestone ${milestone} owns this screen.`"
+      size="md"
+    />
+  </UiPageShell>
 </template>

@@ -15,7 +15,17 @@ import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import {
+  UiBulkActionBar,
+  UiButton,
+  UiCallout,
+  UiDialog,
+  UiEmptyState,
+  UiPageShell,
+  UiSegmentedControl,
+} from '@/components/ui'
 import { useInterlinksStore, type InternalLink } from '@/stores/interlinks'
 import { useArticlesStore } from '@/stores/articles'
 import { useToastsStore } from '@/stores/toasts'
@@ -58,6 +68,10 @@ const columns: DataTableColumn<InternalLink>[] = [
 function setStatusFilter(opt: 'all' | `${InternalLinkStatusEnum}`): void {
   interlinksStore.setFilter('status', opt === 'all' ? null : (opt as InternalLinkStatusEnum))
   void interlinksStore.refresh(projectId.value)
+}
+
+function onStatusSelect(key: string | number): void {
+  setStatusFilter(String(key) as 'all' | `${InternalLinkStatusEnum}`)
 }
 
 function setFromFilter(value: string): void {
@@ -210,65 +224,49 @@ watch(projectId, load)
 </script>
 
 <template>
-  <div class="mx-auto max-w-7xl">
-    <header class="mb-4 flex flex-wrap items-baseline justify-between gap-3">
-      <h1 class="text-2xl font-bold tracking-tight">
-        Interlinks
-      </h1>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-gray-700 dark:hover:bg-gray-800"
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Interlinks"
+      description="Review suggested links, apply approved anchors, dismiss weak matches, and repair broken internal links."
+      :breadcrumbs="[{ label: 'Interlinks' }]"
+    >
+      <template #actions>
+        <UiButton
+          variant="secondary"
           @click="openRepair"
         >
           Repair
-        </button>
-        <button
-          type="button"
-          class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        </UiButton>
+        <UiButton
+          variant="primary"
           @click="suggestMore"
         >
           Suggest interlinks
-        </button>
-      </div>
-    </header>
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
-    <p
+    <UiCallout
       v-if="error"
-      class="mb-3 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
+      tone="danger"
     >
       {{ error }}
-    </p>
+    </UiCallout>
 
-    <div
-      role="tablist"
-      aria-label="Interlink status filter"
-      class="mb-3 flex flex-wrap gap-1"
-    >
-      <button
-        v-for="opt in STATUS_OPTIONS"
-        :key="opt.key"
-        type="button"
-        role="tab"
-        :aria-selected="(filters.status === null && opt.key === 'all') || filters.status === opt.key"
-        class="rounded-full border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-        :class="
-          (filters.status === null && opt.key === 'all') || filters.status === opt.key
-            ? 'border-blue-600 bg-blue-50 font-medium text-blue-800 dark:border-blue-500 dark:bg-blue-900/40 dark:text-blue-200'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800'
-        "
-        @click="setStatusFilter(opt.key)"
-      >
-        {{ opt.label }}
-      </button>
-    </div>
+    <UiSegmentedControl
+      :model-value="filters.status ?? 'all'"
+      :options="STATUS_OPTIONS"
+      label="Interlink status filter"
+      @select="onStatusSelect"
+    />
 
-    <div class="mb-3 flex flex-wrap items-center gap-3 text-sm">
+    <div class="flex flex-wrap items-center gap-3 text-sm">
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">From article</span>
+        <span class="text-fg-muted">From article</span>
         <select
           :value="filters.from_article_id !== null ? String(filters.from_article_id) : ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           aria-label="Filter from article"
           @change="setFromFilter(($event.target as HTMLSelectElement).value)"
         >
@@ -285,10 +283,10 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">To article</span>
+        <span class="text-fg-muted">To article</span>
         <select
           :value="filters.to_article_id !== null ? String(filters.to_article_id) : ''"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           aria-label="Filter to article"
           @change="setToFilter(($event.target as HTMLSelectElement).value)"
         >
@@ -305,7 +303,7 @@ watch(projectId, load)
         </select>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Score min</span>
+        <span class="text-fg-muted">Score min</span>
         <input
           :value="filters.score_min"
           type="range"
@@ -316,13 +314,13 @@ watch(projectId, load)
           aria-label="Score minimum"
           @input="setScoreMin(Number.parseFloat(($event.target as HTMLInputElement).value))"
         >
-        <span class="w-8 text-right text-xs text-gray-500 dark:text-gray-400">{{ filters.score_min.toFixed(2) }}</span>
+        <span class="w-8 text-right text-xs text-fg-muted">{{ filters.score_min.toFixed(2) }}</span>
       </label>
       <label class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-400">Sort</span>
+        <span class="text-fg-muted">Sort</span>
         <select
           :value="interlinksStore.sort"
-          class="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
+          class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
           aria-label="Sort"
           @change="setSort(($event.target as HTMLSelectElement).value)"
         >
@@ -342,57 +340,45 @@ watch(projectId, load)
       </label>
     </div>
 
-    <div
+    <UiBulkActionBar
       v-if="selection.size > 0"
-      class="mb-3 flex flex-wrap items-center gap-2 rounded border border-blue-300 bg-blue-50 p-2 text-sm dark:border-blue-700 dark:bg-blue-900/30"
-      role="status"
-      aria-live="polite"
+      :count="selection.size"
+      aria-label="Selected interlinks"
+      @clear="selection = new Set()"
     >
-      <span class="font-medium">{{ selection.size }} selected</span>
-      <button
-        type="button"
-        class="rounded border border-blue-300 bg-white px-2 py-1 text-xs hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/60"
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="bulkPending"
         @click="applySelected"
       >
         Apply selected
-      </button>
-      <button
-        type="button"
-        class="rounded border border-blue-300 bg-white px-2 py-1 text-xs hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/60"
+      </UiButton>
+      <UiButton
+        size="sm"
+        variant="secondary"
         :disabled="bulkPending"
         @click="dismissSelected"
       >
         Dismiss selected
-      </button>
-      <button
-        type="button"
-        class="ml-auto rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900"
-        @click="selection = new Set()"
-      >
-        Clear
-      </button>
-    </div>
+      </UiButton>
+    </UiBulkActionBar>
 
-    <div
+    <UiEmptyState
       v-if="empty"
-      class="rounded border border-dashed border-gray-300 p-8 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      title="No interlinks yet"
+      description="Generate suggestions from the current article set, then apply or dismiss them from the table."
+      size="lg"
     >
-      <p class="mb-2 text-base font-medium text-gray-900 dark:text-white">
-        No interlinks yet
-      </p>
-      <p class="mb-4">
-        The interlinker skill ships in M7. Until then, use the "Suggest interlinks" button or
-        manually create links via MCP / REST.
-      </p>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        @click="suggestMore"
-      >
-        Suggest interlinks
-      </button>
-    </div>
+      <template #actions>
+        <UiButton
+          variant="primary"
+          @click="suggestMore"
+        >
+          Suggest interlinks
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <DataTable
       v-if="!empty"
@@ -410,7 +396,7 @@ watch(projectId, load)
       <template #cell:from_article_id="{ row }">
         <button
           type="button"
-          class="text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-300"
+          class="focus-ring rounded-xs text-fg-link hover:underline"
           @click.stop="gotoArticle((row as InternalLink).from_article_id)"
         >
           {{ articleTitle((row as InternalLink).from_article_id) }}
@@ -419,7 +405,7 @@ watch(projectId, load)
       <template #cell:to_article_id="{ row }">
         <button
           type="button"
-          class="text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-300"
+          class="focus-ring rounded-xs text-fg-link hover:underline"
           @click.stop="gotoArticle((row as InternalLink).to_article_id)"
         >
           {{ articleTitle((row as InternalLink).to_article_id) }}
@@ -431,123 +417,100 @@ watch(projectId, load)
             :status="(row as InternalLink).status"
             kind="interlink"
           />
-          <button
+          <UiButton
             v-if="(row as InternalLink).status === 'suggested'"
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+            size="sm"
+            variant="secondary"
             :aria-label="`Apply interlink ${(row as InternalLink).id}`"
             @click.stop="applyOne(row as InternalLink)"
           >
             Apply
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="(row as InternalLink).status === 'suggested'"
-            type="button"
-            class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+            size="sm"
+            variant="secondary"
             :aria-label="`Dismiss interlink ${(row as InternalLink).id}`"
             @click.stop="dismissOne(row as InternalLink)"
           >
             Dismiss
-          </button>
+          </UiButton>
         </div>
       </template>
     </DataTable>
 
-    <!-- Repair modal -->
-    <div
-      v-if="repairOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-repair-title"
-      @click.self="repairOpen = false"
+    <UiDialog
+      :model-value="repairOpen"
+      title="Repair interlinks"
+      description="Mark all live interlinks pointing at the selected article as broken."
+      size="md"
+      @update:model-value="(open: boolean) => repairOpen = open"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+      <UiCallout
+        tone="info"
+        density="compact"
+        class="mb-3"
       >
-        <h2
-          id="cs-repair-title"
-          class="mb-3 text-lg font-semibold"
+        Use this after unpublishing or deleting an article so dangling links surface in the broken filter.
+      </UiCallout>
+      <label class="mb-3 block text-sm">
+        <span class="font-medium">Article</span>
+        <select
+          v-model="repairArticleId"
+          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
         >
-          Repair interlinks
-        </h2>
-        <p class="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Mark all live interlinks pointing at the selected article as
-          <strong>broken</strong>. Use this after unpublishing or deleting
-          an article so dangling links surface in the broken filter.
-        </p>
-        <label class="mb-3 block text-sm">
-          <span class="font-medium">Article</span>
-          <select
-            v-model="repairArticleId"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
+          <option :value="null">
+            — pick an article —
+          </option>
+          <option
+            v-for="a in articlesStore.items"
+            :key="a.id"
+            :value="a.id"
           >
-            <option :value="null">
-              — pick an article —
-            </option>
-            <option
-              v-for="a in articlesStore.items"
-              :key="a.id"
-              :value="a.id"
-            >
-              {{ a.title }}
-            </option>
-          </select>
-        </label>
-        <div class="flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="repairPending"
-            @click="repairOpen = false"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="repairPending"
-            @click="submitRepair"
-          >
-            {{ repairPending ? 'Repairing…' : 'Repair links' }}
-          </button>
-        </div>
-      </div>
-    </div>
+            {{ a.title }}
+          </option>
+        </select>
+      </label>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="repairPending"
+          @click="repairOpen = false"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="repairPending"
+          @click="submitRepair"
+        >
+          Repair links
+        </UiButton>
+      </template>
+    </UiDialog>
 
-    <!-- Detail modal -->
-    <div
-      v-if="detailOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cs-detail-title"
-      @click.self="closeDetail"
+    <UiDialog
+      :model-value="detailOpen !== null"
+      :title="detailOpen ? `Interlink #${detailOpen.id}` : 'Interlink'"
+      size="md"
+      @update:model-value="(open: boolean) => open ? undefined : closeDetail()"
     >
-      <div
-        class="w-full max-w-md rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900"
-      >
-        <h2
-          id="cs-detail-title"
-          class="mb-3 text-lg font-semibold"
-        >
-          Interlink #{{ detailOpen.id }}
-        </h2>
+      <template v-if="detailOpen">
         <dl class="space-y-2 text-sm">
           <div>
-            <dt class="font-medium text-gray-600 dark:text-gray-400">
+            <dt class="font-medium text-fg-muted">
               From
             </dt>
             <dd>{{ articleTitle(detailOpen.from_article_id) }}</dd>
           </div>
           <div>
-            <dt class="font-medium text-gray-600 dark:text-gray-400">
+            <dt class="font-medium text-fg-muted">
               To
             </dt>
             <dd>{{ articleTitle(detailOpen.to_article_id) }}</dd>
           </div>
           <div>
-            <dt class="font-medium text-gray-600 dark:text-gray-400">
+            <dt class="font-medium text-fg-muted">
               Anchor text
             </dt>
             <dd class="font-mono">
@@ -555,13 +518,13 @@ watch(projectId, load)
             </dd>
           </div>
           <div>
-            <dt class="font-medium text-gray-600 dark:text-gray-400">
+            <dt class="font-medium text-fg-muted">
               Position
             </dt>
             <dd>{{ detailOpen.position ?? '—' }}</dd>
           </div>
           <div>
-            <dt class="font-medium text-gray-600 dark:text-gray-400">
+            <dt class="font-medium text-fg-muted">
               Status
             </dt>
             <dd>
@@ -572,22 +535,23 @@ watch(projectId, load)
             </dd>
           </div>
         </dl>
-        <p
-          class="mt-3 rounded bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+        <UiCallout
+          tone="info"
+          density="compact"
+          class="mt-3"
         >
           Surrounding paragraph context lands in M7 alongside the interlinker
           skill. M5.C displays the anchor + endpoints only.
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            @click="closeDetail"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+        </UiCallout>
+      </template>
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          @click="closeDetail"
+        >
+          Close
+        </UiButton>
+      </template>
+    </UiDialog>
+  </UiPageShell>
 </template>

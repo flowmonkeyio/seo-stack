@@ -73,7 +73,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
   >
     <button
       type="button"
-      class="flex w-full items-center justify-between gap-2 rounded border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+      class="flex w-full items-center justify-between gap-2 rounded-sm border border-default bg-bg-surface px-3 py-2 text-sm shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       :aria-expanded="open"
       aria-haspopup="listbox"
       @click="toggle"
@@ -81,24 +81,24 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
       <span class="truncate text-left">
         <span
           v-if="activeProject"
-          class="font-medium text-gray-900 dark:text-white"
+          class="font-medium text-fg-strong"
         >
           {{ activeProject.name }}
         </span>
         <span
           v-else
-          class="text-gray-500 dark:text-gray-400"
+          class="text-fg-muted"
         >No project selected</span>
       </span>
       <span
         aria-hidden="true"
-        class="text-xs text-gray-500 dark:text-gray-400"
+        class="text-xs text-fg-muted"
       >▾</span>
     </button>
     <div
       v-if="open"
       role="listbox"
-      class="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+      class="absolute z-dropdown mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-default bg-bg-surface py-1 shadow-md"
     >
       <button
         v-for="p in sortedItems"
@@ -106,34 +106,34 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
         role="option"
         :aria-selected="p.id === activeProject?.id"
         type="button"
-        class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:hover:bg-gray-800"
-        :class="p.id === activeProject?.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''"
+        class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        :class="p.id === activeProject?.id ? 'bg-accent-subtle' : ''"
         @click="pick(p.id)"
       >
         <span>
-          <span class="block truncate font-medium text-gray-900 dark:text-white">
+          <span class="block truncate font-medium text-fg-strong">
             {{ p.name }}
           </span>
-          <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+          <span class="block truncate text-xs text-fg-muted">
             {{ p.slug }} · {{ p.domain }}
           </span>
         </span>
         <span
           v-if="!p.is_active"
-          class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+          class="rounded-xs bg-neutral-subtle px-1.5 py-0.5 text-[10px] font-medium text-neutral-fg"
         >
           archived
         </span>
       </button>
       <div
         v-if="sortedItems.length === 0"
-        class="px-3 py-2 text-sm text-gray-500 dark:text-gray-400"
+        class="px-3 py-2 text-sm text-fg-muted"
       >
         No projects yet.
       </div>
       <button
         type="button"
-        class="mt-1 block w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-gray-800 dark:text-blue-300 dark:hover:bg-blue-900/30"
+        class="mt-1 block w-full border-t border-subtle px-3 py-2 text-left text-sm font-medium text-fg-link hover:bg-accent-subtle"
         @click="newProject"
       >
         + New project

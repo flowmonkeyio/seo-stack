@@ -192,7 +192,7 @@ watch(projectId, load)
       :key="cat"
       class="space-y-2"
     >
-      <h3 class="mt-4 text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
+      <h3 class="mt-4 text-sm font-semibold uppercase text-gray-700 dark:text-gray-300">
         {{ cat }}
       </h3>
       <ul class="divide-y divide-gray-200 rounded border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
