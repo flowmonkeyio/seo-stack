@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 _PROGRAMMATIC_PREFIX = "_programmatic/"
+_PUBLISH_STEP_ID = "publish"
 _PUBLISH_PREFIX = "04-publishing/"
 
 _PUBLISH_KIND_TO_SKILL: dict[PublishTargetKind, str] = {
@@ -613,7 +614,7 @@ class ProcedureRunner:
             merged_args.setdefault("article_id", article_id)
         target_id = self._primary_target_id(
             project_id=run_row.project_id or 0,
-            step_skill=step_spec.skill,
+            step=step_spec,
         )
         if target_id is not None:
             merged_args.setdefault("target_id", target_id)
@@ -650,7 +651,7 @@ class ProcedureRunner:
         return payload
 
     def _resolved_skill(self, *, project_id: int, step: Any) -> str:
-        if not str(step.skill).startswith(_PUBLISH_PREFIX):
+        if not _is_target_publish_step(step):
             return step.skill
         with Session(self._engine) as s:
             row = s.exec(
@@ -664,8 +665,8 @@ class ProcedureRunner:
             return step.skill
         return _PUBLISH_KIND_TO_SKILL.get(row.kind, step.skill)
 
-    def _primary_target_id(self, *, project_id: int, step_skill: str) -> int | None:
-        if not step_skill.startswith(_PUBLISH_PREFIX):
+    def _primary_target_id(self, *, project_id: int, step: Any) -> int | None:
+        if not _is_target_publish_step(step):
             return None
         with Session(self._engine) as s:
             row = s.exec(
@@ -699,6 +700,19 @@ def _current_step_index(steps: list[Any]) -> int | None:
         ):
             return row.step_index
     return None
+
+
+def _is_target_publish_step(step: Any) -> bool:
+    """Return true only for the final target-specific publish step.
+
+    Procedure 4 also contains publishing-phase skills such as
+    ``schema-emitter`` and ``interlinker``. Those must keep their authored
+    skill bodies and grants; only the terminal ``publish`` step is swapped to
+    the primary target's concrete publisher.
+    """
+    return getattr(step, "id", None) == _PUBLISH_STEP_ID and str(step.skill).startswith(
+        _PUBLISH_PREFIX
+    )
 
 
 def _all_steps_terminal(steps: list[Any]) -> bool:

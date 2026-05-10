@@ -71,6 +71,69 @@ async def test_claim_and_record_advance_agent_led_step(
         assert (row.metadata_json or {})["skill_name"] == "04-topic-to-published"
 
 
+async def test_only_final_publish_step_is_target_resolved(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+) -> None:
+    """Schema and interlink steps keep their authored skills before publish."""
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+
+    for step_id in (
+        "brief",
+        "outline",
+        "draft-intro",
+        "draft-body",
+        "draft-conclusion",
+        "editor",
+        "humanizer",
+        "eeat-gate",
+        "image-generator",
+        "alt-text-auditor",
+    ):
+        runner.record_step(
+            run_id=run_id,
+            step_id=step_id,
+            status=ProcedureRunStepStatus.SUCCESS,
+            output_json={"step_id": step_id, "article_id": 42},
+        )
+
+    current = runner.current_step(run_id=run_id)["current_step"]
+    assert current["step_id"] == "schema-emitter"
+    assert current["skill"] == "04-publishing/schema-emitter"
+    assert "schema.set" in current["allowed_tools"]
+    assert "publish.recordPublish" not in current["allowed_tools"]
+    assert "target_id" not in current["args"]
+
+    runner.record_step(
+        run_id=run_id,
+        step_id="schema-emitter",
+        status=ProcedureRunStepStatus.SUCCESS,
+        output_json={"step_id": "schema-emitter", "article_id": 42},
+    )
+    current = runner.current_step(run_id=run_id)["current_step"]
+    assert current["step_id"] == "interlinker"
+    assert current["skill"] == "04-publishing/interlinker"
+    assert "publish.recordPublish" not in current["allowed_tools"]
+    assert "target_id" not in current["args"]
+
+    runner.record_step(
+        run_id=run_id,
+        step_id="interlinker",
+        status=ProcedureRunStepStatus.SUCCESS,
+        output_json={"step_id": "interlinker", "article_id": 42},
+    )
+    current = runner.current_step(run_id=run_id)["current_step"]
+    assert current["step_id"] == "publish"
+    assert current["skill"] == "04-publishing/nuxt-content-publish"
+    assert "publish.recordPublish" in current["allowed_tools"]
+    assert current["args"]["target_id"] > 0
+
+
 async def test_recording_all_steps_success_marks_run_success(
     runner: ProcedureRunner,
     scenario: dict[str, int],
