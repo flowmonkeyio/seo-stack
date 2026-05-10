@@ -34,6 +34,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 from importlib import resources
@@ -263,6 +264,48 @@ def copy_procedures(
     return target, count
 
 
+def _plugin_mcp_payload() -> dict[str, object]:
+    """Return a plugin-local MCP config that does not depend on shell PATH."""
+    return {
+        "mcpServers": {
+            "content-stack": {
+                "command": sys.executable,
+                "args": ["-m", "content_stack", "mcp-bridge"],
+            }
+        }
+    }
+
+
+def _write_plugin_mcp_config(target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".mcp.", dir=str(target.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(_plugin_mcp_payload(), f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, target)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def _refresh_existing_plugin_cache(home_dir: Path) -> None:
+    """Refresh Codex's installed plugin cache when it already exists.
+
+    Codex loads enabled plugins from ``~/.codex/plugins/cache``. Updating the
+    marketplace source is enough for a future reinstall, but refreshing our own
+    existing cache copy keeps clone-mode installs usable immediately after
+    ``content-stack install``.
+    """
+    cache_root = home_dir / ".codex" / "plugins" / "cache" / "local-content-stack" / "content-stack"
+    if not cache_root.is_dir():
+        return
+    for version_dir in cache_root.iterdir():
+        if (version_dir / ".codex-plugin" / "plugin.json").is_file():
+            _write_plugin_mcp_config(version_dir / ".mcp.json")
+
+
 def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
     """Mirror and hydrate plugin packages into the home-local plugin directory."""
     home_dir = home if home is not None else Path.home()
@@ -286,6 +329,9 @@ def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
         _mirror_path(procedures_source, procedures_target, exclude_dirs=("_template",))
     else:
         _mirror_traversable(procedures_source, procedures_target, exclude_dirs=("_template",))
+
+    _write_plugin_mcp_config(target / ".mcp.json")
+    _refresh_existing_plugin_cache(home_dir)
 
     count = sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
     return target, count

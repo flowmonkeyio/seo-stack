@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,12 +71,35 @@ def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
     assert target == sandbox / ".codex" / "plugins" / "content-stack"
     assert count == 1
     assert (target / ".codex-plugin" / "plugin.json").is_file()
+    mcp = json.loads((target / ".mcp.json").read_text(encoding="utf-8"))
+    assert mcp["mcpServers"]["content-stack"] == {
+        "command": sys.executable,
+        "args": ["-m", "content_stack", "mcp-bridge"],
+    }
     assert (target / "skills" / "content-stack" / "SKILL.md").is_file()
     assert (
         target / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"
     ).is_file()
     assert (target / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
     assert not (target / "procedures" / "_template").exists()
+
+
+def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-content-stack" / "content-stack" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    (cache / ".mcp.json").write_text(
+        '{"mcpServers":{"content-stack":{"command":"content-stack","args":["mcp-bridge"]}}}',
+        encoding="utf-8",
+    )
+
+    installer.copy_plugins(home=sandbox)
+
+    mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))
+    assert mcp["mcpServers"]["content-stack"] == {
+        "command": sys.executable,
+        "args": ["-m", "content_stack", "mcp-bridge"],
+    }
 
 
 def test_copy_skills_idempotent(sandbox: Path) -> None:

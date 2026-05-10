@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -13,7 +14,11 @@ def _run(script: Path, home: Path, *args: str) -> str:
         ["bash", str(script), *args],
         capture_output=True,
         text=True,
-        env={**os.environ, "CONTENT_STACK_HOME": str(home)},
+        env={
+            **os.environ,
+            "CONTENT_STACK_HOME": str(home),
+            "CONTENT_STACK_PLUGIN_PYTHON": sys.executable,
+        },
         check=True,
     )
     return result.stdout
@@ -35,6 +40,11 @@ def test_install_plugins_creates_plugin_and_marketplace(
 
     assert "Installed 1 plugins" in output
     assert (plugin_root / ".codex-plugin" / "plugin.json").is_file()
+    mcp = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
+    assert mcp["mcpServers"]["content-stack"] == {
+        "command": sys.executable,
+        "args": ["-m", "content_stack", "mcp-bridge"],
+    }
     assert (plugin_root / "skills" / "content-stack" / "SKILL.md").is_file()
     assert (
         plugin_root / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"

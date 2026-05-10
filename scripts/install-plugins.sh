@@ -22,6 +22,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
 TARGET="${HOME_DIR}/.codex/plugins/content-stack"
 MARKETPLACE="${HOME_DIR}/.agents/plugins/marketplace.json"
+PLUGIN_PYTHON="${CONTENT_STACK_PLUGIN_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${PLUGIN_PYTHON}" ]]; then
+    PLUGIN_PYTHON="$(command -v python3)"
+fi
 
 mkdir -p "${TARGET}" "$(dirname "${MARKETPLACE}")"
 
@@ -40,6 +44,46 @@ if [[ "${ACTION}" == "install" ]]; then
         --exclude '__pycache__' \
         --exclude '_template' \
         "${REPO_ROOT}/procedures/" "${TARGET}/procedures/"
+    python3 - "${TARGET}" "${HOME_DIR}" "${PLUGIN_PYTHON}" <<'PYEOF'
+import json
+import os
+import sys
+import tempfile
+
+target, home_dir, plugin_python = sys.argv[1:4]
+payload = {
+    "mcpServers": {
+        "content-stack": {
+            "command": plugin_python,
+            "args": ["-m", "content_stack", "mcp-bridge"],
+        }
+    }
+}
+
+
+def write_mcp(plugin_root: str) -> None:
+    path = os.path.join(plugin_root, ".mcp.json")
+    target_dir = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(prefix=".mcp.", dir=target_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+            f.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+write_mcp(target)
+cache_root = os.path.join(home_dir, ".codex", "plugins", "cache", "local-content-stack", "content-stack")
+if os.path.isdir(cache_root):
+    for name in os.listdir(cache_root):
+        plugin_root = os.path.join(cache_root, name)
+        if os.path.isfile(os.path.join(plugin_root, ".codex-plugin", "plugin.json")):
+            write_mcp(plugin_root)
+PYEOF
 else
     rm -rf "${TARGET}"
 fi
