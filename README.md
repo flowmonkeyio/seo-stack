@@ -1,12 +1,12 @@
-# content-stack
+# SEO Stack
 
-Agent-led SEO content operations for Codex, Claude Code, and other MCP-capable
-coding agents.
+Local SEO operations for agents that research, write, publish, and refresh
+content.
 
-content-stack turns the agent already working in a website repository into the
-SEO operator for that site. The agent researches topics, writes and edits
-content, creates assets, emits schema, suggests links, publishes, and refreshes
-old pages. A local daemon keeps the durable state: projects, topics, runs,
+SEO Stack turns the agent already working in a website repository into the SEO
+operator for that site. The agent researches topics, writes and edits content,
+creates assets, emits schema, suggests links, publishes, and refreshes old
+pages. A local daemon keeps the durable state: projects, topics, runs,
 credentials, quality gates, publish targets, and audit history.
 
 The split is intentional:
