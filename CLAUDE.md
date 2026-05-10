@@ -78,8 +78,7 @@ content-stack/
 │   ├── api-keys.md                  # per-integration setup incl. GSC OAuth flow
 │   ├── procedures-guide.md          # PROCEDURE.md frontmatter + DSL
 │   └── upgrade.md                   # version-to-version upgrade semantics
-├── tests/                           # unit + integration + fixtures
-└── .github/workflows/ci.yml         # ruff + pytest + mypy + UI build + parity table
+└── tests/                           # unit + integration + fixtures
 ```
 
 ## Common commands (target)

@@ -82,7 +82,7 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
 
     Per PLAN.md L1346-L1358 the executor + jobstore + job_defaults are
     fixed; per audit MAJOR-23 we assert this layout in tests so an
-    accidental drift surfaces in CI.
+    accidental drift surfaces during release validation.
 
     Note ``settings`` is currently unused but accepted for symmetry —
     the lifespan hook always has both available, and a future tightening

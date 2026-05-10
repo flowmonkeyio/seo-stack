@@ -1,6 +1,6 @@
 """`scripts/install-launchd.sh` generates a plist from a template.
 
-We can't actually `launchctl bootstrap` in CI, so we shim `launchctl`
+We can't actually `launchctl bootstrap` in the test runner, so we shim `launchctl`
 with a stub on PATH that records every invocation. The plist itself
 must:
   - substitute `__UV_PATH__`, `__REPO_ROOT__`, `__HOME__` correctly,
@@ -108,7 +108,7 @@ def test_force_overwrites_with_bak(
 def test_diff_without_force_aborts_in_non_tty(
     sandbox_home: Path, scripts_dir: Path, launchctl_stub: Path
 ) -> None:
-    """In CI (no TTY on stdin) the script must fail rather than block on read."""
+    """Without a TTY on stdin, the script must fail rather than block on read."""
     plist_dir = sandbox_home / "Library" / "LaunchAgents"
     plist_dir.mkdir(parents=True, exist_ok=True)
     plist = plist_dir / "com.content-stack.daemon.plist"

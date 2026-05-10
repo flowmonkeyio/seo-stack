@@ -612,7 +612,7 @@ Two checks:
   `allowed_tools`, refuses to boot on mismatch.
 - **Unit test** —
   `tests/integration/test_skills_frontmatter.py::test_allowed_tools_matches_permissions_matrix`
-  asserts the same parity in CI.
+  asserts the same parity in local release checks.
 
 ### 5.3 Adding a new tool to a skill
 
@@ -698,7 +698,7 @@ and the corresponding `_SKILL_<NAME>` set in
 `content_stack/mcp/permissions.py` that needs it. Skills that don't
 need the tool stay narrow.
 
-### 6.4 Update CI gen-types
+### 6.4 Update generated UI types
 
 `make gen-types` regenerates `ui/src/api.ts` from the daemon's
 OpenAPI spec. The MCP tool itself doesn't change OpenAPI (MCP and
@@ -707,7 +707,7 @@ REST are separate transports); but if you also add a REST route
 
 ### 6.5 Mutating-verb discipline
 
-The CI envelope check (`assert_envelope_discipline` at
+The envelope validation check (`assert_envelope_discipline` at
 `content_stack/mcp/server.py`) verifies every mutating-verb tool
 returns `WriteEnvelope[Inner]`. The verb list:
 `create|update|set|mark|add|remove|toggle|approve|reject|apply|
@@ -764,7 +764,7 @@ def register_routers(app: FastAPI) -> None:
 ```
 
 Run `make gen-types` after adding the route so the UI's `api.ts`
-picks up the new shape. CI fails on diff if you forget.
+picks up the new shape. Release checks fail on diff if you forget.
 
 ### 7.1 Permissive vs. state-machine
 

@@ -8,7 +8,7 @@ Two purposes:
 - ``test_100_sequential_set_draft_under_2s`` — the audit B-07 / PLAN.md
   L1615 acceptance benchmark: 100 sequential 200 KB ``set_draft`` calls
   must complete in under 2 seconds on a 2020 MBP-class machine.
-  Marked ``benchmark`` so CI can run it explicitly via
+  Marked ``benchmark`` so release validation can run it explicitly via
   ``pytest -m benchmark``.
 """
 

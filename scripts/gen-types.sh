@@ -3,7 +3,7 @@
 #
 # Boots the daemon if it's not already serving, waits for /api/v1/health to
 # return 200, then runs the openapi-typescript pass via pnpm. Used by
-# `make gen-types` and CI's gen-types-parity step.
+# `make gen-types` and the release gen-types parity check.
 #
 # We never want to clobber an existing daemon — if /health responds, we
 # reuse it; otherwise we start one in the background, wait, run, then kill

@@ -13,7 +13,7 @@ for v1" criterion in `PLAN.md`.
 ### Added
 
 - **M0 Foundation** — repo scaffold, Python package, FastAPI app
-  factory, alembic, Makefile, CI, doctor stub, auth-token + seed
+  factory, alembic, Makefile, doctor stub, auth-token + seed
   generation, Vue UI scaffold.
 - **M1 Database** — 28 SQLModel tables, migrations, indexes,
   repository layer with optimistic concurrency on the articles fat
@@ -79,8 +79,8 @@ for v1" criterion in `PLAN.md`.
 - **D7 EEAT core floor** — `eeat_criteria.tier ENUM('core','recommended','project')`.
   T04 / C01 / R10 seed as `tier='core'`; cannot be deactivated.
 - **D8 Committed ui_dist** — `content_stack/ui_dist/` is checked in
-  per the build artifact; CI verifies the committed bundle matches
-  `ui/src/`. No `pnpm` required at user install.
+  per the build artifact; release checks verify the committed bundle
+  matches `ui/src/`. No `pnpm` required at user install.
 
 ### Roadmap
 

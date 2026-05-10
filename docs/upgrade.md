@@ -74,8 +74,8 @@ Migrations run automatically every time the daemon boots
 (`alembic upgrade head` is invoked from the lifespan). Operators do
 not normally need to run `make migrate` by hand. Down-migrations
 exist (`alembic downgrade <rev>`) but are discouraged: they run
-forward-only in CI, and a down-migration that drops columns may
-shed data depending on the change.
+forward-only in release validation, and a down-migration that drops
+columns may shed data depending on the change.
 
 Breaking schema changes bump the major version (1.x → 2.0). Release
 notes call out manual operator steps.

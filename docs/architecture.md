@@ -339,8 +339,8 @@ FastAPI auto-publishes the OpenAPI spec at `/api/openapi.json` and
 Swagger UI at `/api/docs`. `make gen-types` runs
 `scripts/gen-types.sh` which invokes `openapi-typescript` against
 the live spec and rewrites `ui/src/api.ts`. The committed file is
-checked in CI; mismatch fails the build so the UI types never drift
-from the daemon shape.
+checked by release validation; mismatch fails the check so the UI
+types never drift from the daemon shape.
 
 ### 6.3 Response envelope
 
@@ -680,15 +680,15 @@ correctness. The protocol is mandatory and lives in CLAUDE.md.
 
 ### 11.2 D8 parity check
 
-CI rebuilds `ui/src/` and diffs against the committed
-`content_stack/ui_dist/`. Mismatch fails the build. This lowers the
-install floor: end users do not need `pnpm` or Node.js.
+Release validation rebuilds `ui/src/` and diffs against the committed
+`content_stack/ui_dist/`. Mismatch fails the check. This lowers the install
+floor: end users do not need `pnpm` or Node.js.
 
 ### 11.3 Auto-generated TS types
 
 `make gen-types` regenerates `ui/src/api.ts` from the daemon's live
-OpenAPI spec via `openapi-typescript`. CI fails on diff so the UI
-types never drift from the daemon shape.
+OpenAPI spec via `openapi-typescript`. Release checks fail on diff so the
+UI types never drift from the daemon shape.
 
 ---
 

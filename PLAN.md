@@ -161,7 +161,7 @@ unless noted.
 |---|---|---|---|
 | `install` | yes | no | Wraps: `uv sync`, `alembic upgrade head`, `make build-ui`, `make register-codex`, `make register-claude`, `make install-plugins`, `scripts/doctor.sh --json`. Re-running is idempotent; auth token rotation is explicit via `rotate-token`. |
 | `serve` | n/a | starts it | `python -m content_stack serve --port 5180`. Foreground; `Ctrl-C` graceful. |
-| `build-ui` | yes | no | `cd ui && pnpm install --frozen-lockfile && pnpm build`. Output committed at `content_stack/ui_dist/`. CI verifies the committed bundle matches `ui/src/`. |
+| `build-ui` | yes | no | `cd ui && pnpm install --frozen-lockfile && pnpm build`. Output committed at `content_stack/ui_dist/`. Release checks rebuild and diff the committed bundle against `ui/src/`. |
 | `register-codex` | yes | no | `scripts/register-mcp-codex.sh`: idempotent upsert of `content-stack` MCP server with current auth token. |
 | `register-claude` | yes | no | `scripts/register-mcp-claude.sh`: parse `.mcp.json`, upsert `content-stack`, atomic write with `.bak`. |
 | `install-plugins` | yes | no | `rsync -a --delete plugins/content-stack/ ~/.codex/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, and upsert `~/.agents/plugins/marketplace.json`. |
@@ -231,7 +231,7 @@ content-stack/
 │   │   ├── refresh_detector.py      # weekly
 │   │   └── runs.py
 │   │
-│   └── ui_dist/                     # built Vue assets (committed; CI verifies match with ui/src/)
+│   └── ui_dist/                     # built Vue assets (committed; release checks verify match with ui/src/)
 │
 ├── ui/                              # Vue 3 source
 │   ├── package.json
@@ -332,9 +332,6 @@ content-stack/
 │   ├── integration/                 # FastAPI + real SQLite
 │   ├── fixtures/
 │   └── conftest.py
-│
-├── .github/workflows/
-│   └── ci.yml
 │
 └── .gitignore
 ```
@@ -686,8 +683,8 @@ Every tool has `tools/<name>.py` with `class FooInput(BaseModel)` and
 `class FooOutput(BaseModel)` (pydantic v2). Input models declare `project_id:
 int` explicitly except for `meta.*` and globally-scoped `project.*` tools.
 Output models are the canonical pydantic models exported from
-`repositories/`. A CI check fails the build if any registered MCP tool lacks
-matching Input/Output classes.
+`repositories/`. Local quality gates should fail if any registered MCP tool
+lacks matching Input/Output classes.
 
 **Per-call `project_id` is mandatory** on every project-scoped tool. MCP is
 stateless across calls; `project.setActive` and `project.getActive` mutate the
@@ -766,8 +763,8 @@ Mutating tools (whose name starts with `create|update|set|mark|add|remove|toggle
 { "data": <T>, "run_id": <int>, "project_id": <int> }
 ```
 
-Read tools return `T` bare. CI check enforces this convention against the
-verb prefix list.
+Read tools return `T` bare. Local quality gates enforce this convention
+against the verb prefix list.
 
 ### REST/MCP parity table
 
@@ -793,8 +790,8 @@ verb prefix list.
 | Enum lookup | `GET /meta/enums` | `meta.enums` |
 | Health | `GET /health` | n/a (use HTTP) |
 
-CI generates this table from registrations in both transports and fails on
-gaps.
+The parity audit generates this table from registrations in both transports
+and fails on gaps.
 
 ### Article CRUD: REST permissive vs. MCP state-machine
 
@@ -818,8 +815,8 @@ with `kind='manual-edit'` and increments `articles.version` only if
 ### TypeScript type generation
 
 `ui/src/api.ts` is auto-generated via `openapi-typescript` invoked from
-`make build-ui`. Lockfile committed; CI fails if regeneration would produce
-a diff against the committed `api.ts`.
+`make build-ui`. Lockfile committed; release checks fail if regeneration
+would produce a diff against the committed `api.ts`.
 
 ### Logging
 
@@ -1442,10 +1439,10 @@ fresh development checkouts look broken.
   Legacy loose skill/procedure installers remain as explicit compatibility
   commands but are not the default runtime surface.
 - **The UI** is built at `make build-ui` and **committed** to
-  `content_stack/ui_dist/` (D8). `ui_dist/` is NOT in `.gitignore`. CI
-  verifies the committed bundle matches `ui/src/` source by rebuilding and
-  diffing; mismatch fails the build. This lowers the install floor — no
-  `pnpm` required at user install time.
+  `content_stack/ui_dist/` (D8). `ui_dist/` is NOT in `.gitignore`. Release
+  checks verify the committed bundle matches `ui/src/` source by rebuilding
+  and diffing. This lowers the install floor — no `pnpm` required at user
+  install time.
 - **Database** auto-migrates on daemon start (`alembic upgrade head`).
 - **Auth token + seed** generated on first `serve` if absent; both at
   `~/.local/state/content-stack/`, mode 0600.
@@ -1456,7 +1453,7 @@ fresh development checkouts look broken.
 
 Not "MVP cuts" — full scope, sequenced by dependency:
 
-1. **Foundation** — repo init, pyproject, FastAPI app factory, alembic, Makefile, CI, doctor script, auth-token generation, seed-file generation. (1d)
+1. **Foundation** — repo init, pyproject, FastAPI app factory, alembic, Makefile, doctor script, auth-token generation, seed-file generation. (1d)
 2. **DB + repositories** — all 30 tables, SQLModel models, migrations, indexes, seed. Repository layer tested against in-memory SQLite. JSON column shape contracts. M2 acceptance benchmark: 100 sequential `article.setDraft` of 200 KB markdown each completes < 2 s on a 2020 MBP. (3d)
 3. **REST API** — all routers, OpenAPI generation, UI type generation, pagination/filter conventions, REST/MCP parity table. (3d)
 4. **MCP server** — all tools, transport mounted at `/mcp`, end-to-end test from a Codex session, idempotency keys, streaming, error model, result envelope, tool-grant matrix. (3d)
@@ -1490,7 +1487,7 @@ document.
 | D5 | **Daemon auth** — per-install bearer token at `~/.local/state/content-stack/auth.token` (32 bytes, 0600). Every REST + MCP request requires `Authorization: Bearer <token>`. Host header check + same-origin CORS. Install scripts inject. Rotates on `make install` re-run | Architecture + Security |
 | D6 | **Articles versioning** — separate `article_versions` table. `articles` keeps current. `article.createVersion` MCP copies live → versions before mutating | Schema § Core projects |
 | D7 | **EEAT floor** — `eeat_criteria.tier ENUM('core','recommended','project')`. T04/C01/R10 seeded as `tier='core'`; cannot be deactivated; gate refuses to score if any dimension has 0 active items | Schema § Core projects + Procedures § EEAT gate |
-| D8 | **UI dist** — COMMIT `ui_dist/` bundle. Drop from `.gitignore`. CI verifies committed bundle matches `ui/src/` | Distribution model |
+| D8 | **UI dist** — COMMIT `ui_dist/` bundle. Drop from `.gitignore`. Release checks verify committed bundle matches `ui/src/` | Distribution model |
 
 Other previously-open items, all now locked:
 
@@ -1542,7 +1539,7 @@ Other previously-open items, all now locked:
 |---|---|
 | MCP Streamable HTTP not yet supported by all client versions | stdio fallback documented; can be added in <1d if needed; doctor.sh check 15 verifies runtime version pin |
 | SQLite WAL contention + same-article concurrent writes | Per-step etag (`articles.step_etag`); every `article.set*` requires `expected_etag`; mismatch → 409 conflict (-32008). `MAX_CONCURRENCY` env caps procedure runs (default 4). M2 acceptance benchmark: 100 sequential 200 KB `setDraft` calls < 2 s. `articles.lock_token` for procedure-duration advisory locks. UI `If-Match` header for optimistic concurrency on manual edits |
-| Vue UI drifts from API shape | Auto-generate TS types via `openapi-typescript` from FastAPI OpenAPI; CI fails on diff |
+| Vue UI drifts from API shape | Auto-generate TS types via `openapi-typescript` from FastAPI OpenAPI; release checks fail on diff |
 | Skills/plugins out of sync between Codex and Claude installs | Single `skills/` and `plugins/` directories plus delete-aware install scripts; doctor.sh checks verify installed counts in both runtimes |
 | LLM corrupts DB via bad input | All MCP tools pydantic-validated; status enums enforced; tool-grant matrix per skill (-32007 forbidden); state-machine triggers; full audit via `run_steps` + `run_step_calls`; idempotency keys for replay safety |
 | EEAT gate rubber-stamp by project owner | `eeat_criteria.tier` ENUM(`core`,`recommended`,`project`); rows with `tier='core'` cannot be deactivated (repository invariant + 422); EEAT gate refuses to score if any of 8 dimensions has 0 active items; coverage floor enforced |
