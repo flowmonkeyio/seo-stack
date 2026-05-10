@@ -374,6 +374,25 @@ content-stack install
 content-stack serve
 ```
 
+### Daemon Lifecycle
+
+Run the daemon in the foreground while developing:
+
+```bash
+content-stack serve
+```
+
+Restart the background daemon after UI/backend changes, token rotation, or a
+stuck MCP bridge auto-start:
+
+```bash
+content-stack restart
+```
+
+`restart` only stops a process that looks like `content-stack serve` on the
+configured loopback port. If graceful shutdown times out, use
+`content-stack restart --force`.
+
 ### Restart Agent Clients
 
 After install or upgrade, restart Codex or Claude Code so they reload plugin

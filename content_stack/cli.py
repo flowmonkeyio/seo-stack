@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import socket
 import stat
 import subprocess
@@ -117,18 +118,25 @@ def serve(
     os.environ["CONTENT_STACK_PORT"] = str(port)
     os.environ["CONTENT_STACK_LOG_LEVEL"] = log_level.upper()
 
-    # Late-import uvicorn so `--help` is fast and the heavy import only
-    # happens on actual serve.
-    import uvicorn
+    settings = get_settings()
+    settings.ensure_dirs()
+    _write_pid_file(settings.pid_path, os.getpid())
 
-    uvicorn.run(
-        "content_stack.server:create_app",
-        host=host,
-        port=port,
-        factory=True,
-        log_level=log_level.lower(),
-        reload=False,
-    )
+    try:
+        # Late-import uvicorn so `--help` is fast and the heavy import only
+        # happens on actual serve.
+        import uvicorn
+
+        uvicorn.run(
+            "content_stack.server:create_app",
+            host=host,
+            port=port,
+            factory=True,
+            log_level=log_level.lower(),
+            reload=False,
+        )
+    finally:
+        _remove_pid_file(settings.pid_path, os.getpid())
 
 
 # ---- plugin bridge --------------------------------------------------------
@@ -148,26 +156,27 @@ def _is_loopback_host(host: str) -> bool:
 def _wait_for_daemon(host: str, port: int, *, timeout: float = 20.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _tcp_can_connect(host, port, timeout=0.25):
+        if _daemon_health_ok(host, port, timeout=0.25):
             return True
         time.sleep(0.2)
-    return _tcp_can_connect(host, port, timeout=0.25)
+    return _daemon_health_ok(host, port, timeout=0.25)
 
 
-def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[bool, str]:
-    """Start the singleton daemon for plugin clients when it is not running."""
-    if _tcp_can_connect(host, port, timeout=0.25):
-        return True, "daemon already running"
-    if not _is_loopback_host(host):
-        return False, f"refusing to auto-start non-loopback daemon host {host!r}"
+def _daemon_health_ok(host: str, port: int, *, timeout: float = 0.5) -> bool:
+    """Return True iff the daemon's unauthenticated health endpoint is ready."""
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
 
-    settings.ensure_dirs()
-    log_path = settings.state_dir / "mcp-bridge-autostart.log"
-    env = os.environ.copy()
-    env["CONTENT_STACK_HOST"] = host
-    env["CONTENT_STACK_PORT"] = str(port)
-    env.setdefault("CONTENT_STACK_LOG_LEVEL", settings.log_level)
-    args = [
+    request = Request(f"http://{host}:{port}/api/v1/health", method="GET")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return 200 <= response.status < 300
+    except (HTTPError, OSError, URLError, TimeoutError):
+        return False
+
+
+def _daemon_args(host: str, port: int, log_level: str) -> list[str]:
+    return [
         sys.executable,
         "-m",
         "content_stack",
@@ -177,8 +186,31 @@ def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[
         "--port",
         str(port),
         "--log-level",
-        settings.log_level,
+        log_level,
     ]
+
+
+def _spawn_detached_daemon(
+    settings: Settings,
+    host: str,
+    port: int,
+    *,
+    log_level: str,
+    log_path: Path,
+    cwd: Path,
+    ready_timeout: float = 20.0,
+) -> tuple[bool, str]:
+    if _tcp_can_connect(host, port, timeout=0.25):
+        return True, "daemon already running"
+    if not _is_loopback_host(host):
+        return False, f"refusing to start non-loopback daemon host {host!r}"
+
+    settings.ensure_dirs()
+    env = os.environ.copy()
+    env["CONTENT_STACK_HOST"] = host
+    env["CONTENT_STACK_PORT"] = str(port)
+    env["CONTENT_STACK_LOG_LEVEL"] = log_level
+    args = _daemon_args(host, port, log_level)
     try:
         with log_path.open("ab", buffering=0) as log:
             process = subprocess.Popen(
@@ -186,7 +218,7 @@ def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                cwd=str(Path.home()),
+                cwd=str(cwd),
                 env=env,
                 start_new_session=True,
                 close_fds=True,
@@ -194,12 +226,276 @@ def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[
     except OSError as exc:
         return False, f"failed to spawn daemon: {exc}; log={log_path}"
 
-    if _wait_for_daemon(host, port):
-        return True, f"auto-started daemon pid={process.pid}; log={log_path}"
+    if _wait_for_daemon(host, port, timeout=ready_timeout):
+        return True, f"started daemon pid={process.pid}; url=http://{host}:{port}; log={log_path}"
     exit_code = process.poll()
     if exit_code is None:
         return False, f"daemon did not become ready on {host}:{port}; log={log_path}"
     return False, f"daemon exited with code {exit_code}; log={log_path}"
+
+
+def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[bool, str]:
+    """Start the singleton daemon for plugin clients when it is not running."""
+    log_path = settings.state_dir / "mcp-bridge-autostart.log"
+    ok, message = _spawn_detached_daemon(
+        settings,
+        host,
+        port,
+        log_level=settings.log_level,
+        log_path=log_path,
+        cwd=Path.home(),
+    )
+    if ok and message.startswith("started daemon"):
+        message = "auto-" + message
+    return ok, message
+
+
+def _write_pid_file(path: Path, pid: int) -> None:
+    path.write_text(f"{pid}\n", encoding="utf-8")
+
+
+def _remove_pid_file(path: Path, pid: int) -> None:
+    try:
+        current = int(path.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        return
+    if current == pid:
+        path.unlink(missing_ok=True)
+
+
+def _read_pid_file(path: Path) -> int | None:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    try:
+        pid = int(raw)
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _pid_command(pid: int) -> str | None:
+    ps = shutil.which("ps")
+    if not ps:
+        return None
+    try:
+        result = subprocess.run(
+            [ps, "-p", str(pid), "-o", "command="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    command = result.stdout.strip()
+    return command or None
+
+
+def _command_looks_like_daemon(command: str | None) -> bool:
+    if not command:
+        return False
+    normalized = command.replace("-", "_")
+    return "content_stack" in normalized and " serve" in f" {normalized} "
+
+
+def _listener_pids(port: int) -> list[int]:
+    lsof = shutil.which("lsof")
+    if not lsof:
+        return []
+    try:
+        result = subprocess.run(
+            [lsof, f"-tiTCP:{port}", "-sTCP:LISTEN"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode not in (0, 1):
+        return []
+
+    pids: list[int] = []
+    seen: set[int] = set()
+    for line in result.stdout.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if pid > 0 and pid not in seen:
+            seen.add(pid)
+            pids.append(pid)
+    return pids
+
+
+def _discover_daemon_processes(settings: Settings, port: int) -> tuple[list[int], list[int]]:
+    """Return ``(daemon_pids, blocker_pids)`` for the configured daemon port."""
+    pid_file_pid = _read_pid_file(settings.pid_path)
+    listener_pids = _listener_pids(port)
+    daemons: list[int] = []
+    blockers: list[int] = []
+    seen_daemons: set[int] = set()
+
+    for pid in listener_pids:
+        if pid == os.getpid():
+            continue
+        command = _pid_command(pid)
+        if _command_looks_like_daemon(command) or (command is None and pid == pid_file_pid):
+            daemons.append(pid)
+            seen_daemons.add(pid)
+        else:
+            blockers.append(pid)
+
+    if (
+        pid_file_pid
+        and pid_file_pid != os.getpid()
+        and pid_file_pid not in seen_daemons
+        and _pid_is_running(pid_file_pid)
+        and _command_looks_like_daemon(_pid_command(pid_file_pid))
+    ):
+        daemons.append(pid_file_pid)
+
+    return daemons, blockers
+
+
+def _wait_for_pids_to_exit(pids: list[int], *, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if all(not _pid_is_running(pid) for pid in pids):
+            return True
+        time.sleep(0.2)
+    return all(not _pid_is_running(pid) for pid in pids)
+
+
+def _terminate_daemon_processes(
+    pids: list[int],
+    *,
+    timeout: float,
+    force: bool,
+) -> tuple[bool, str]:
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            return False, f"permission denied stopping daemon pid={pid}: {exc}"
+
+    if _wait_for_pids_to_exit(pids, timeout=timeout):
+        return True, f"stopped daemon pid(s): {', '.join(str(pid) for pid in pids)}"
+
+    if force:
+        for pid in pids:
+            if not _pid_is_running(pid):
+                continue
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                continue
+            except PermissionError as exc:
+                return False, f"permission denied force-stopping daemon pid={pid}: {exc}"
+        if _wait_for_pids_to_exit(pids, timeout=timeout):
+            return True, f"force-stopped daemon pid(s): {', '.join(str(pid) for pid in pids)}"
+
+    return False, (
+        "daemon did not stop before timeout; re-run with `content-stack restart --force` "
+        "if the process is wedged."
+    )
+
+
+@app.command()
+def restart(
+    host: Annotated[
+        str | None,
+        typer.Option("--host", help="Daemon host; defaults to configured loopback host."),
+    ] = None,
+    port: Annotated[
+        int | None,
+        typer.Option("--port", help="Daemon port; defaults to configured daemon port."),
+    ] = None,
+    log_level: Annotated[
+        str | None,
+        typer.Option("--log-level", help="Log level for the restarted daemon."),
+    ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Seconds to wait for stop/start readiness."),
+    ] = 20.0,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="SIGKILL the old daemon if SIGTERM does not stop it."),
+    ] = False,
+) -> None:
+    """Restart the local singleton daemon in the background."""
+    settings = get_settings()
+    settings.ensure_dirs()
+    daemon_host = host or settings.host
+    daemon_port = port or settings.port
+    daemon_log_level = (log_level or settings.log_level).upper()
+
+    if not _is_loopback_host(daemon_host):
+        typer.echo(
+            f"error: --host {daemon_host!r} is not a loopback address; refusing to start.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    daemon_pids, blocker_pids = _discover_daemon_processes(settings, daemon_port)
+    if blocker_pids:
+        typer.echo(
+            "error: port "
+            f"{daemon_port} is held by non-content-stack process pid(s): "
+            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if daemon_pids:
+        ok, message = _terminate_daemon_processes(
+            daemon_pids,
+            timeout=timeout,
+            force=force,
+        )
+        if not ok:
+            typer.echo(f"restart: {message}", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"restart: {message}")
+    elif _tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
+        typer.echo(
+            "error: daemon port is reachable, but no content-stack daemon PID could be identified.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    else:
+        typer.echo("restart: no running daemon found")
+
+    ok, message = _spawn_detached_daemon(
+        settings,
+        daemon_host,
+        daemon_port,
+        log_level=daemon_log_level,
+        log_path=settings.log_path,
+        cwd=Path.cwd(),
+        ready_timeout=timeout,
+    )
+    if not ok:
+        typer.echo(f"restart: {message}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"restart: {message}")
 
 
 @app.command(name="mcp-bridge")
@@ -262,7 +558,8 @@ def mcp_bridge(
 
             try:
                 out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
-            except Exception as exc:
+            except Exception as original_exc:
+                exc = original_exc
                 if not autostart_attempted and not _tcp_can_connect(
                     bridge_host,
                     bridge_port,
@@ -1013,7 +1310,7 @@ def rotate_token(
     msg = installer.register_mcp_claude(port=settings.port)
     typer.echo(msg)
     typer.echo("rotate-token: token rotated; MCP configs updated.")
-    typer.echo("rotate-token: restart any running daemon so it loads the new token.")
+    typer.echo("rotate-token: run `content-stack restart` so the daemon loads the new token.")
 
 
 @app.command()
