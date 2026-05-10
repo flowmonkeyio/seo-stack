@@ -19,10 +19,12 @@ from sqlmodel import SQLModel
 from typer.testing import CliRunner
 
 import content_stack.db.models  # noqa: F401  (populate SQLModel metadata)
+import content_stack.cli as cli_module
 from content_stack import install as installer
 from content_stack.cli import app
 from content_stack.config import Settings
 from content_stack.db.connection import make_engine
+from content_stack.db.migrate import current_alembic_version, upgrade_to_head
 
 
 @pytest.fixture
@@ -100,6 +102,74 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
         "command": sys.executable,
         "args": ["-m", "content_stack", "mcp-bridge"],
     }
+
+
+def test_bridge_autostart_spawns_loopback_daemon(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=sandbox / ".local" / "share" / "content-stack",
+        state_dir=sandbox / ".local" / "state" / "content-stack",
+    )
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    class FakeProcess:
+        pid = 12345
+
+        def poll(self) -> None:
+            return None
+
+    def fake_popen(args: list[str], **kwargs: object) -> FakeProcess:
+        calls.append((args, kwargs))
+        return FakeProcess()
+
+    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(cli_module, "_wait_for_daemon", lambda *args, **kwargs: True)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+
+    ok, message = cli_module._autostart_bridge_daemon(settings, "127.0.0.1", 5180)
+
+    assert ok is True
+    assert "auto-started daemon" in message
+    assert calls
+    args, kwargs = calls[0]
+    assert args == [
+        sys.executable,
+        "-m",
+        "content_stack",
+        "serve",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "5180",
+        "--log-level",
+        settings.log_level,
+    ]
+    assert kwargs["stdin"] is cli_module.subprocess.DEVNULL
+    assert kwargs["stderr"] is cli_module.subprocess.STDOUT
+    assert kwargs["start_new_session"] is True
+
+
+def test_bridge_autostart_rejects_non_loopback(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=sandbox / ".local" / "share" / "content-stack",
+        state_dir=sandbox / ".local" / "state" / "content-stack",
+    )
+
+    def fail_popen(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Popen should not be called for non-loopback hosts")
+
+    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(cli_module.subprocess, "Popen", fail_popen)
+
+    ok, message = cli_module._autostart_bridge_daemon(settings, "0.0.0.0", 5180)
+
+    assert ok is False
+    assert "non-loopback" in message
 
 
 def test_copy_skills_idempotent(sandbox: Path) -> None:
@@ -272,6 +342,19 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
         engine.dispose()
     assert version == "0004_workspace_bindings"
     assert templates >= 5
+
+
+def test_upgrade_to_head_works_outside_repo_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    monkeypatch.chdir(tmp_path)
+
+    result = upgrade_to_head(settings)
+
+    assert result.stamped_existing_schema is False
+    assert current_alembic_version(settings) == "0004_workspace_bindings"
 
 
 def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:

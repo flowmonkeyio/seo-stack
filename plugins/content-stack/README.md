@@ -23,6 +23,9 @@ use `/plugins` to inspect or toggle the plugin.
 The installed `.mcp.json` is rewritten during install to use the current Python
 environment (`python -m content_stack mcp-bridge`), so clone-mode development
 does not require a global `content-stack` executable on `PATH`.
+If the daemon is not listening yet, the bridge auto-starts it on the configured
+loopback host and writes startup output to
+`~/.local/state/content-stack/mcp-bridge-autostart.log`.
 
 ## Agent-Facing MCP Surface
 

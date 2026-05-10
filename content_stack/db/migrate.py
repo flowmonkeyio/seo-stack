@@ -24,8 +24,12 @@ class MigrationResult:
 
 def alembic_config(settings: Settings) -> Config:
     """Build an Alembic config pinned to the configured SQLite database."""
-    cfg_path = Path(__file__).resolve().parents[2] / "alembic.ini"
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg_path = repo_root / "alembic.ini"
+    migrations_path = Path(__file__).resolve().parent / "migrations"
     cfg = Config(str(cfg_path))
+    cfg.set_main_option("script_location", str(migrations_path))
+    cfg.set_main_option("prepend_sys_path", str(repo_root))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
     return cfg
 

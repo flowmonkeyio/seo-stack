@@ -724,6 +724,12 @@ regenerates the MCP configs to match.
 paths. The wheel includes the committed `ui_dist/` (it's inside the
 package), so end users never need pnpm.
 
+When an enabled Codex plugin starts before the daemon is listening, the
+plugin bridge auto-starts `python -m content_stack serve` on the configured
+loopback host and waits for the port before continuing the MCP handshake.
+Startup output lands at
+`~/.local/state/content-stack/mcp-bridge-autostart.log`.
+
 `pyproject.toml:[tool.hatch.build.targets.wheel.force-include]`
 copies `plugins/`, `skills/`, and `procedures/` under
 `content_stack/_assets/` at wheel-build time.

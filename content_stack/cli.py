@@ -14,6 +14,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -133,6 +134,74 @@ def serve(
 # ---- plugin bridge --------------------------------------------------------
 
 
+def _is_loopback_host(host: str) -> bool:
+    if host in _LOOPBACK_HOSTS:
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _wait_for_daemon(host: str, port: int, *, timeout: float = 20.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _tcp_can_connect(host, port, timeout=0.25):
+            return True
+        time.sleep(0.2)
+    return _tcp_can_connect(host, port, timeout=0.25)
+
+
+def _autostart_bridge_daemon(settings: Settings, host: str, port: int) -> tuple[bool, str]:
+    """Start the singleton daemon for plugin clients when it is not running."""
+    if _tcp_can_connect(host, port, timeout=0.25):
+        return True, "daemon already running"
+    if not _is_loopback_host(host):
+        return False, f"refusing to auto-start non-loopback daemon host {host!r}"
+
+    settings.ensure_dirs()
+    log_path = settings.state_dir / "mcp-bridge-autostart.log"
+    env = os.environ.copy()
+    env["CONTENT_STACK_HOST"] = host
+    env["CONTENT_STACK_PORT"] = str(port)
+    env.setdefault("CONTENT_STACK_LOG_LEVEL", settings.log_level)
+    args = [
+        sys.executable,
+        "-m",
+        "content_stack",
+        "serve",
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--log-level",
+        settings.log_level,
+    ]
+    try:
+        with log_path.open("ab", buffering=0) as log:
+            process = subprocess.Popen(
+                args,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                cwd=str(Path.home()),
+                env=env,
+                start_new_session=True,
+                close_fds=True,
+            )
+    except OSError as exc:
+        return False, f"failed to spawn daemon: {exc}; log={log_path}"
+
+    if _wait_for_daemon(host, port):
+        return True, f"auto-started daemon pid={process.pid}; log={log_path}"
+    exit_code = process.poll()
+    if exit_code is None:
+        return False, f"daemon did not become ready on {host}:{port}; log={log_path}"
+    return False, f"daemon exited with code {exit_code}; log={log_path}"
+
+
 @app.command(name="mcp-bridge")
 def mcp_bridge(
     host: Annotated[
@@ -173,6 +242,7 @@ def mcp_bridge(
         "Content-Type": "application/json",
     }
     proxy = AgentBridgeProxy(url=url, headers=headers)
+    autostart_attempted = False
 
     with httpx.Client(timeout=None) as client:
         for raw in sys.stdin:
@@ -193,6 +263,31 @@ def mcp_bridge(
             try:
                 out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
             except Exception as exc:
+                if not autostart_attempted and not _tcp_can_connect(
+                    bridge_host,
+                    bridge_port,
+                    timeout=0.25,
+                ):
+                    autostart_attempted = True
+                    ok, msg = _autostart_bridge_daemon(settings, bridge_host, bridge_port)
+                    typer.echo(f"mcp-bridge: {msg}", err=True)
+                    if ok:
+                        try:
+                            out = proxy.handle(
+                                client,
+                                payload=payload,
+                                line=line,
+                                request_id=request_id,
+                            )
+                        except Exception as retry_exc:
+                            exc = retry_exc
+                        else:
+                            if out:
+                                sys.stdout.write(out)
+                                if not out.endswith("\n"):
+                                    sys.stdout.write("\n")
+                                sys.stdout.flush()
+                            continue
                 if request_id is None:
                     typer.echo(f"mcp-bridge: daemon request failed: {exc}", err=True)
                     continue

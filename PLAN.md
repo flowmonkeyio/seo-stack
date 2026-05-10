@@ -1168,6 +1168,13 @@ python -m content_stack serve --port 5180
 make serve
 ```
 
+**Plugin on-demand start**:
+When Codex launches the installable plugin and the daemon is not listening,
+`content-stack mcp-bridge` starts `python -m content_stack serve` on the
+configured loopback host, waits for the port, and then resumes the MCP
+handshake. Startup output is written to
+`~/.local/state/content-stack/mcp-bridge-autostart.log`.
+
 **Auto-start on macOS** (optional):
 ```bash
 make install-launchd
