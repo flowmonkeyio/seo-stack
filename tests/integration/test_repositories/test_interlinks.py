@@ -85,10 +85,9 @@ def test_partial_unique_blocks_live_dupe(session: Session, project_id: int) -> N
             )
         ],
     )
-    # Inserting a second identical-live row should fail at DB level.
-    from sqlalchemy.exc import IntegrityError
-
-    with pytest.raises(IntegrityError):
+    # Inserting a second identical-live row should fail at DB level and be
+    # surfaced as the repository's conflict error.
+    with pytest.raises(ConflictError):
         repo.suggest(
             project_id,
             [
@@ -100,6 +99,19 @@ def test_partial_unique_blocks_live_dupe(session: Session, project_id: int) -> N
                 )
             ],
         )
+
+
+def test_partial_unique_blocks_live_dupe_with_default_position(
+    session: Session, project_id: int
+) -> None:
+    """B-09: ``position=None`` is still one live uniqueness bucket."""
+    a, b = _two_articles(session, project_id)
+    repo = InterlinkRepository(session)
+    suggestion = InterlinkSuggestion(from_article_id=a, to_article_id=b, anchor_text="default-pos")
+    repo.suggest(project_id, [suggestion])
+
+    with pytest.raises(ConflictError):
+        repo.suggest(project_id, [suggestion])
 
 
 def test_bulk_apply(session: Session, project_id: int) -> None:

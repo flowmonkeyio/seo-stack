@@ -271,7 +271,8 @@ def _read_token(home: Path) -> str:
     token_path = home / ".local" / "state" / "content-stack" / "auth.token"
     if not token_path.is_file():
         raise FileNotFoundError(
-            f"auth token missing at {token_path} — run `make serve` once first."
+            f"auth token missing at {token_path} — run `content-stack init` "
+            "or `make install` first."
         )
     return token_path.read_text(encoding="utf-8").strip()
 

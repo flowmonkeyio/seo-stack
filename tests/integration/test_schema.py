@@ -178,8 +178,7 @@ def test_eeat_seed_populates_80_items_with_3_cores(isolated_alembic: Path) -> No
 
 
 def test_partial_unique_internal_links(isolated_alembic: Path) -> None:
-    """The `WHERE status != 'dismissed'` partial unique blocks live duplicates
-    but allows duplicates if one row is dismissed."""
+    """Live duplicates are blocked, including the default ``position=NULL`` bucket."""
     _run_alembic(["upgrade", "head"])
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
@@ -213,7 +212,7 @@ def test_partial_unique_internal_links(isolated_alembic: Path) -> None:
             from_article_id=a1.id,
             to_article_id=a2.id,
             anchor_text="see the other one",
-            position=1,
+            position=None,
             status=InternalLinkStatus.SUGGESTED,
         )
         session.add(link1)
@@ -224,7 +223,7 @@ def test_partial_unique_internal_links(isolated_alembic: Path) -> None:
             from_article_id=a1.id,
             to_article_id=a2.id,
             anchor_text="see the other one",
-            position=1,
+            position=None,
             status=InternalLinkStatus.DISMISSED,
         )
         session.add(link_dup_dismissed)
@@ -235,7 +234,7 @@ def test_partial_unique_internal_links(isolated_alembic: Path) -> None:
             from_article_id=a1.id,
             to_article_id=a2.id,
             anchor_text="see the other one",
-            position=1,
+            position=None,
             status=InternalLinkStatus.APPLIED,
         )
         session.add(link_dup_live)

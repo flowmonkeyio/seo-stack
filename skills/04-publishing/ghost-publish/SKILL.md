@@ -24,6 +24,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -41,7 +43,7 @@ inputs:
     source: args
     type: int
     required: true
-    description: The publish_targets.id whose kind='ghost' the procedure runner has selected for this dispatch. Procedure 4 publishes to the primary target first, then queues secondary targets.
+    description: The publish_targets.id whose kind='ghost' the procedure controller selected for this run. Procedure 4 publishes to the primary target first, then queues secondary targets.
 outputs:
   - table: article_publishes
     write: one row per (article_id, target_id, version_published) via publish.recordPublish — published_url + frontmatter_json + status='published' on success, status='failed' + error on failure.
@@ -53,13 +55,13 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable, and the publish target is a `kind='ghost'` row whose `config_json` carries the Ghost site's URL, the default post status, the format preference (HTML / Lexical / mobiledoc), tag and author mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to Ghost's image endpoint, POSTs (or PUTs) the post to the Admin API with `?source=html`, records the publish row, and — when the dispatch is for the primary target — advances `articles.status` to `published`.
+Procedure 4 calls this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable, and the publish target is a `kind='ghost'` row whose `config_json` carries the Ghost site's URL, the default post status, the format preference (HTML / Lexical / mobiledoc), tag and author mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to Ghost's image endpoint, POSTs (or PUTs) the post to the Admin API with `?source=html`, records the publish row, and — when the run is for the primary target — advances `articles.status` to `published`.
 
-Procedure 4 publishes to the primary target first; secondary `ghost` targets (e.g., a multi-publication setup, or a Ghost-side mirror of a Nuxt primary) are dispatched in turn. Each dispatch is a fresh skill invocation with the `target_id` passed through args. The skill is idempotent on `(article_id, target_id, version_published)` because publish.recordPublish upserts. The Ghost post is identified externally by a `ghost_post_id` stored in the publish row's `frontmatter_json` so re-dispatches PUT to the existing post.
+Procedure 4 publishes to the primary target first; secondary `ghost` targets (e.g., a multi-publication setup, or a Ghost-side mirror of a Nuxt primary) are handled by the operator agent as explicit follow-up publish steps. Each invocation receives the `target_id` through args. The skill is idempotent on `(article_id, target_id, version_published)` because publish.recordPublish upserts. The Ghost post is identified externally by a `ghost_post_id` stored in the publish row's `frontmatter_json` so re-runs PUT to the existing post.
 
 The skill also runs in two non-procedure-driven modes the operator can invoke from the UI: a manual republish after a UI edit, and a content-refresh republish from procedure 7 against a humanized version. The contract is identical in both modes; only the status sequencing differs.
 
-A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute expiration) signed with the secret half of an Admin API key. The daemon's HTTP helper handles minting and refreshing tokens; the skill never reads the secret directly. The skill defaults `email_only=true` (or `status='draft'` when the operator's UI confirmation is part of the publish flow) so an automated publish never accidentally blasts an email to the publication's subscribers — that decision belongs to the human, not the procedure runner.
+A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute expiration) signed with the secret half of an Admin API key. The daemon's HTTP helper handles minting and refreshing tokens; the skill never reads the secret directly. The skill defaults `email_only=true` (or `status='draft'` when the operator's UI confirmation is part of the publish flow) so a publish step never accidentally blasts an email to the publication's subscribers — that decision belongs to the human/operator agent.
 
 ## Inputs
 
@@ -150,7 +152,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 - **Image upload returns 5xx.** Retry once. Two consecutive 5xx aborts that asset; same hero rule applies.
 - **JWT expires mid-upload (step 4).** The daemon's HTTP helper auto-mints a fresh JWT and retries the upload transparently. When the helper itself fails to mint (e.g., the credential has been rotated server-side and our copy is stale), the skill aborts with `runs.metadata_json.ghost_publish.jwt_refresh_failed=true`.
 - **POST returns 4xx (step 7).** Capture, mark `status='failed'`, surface, do not retry. Common 4xx reasons: invalid slug (Ghost returns the canonicalised version), permission denied (covered by role check), invalid `published_at` (when scheduling and the time is in the past), invalid `tags` shape (when auto-create is off and a tag slug is missing).
-- **POST returns 5xx.** Capture, mark `status='failed'`, raise so the procedure runner's `retry(3, backoff=exponential)` shape decides whether to re-dispatch.
+- **POST returns 5xx.** Capture, mark `status='failed'`, and let the procedure agent decide whether to retry.
 - **PUT returns 409 (Ghost's optimistic concurrency).** Means the post was edited externally between our last read and our update. Refresh the post via GET, capture the new `updated_at`, retry the PUT once. Two consecutive 409s abort the publish so the operator can decide whether to overwrite or merge.
 - **`email_only=false` slipped through unintentionally.** Defence-in-depth: when the composed payload would set `email_only=false` AND the operator did not explicitly opt in via the target config, downgrade to `email_only=true` and surface the override in `runs.metadata_json.ghost_publish.email_blast_prevented=true`. The skill must never blast an email to subscribers without an explicit opt-in.
 - **`publish.recordPublish` rejects.** Hard failure; the skill must always record its outcome. Surface and abort.

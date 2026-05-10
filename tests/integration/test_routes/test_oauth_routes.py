@@ -67,6 +67,37 @@ def test_callback_exchanges_code_and_persists_tokens(
     assert "oauth_state" not in config
 
 
+def test_callback_accepts_browser_redirect_without_bearer_header(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Google redirects a normal browser tab, so no Authorization header is present."""
+    auth = api.post(
+        "/api/v1/integrations/gsc/oauth/authorize",
+        json={"project_id": project_id},
+    )
+    state = auth.json()["state"]
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        json={
+            "access_token": "ya29.browser",
+            "refresh_token": "1//rt-browser",
+            "expires_in": 3600,
+            "scope": "webmasters.readonly indexing",
+            "token_type": "Bearer",
+        },
+    )
+
+    api.headers.pop("Authorization", None)
+    resp = api.get(
+        "/api/v1/integrations/gsc/oauth/callback",
+        params={"code": "auth-code-browser", "state": state},
+    )
+    assert resp.status_code == 200
+
+
 def test_callback_rejects_state_mismatch(api: TestClient, project_id: int) -> None:
     """A mismatched state nonce → 400 (not 200)."""
     api.post(

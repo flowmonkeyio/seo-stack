@@ -44,6 +44,8 @@ from content_stack.db.models import (
     ArticlePublishStatus,
     ArticleStatus,
     EeatVerdict,
+    RunKind,
+    RunStatus,
 )
 from content_stack.repositories.articles import (
     ArticleAssetOut,
@@ -66,6 +68,7 @@ from content_stack.repositories.eeat import (
 )
 from content_stack.repositories.gsc import DriftBaselineOut, DriftBaselineRepository
 from content_stack.repositories.interlinks import InterlinkRepository, InternalLinkOut
+from content_stack.repositories.runs import RunRepository
 
 project_router = APIRouter(prefix="/api/v1/projects", tags=["articles"])
 article_router = APIRouter(prefix="/api/v1/articles", tags=["articles"])
@@ -145,13 +148,13 @@ class SetEditedRequest(BaseModel):
 
 class MarkEeatPassedRequest(BaseModel):
     expected_etag: str
-    run_id: int
+    run_id: int | None = None
     eeat_criteria_version: int
 
 
 class MarkPublishedRequest(BaseModel):
     expected_etag: str
-    run_id: int
+    run_id: int | None = None
 
 
 class MarkRefreshDueRequest(BaseModel):
@@ -418,6 +421,38 @@ async def patch_article(
 # Typed verbs.
 
 
+def _manual_run_id(
+    session: Session,
+    *,
+    project_id: int,
+    article_id: int,
+    action: str,
+    supplied_run_id: int | None,
+) -> tuple[RunRepository, int, bool]:
+    """Return a supplied run id or create a REST manual-edit audit run."""
+    runs = RunRepository(session)
+    if supplied_run_id is not None:
+        return runs, supplied_run_id, False
+    run = runs.start(
+        project_id=project_id,
+        kind=RunKind.MANUAL_EDIT,
+        metadata_json={"source": "rest", "article_id": article_id, "action": action},
+    ).data
+    return runs, run.id, True
+
+
+def _finish_manual_run(
+    runs: RunRepository,
+    run_id: int,
+    *,
+    created_here: bool,
+    status: RunStatus,
+    error: str | None = None,
+) -> None:
+    if created_here:
+        runs.finish(run_id, status=status, error=error)
+
+
 @article_router.post(
     "/{article_id}/brief",
     response_model=WriteResponse[ArticleOut],
@@ -515,14 +550,28 @@ async def mark_eeat_passed(
     session: Session = Depends(get_session),
 ) -> WriteResponse[ArticleOut]:
     """Advance ``edited → eeat_passed``; freeze rubric version + run id."""
-    return write_response(
-        ArticleRepository(session).mark_eeat_passed(
+    current = ArticleRepository(session).get(article_id)
+    runs, run_id, created_here = _manual_run_id(
+        session,
+        project_id=current.project_id,
+        article_id=article_id,
+        action="mark-eeat-passed",
+        supplied_run_id=body.run_id,
+    )
+    try:
+        out = ArticleRepository(session).mark_eeat_passed(
             article_id,
             expected_etag=body.expected_etag,
-            run_id=body.run_id,
+            run_id=run_id,
             eeat_criteria_version=body.eeat_criteria_version,
         )
-    )
+    except Exception as exc:
+        _finish_manual_run(
+            runs, run_id, created_here=created_here, status=RunStatus.FAILED, error=str(exc)
+        )
+        raise
+    _finish_manual_run(runs, run_id, created_here=created_here, status=RunStatus.SUCCESS)
+    return write_response(out)
 
 
 @article_router.post(
@@ -535,11 +584,25 @@ async def mark_published(
     session: Session = Depends(get_session),
 ) -> WriteResponse[ArticleOut]:
     """Advance ``eeat_passed → published``; slug immutable from here."""
-    return write_response(
-        ArticleRepository(session).mark_published(
-            article_id, expected_etag=body.expected_etag, run_id=body.run_id
-        )
+    current = ArticleRepository(session).get(article_id)
+    runs, run_id, created_here = _manual_run_id(
+        session,
+        project_id=current.project_id,
+        article_id=article_id,
+        action="publish",
+        supplied_run_id=body.run_id,
     )
+    try:
+        out = ArticleRepository(session).mark_published(
+            article_id, expected_etag=body.expected_etag, run_id=run_id
+        )
+    except Exception as exc:
+        _finish_manual_run(
+            runs, run_id, created_here=created_here, status=RunStatus.FAILED, error=str(exc)
+        )
+        raise
+    _finish_manual_run(runs, run_id, created_here=created_here, status=RunStatus.SUCCESS)
+    return write_response(out)
 
 
 @article_router.post(

@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -41,7 +43,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after `draft-body` (#8). The conclusion seals the article: it closes whichever rhetorical loop the intro opened, surfaces the compliance footer, materialises the footnote definitions for every `[^N]` marker the intro and body planted, and explicitly advances `articles.status` from `outlined` to `drafted` via `markDrafted`. After this skill returns, the editor (#10) takes over.
+Procedure 4 calls this skill after `draft-body` (#8). The conclusion seals the article: it closes whichever rhetorical loop the intro opened, surfaces the compliance footer, materialises the footnote definitions for every `[^N]` marker the intro and body planted, and explicitly advances `articles.status` from `outlined` to `drafted` via `markDrafted`. After this skill returns, the editor (#10) takes over.
 
 Re-running this skill replaces the conclusion (overwrites whatever follows the last body H2) and re-renders the footnote block. The procedure runner controls when to re-run via etag rotation.
 

@@ -20,11 +20,13 @@ def _ctx(
     project_id: int,
     args: dict,
     run_id: int = 1,
+    step_id: str = "test-step",
     previous_outputs: dict | None = None,
 ) -> StepContext:
     return StepContext(
         runner=runner,
         run_id=run_id,
+        step_id=step_id,
         project_id=project_id,
         args=args,
         previous_outputs=dict(previous_outputs or {}),
@@ -174,6 +176,39 @@ async def test_bulk_cost_estimator_passes_under_cap(
     )
     assert out["n_topics"] == 2
     assert out["estimated_total_usd"] == pytest.approx(1.0)
+
+
+async def test_bulk_cost_estimator_accepts_csv_topic_ids(
+    runner: ProcedureRunner, scenario: dict
+) -> None:
+    """Procedure 5 accepts the documented comma-separated topic id input."""
+    handler = ProgrammaticStepRegistry.get("bulk-cost-estimator")
+    assert handler is not None
+    out = await handler(
+        _ctx(
+            runner=runner,
+            project_id=scenario["project_id"],
+            args={"topic_ids": "1, 2,3", "budget_cap_usd": 100.0},
+        )
+    )
+    assert out["n_topics"] == 3
+    assert out["estimated_total_usd"] == pytest.approx(1.5)
+
+
+async def test_bulk_cost_estimator_all_approved_selects_project_topics(
+    runner: ProcedureRunner, scenario: dict
+) -> None:
+    """Procedure 5's all-approved flag pulls approved topics for the project."""
+    handler = ProgrammaticStepRegistry.get("bulk-cost-estimator")
+    assert handler is not None
+    out = await handler(
+        _ctx(
+            runner=runner,
+            project_id=scenario["project_id"],
+            args={"all_approved": True, "budget_cap_usd": 100.0},
+        )
+    )
+    assert out["n_topics"] == 1
 
 
 async def test_select_refresh_candidates_top_n_mode(

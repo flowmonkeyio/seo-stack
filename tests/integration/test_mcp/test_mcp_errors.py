@@ -24,7 +24,19 @@ def test_validation_error_maps_to_minus_32602(mcp_client: MCPClient) -> None:
 
 def test_drift_diff_returns_milestone_deferral(mcp_client: MCPClient, seeded_project: dict) -> None:
     """drift.diff returns -32601 with milestone='M6' hint (drift-watch skill)."""
-    err = mcp_client.call_tool_error("drift.diff", {"baseline_id": 1, "current_md": "x"})
+    run = mcp_client.call_tool_structured(
+        "run.start",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "kind": "procedure",
+            "procedure_slug": "05-ongoing/drift-watch",
+            "skill_name": "05-ongoing/drift-watch",
+        },
+    )
+    err = mcp_client.call_tool_error(
+        "drift.diff",
+        {"baseline_id": 1, "current_md": "x", "run_token": run["data"]["run_token"]},
+    )
     assert err["code"] == -32601
     assert err["message"] == "MilestoneDeferralError"
     assert err["data"]["milestone"] == "M6"

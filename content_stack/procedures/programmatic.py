@@ -1,10 +1,10 @@
-"""``_programmatic/*`` step handlers — M8.
+"""``_programmatic/*`` step handlers.
 
 Procedures 1, 5, 6, 7, 8 declare steps whose ``skill`` field starts with
-the synthetic ``_programmatic/`` prefix. These steps don't dispatch a
-fresh LLM session — they call dedicated repository / integration code
-inside the daemon. The runner detects the prefix at dispatch time and
-routes through this registry instead of the LLM dispatcher.
+the synthetic ``_programmatic/`` prefix. These steps do not start a
+fresh model session. The current agent explicitly calls
+``procedure.executeProgrammaticStep`` and the daemon runs dedicated
+repository / integration code for that one deterministic step.
 
 Each handler is an async callable ``(StepContext) -> StepResult`` where:
 
@@ -15,31 +15,33 @@ Each handler is an async callable ``(StepContext) -> StepResult`` where:
 
 Handlers raise:
 
-- ``HumanReviewPause`` to ask the runner for an operator pause (the
-  runner translates this into a ``human_review`` on_failure code path).
+- ``HumanReviewPause`` to ask the current agent/operator to manage child
+  runs, approve queued work, or provide missing setup before retrying.
 - Any other ``Exception`` to fail the step — the runner wraps the
   message and applies the step's declared ``on_failure`` mode.
 
 Per audit P-I1 procedure 7's per-candidate refresh chain runs sequentially
-inside ``_programmatic/humanize-each``; per audit M-25 procedure 5's
-budget gate fires inside ``_programmatic/estimate-cost``.
+under agent control; per audit M-25 procedure 5's budget gate fires
+inside ``_programmatic/bulk-cost-estimator``.
 """
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlmodel import Session, select
 
 from content_stack.db.models import (
     EeatCriterion,
+    ProcedureRunStep,
     Project,
     Run,
     RunStatus,
+    Topic,
+    TopicStatus,
 )
 from content_stack.logging import get_logger
 from content_stack.repositories.articles import ArticleRepository
@@ -57,11 +59,6 @@ _log = get_logger(__name__)
 # Audit M-25 says budget gates exist; we pick conservative numbers so
 # tests can assert on the gate firing without burning real model calls.
 PROCEDURE_FOUR_PER_TOPIC_USD = 0.50  # rough average across all 12 steps
-
-# Polling interval for ``_programmatic/wait-for-children``. Tests can
-# override via the args.
-DEFAULT_CHILD_POLL_SECONDS = 30.0
-MAX_CHILD_WAIT_SECONDS = 24 * 3600.0  # 24 h sanity ceiling
 
 # Niche-specific compliance defaults consumed by procedure 1's
 # ``_programmatic/compliance-seed`` step. Each entry is a list of
@@ -127,18 +124,17 @@ def _utcnow() -> datetime:
 class StepContext:
     """Per-step state passed to a programmatic handler.
 
-    Mirrors the LLM dispatcher's ``StepDispatch`` shape but with a
-    repository-friendly view (engine + a ready-to-use session factory).
-    The ``runner`` field is the live ``ProcedureRunner`` instance —
-    handlers that spawn child runs (procedure 5, 8) call
-    ``runner.start(...)`` directly.
+    The ``runner`` field is the live ``ProcedureRunner`` instance.
+    Handlers that need child procedures call ``runner.start(...)`` to
+    open child runs for the current agent to manage.
     """
 
     runner: ProcedureRunner
     run_id: int
+    step_id: str
     project_id: int
     args: dict[str, Any]
-    """Merged step.args + procedure-level args at dispatch time."""
+    """Merged step.args + procedure-level args for this step package."""
 
     previous_outputs: dict[str, dict[str, Any]] = field(default_factory=dict)
     parent_run_id: int | None = None
@@ -153,15 +149,23 @@ StepResult = dict[str, Any]
 
 
 class HumanReviewPause(Exception):
-    """Sentinel — runner translates to ``on_failure='human_review'``.
+    """Sentinel — runner records a retryable human/agent pause.
 
-    Carries a ``reason`` for the audit row + UI display.
+    Carries a ``reason`` for the audit row + UI display and optional
+    structured data for the next retry.
     """
 
-    def __init__(self, reason: str, *, hint: str | None = None) -> None:
+    def __init__(
+        self,
+        reason: str,
+        *,
+        hint: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.hint = hint
+        self.data = data or {}
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +180,8 @@ class ProgrammaticStepRegistry:
     """Decorator-style registry for programmatic step handlers.
 
     Handlers register at import time with ``@register('name')``; the
-    runner resolves at dispatch time via ``dispatch('name', ctx)``.
+    controller resolves the handler when
+    ``procedure.executeProgrammaticStep`` is called.
     """
 
     # ClassVar annotation tells ruff RUF012 we *intend* this dict to be
@@ -342,6 +347,41 @@ async def _bootstrap_verify(ctx: StepContext) -> StepResult:
 # ---------------------------------------------------------------------------
 
 
+def _parse_topic_ids(value: Any) -> list[int]:
+    """Normalise procedure-5 topic ids from list or comma-separated string."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [int(item) for item in value]
+    if isinstance(value, str):
+        return [int(part.strip()) for part in value.split(",") if part.strip()]
+    raise ValueError(
+        f"topic_ids must be a list or comma-separated string (got {type(value).__name__})"
+    )
+
+
+def _bool_arg(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _bulk_topic_ids(ctx: StepContext) -> list[int]:
+    """Resolve procedure-5 topic selection from explicit ids or all-approved."""
+    if _bool_arg(ctx.args.get("all_approved", False)):
+        with Session(ctx.engine) as s:
+            ids = s.exec(
+                select(Topic.id).where(
+                    Topic.project_id == ctx.project_id,
+                    Topic.status == TopicStatus.APPROVED,
+                )
+            ).all()
+        return [int(tid) for tid in ids if tid is not None]
+    return _parse_topic_ids(ctx.args.get("topic_ids"))
+
+
 @ProgrammaticStepRegistry.register("bulk-cost-estimator")
 async def _bulk_cost_estimator(ctx: StepContext) -> StepResult:
     """Sum per-topic cost x N topics; raise if > budget cap.
@@ -350,11 +390,7 @@ async def _bulk_cost_estimator(ctx: StepContext) -> StepResult:
     Audit M-25: a breach raises ``BudgetExceededError`` *before* fanning
     out child procedure 4 runs.
     """
-    topic_ids = ctx.args.get("topic_ids") or []
-    if not isinstance(topic_ids, list):
-        raise ValueError(
-            f"estimate-cost requires args.topic_ids to be a list (got {type(topic_ids).__name__})"
-        )
+    topic_ids = _bulk_topic_ids(ctx)
     cap = ctx.args.get("budget_cap_usd")
     n_topics = len(topic_ids)
     estimated = round(n_topics * PROCEDURE_FOUR_PER_TOPIC_USD, 4)
@@ -374,9 +410,7 @@ async def _bulk_cost_estimator(ctx: StepContext) -> StepResult:
 @ProgrammaticStepRegistry.register("spawn-procedure-4-batch")
 async def _spawn_procedure_4_batch(ctx: StepContext) -> StepResult:
     """Fan out one procedure 4 run per topic, linked via ``parent_run_id``."""
-    topic_ids = ctx.args.get("topic_ids") or []
-    if not isinstance(topic_ids, list):
-        raise ValueError("spawn-procedure-4-batch requires args.topic_ids list")
+    topic_ids = _bulk_topic_ids(ctx)
     spawned: list[int] = []
     for tid in topic_ids:
         envelope = await ctx.runner.start(
@@ -389,53 +423,31 @@ async def _spawn_procedure_4_batch(ctx: StepContext) -> StepResult:
     return {
         "spawned_run_ids": spawned,
         "parent_run_id": ctx.run_id,
+        "topic_ids": topic_ids,
     }
-
-
-async def _await_children(
-    *,
-    engine: Engine,
-    parent_run_id: int,
-    poll_seconds: float,
-    timeout_seconds: float,
-) -> tuple[list[int], list[int], list[int]]:
-    """Poll until every child run is terminal; return (success, failed, aborted) ids.
-
-    Returns immediately when there are no children (the spawn step
-    found nothing to run — e.g. an empty topic_ids list).
-    """
-    deadline = _utcnow() + timedelta(seconds=timeout_seconds)
-    while True:
-        with Session(engine) as s:
-            children = s.exec(select(Run).where(Run.parent_run_id == parent_run_id)).all()
-        if not children:
-            # Nothing to wait on — return early. This matches the
-            # case where ``spawn-procedure-4-batch`` was passed an
-            # empty topic_ids list.
-            return [], [], []
-        statuses = {c.id: c.status for c in children if c.id is not None}
-        terminal = (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.ABORTED)
-        if all(s in terminal for s in statuses.values()):
-            success = [rid for rid, s in statuses.items() if s == RunStatus.SUCCESS]
-            failed = [rid for rid, s in statuses.items() if s == RunStatus.FAILED]
-            aborted = [rid for rid, s in statuses.items() if s == RunStatus.ABORTED]
-            return success, failed, aborted
-        if _utcnow() >= deadline:
-            return [], [], []
-        await asyncio.sleep(poll_seconds)
 
 
 @ProgrammaticStepRegistry.register("wait-for-children")
 async def _wait_for_children(ctx: StepContext) -> StepResult:
-    """Poll the spawned child runs until terminal."""
-    poll_seconds = float(ctx.args.get("poll_seconds", DEFAULT_CHILD_POLL_SECONDS))
-    timeout_seconds = float(ctx.args.get("timeout_seconds", MAX_CHILD_WAIT_SECONDS))
-    success, failed, aborted = await _await_children(
-        engine=ctx.engine,
-        parent_run_id=ctx.run_id,
-        poll_seconds=poll_seconds,
-        timeout_seconds=timeout_seconds,
-    )
+    """Summarise spawned child runs or pause until the agent completes them."""
+    with Session(ctx.engine) as s:
+        children = s.exec(select(Run).where(Run.parent_run_id == ctx.run_id)).all()
+    statuses = {int(c.id): c.status for c in children if c.id is not None}
+    success = [rid for rid, status in statuses.items() if status == RunStatus.SUCCESS]
+    failed = [rid for rid, status in statuses.items() if status == RunStatus.FAILED]
+    aborted = [rid for rid, status in statuses.items() if status == RunStatus.ABORTED]
+    running = [rid for rid, status in statuses.items() if status == RunStatus.RUNNING]
+    if running:
+        raise HumanReviewPause(
+            "child procedure runs are still active",
+            hint="Complete or abort the listed child runs, then retry this step.",
+            data={
+                "running_run_ids": running,
+                "success": success,
+                "failed": failed,
+                "aborted": aborted,
+            },
+        )
     return {
         "success": success,
         "failed": failed,
@@ -546,7 +558,7 @@ async def _topic_approval_pause(ctx: StepContext) -> StepResult:
 
 @ProgrammaticStepRegistry.register("run-child-procedure")
 async def _run_child_procedure(ctx: StepContext) -> StepResult:
-    """Spawn a named child procedure + await its completion.
+    """Spawn a named child procedure and pause until the agent completes it.
 
     ``ctx.args.child_procedure`` names the child slug; remaining args
     are forwarded to the child runner. Failure of the child propagates
@@ -555,6 +567,29 @@ async def _run_child_procedure(ctx: StepContext) -> StepResult:
     child_slug = ctx.args.get("child_procedure")
     if not child_slug:
         raise ValueError("run-child-procedure requires args.child_procedure (slug)")
+    prior = _current_step_output(ctx)
+    prior_child_id = prior.get("child_run_id")
+    if prior_child_id is not None:
+        child_run_id = int(prior_child_id)
+        with Session(ctx.engine) as s:
+            child_row = RunRepository(s).get(child_run_id)
+        if child_row.status == RunStatus.RUNNING:
+            raise HumanReviewPause(
+                f"child procedure {child_slug!r} still running",
+                hint=f"Complete child run {child_run_id}, then retry this step.",
+                data=prior,
+            )
+        if child_row.status in (RunStatus.FAILED, RunStatus.ABORTED):
+            raise RuntimeError(
+                f"child procedure {child_slug!r} ended in {child_row.status.value!r}: "
+                f"{child_row.error or 'no error message'}"
+            )
+        return {
+            "child_run_id": child_run_id,
+            "child_slug": str(child_slug),
+            "child_status": child_row.status.value,
+        }
+
     child_args = {k: v for k, v in ctx.args.items() if k not in {"child_procedure"}}
     envelope = await ctx.runner.start(
         slug=str(child_slug),
@@ -563,28 +598,33 @@ async def _run_child_procedure(ctx: StepContext) -> StepResult:
         parent_run_id=ctx.run_id,
     )
     child_run_id = int(envelope["run_id"])
-    # Wait for terminal status — runner.wait_for awaits the asyncio task
-    # if the runner has it; for cross-instance races (unlikely in M8) we
-    # poll the DB once at the end as belt-and-braces.
-    await ctx.runner.wait_for(child_run_id)
-    with Session(ctx.engine) as s:
-        run_repo = RunRepository(s)
-        child_row = run_repo.get(child_run_id)
-    if child_row.status in (RunStatus.FAILED, RunStatus.ABORTED):
-        raise RuntimeError(
-            f"child procedure {child_slug!r} ended in {child_row.status.value!r}: "
-            f"{child_row.error or 'no error message'}"
-        )
-    return {
+    data = {
         "child_run_id": child_run_id,
         "child_slug": str(child_slug),
-        "child_status": child_row.status.value,
+        "child_status": RunStatus.RUNNING.value,
     }
+    raise HumanReviewPause(
+        f"child procedure {child_slug!r} opened",
+        hint=f"Manage child run {child_run_id}, then retry this step.",
+        data=data,
+    )
+
+
+def _current_step_output(ctx: StepContext) -> dict[str, Any]:
+    """Return this step row's existing output, if a retry is in progress."""
+    with Session(ctx.engine) as s:
+        row = s.exec(
+            select(ProcedureRunStep).where(
+                ProcedureRunStep.run_id == ctx.run_id,
+                ProcedureRunStep.step_id == ctx.step_id,
+            )
+        ).first()
+    if row is None or not isinstance(row.output_json, dict):
+        return {}
+    return dict(row.output_json)
 
 
 __all__ = [
-    "DEFAULT_CHILD_POLL_SECONDS",
-    "MAX_CHILD_WAIT_SECONDS",
     "PROCEDURE_FOUR_PER_TOPIC_USD",
     "HumanReviewPause",
     "ProgrammaticHandler",

@@ -68,9 +68,9 @@ def test_run_token_correlation_to_run(mcp_client: MCPClient, seeded_project: dic
 
 
 def test_run_resume_routes_to_runner(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """run.resume now routes through the procedure runner (M8 — live)."""
+    """run.resume now routes through the procedure controller."""
     # ``run.resume`` requires a procedure-kind run with a procedure_slug
-    # set so the runner can dispatch. A bare ``run.start`` without a
+    # set so the controller can resolve a spec. A bare ``run.start`` without a
     # procedure_slug is rejected at the runner layer with ValidationError
     # (-32602). That's the M8 contract — the deferral is gone.
     env = mcp_client.call_tool_structured(

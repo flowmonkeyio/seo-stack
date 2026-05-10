@@ -27,13 +27,13 @@ from content_stack.integrations._base import BaseIntegration, IntegrationCallRes
 
 
 class FirecrawlIntegration(BaseIntegration):
-    """Wrapper for ``https://api.firecrawl.dev/v1``."""
+    """Wrapper for ``https://api.firecrawl.dev/v2``."""
 
     kind = "firecrawl"
     vendor = "firecrawl"
     default_qps = 2.0
 
-    BASE_URL = "https://api.firecrawl.dev/v1"
+    BASE_URL = "https://api.firecrawl.dev/v2"
 
     _ESTIMATED_COSTS: ClassVar[dict[str, float]] = {
         "scrape": 0.001,
@@ -96,7 +96,7 @@ class FirecrawlIntegration(BaseIntegration):
                 "formats": ["markdown"],
                 "onlyMainContent": True,
             },
-            "maxDepth": max_depth,
+            "maxDiscoveryDepth": max_depth,
         }
         return await self.call(
             op="crawl",
@@ -132,7 +132,7 @@ class FirecrawlIntegration(BaseIntegration):
         prompt: str | None = None,
     ) -> IntegrationCallResult:
         """Structured-data extraction with optional JSON schema."""
-        body: dict[str, Any] = {"url": url}
+        body: dict[str, Any] = {"urls": [url]}
         if schema is not None:
             body["schema"] = schema
         if prompt is not None:

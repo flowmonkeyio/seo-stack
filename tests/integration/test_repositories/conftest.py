@@ -54,7 +54,7 @@ def _emit_partial_indexes(engine: object) -> None:
     statements = [
         # Partial unique on internal_links (audit B-09)
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_internal_links_unique "
-        "ON internal_links(from_article_id, to_article_id, anchor_text, position) "
+        "ON internal_links(from_article_id, to_article_id, anchor_text, COALESCE(position, -1)) "
         "WHERE status != 'dismissed'",
         # Primary publish target (audit B-08)
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_publish_targets_primary "

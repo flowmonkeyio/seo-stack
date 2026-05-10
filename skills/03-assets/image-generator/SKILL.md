@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -41,7 +43,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after the EEAT gate (#11) returns SHIP and before alt-text-auditor (#14). The article body is final and frozen at this point — image prompts can ground in the actual headings and the actual paragraph the inline image sits next to. Running earlier is wasteful: a FIX loop that rewrites a section invalidates whatever inline image was generated against the previous text.
+Procedure 4 calls this skill after the EEAT gate (#11) returns SHIP and before alt-text-auditor (#14). The article body is final and frozen at this point — image prompts can ground in the actual headings and the actual paragraph the inline image sits next to. Running earlier is wasteful: a FIX loop that rewrites a section invalidates whatever inline image was generated against the previous text.
 
 The skill also runs in two ad-hoc modes the procedure runner does not orchestrate. The first is a per-article re-generation when the operator deletes one or more `article_assets` rows via the UI and wants the gaps refilled. The second is procedure 7's monthly humanize pass, which can ask for a fresh hero on a refreshed article when the brief's `image_directives.regenerate_on_refresh` is true. In both modes the contract is the same: read what assets already exist via `asset.list`, generate only the missing slots, never duplicate hero or og positions.
 

@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -37,9 +39,9 @@ outputs:
 
 ## When to use
 
-Procedure 6 (`weekly-gsc-review`) dispatches this skill once per project, after gsc-opportunity-finder (#20) has filed the week's queue updates. The skill walks every `articles WHERE status='published' AND project_id=:p` row, fetches the canonical published URL via Firecrawl, captures the element bag the comparison framework operates on, and either calls `drift.diff` (when the M6 comparison engine is live) or stops at snapshot capture (the M6 deferral path; the skill remains useful even without the diff because the snapshot history is what the engine eventually compares against).
+Procedure 6 (`weekly-gsc-review`) calls this skill once per project, after gsc-opportunity-finder (#20) has filed the week's queue updates. The skill walks every `articles WHERE status='published' AND project_id=:p` row, fetches the canonical published URL via Firecrawl, captures the element bag the comparison framework operates on, and either calls `drift.diff` (when the M6 comparison engine is live) or stops at snapshot capture (the M6 deferral path; the skill remains useful even without the diff because the snapshot history is what the engine eventually compares against).
 
-Procedure 7 (`monthly-humanize-pass`) re-dispatches the skill against any single article being refreshed: the article's pre-refresh and post-refresh snapshots both feed the baseline so the operator can audit what the refresh changed at the rendered-HTML level. The operator can also trigger a single-article snapshot from `ArticleDetailView.vue` when they suspect a rogue WordPress edit; the contract is identical, scoped to one article id passed via args.
+Procedure 7 (`monthly-humanize-pass`) runs the skill against any single article being refreshed: the article's pre-refresh and post-refresh snapshots both feed the baseline so the operator can audit what the refresh changed at the rendered-HTML level. The operator can also trigger a single-article snapshot from `ArticleDetailView.vue` when they suspect a rogue WordPress edit; the contract is identical, scoped to one article id passed via args.
 
 The skill graceful-degrades when `drift.diff` raises `MilestoneDeferralError` (the M6 deferral path documented in `content_stack/mcp/tools/gsc.py:_drift_diff`). In that mode the skill runs every step except the diff itself: it captures the snapshot, persists the element bag to `drift_baselines`, surfaces a deferred-diff warning to the operator via `runs.metadata_json.drift_watch.diff_deferred=true`, and exits cleanly. When the comparison engine lands in a follow-up milestone, the diff path activates without skill changes — the skill calls `drift.diff` first; only the deferral-error catch flips to the snapshot-only path.
 

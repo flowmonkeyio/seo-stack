@@ -50,9 +50,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from content_stack.db.models import (
@@ -659,21 +660,51 @@ class ArticleRepository:
         - Rotate ``step_etag``, advance ``last_completed_step``, bump
           ``updated_at``.
         """
-        row = self._fetch(article_id)
-        # ETag check first — cheaper short-circuit on contention.
-        if expected_etag != row.step_etag:
-            raise ConflictError(
-                "expected_etag mismatch — article was modified concurrently",
-                data={
-                    "expected_etag": expected_etag,
-                    "current_etag": row.step_etag,
-                    "article_id": article_id,
-                    "step": step,
-                },
-            )
-        # From-status gate.
         allowed = (from_status,) if isinstance(from_status, ArticleStatus) else from_status
-        if row.status not in allowed:
+        if to_status is not None:
+            for status in allowed:
+                if to_status != status:
+                    validate_transition(
+                        status, to_status, ARTICLE_STATUS_TRANSITIONS, label="article.status"
+                    )
+
+        values: dict[str, Any] = {}
+        for k, v in patch.items():
+            if append_field == k and v is not None:
+                values[k] = func.coalesce(getattr(Article, k), "") + v
+            else:
+                values[k] = v
+        if to_status is not None:
+            values["status"] = to_status
+        values["step_etag"] = _new_etag()
+        values["last_completed_step"] = step
+        values["updated_at"] = _utcnow()
+
+        stmt = (
+            update(Article)
+            .where(
+                cast(Any, Article.id) == article_id,
+                cast(Any, Article.step_etag) == expected_etag,
+                cast(Any, Article.status).in_(allowed),
+            )
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+        result = self._s.execute(stmt)
+        if cast(Any, result).rowcount != 1:
+            self._s.rollback()
+            self._s.expire_all()
+            row = self._fetch(article_id)
+            if expected_etag != row.step_etag:
+                raise ConflictError(
+                    "expected_etag mismatch — article was modified concurrently",
+                    data={
+                        "expected_etag": expected_etag,
+                        "current_etag": row.step_etag,
+                        "article_id": article_id,
+                        "step": step,
+                    },
+                )
             raise ConflictError(
                 f"{step} requires status in {[s.value for s in allowed]}, "
                 f"current is {row.status.value!r}",
@@ -684,26 +715,9 @@ class ArticleRepository:
                     "article_id": article_id,
                 },
             )
-        # Apply patch with optional append.
-        for k, v in patch.items():
-            if append_field == k and v is not None:
-                current = getattr(row, k) or ""
-                setattr(row, k, current + v)
-            else:
-                setattr(row, k, v)
-        # Status transition.
-        if to_status is not None and to_status != row.status:
-            validate_transition(
-                row.status, to_status, ARTICLE_STATUS_TRANSITIONS, label="article.status"
-            )
-            row.status = to_status
-        # Etag + step bookkeeping.
-        row.step_etag = _new_etag()
-        row.last_completed_step = step
-        row.updated_at = _utcnow()
-        self._s.add(row)
         self._s.commit()
-        self._s.refresh(row)
+        self._s.expire_all()
+        row = self._fetch(article_id)
         return Envelope(data=ArticleOut.model_validate(row), project_id=row.project_id)
 
 

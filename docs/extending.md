@@ -99,8 +99,8 @@ Fields:
   verbatim. The startup smoke check + the unit test
   `tests/integration/test_skills_frontmatter.py::test_allowed_tools_matches_permissions_matrix`
   enforces parity.
-- `inputs` — keys the procedure runner sets via env vars; the skill
-  body reads them.
+- `inputs` — context keys the agent-led procedure step package
+  supplies; the skill body reads them.
 - `outputs` — tables the skill writes; surfaces in the UI for
   blast-radius prediction.
 
@@ -292,13 +292,15 @@ time so each active project's cron-triggered procedures land as
 Two kinds of steps:
 
 - **Skill steps** — `skill: <phase>/<name>` (e.g., `02-content/editor`).
-  Runner dispatches via `LLMDispatcher`; the LLM session loads
-  `skills/<phase>/<name>/SKILL.md`.
+  The current agent claims the step via `procedure.claimStep`, receives
+  `skills/<phase>/<name>/SKILL.md`, executes the work through MCP, and
+  records output with `procedure.recordStep`.
 - **Programmatic steps** — `skill: _programmatic/<name>` (e.g.,
   `_programmatic/project-create`,
-  `_programmatic/spawn-procedure-4-batch`). Runner dispatches via
-  `ProgrammaticStepRegistry.dispatch`; no LLM session, just Python
-  code that touches the DB or kicks off child runs.
+  `_programmatic/spawn-procedure-4-batch`). The current agent calls
+  `procedure.executeProgrammaticStep`; the daemon runs the registered
+  Python handler for that one deterministic step. No LLM session is
+  spawned.
 
 See section 3 below for adding new programmatic handlers.
 
@@ -306,11 +308,11 @@ See section 3 below for adding new programmatic handlers.
 
 | Mode           | Required keys                      | Effect                                                                          |
 | -------------- | ---------------------------------- | ------------------------------------------------------------------------------- |
-| `abort`        | —                                  | Mark `runs.status='failed'`; raise.                                             |
-| `retry`        | `max_retries >= 1`                 | Re-dispatch same step; capped at `max_retries` (cap 3 even if higher declared). |
-| `loop_back`    | `loop_back_to: <prior step.id>`    | Jump to prior step; capped at `procedure_runner_max_loop_iterations` (default 3). |
-| `skip`         | —                                  | Mark `procedure_run_steps.status='skipped'`; advance.                           |
-| `human_review` | —                                  | Mark step paused; UI shows "needs review" badge; resume picks up.               |
+| `abort`        | —                                  | A failed record marks `runs.status='failed'`.                                   |
+| `retry`        | `max_retries >= 1`                 | The agent retries the same step, respecting the cap in the step context.        |
+| `loop_back`    | `loop_back_to: <prior step.id>`    | The agent returns to a prior step, respecting the loop cap.                     |
+| `skip`         | —                                  | The agent may record the step as `skipped` and continue.                        |
+| `human_review` | —                                  | The agent records a review pause, waits for operator input, then retries.       |
 
 The parser validates these at load time:
 
@@ -328,7 +330,7 @@ mysterious 500 on the first `procedure.run`.
 Two override shapes:
 
 - `args_overrides` — dict keyed by step id; merges into that step's
-  `args` at dispatch time. Useful for "deeper research" or "longer
+  `args` in the step package. Useful for "deeper research" or "longer
   word count" without authoring a separate procedure.
 - `steps_omit` — list of step ids to skip entirely (status='skipped').
   Useful for "short-form" variants that drop the asset chain.
@@ -401,9 +403,11 @@ steps:
     on_failure: abort
 ```
 
-The runner's resolution: `skill` starts with `_programmatic/`?
-`ProgrammaticStepRegistry.dispatch(name, ctx)` else
-`LLMDispatcher.dispatch`.
+Programmatic resolution: if `skill` starts with `_programmatic/`, the
+step package returns `next_action='execute_programmatic_step'` and the
+current agent calls `procedure.executeProgrammaticStep`. Otherwise the
+step is a normal skill step and the current external agent follows the
+referenced skill.
 
 ### 3.3 Pause for operator review
 
@@ -424,9 +428,10 @@ async def _approve_topics(ctx: StepContext) -> StepResult:
     return {"approved_count": ctx.args["approved"]}
 ```
 
-The runner catches `HumanReviewPause`, marks the step paused, and
-emits the event for the UI. `procedure.resume(run_id, args={...})`
-re-dispatches the step with the operator's input merged into `args`.
+The controller catches `HumanReviewPause`, records a failed step with
+`human_review=true`, and keeps the run in agent-led mode. After the
+operator completes the requested action, the current agent retries the
+same step.
 
 ### 3.4 Spawning child runs
 
@@ -444,13 +449,14 @@ async def _spawn_batch(ctx: StepContext) -> StepResult:
             args={"topic_id": topic_id},
             parent_run_id=ctx.run_id,        # parent-child relationship
         )
-        children.append(result.run_id)
+        children.append(result["run_id"])
     return {"child_run_ids": children}
 ```
 
-The parent's `concurrency_limit` (per-procedure, semaphore-backed)
-queues additional children when capacity is full; APScheduler's
-per-job_id `max_instances=1` provides the cross-process serialisation.
+The child runs are opened with `parent_run_id` so the current agent can
+manage them as a visible tree. A later `_programmatic/wait-for-children`
+step summarizes terminal child runs or returns a review pause while any
+child is still running.
 
 ### 3.5 Tests
 
@@ -587,9 +593,10 @@ tool is not in `SKILL_TOOL_GRANTS[skill_name]`.
 
 Two reserved names get full grants:
 
-- `__system__` — direct REST/UI calls (no run_token present);
-  `is_full_grant` short-circuits the matrix lookup.
-- `__test__` — test fixtures; same short-circuit. Naming convention:
+- `__system__` — direct REST/UI calls (no run_token present); this gets
+  a deliberately narrow bootstrap allow-list.
+- `__test__` — test fixtures; `is_full_grant` short-circuits the
+  matrix lookup. Naming convention:
   test-only skills use the `_test_` prefix so production names cannot
   collide.
 

@@ -15,6 +15,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -37,7 +39,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill immediately after the image-generator (#13). The generator drafted candidate alt text per slot; this skill is the consistency gate that confirms each candidate meets the rubric, fits its file-size tier, uses a sensible format, and carries the right above-the-fold loading hints for the publish step. The auditor either accepts the generator's draft (no asset.update call needed) or rewrites it (one asset.update call per refined alt text), and always emits a structured rubric report under `runs.metadata_json.alt_text_audit` so the EEAT gate's rerun-after-images audit can read it.
+Procedure 4 calls this skill immediately after the image-generator (#13). The generator drafted candidate alt text per slot; this skill is the consistency gate that confirms each candidate meets the rubric, fits its file-size tier, uses a sensible format, and carries the right above-the-fold loading hints for the publish step. The auditor either accepts the generator's draft (no asset.update call needed) or rewrites it (one asset.update call per refined alt text), and always emits a structured rubric report under `runs.metadata_json.alt_text_audit` so the EEAT gate's rerun-after-images audit can read it.
 
 The skill also runs in a standalone mode the operator can invoke from the UI on any already-published article whose alt-text quality the operator suspects has drifted (e.g., a publish-target migration changed image hosting and broke alt attributes). In standalone mode the audit is identical; the only difference is the procedure runner is not in the loop, and the runs row is the audit's own surface for the report.
 

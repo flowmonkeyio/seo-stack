@@ -18,6 +18,7 @@ code checks ``test_credentials`` before issuing the first real op.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from content_stack.integrations._base import BaseIntegration, IntegrationCallResult
@@ -56,19 +57,26 @@ class AhrefsIntegration(BaseIntegration):
             "Accept": "application/json",
         }
 
+    @staticmethod
+    def _default_report_date() -> str:
+        """Use yesterday: Ahrefs reports are date-bound and may lag today."""
+        return (date.today() - timedelta(days=1)).isoformat()
+
     async def keywords_for_site(
         self,
         *,
         target: str,
         country: str = "us",
         limit: int = 100,
+        date_: str | None = None,
     ) -> IntegrationCallResult:
         """Keyword inventory for the target domain."""
         params = {
             "target": target,
             "country": country,
             "limit": str(limit),
-            "select": "keyword,volume,cpc,position,kd",
+            "date": date_ or self._default_report_date(),
+            "select": "keyword,volume,cpc,best_position,keyword_difficulty",
         }
         return await self.call(
             op="keywords_for_site",
@@ -90,18 +98,18 @@ class AhrefsIntegration(BaseIntegration):
             "target": target,
             "mode": mode,
             "limit": str(limit),
-            "select": "url_from,url_to,domain_rating,first_seen",
+            "select": "url_from,url_to,domain_rating_source,first_seen",
         }
         return await self.call(
             op="top_backlinks",
             method="GET",
-            url=f"{self.BASE_URL}/site-explorer/backlinks",
+            url=f"{self.BASE_URL}/site-explorer/all-backlinks",
             params=params,
             headers=self._auth_headers(),
         )
 
     async def test_credentials(self) -> dict[str, Any]:
-        """Cheap auth probe — call ``site-explorer/overview`` for a tiny target.
+        """Cheap auth probe — call a free ``domain-rating`` query.
 
         Raises ``IntegrationDownError`` with the Enterprise-only hint
         when no key is configured (graceful degrade — the keyword-
@@ -111,8 +119,8 @@ class AhrefsIntegration(BaseIntegration):
         result = await self.call(
             op="test",
             method="GET",
-            url=f"{self.BASE_URL}/site-explorer/overview",
-            params={"target": "example.com", "country": "us"},
+            url=f"{self.BASE_URL}/site-explorer/domain-rating",
+            params={"target": "wordcount.com", "date": self._default_report_date()},
             headers=self._auth_headers(),
         )
         return {"ok": True, "vendor": "ahrefs", "data": result.data}

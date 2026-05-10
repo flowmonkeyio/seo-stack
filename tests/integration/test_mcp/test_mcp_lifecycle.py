@@ -26,7 +26,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "integration": 5,
     "interlink": 6,
     "meta": 1,
-    "procedure": 5,
+    "procedure": 9,
     "project": 8,
     "publish": 3,
     "redirect": 3,
@@ -43,6 +43,7 @@ EXPECTED_NAMESPACE_COUNTS = {
 # Total = sum of values; locked here to flag accidental drops.
 EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
 # 125 at M3 land; 126 at M6.A (added ``sitemap.fetch`` for skill #5).
+# Agent-led procedures add current/claim/record/execute control tools.
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:

@@ -7,8 +7,10 @@ against the skill's allow-list.
 
 At M3 the matrix is intentionally narrow:
 
-- ``__system__`` / ``__test__`` — full grant. The first is used for
-  direct human REST/UI access; the second is the test fixture.
+- ``__system__`` — a small bootstrap grant for direct MCP setup calls
+  before a run token exists.
+- ``__test__`` — a reserved full-grant sentinel for tests that bind it
+  explicitly. Unmatched tokens never resolve to it.
 - ``_test_*`` skills (e.g. ``_test_keyword_discovery``,
   ``_test_editor``) — narrow grants used by the verification tests in
   ``tests/integration/test_mcp/test_mcp_tool_grants.py``.
@@ -26,12 +28,13 @@ from content_stack.db.models import Run
 from content_stack.mcp.errors import ToolNotGrantedError
 
 # ---------------------------------------------------------------------------
-# Sentinel skill names — full-grant escapes for system/test contexts.
+# Sentinel skill names.
 # ---------------------------------------------------------------------------
 
 
 SYSTEM_SKILL = "__system__"
 TEST_SKILL = "__test__"
+INVALID_SKILL = "__invalid__"
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +46,63 @@ TEST_SKILL = "__test__"
 # Each entry mimics the shape M7 will produce when real SKILL.md files
 # land — narrow allow-lists per skill role. Naming convention: ``_test_``
 # prefix so production skill names cannot accidentally collide.
+_SYSTEM_TOOLS: frozenset[str] = frozenset(
+    {
+        # Bootstrapping: callers need to create/select a project and open
+        # a run before they have a run_token. Everything else should carry
+        # the token returned by run.start/procedure.run.
+        "meta.enums",
+        "project.create",
+        "project.get",
+        "project.list",
+        "project.setActive",
+        "project.update",
+        "eeat.list",
+        "eeat.toggle",
+        "gsc.bulkIngest",
+        "gsc.rollup",
+        "integration.list",
+        "integration.set",
+        "integration.test",
+        "integration.testGsc",
+        "interlink.apply",
+        "interlink.bulkApply",
+        "interlink.dismiss",
+        "interlink.list",
+        "interlink.repair",
+        "interlink.suggest",
+        "procedure.claimStep",
+        "procedure.currentStep",
+        "procedure.executeProgrammaticStep",
+        "procedure.list",
+        "procedure.recordStep",
+        "procedure.run",
+        "procedure.status",
+        "run.get",
+        "run.abort",
+        "run.finish",
+        "run.fork",
+        "run.heartbeat",
+        "run.insertStep",
+        "run.list",
+        "run.listStepCalls",
+        "run.listSteps",
+        "run.recordStepCall",
+        "run.resume",
+        "run.start",
+        "sitemap.fetch",
+        "topic.approve",
+        "topic.bulkCreate",
+        "topic.bulkUpdateStatus",
+        "topic.create",
+        "topic.get",
+        "topic.list",
+        "topic.reject",
+        "voice.set",
+        "voice.setActive",
+    }
+)
+
 _TEST_KEYWORD_DISCOVERY: frozenset[str] = frozenset(
     {
         "topic.create",
@@ -110,6 +170,8 @@ _RUN_LIFECYCLE: frozenset[str] = frozenset(
         "run.heartbeat",
         "run.finish",
         "run.recordStepCall",
+        "procedure.currentStep",
+        "procedure.recordStep",
     }
 )
 
@@ -460,16 +522,72 @@ _SKILL_CONTENT_REFRESHER: frozenset[str] = _RUN_LIFECYCLE | {
 }
 
 
-# The matrix proper. Special-case keys (``__system__``, ``__test__``) hold
-# a sentinel set; ``check_grant`` short-circuits on them so we never
-# enumerate the full tool registry just to grant access.
+# Procedure slugs are the grant bound to a run token between claimed
+# skill steps. They can inspect/claim the next step and execute
+# deterministic ``_programmatic/*`` helpers, but prose/content writes
+# still require the concrete skill grant bound by ``procedure.claimStep``.
+_PROCEDURE_CONTROL: frozenset[str] = frozenset(
+    {
+        "procedure.currentStep",
+        "procedure.claimStep",
+        "procedure.executeProgrammaticStep",
+        "procedure.status",
+        "run.get",
+        "run.heartbeat",
+        "run.listSteps",
+    }
+)
+
+
+_PROGRAMMATIC_CONTROL: frozenset[str] = frozenset(
+    {
+        "procedure.currentStep",
+        "procedure.executeProgrammaticStep",
+        "procedure.status",
+        "run.get",
+        "run.heartbeat",
+        "run.listSteps",
+    }
+)
+
+
+# The matrix proper. ``__system__`` is deliberately small: it is only for
+# bootstrapping enough state to obtain a real run token.
 SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
-    SYSTEM_SKILL: frozenset(),  # full grant; sentinel-checked in check_grant
+    SYSTEM_SKILL: _SYSTEM_TOOLS,
     TEST_SKILL: frozenset(),  # full grant; sentinel-checked in check_grant
     "_test_keyword_discovery": _TEST_KEYWORD_DISCOVERY,
     "_test_editor": _TEST_EDITOR,
     "_test_eeat_gate": _TEST_EEAT_GATE,
     "_test_publisher": _TEST_PUBLISHER,
+    # Agent-led procedure controllers (bound between claimed skill steps).
+    "01-bootstrap-project": _PROCEDURE_CONTROL,
+    "02-one-site-shortcut": _PROCEDURE_CONTROL,
+    "03-keyword-to-topic-queue": _PROCEDURE_CONTROL,
+    "04-topic-to-published": _PROCEDURE_CONTROL,
+    "05-bulk-content-launch": _PROCEDURE_CONTROL,
+    "06-weekly-gsc-review": _PROCEDURE_CONTROL,
+    "07-monthly-humanize-pass": _PROCEDURE_CONTROL,
+    "08-add-new-site": _PROCEDURE_CONTROL,
+    # Deterministic programmatic helpers. The current agent explicitly
+    # invokes these through ``procedure.executeProgrammaticStep``; no
+    # hidden writer or vendor session is spawned.
+    "_programmatic/bootstrap-verify": _PROGRAMMATIC_CONTROL,
+    "_programmatic/bulk-cost-estimator": _PROGRAMMATIC_CONTROL,
+    "_programmatic/bulk-final-summary": _PROGRAMMATIC_CONTROL,
+    "_programmatic/compliance-seed": _PROGRAMMATIC_CONTROL,
+    "_programmatic/eeat-seed-verify": _PROGRAMMATIC_CONTROL,
+    "_programmatic/gsc-pull": _PROGRAMMATIC_CONTROL,
+    "_programmatic/integration-creds-prompt": _PROGRAMMATIC_CONTROL,
+    "_programmatic/project-create": _PROGRAMMATIC_CONTROL,
+    "_programmatic/publish-target-prompt": _PROGRAMMATIC_CONTROL,
+    "_programmatic/run-child-procedure": _PROGRAMMATIC_CONTROL,
+    "_programmatic/select-refresh-candidates": _PROGRAMMATIC_CONTROL,
+    "_programmatic/spawn-procedure-4-batch": _PROGRAMMATIC_CONTROL,
+    "_programmatic/topic-approval-pause": _PROGRAMMATIC_CONTROL,
+    "_programmatic/voice-profile-prompt": _PROGRAMMATIC_CONTROL,
+    "_programmatic/wait-for-children": _PROGRAMMATIC_CONTROL,
+    "_programmatic/weekly-summary": _PROGRAMMATIC_CONTROL,
     # M6.A skills (research phase).
     "01-research/keyword-discovery": _SKILL_KEYWORD_DISCOVERY,
     "01-research/serp-analyzer": _SKILL_SERP_ANALYZER,
@@ -509,10 +627,10 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
 def is_full_grant(skill_name: str) -> bool:
     """Return ``True`` iff ``skill_name`` carries an unrestricted grant.
 
-    System + test contexts bypass the per-tool whitelist. Real skills
-    (M7) always go through the whitelist.
+    Only the explicit test sentinel bypasses the whitelist. System MCP
+    calls use the narrow bootstrap grant in ``SKILL_TOOL_GRANTS``.
     """
-    return skill_name in {SYSTEM_SKILL, TEST_SKILL}
+    return skill_name == TEST_SKILL
 
 
 def resolve_run_token(
@@ -523,39 +641,30 @@ def resolve_run_token(
 
     Lookup contract:
 
-    - ``token=None`` → ``(None, "__system__")``. Direct human REST/UI
-      calls don't carry a run_token and run with full grants.
+    - ``token=None`` → ``(None, "__system__")``. Direct MCP bootstrap
+      calls don't carry a run_token and can only call the narrow system
+      allow-list.
     - ``token`` matches a row's ``runs.client_session_id`` →
       ``(run, skill_name)`` where ``skill_name`` comes from
       ``runs.metadata_json.skill_name`` if set, else falls back to the
-      run's ``procedure_slug``. If neither is set, returns the test
-      sentinel — useful in unit tests that mint a run without binding
-      a skill.
-    - Token does not match any row → ``(None, "__test__")`` so the
-      test harness can stamp arbitrary bytes without provisioning a
-      run row first. Production callers MUST always present a
-      provisioned token; the system surface (REST/UI) carries None.
+      run's ``procedure_slug``.
+    - Token does not match any row → ``(None, "__invalid__")``.
     """
     if token is None or token == "":
         return None, SYSTEM_SKILL
     row = session.exec(select(Run).where(Run.client_session_id == token)).first()
     if row is None:
-        # Unmatched token in production would be a security event; the
-        # test harness uses arbitrary tokens so we lean to permissive.
-        # Real M7 deployment will tighten this via a CONFIG flag.
-        return None, TEST_SKILL
+        return None, INVALID_SKILL
     metadata = row.metadata_json or {}
-    skill_name = metadata.get("skill_name") or row.procedure_slug or TEST_SKILL
+    skill_name = metadata.get("skill_name") or row.procedure_slug or INVALID_SKILL
     return row, skill_name
 
 
 def check_grant(tool_name: str, skill_name: str) -> None:
     """Raise ``ToolNotGrantedError`` if the skill cannot call the tool.
 
-    Sentinel skills (``__system__`` / ``__test__``) always pass without
-    consulting the matrix — the unprivileged path cannot reach them
-    because ``resolve_run_token`` only emits those names for the system
-    surface or the test harness.
+    The ``__test__`` sentinel remains a full-grant fixture escape hatch,
+    but normal system/bootstrap calls use an explicit allow-list.
     """
     if is_full_grant(skill_name):
         return
@@ -573,6 +682,7 @@ def check_grant(tool_name: str, skill_name: str) -> None:
 
 
 __all__ = [
+    "INVALID_SKILL",
     "SKILL_TOOL_GRANTS",
     "SYSTEM_SKILL",
     "TEST_SKILL",

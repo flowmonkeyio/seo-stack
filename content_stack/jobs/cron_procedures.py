@@ -8,9 +8,10 @@ schedule, and registers one APScheduler job per active project per
 procedure.
 
 Job_id pattern: ``procedure-{slug}-{project_id}``. The body is a tiny
-async wrapper that calls ``runner.start(slug, args={"project_id": p.id},
-project_id=p.id)`` — same path as a manual operator trigger via
-``procedure.run``.
+async wrapper that opens an agent-led run via
+``runner.start(slug, args={"project_id": p.id}, project_id=p.id)``.
+Cron prepares the work queue; the current operator agent still owns the
+writing / SEO judgment when it picks the run up.
 
 Per-procedure timezone resolution:
 

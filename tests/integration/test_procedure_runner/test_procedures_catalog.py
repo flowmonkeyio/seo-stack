@@ -40,9 +40,9 @@ def _skills_dir() -> Path:
 
 # Per the M7.B deliverable: every step.skill must either resolve to a
 # real skill directory under ``skills/<key>`` or use the documented
-# ``_programmatic/`` synthetic prefix. The synthetic prefix names
-# steps the runner dispatches to a no-op stub today; M8 wires them
-# to dedicated repository calls (no LLM session needed).
+# ``_programmatic/`` synthetic prefix. Programmatic steps are executed
+# explicitly through ``procedure.executeProgrammaticStep`` and map to
+# dedicated repository calls.
 _PROGRAMMATIC_PREFIX = "_programmatic/"
 
 

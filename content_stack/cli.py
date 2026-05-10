@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import stat
+import subprocess
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -239,6 +241,132 @@ def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
     return daemon_up, 4 if daemon_up else 0
 
 
+def _doctor_home() -> Path:
+    """Return the install home used by scripts and pipx install helpers."""
+    return Path(os.environ.get("CONTENT_STACK_HOME") or Path.home()).expanduser()
+
+
+def _count_traversable_named(
+    root: object, filename: str, *, exclude_dirs: frozenset[str] = frozenset()
+) -> int:
+    """Count files named ``filename`` under an importlib.resources Traversable."""
+    count = 0
+    try:
+        children = list(root.iterdir())  # type: ignore[attr-defined]
+    except Exception:
+        return 0
+    for child in children:
+        name = getattr(child, "name", "")
+        if name in {".DS_Store", "__pycache__"}:
+            continue
+        try:
+            if child.is_dir():  # type: ignore[attr-defined]
+                if name in exclude_dirs:
+                    continue
+                count += _count_traversable_named(child, filename, exclude_dirs=exclude_dirs)
+            elif name == filename:
+                count += 1
+        except Exception:
+            continue
+    return count
+
+
+def _expected_asset_count(kind: Literal["skills", "procedures"]) -> int | None:
+    """Return source asset count for doctor install checks."""
+    try:
+        from content_stack import install as installer
+
+        source = installer._resolve_source(kind)  # type: ignore[attr-defined]
+    except Exception:
+        return None
+    filename = "SKILL.md" if kind == "skills" else "PROCEDURE.md"
+    if isinstance(source, Path):
+        paths = source.rglob(filename)
+        if kind == "procedures":
+            paths = (p for p in paths if "_template" not in p.parts)
+        return sum(1 for _ in paths)
+    exclude = frozenset({"_template"}) if kind == "procedures" else frozenset()
+    return _count_traversable_named(source, filename, exclude_dirs=exclude)
+
+
+def _installed_asset_count(home: Path, runtime: Literal["codex", "claude"], kind: str) -> int:
+    """Count installed skills/procedures for one runtime target."""
+    filename = "SKILL.md" if kind == "skills" else "PROCEDURE.md"
+    target = home / f".{runtime}" / kind / "content-stack"
+    if not target.is_dir():
+        return 0
+    return sum(1 for _ in target.rglob(filename))
+
+
+def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, object]]:
+    """Return optional install mirror checks for skills/procedures."""
+    expected_skills = _expected_asset_count("skills")
+    expected_procedures = _expected_asset_count("procedures")
+    checks: dict[str, bool] = {}
+    details: dict[str, object] = {
+        "expected_skills": expected_skills,
+        "expected_procedures": expected_procedures,
+    }
+    for runtime in ("codex", "claude"):
+        skills_count = _installed_asset_count(home, runtime, "skills")
+        procedures_count = _installed_asset_count(home, runtime, "procedures")
+        checks[f"{runtime}_skills_installed"] = (
+            expected_skills is not None and skills_count == expected_skills
+        )
+        checks[f"{runtime}_procedures_installed"] = (
+            expected_procedures is not None and procedures_count == expected_procedures
+        )
+        details[f"{runtime}_skills_count"] = skills_count
+        details[f"{runtime}_procedures_count"] = procedures_count
+    return checks, details
+
+
+def _check_codex_mcp_registered(port: int) -> tuple[bool, dict[str, object]]:
+    """Best-effort read-only check for Codex MCP registration."""
+    codex = shutil.which("codex")
+    if codex is None:
+        return False, {"available": False}
+    try:
+        result = subprocess.run(
+            [codex, "mcp", "list"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception as exc:
+        return False, {"available": True, "error": str(exc)}
+    expected = f"http://127.0.0.1:{port}/mcp"
+    ok = "content-stack" in result.stdout and expected in result.stdout
+    return ok, {
+        "available": True,
+        "returncode": result.returncode,
+        "expected_url": expected,
+    }
+
+
+def _check_claude_mcp_registered(home: Path, port: int) -> tuple[bool, dict[str, object]]:
+    """Read the Claude MCP JSON target and look for the content-stack entry."""
+    target = Path(os.environ.get("CONTENT_STACK_MCP_TARGET") or home / ".claude" / "mcp.json")
+    if not target.exists():
+        return False, {"target": str(target), "exists": False}
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        servers = payload.get("mcpServers", {})
+        row = servers.get("content-stack") if isinstance(servers, dict) else None
+    except Exception as exc:
+        return False, {"target": str(target), "exists": True, "error": str(exc)}
+    expected = f"http://127.0.0.1:{port}/mcp"
+    ok = isinstance(row, dict) and row.get("url") == expected
+    return ok, {"target": str(target), "exists": True, "expected_url": expected}
+
+
+def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
+    """Optional launchd plist presence check; launchd itself is not required."""
+    target = home / "Library" / "LaunchAgents" / "com.content-stack.daemon.plist"
+    return target.exists(), {"target": str(target), "exists": target.exists()}
+
+
 @app.command()
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
@@ -278,6 +406,11 @@ def doctor(
     # M8: alembic-head + scheduler-jobs probes.
     alembic_ok, alembic_version = _check_alembic_at_head(settings, db_present)
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
+    home = _doctor_home()
+    install_checks, install_info = _check_installed_assets(home)
+    codex_mcp_ok, codex_mcp_info = _check_codex_mcp_registered(settings.port)
+    claude_mcp_ok, claude_mcp_info = _check_claude_mcp_registered(home, settings.port)
+    launchd_ok, launchd_info = _check_launchd_plist(home)
 
     checks = {
         "daemon_up": daemon_up,
@@ -289,6 +422,10 @@ def doctor(
         "credentials_decrypt": credentials_ok,
         "alembic_at_head": alembic_ok,
         "scheduler_jobs_healthy": scheduler_ok,
+        "codex_mcp_registered": codex_mcp_ok,
+        "claude_mcp_registered": claude_mcp_ok,
+        "launchd_plist_present": launchd_ok,
+        **install_checks,
     }
     info = {
         "host": settings.host,
@@ -302,6 +439,11 @@ def doctor(
         "credential_issues": credential_issues,
         "alembic_version": alembic_version,
         "scheduler_job_count": scheduler_job_count,
+        "home_dir": str(home),
+        "install_checks": install_info,
+        "codex_mcp": codex_mcp_info,
+        "claude_mcp": claude_mcp_info,
+        "launchd": launchd_info,
     }
 
     # Compute exit code with the highest-priority failure winning so a single
@@ -447,6 +589,12 @@ def install(
 
     settings = get_settings()
     settings.ensure_dirs()
+    from content_stack.auth import ensure_token
+    from content_stack.crypto.seed import ensure_seed_file
+
+    ensure_seed_file(settings.seed_path)
+    ensure_token(settings.token_path)
+    typer.echo(f"==> Bootstrap state ready: {settings.state_dir}")
     home = Path.home()
 
     runtimes: tuple[Literal["codex", "claude"], ...] = ("codex", "claude")
@@ -528,7 +676,12 @@ def rotate_seed(
     from sqlmodel import Session
 
     from content_stack.crypto.aes_gcm import configure_seed_path
-    from content_stack.crypto.seed import rotate_seed as crypto_rotate_seed
+    from content_stack.crypto.seed import (
+        abort_staged_seed_rotation,
+        commit_staged_seed_rotation,
+        reencrypt_rows_for_seed_rotation,
+        stage_seed_rotation,
+    )
     from content_stack.db.connection import make_engine
     from content_stack.db.models import IntegrationCredential
 
@@ -536,6 +689,7 @@ def rotate_seed(
     settings.ensure_dirs()
     configure_seed_path(settings.seed_path)
     engine = make_engine(settings.db_path)
+    db_committed = False
     try:
         with Session(engine) as session:
             from sqlmodel import select
@@ -551,7 +705,8 @@ def rotate_seed(
                 }
                 for r in rows
             ]
-            _, rotated = crypto_rotate_seed(settings.seed_path, rows=row_dicts)
+            new_seed, rotated = reencrypt_rows_for_seed_rotation(settings.seed_path, rows=row_dicts)
+            stage_seed_rotation(settings.seed_path, new_seed)
             id_to_row = {r.id: r for r in rows}
             for rotated_row in rotated:
                 row = id_to_row[rotated_row["id"]]
@@ -559,10 +714,16 @@ def rotate_seed(
                 row.nonce = rotated_row["nonce"]
                 session.add(row)
             session.commit()
+            db_committed = True
+        commit_staged_seed_rotation(settings.seed_path)
         # Drop any cached key from the old seed so subsequent calls in
         # this process re-derive from the fresh seed file.
         configure_seed_path(settings.seed_path)
         typer.echo(f"rotate-seed: rotated {len(rows)} row(s); old seed → seed.bin.bak")
+    except Exception:
+        if not db_committed:
+            abort_staged_seed_rotation(settings.seed_path)
+        raise
     finally:
         engine.dispose()
 
@@ -581,8 +742,9 @@ def rotate_token(
 
     Per PLAN.md L1273: writes a fresh 32 bytes to ``auth.token`` (mode
     0600) then re-registers Codex + Claude Code so their saved
-    Authorization headers match the new token. Existing tokens become
-    invalid the moment this completes — that is the whole point.
+    Authorization headers match the new token. A daemon that is already
+    running keeps accepting the token it loaded at startup until it is
+    restarted.
     """
     if not yes:
         typer.echo(
@@ -617,6 +779,7 @@ def rotate_token(
     msg = installer.register_mcp_claude(port=settings.port)
     typer.echo(msg)
     typer.echo("rotate-token: token rotated; MCP configs updated.")
+    typer.echo("rotate-token: restart any running daemon so it loads the new token.")
 
 
 @app.command()

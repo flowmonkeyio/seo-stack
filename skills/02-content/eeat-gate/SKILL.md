@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -43,9 +45,9 @@ outputs:
 
 ## When to use
 
-This is the gate between LLM-authored content and the published article. Procedure 4 dispatches it after the editor (#10) and humanizer (#12) have polished the draft. The gate audits `articles.edited_md` against the project's active `eeat_criteria` rows (not the hardcoded 80-item rubric — every project customises), produces three artifacts (per-criterion verdicts, aggregate scores, a final SHIP / FIX / BLOCK verdict), and either advances the article toward publication or routes it back for repair.
+This is the gate between LLM-authored content and the published article. Procedure 4 calls it after the editor (#10) and humanizer (#12) have polished the draft. The gate audits `articles.edited_md` against the project's active `eeat_criteria` rows (not the hardcoded 80-item rubric — every project customises), produces three artifacts (per-criterion verdicts, aggregate scores, a final SHIP / FIX / BLOCK verdict), and either advances the article toward publication or routes it back for repair.
 
-The skill is a daemon-orchestrated FIX loop boundary: when the verdict is FIX, the procedure runner re-dispatches the editor (#10) with the gate's fix list. When the verdict is BLOCK, the procedure aborts with `articles.status='aborted-publish'` per audit BLOCKER-09. When the verdict is SHIP, the article advances and the next skill (image-generator #13) runs.
+The skill is the FIX loop boundary: when the verdict is FIX, the current operator agent loops back to the editor (#10) with the gate's fix list. When the verdict is BLOCK, the procedure aborts with `articles.status='aborted-publish'` per audit BLOCKER-09. When the verdict is SHIP, the article advances and the next skill (image-generator #13) runs.
 
 Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id` and writes a fresh batch of `eeat_evaluations` rows; old evaluations from prior runs remain for audit. The repository's `score()` query filters by `(article_id, run_id)` so the current run's verdict is computed against only the current run's evaluations.
 
@@ -65,7 +67,7 @@ Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id
    - **Affiliate disclosure (T04 input)** — confirm the after-intro and footer positions both render the active affiliate rule when the article carries any monetised link patterns. Missing disclosure with monetised links is the primary T04 fail mode.
    - **Title-content match (C01 input)** — confirm the title (H1) makes a promise the body delivers. If the H1 names a specific claim and the body never substantiates it, C01 fires.
    - **Self-consistent data (R10 input)** — scan numeric claims for internal contradictions ("23% drop" in one section, "40% drop" in another for the same metric). Self-contradicting data is the primary R10 fail mode.
-   The pre-check is fast (regex + simple semantic compares) and lets the gate surface a likely BLOCK verdict early so the procedure runner can abort without paying for the full 80-item LLM evaluation.
+   The pre-check is fast (regex + simple semantic compares) and lets the gate surface a likely BLOCK verdict early so the operator agent can abort without paying for the full 80-item evaluation.
 4. **Per-criterion evaluation (the LLM-reasoning pass).** Walk every active criterion. For each:
    - Read the criterion's `text` (the human-readable standard, e.g., "Article cites at least one primary source per load-bearing claim" for R10).
    - Read the criterion's `category` and `tier` to know which slice of the article to focus on.
@@ -95,30 +97,30 @@ Re-runs are common during the FIX loop — each EEAT-gate run is a fresh `run_id
    For each top issue, capture `{criterion_code, category, tier, severity, finding}` where severity is `critical | high | medium | low`. The editor's FIX-loop pass reads `top_issues` to target its rewriting.
 10. **Persist the audit row to the run.** Write `runs.metadata_json.eeat = {dimension_scores, system_scores, coverage, vetoes_failed, top_issues[], verdict, weights_applied?, fix_required?}`. The shape matches the `eeat-audit` discriminated-union row in PLAN.md L444 (`eeat-audit` kind), with the addition of `fix_required` when verdict is FIX so the editor's FIX-loop knows what to fix. `fix_required[]` is the same shape as `top_issues[]` filtered to `verdict='fail'` rows.
 11. **Verdict-specific persistence.**
-    - **SHIP** → call `article.markEeatPassed(article_id, expected_etag=<live etag>, run_id, eeat_criteria_version=<current rubric version>)`. The repository advances `articles.status` from `edited` to `eeat_passed`, freezes the rubric version (so future rubric edits don't retroactively invalidate the audit), and rotates `step_etag`. The procedure runner picks up the new etag for skill #13 (image-generator).
-    - **FIX** → do NOT advance status. Persist `runs.metadata_json.eeat.fix_required[]` so the procedure runner reads it on FIX-loop re-entry of skill #10. The runner re-dispatches the editor with the fix list as the editor's run args. The fix-loop counter (held in the runner's state, not the gate's) increments; if it exceeds the cap (default 3), the runner aborts the procedure rather than re-dispatching.
-    - **BLOCK** → do NOT advance via `markEeatPassed`. The procedure runner advances via a separate transition: `articles.status` becomes `aborted-publish` and `runs.status` becomes `aborted`. The gate persists the BLOCK verdict to `runs.metadata_json.eeat` and finishes; the runner handles the abort transitions.
-12. **Finish.** Call `run.finish` with `{article_id, verdict, dimension_scores, system_scores, vetoes_failed, top_issues_count, fix_required_count?, fix_loop_iteration}`. A heartbeat fires after the per-criterion evaluation pass (step 4).
+    - **SHIP** → call `article.markEeatPassed(article_id, expected_etag=<live etag>, run_id, eeat_criteria_version=<current rubric version>)`. The repository advances `articles.status` from `edited` to `eeat_passed`, freezes the rubric version (so future rubric edits don't retroactively invalidate the audit), and rotates `step_etag`. The next claimed step uses the fresh etag.
+    - **FIX** → do NOT advance status. Persist `runs.metadata_json.eeat.fix_required[]` so the operator agent can loop back to skill #10 with focused repair instructions. The fix-loop counter is procedure state; if it exceeds the cap (default 3), the operator agent aborts the procedure rather than repeating the loop.
+    - **BLOCK** → do NOT advance via `markEeatPassed`. Mark the article `aborted-publish` through the allowed article state transition, persist the BLOCK verdict to `runs.metadata_json.eeat`, and record the step as failed/aborted for the procedure.
+12. **Finish.** Call `procedure.recordStep` with `{article_id, verdict, dimension_scores, system_scores, vetoes_failed, top_issues_count, fix_required_count?, fix_loop_iteration}`. A heartbeat fires after the per-criterion evaluation pass (step 4).
 
 ## Outputs
 
 - `eeat_evaluations` — one row per active criterion for this run; verdict + notes.
-- `articles.status` — advanced to `eeat_passed` on SHIP; unchanged on FIX; the runner moves it to `aborted-publish` on BLOCK.
+- `articles.status` — advanced to `eeat_passed` on SHIP; unchanged on FIX; the operator agent moves it to `aborted-publish` on BLOCK.
 - `articles.eeat_criteria_version_used` — frozen on SHIP for audit reproducibility.
-- `articles.step_etag` — rotated on SHIP; the procedure runner hands the new value to skill #13.
+- `articles.step_etag` — rotated on SHIP; the next claimed step uses the new value.
 - `runs.metadata_json.eeat` — full audit shape per PLAN.md L444.
 
 ## Failure handling
 
-- **Coverage floor breached.** Abort the run; do not write evaluations. Surface the empty dimension(s) and recommend `bootstrap-fix`. Status remains `edited`; the procedure runner aborts the procedure with a clear operator-facing message.
+- **Coverage floor breached.** Abort the run; do not write evaluations. Surface the empty dimension(s) and recommend `bootstrap-fix`. Status remains `edited`; the operator agent aborts the procedure with a clear operator-facing message.
 - **`eeat.list` returns zero rows.** Equivalent to coverage failure; same handling.
 - **`eeat.bulkRecord` rolls back.** Means a per-evaluation validation failed (e.g., a criterion_id no longer exists because the operator deactivated it mid-run). Refresh the criterion list, recompute evaluations against the fresh list, retry the bulk record once. Two consecutive rollbacks aborts the run.
-- **`markEeatPassed` etag conflict on SHIP.** Means another writer touched the article between the gate's read and the markEeatPassed call. Refresh via `article.get`, retry once with the new etag. Two conflicts aborts and the procedure runner restarts the gate.
+- **`markEeatPassed` etag conflict on SHIP.** Means another writer touched the article between the gate's read and the markEeatPassed call. Refresh via `article.get`, retry once with the new etag. Two conflicts aborts and the operator agent restarts the gate.
 - **A criterion's evidence is genuinely ambiguous.** Default to the more conservative verdict (partial vs. pass; fail vs. partial). The notes field records the ambiguity so the FIX-loop editor can decide whether to clarify or whether to flag the criterion as inapplicable.
 - **Voice profile carries malformed weight table.** Ignore the weights and proceed with the unweighted aggregation. Surface in `runs.metadata_json.eeat.weights_skipped=true` with the parse error.
 
 ## Variants
 
 - **`standard`** — the default flow above.
-- **`strict`** — raises the per-dimension floor from 60 to 70 and the per-system floor from 70 to 80; useful for pillar articles or for projects with a stricter quality bar set in `voice.eeat.thresholds`. The strict thresholds are advisory; the procedure runner reads them from voice and passes via skill args.
+- **`strict`** — raises the per-dimension floor from 60 to 70 and the per-system floor from 70 to 80; useful for pillar articles or for projects with a stricter quality bar set in `voice.eeat.thresholds`. The strict thresholds are advisory; the operator agent reads them from voice and passes via skill args.
 - **`audit-only`** — performs the full evaluation and persists `eeat_evaluations` but does NOT call `markEeatPassed` regardless of verdict. Used for periodic content-quality re-audits of already-published articles (procedure 6's GSC-driven cadence) where the gate is informational rather than gating.

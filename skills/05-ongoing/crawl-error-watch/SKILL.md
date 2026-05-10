@@ -17,6 +17,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -35,7 +37,7 @@ outputs:
 
 ## When to use
 
-Procedure 6 (`weekly-gsc-review`) dispatches this skill once per project, after drift-watch (#21) has captured the week's element-bag baselines. The skill walks every `articles WHERE status='published' AND project_id=:p` row, calls the GSC URL Inspection API per page (or in batches when the roster exceeds 10), classifies each verdict, and emits topics for every FAIL or PARTIAL. The topics carry `intent='technical-fix'` to mark them as out-of-scope for content production but visible to the operator on the topic queue UI.
+Procedure 6 (`weekly-gsc-review`) calls this skill once per project, after drift-watch (#21) has captured the week's element-bag baselines. The skill walks every `articles WHERE status='published' AND project_id=:p` row, calls the GSC URL Inspection API per page (or in batches when the roster exceeds 10), classifies each verdict, and emits topics for every FAIL or PARTIAL. The topics carry `intent='technical-fix'` to mark them as out-of-scope for content production but visible to the operator on the topic queue UI.
 
 Crawl errors are technical issues — robots blocking, redirect loops, server errors, soft-404s, mobile-usability faults, rich-results malformations, canonical mismatches. The content-production pipeline (procedure 4) cannot fix these; the operator addresses them via the publish target's UI (WordPress / Ghost) or the publish target's repo (Nuxt). The skill's job is to surface the issue to the operator's queue, not to remediate.
 

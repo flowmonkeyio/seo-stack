@@ -7,12 +7,21 @@ from .conftest import MCPClient
 
 def _two_articles(mcp: MCPClient, pid: int) -> tuple[int, int]:
     """Create two articles and return their ids."""
-    a = mcp.call_tool_structured("article.create", {"project_id": pid, "title": "A", "slug": "a"})[
-        "data"
-    ]["id"]
-    b = mcp.call_tool_structured("article.create", {"project_id": pid, "title": "B", "slug": "b"})[
-        "data"
-    ]["id"]
+    token = mcp.call_tool_structured(
+        "run.start",
+        {
+            "project_id": pid,
+            "kind": "procedure",
+            "procedure_slug": "01-research/content-brief",
+            "skill_name": "01-research/content-brief",
+        },
+    )["data"]["run_token"]
+    a = mcp.call_tool_structured(
+        "article.create", {"project_id": pid, "title": "A", "slug": "a", "run_token": token}
+    )["data"]["id"]
+    b = mcp.call_tool_structured(
+        "article.create", {"project_id": pid, "title": "B", "slug": "b", "run_token": token}
+    )["data"]["id"]
     return a, b
 
 

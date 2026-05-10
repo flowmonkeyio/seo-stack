@@ -34,7 +34,7 @@ fi
 
 if [[ "${ACTION}" == "register" ]]; then
     if [[ ! -f "${TOKEN_PATH}" ]]; then
-        echo "auth token missing at ${TOKEN_PATH} — run \`make serve\` once first." >&2
+        echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
         exit 1
     fi
     TOKEN=$(cat "${TOKEN_PATH}")

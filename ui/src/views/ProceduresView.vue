@@ -3,13 +3,12 @@
 //
 // Wires to:
 // - `GET  /api/v1/procedures`              — list procedure summaries
-// - `POST /api/v1/procedures/{slug}/run`   — currently 501 at M5.C (M7)
+// - `POST /api/v1/procedures/{slug}/run`   — enqueue daemon-side procedure runs
 // - `GET  /api/v1/procedures/runs/{id}`    — `{run, steps[]}` for polling
 // - `GET  /api/v1/projects/{id}/runs?kind=procedure`
 //
-// The "Run" button submits free-form JSON args and surfaces the 501 +
-// "Will be available in M7" hint per the milestone scope. Recent runs
-// poll every 5s for in-flight rows.
+// The "Run" button submits free-form JSON args. Recent runs poll every 5s
+// for in-flight rows.
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -97,6 +96,10 @@ function closeRunModal(): void {
 
 async function submitRun(): Promise<void> {
   if (!runOpen.value) return
+  if (!projectId.value || Number.isNaN(projectId.value)) {
+    toasts.error('Run failed', 'Invalid project id')
+    return
+  }
   let args: Record<string, unknown> = {}
   try {
     args = JSON.parse(argsJson.value) as Record<string, unknown>
@@ -106,15 +109,15 @@ async function submitRun(): Promise<void> {
   }
   submittingRun.value = true
   try {
-    await proceduresStore.runProcedure(runOpen.value.slug, args)
+    await proceduresStore.runProcedure(runOpen.value.slug, projectId.value, args)
     toasts.success('Procedure run started', runOpen.value.slug)
     runOpen.value = null
     await runsStore.refresh(projectId.value)
   } catch (err) {
     if (err instanceof ProcedureNotImplementedError) {
       toasts.info(
-        'Procedure runner not yet available',
-        'The runner ships in M7 — the route is wired but returns 501 today.',
+        'Procedure runner unavailable',
+        'This daemon does not expose procedure execution.',
       )
     } else {
       toasts.error('Run failed', err instanceof Error ? err.message : undefined)
@@ -258,11 +261,8 @@ watch(activeTab, async (tab) => {
         >
           Run procedure: {{ runOpen.name }}
         </h2>
-        <p class="mb-3 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-          Procedure runner ships in <strong>M7</strong>. The route is wired and
-          returns 501 at M5.C — you'll see a "not yet available" toast when
-          you submit. Once M7 lands, the daemon will accept these args and
-          orchestrate the per-skill LLM sessions.
+        <p class="mb-3 rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+          Runs start immediately using the JSON args below.
         </p>
         <label class="mb-3 block text-sm">
           <span class="font-medium">Args (JSON)</span>

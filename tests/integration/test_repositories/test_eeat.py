@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlmodel import Session
 
-from content_stack.db.models import EeatVerdict, RunKind
+from content_stack.db.models import EeatTier, EeatVerdict, RunKind
 from content_stack.repositories.articles import ArticleRepository
 from content_stack.repositories.eeat import (
     EeatEvaluationCreate,
@@ -92,3 +92,34 @@ def test_core_veto_failure_surfaces(session: Session, project_id: int) -> None:
     score = eeat_repo.score(article_id=art.id, run_id=run.id)
     failed = sorted(score.vetoes_failed)
     assert failed == sorted(c.code for c in cores)
+
+
+def test_score_ignores_inactive_criteria(session: Session, project_id: int) -> None:
+    art_repo = ArticleRepository(session)
+    crit_repo = EeatCriteriaRepository(session)
+    run_repo = RunRepository(session)
+    eeat_repo = EeatEvaluationRepository(session)
+
+    art = art_repo.create(project_id=project_id, topic_id=None, title="I", slug="inactive-art").data
+    run = run_repo.start(project_id=project_id, kind=RunKind.EEAT_AUDIT).data
+    crits = crit_repo.list(project_id)
+    inactive = next(c for c in crits if c.tier == EeatTier.RECOMMENDED)
+    active_same_category = next(
+        c for c in crits if c.category == inactive.category and c.id != inactive.id
+    )
+    crit_repo.toggle(inactive.id, active=False)
+
+    eeat_repo.bulk_record(
+        article_id=art.id,
+        run_id=run.id,
+        evaluations=[
+            EeatEvaluationCreate(criterion_id=inactive.id, verdict=EeatVerdict.FAIL),
+            EeatEvaluationCreate(criterion_id=active_same_category.id, verdict=EeatVerdict.PASS),
+        ],
+    )
+
+    score = eeat_repo.score(article_id=art.id, run_id=run.id)
+
+    assert score.total_evaluations == 1
+    assert score.dimension_scores[inactive.category.value] == 100.0
+    assert score.coverage[inactive.category.value] is True

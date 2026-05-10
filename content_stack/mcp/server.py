@@ -30,7 +30,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, get_origin
+from typing import Any, cast, get_origin
 
 import mcp.types as mcp_types
 from fastapi import FastAPI
@@ -38,21 +38,24 @@ from mcp.server.lowlevel.server import Server, request_ctx
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import delete
 from sqlmodel import Session
 from starlette.types import Receive, Scope, Send
 
 from content_stack import __version__
+from content_stack.db.models import IdempotencyKey
 from content_stack.logging import get_logger
 from content_stack.mcp.context import MCPContext, bind_context, build_context
 from content_stack.mcp.contract import MCPInput, WriteEnvelope, verb_is_mutating
 from content_stack.mcp.errors import (
     JSONRPC_INTERNAL,
     JSONRPC_VALIDATION,
+    ToolNotGrantedError,
     map_repository_error,
 )
 from content_stack.mcp.permissions import check_grant
 from content_stack.mcp.streaming import ProgressEmitter
-from content_stack.repositories.base import RepositoryError
+from content_stack.repositories.base import ConflictError, RepositoryError
 from content_stack.repositories.runs import IdempotencyKeyRepository
 
 _log = get_logger(__name__)
@@ -287,6 +290,24 @@ def _item_to_json(item: Any) -> Any:
     return item
 
 
+def _find_mismatched_project_id(value: Any, expected: int) -> int | None:
+    """Return the first project_id in a payload that differs from expected."""
+    if isinstance(value, dict):
+        raw = value.get("project_id")
+        if isinstance(raw, int) and raw != expected:
+            return raw
+        for child in value.values():
+            found = _find_mismatched_project_id(child, expected)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_mismatched_project_id(child, expected)
+            if found is not None:
+                return found
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher.
 # ---------------------------------------------------------------------------
@@ -378,6 +399,13 @@ class MCPDispatcher:
                     parsed = spec.input_model.model_validate(arguments or {})
                 except PydanticValidationError as exc:
                     return self._validation_failure(exc)
+                # If a skill call carries both a resolved run_token and a
+                # project_id, the project_id must be the run's project. Tools
+                # that only take object IDs are additionally checked on the
+                # response payload below before anything leaves the transport.
+                scope_error = self._scope_input_error(spec, ctx)
+                if scope_error is not None:
+                    return scope_error
                 # Tool-grant matrix.
                 try:
                     check_grant(spec.name, ctx.skill_name)
@@ -398,8 +426,20 @@ class MCPDispatcher:
                     result = await spec.handler(parsed, ctx, emitter)
                     duration_ms = int((time.perf_counter() - started) * 1000)
                 except RepositoryError as exc:
+                    if (
+                        not spec.read_only
+                        and ctx.idempotency_key is not None
+                        and ctx.project_id is not None
+                    ):
+                        self._idempotency_forget(spec, ctx)
                     return self._repo_error(exc)
                 except Exception as exc:
+                    if (
+                        not spec.read_only
+                        and ctx.idempotency_key is not None
+                        and ctx.project_id is not None
+                    ):
+                        self._idempotency_forget(spec, ctx)
                     _log.exception("mcp.dispatch.unexpected_error", tool=name, **ctx.to_log_dict())
                     return _CallResult(
                         payload={
@@ -414,6 +454,15 @@ class MCPDispatcher:
 
                 # Persist idempotency response (success path).
                 payload = _result_to_json(result)
+                scope_error = self._scope_output_error(spec, ctx, payload)
+                if scope_error is not None:
+                    if (
+                        not spec.read_only
+                        and ctx.idempotency_key is not None
+                        and ctx.project_id is not None
+                    ):
+                        self._idempotency_forget(spec, ctx)
+                    return scope_error
                 if (
                     not spec.read_only
                     and ctx.idempotency_key is not None
@@ -464,6 +513,50 @@ class MCPDispatcher:
             is_error=True,
         )
 
+    def _scope_input_error(self, spec: ToolSpec, ctx: MCPContext) -> _CallResult | None:
+        """Reject a run_token used with another project's explicit project_id."""
+        if ctx.run is None or ctx.project_id is None or ctx.run.project_id is None:
+            return None
+        if ctx.project_id == ctx.run.project_id:
+            return None
+        return self._repo_error(
+            ToolNotGrantedError(
+                "run_token is not scoped to this project",
+                data={
+                    "tool": spec.name,
+                    "run_id": ctx.run_id,
+                    "run_project_id": ctx.run.project_id,
+                    "requested_project_id": ctx.project_id,
+                },
+            )
+        )
+
+    def _scope_output_error(
+        self,
+        spec: ToolSpec,
+        ctx: MCPContext,
+        payload: dict[str, Any],
+    ) -> _CallResult | None:
+        """Reject object-only reads/mutations whose result crosses run scope."""
+        if ctx.run is None or ctx.run.project_id is None:
+            return None
+
+        expected = ctx.run.project_id
+        seen = _find_mismatched_project_id(payload, expected)
+        if seen is None:
+            return None
+        return self._repo_error(
+            ToolNotGrantedError(
+                "run_token cannot access data from another project",
+                data={
+                    "tool": spec.name,
+                    "run_id": ctx.run_id,
+                    "run_project_id": expected,
+                    "result_project_id": seen,
+                },
+            )
+        )
+
     def _idempotency_check(
         self,
         spec: ToolSpec,
@@ -501,18 +594,34 @@ class MCPDispatcher:
                         **log_extra,
                     )
                     return _CallResult(payload=cached)
-                # No cached response yet — return a synthesized envelope
-                # so the caller doesn't see an error. This is the rare
-                # race where the original call started but didn't finish.
-                return _CallResult(
-                    payload={
-                        "data": None,
-                        "run_id": exc.data.get("run_id"),
-                        "project_id": ctx.project_id,
-                    }
+                return self._repo_error(
+                    ConflictError(
+                        "idempotency key is already in-flight",
+                        data={
+                            "idempotency_key": ctx.idempotency_key,
+                            "run_id": exc.data.get("run_id"),
+                            "tool_name": spec.name,
+                            "project_id": ctx.project_id,
+                            "replay": True,
+                            "in_flight": True,
+                        },
+                    )
                 )
             return self._repo_error(exc)
         return None
+
+    def _idempotency_forget(self, spec: ToolSpec, ctx: MCPContext) -> None:
+        """Remove a fresh idempotency key when the handler fails before caching."""
+        assert ctx.project_id is not None
+        assert ctx.idempotency_key is not None
+        ctx.session.exec(
+            delete(IdempotencyKey).where(
+                cast(Any, IdempotencyKey.project_id) == ctx.project_id,
+                cast(Any, IdempotencyKey.tool_name) == spec.name,
+                cast(Any, IdempotencyKey.idempotency_key) == ctx.idempotency_key,
+            )
+        )
+        ctx.session.commit()
 
     def _idempotency_record(
         self,

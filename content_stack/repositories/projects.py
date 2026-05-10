@@ -25,9 +25,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import func, update
 from sqlmodel import Session, select
 
 from content_stack.db.models import (
@@ -676,7 +677,7 @@ class EeatCriteriaRepository:
 
 
 class PublishTargetRepository:
-    """Publish targets; one ``is_primary`` per project (DB-enforced + this)."""
+    """Publish targets; exactly one ``is_primary`` per project when rows exist."""
 
     def __init__(self, session: Session) -> None:
         self._s = session
@@ -702,6 +703,8 @@ class PublishTargetRepository:
         """Insert a new target."""
         if is_primary:
             self._unset_other_primary(project_id, exclude_id=None)
+        elif not self._has_primary(project_id):
+            is_primary = True
         row = PublishTarget(
             project_id=project_id,
             kind=kind,
@@ -719,6 +722,11 @@ class PublishTargetRepository:
         row = self._fetch(target_id)
         if patch.get("is_primary") is True:
             self._unset_other_primary(row.project_id, exclude_id=target_id)
+        elif patch.get("is_primary") is False and row.is_primary:
+            raise ConflictError(
+                "cannot unset the only primary publish target; choose another primary instead",
+                data={"project_id": row.project_id, "target_id": target_id},
+            )
         for k, v in patch.items():
             if k in {"id", "project_id"}:
                 continue
@@ -733,10 +741,22 @@ class PublishTargetRepository:
     def remove(self, target_id: int) -> Envelope[PublishTargetOut]:
         """Hard-delete a target."""
         row = self._fetch(target_id)
+        project_id = row.project_id
+        was_primary = row.is_primary
         out = PublishTargetOut.model_validate(row)
         self._s.delete(row)
+        self._s.flush()
+        if was_primary:
+            replacement = self._s.exec(
+                select(PublishTarget)
+                .where(PublishTarget.project_id == project_id)
+                .order_by(PublishTarget.id.asc())  # type: ignore[union-attr]
+            ).first()
+            if replacement is not None:
+                replacement.is_primary = True
+                self._s.add(replacement)
         self._s.commit()
-        return Envelope(data=out, project_id=row.project_id)
+        return Envelope(data=out, project_id=project_id)
 
     def set_primary(self, target_id: int) -> Envelope[PublishTargetOut]:
         """Make this target primary; clear every other primary in the project."""
@@ -764,6 +784,15 @@ class PublishTargetRepository:
                 continue
             o.is_primary = False
             self._s.add(o)
+
+    def _has_primary(self, project_id: int) -> bool:
+        row = self._s.exec(
+            select(PublishTarget.id).where(
+                PublishTarget.project_id == project_id,
+                cast(Any, PublishTarget.is_primary).is_(True),
+            )
+        ).first()
+        return row is not None
 
 
 # ---------------------------------------------------------------------------
@@ -1042,25 +1071,54 @@ class IntegrationBudgetRepository:
         if cost_usd < 0:
             raise ValidationError("cost_usd must be >= 0", data={"cost_usd": cost_usd})
         when = now or _utcnow()
-        row = self._s.exec(
-            select(IntegrationBudget).where(
-                IntegrationBudget.project_id == project_id,
-                IntegrationBudget.kind == kind,
+        self._s.execute(
+            update(IntegrationBudget)
+            .where(
+                cast(Any, IntegrationBudget.project_id) == project_id,
+                cast(Any, IntegrationBudget.kind) == kind,
+                func.strftime("%Y-%m", IntegrationBudget.last_reset) != when.strftime("%Y-%m"),
             )
-        ).first()
-        if row is None:
-            raise NotFoundError(
-                f"budget for project={project_id} kind={kind!r} not configured",
-                data={"project_id": project_id, "kind": kind},
+            .values(
+                current_month_spend=0.0,
+                current_month_calls=0,
+                last_reset=when,
+                updated_at=_utcnow(),
             )
-        # Rollover if last_reset is from a prior (year, month).
-        if (row.last_reset.year, row.last_reset.month) != (when.year, when.month):
-            row.current_month_spend = 0.0
-            row.current_month_calls = 0
-            row.last_reset = when
-        # Pre-emption.
-        new_spend = round(row.current_month_spend + cost_usd, 6)
-        if new_spend > row.monthly_budget_usd:
+            .execution_options(synchronize_session=False)
+        )
+        result = self._s.execute(
+            update(IntegrationBudget)
+            .where(
+                cast(Any, IntegrationBudget.project_id) == project_id,
+                cast(Any, IntegrationBudget.kind) == kind,
+                cast(Any, IntegrationBudget.current_month_spend) + cost_usd
+                <= cast(Any, IntegrationBudget.monthly_budget_usd),
+            )
+            .values(
+                current_month_spend=func.round(
+                    IntegrationBudget.current_month_spend + cost_usd,
+                    6,
+                ),
+                current_month_calls=IntegrationBudget.current_month_calls + 1,
+                updated_at=_utcnow(),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if cast(Any, result).rowcount != 1:
+            self._s.rollback()
+            self._s.expire_all()
+            row = self._s.exec(
+                select(IntegrationBudget).where(
+                    IntegrationBudget.project_id == project_id,
+                    IntegrationBudget.kind == kind,
+                )
+            ).first()
+            if row is None:
+                raise NotFoundError(
+                    f"budget for project={project_id} kind={kind!r} not configured",
+                    data={"project_id": project_id, "kind": kind},
+                )
+            new_spend = round(row.current_month_spend + cost_usd, 6)
             raise BudgetExceededError(
                 f"{kind} budget would exceed cap: ${new_spend:.4f} > ${row.monthly_budget_usd:.4f}",
                 data={
@@ -1071,11 +1129,18 @@ class IntegrationBudgetRepository:
                     "attempted_cost_usd": cost_usd,
                 },
             )
-        row.current_month_spend = new_spend
-        row.current_month_calls += 1
-        row.updated_at = _utcnow()
-        self._s.add(row)
         self._s.commit()
+        row = self._s.exec(
+            select(IntegrationBudget).where(
+                IntegrationBudget.project_id == project_id,
+                IntegrationBudget.kind == kind,
+            )
+        ).first()
+        if row is None:  # Defensive; the committed UPDATE proved it existed.
+            raise NotFoundError(
+                f"budget for project={project_id} kind={kind!r} not configured",
+                data={"project_id": project_id, "kind": kind},
+            )
         self._s.refresh(row)
         return Envelope(data=IntegrationBudgetOut.model_validate(row), project_id=project_id)
 

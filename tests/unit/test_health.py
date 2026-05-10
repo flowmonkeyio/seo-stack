@@ -76,3 +76,10 @@ def test_openapi_json_is_public(client: TestClient) -> None:
     """OpenAPI schema is local-dev ergonomics; exposing it grants no access."""
     resp = client.get("/api/openapi.json")
     assert resp.status_code == 200
+
+
+def test_openapi_path_count_matches_documented_census(client: TestClient) -> None:
+    """The README/architecture census says the REST surface has 87 paths."""
+    resp = client.get("/api/openapi.json")
+    assert resp.status_code == 200
+    assert len(resp.json()["paths"]) == 87

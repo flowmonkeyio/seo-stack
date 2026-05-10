@@ -38,9 +38,14 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``content_stack/api/auth.py``.
+# - ``/api/v1/integrations/gsc/oauth/callback``: Google redirects the
+#   operator's browser back to this local callback and cannot attach the
+#   JavaScript-held bearer token. The route validates the OAuth ``state``
+#   nonce before exchanging the code.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
+    "/api/v1/integrations/gsc/oauth/callback",
 )
 
 _TOKEN_BYTES = 32

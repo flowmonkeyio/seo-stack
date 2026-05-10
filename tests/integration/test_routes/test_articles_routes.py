@@ -110,23 +110,28 @@ def test_full_procedure_4_walk(api: TestClient, project_id: int, article_id: int
     assert article["status"] == "edited"
     etag = article["step_etag"]
 
-    # EEAT pass — needs a real run id.
-    run_id = _seed_run(api, project_id)
+    # EEAT pass — omitted run_id creates a manual-edit audit run.
     resp = api.post(
         f"/api/v1/articles/{article_id}/eeat-pass",
-        json={"expected_etag": etag, "run_id": run_id, "eeat_criteria_version": 1},
+        json={"expected_etag": etag, "eeat_criteria_version": 1},
     )
     article = resp.json()["data"]
     assert article["status"] == "eeat_passed"
+    eeat_run_id = article["owner_run_id"]
+    assert isinstance(eeat_run_id, int)
     etag = article["step_etag"]
 
-    # Publish.
+    # Publish — omitted run_id creates another manual-edit audit run.
     resp = api.post(
         f"/api/v1/articles/{article_id}/publish",
-        json={"expected_etag": etag, "run_id": run_id},
+        json={"expected_etag": etag},
     )
     article = resp.json()["data"]
     assert article["status"] == "published"
+    assert isinstance(article["owner_run_id"], int)
+    assert article["owner_run_id"] != eeat_run_id
+    runs = api.get(f"/api/v1/projects/{project_id}/runs?kind=manual-edit").json()["items"]
+    assert {r["status"] for r in runs} == {"success"}
 
 
 def test_etag_mismatch_returns_412(api: TestClient, article_id: int) -> None:

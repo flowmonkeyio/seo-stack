@@ -98,10 +98,9 @@ quarter's content plan".
 4. **human-review-queue** — Operator reviews the proposed queue +
    cluster suggestions in the UI. Step intentionally pauses
    (``on_failure=human_review``): same pattern as procedure 2 — the
-   dispatcher emits ``runs.metadata_json.pending_human_review`` and
-   raises ``LLMDispatcherError``; the runner pauses; the operator
-   flips ``topics.status='approved'`` on their picks; resume picks
-   up downstream procedures.
+   programmatic handler records ``output_json.human_review=true``; the
+   operator flips ``topics.status='approved'`` on their picks; the
+   current agent retries or continues once the queue is ready.
 
 ## Variants
 

@@ -135,11 +135,11 @@ child results.
    project's active criteria. Three verdicts:
    - `SHIP` → advance.
    - `FIX` → loop back to **editor** with the gate's fix list. The
-     runner caps loop iterations at
+     current agent respects the loop cap from
      `settings.procedure_runner_max_loop_iterations` (default 3); on
      exhaustion the procedure aborts with `runs.error` describing the
      loop-cap breach.
-   - `BLOCK` → abort the procedure. The runner moves
+   - `BLOCK` → abort the procedure. The agent records
      `articles.status=aborted-publish` and `runs.status=aborted`
      per audit BLOCKER-09.
 6. **image-generator** (#13 image-generator) — Generate the hero image
@@ -157,21 +157,21 @@ child results.
    project's existing articles. `on_failure=skip`: suggestions are
    advisory and the publish step works without them.
 10. **publish** (#17/#18/#19) — Push the article to the project's
-    primary publish target. The runner inspects
+    primary publish target. The controller inspects
     `project.publish_targets WHERE is_primary=true AND is_active=true`
     and selects the appropriate skill (`#17 nuxt-content-publish`,
-    `#18 wordpress-publish`, or `#19 ghost-publish`) at dispatch time.
+    `#18 wordpress-publish`, or `#19 ghost-publish`) in the step package.
     `on_failure=abort`: a publish failure reverts to manual
     intervention rather than retrying through the chain.
 
 ## EEAT three-verdict semantics (audit BLOCKER-09)
 
-The `eeat-gate` step is the only step the runner branches on a
-verdict for. Per PLAN.md L1018-L1027:
+The `eeat-gate` step is the only step with a verdict-driven branch.
+Per PLAN.md L1018-L1027:
 
 - `SHIP` advances the article and the procedure walks the next step.
 - `FIX` loops back to the editor with the gate's `fix_required[]` list
-  in `runs.metadata_json.eeat`. The runner increments a per-target
+  in `runs.metadata_json.eeat`. The current agent increments a per-target
   counter and aborts when the counter exceeds
   `procedure_runner_max_loop_iterations`.
 - `BLOCK` aborts the procedure with `runs.status=aborted` and flips
@@ -207,6 +207,6 @@ verdict for. Per PLAN.md L1018-L1027:
 
 When invoked from procedure 5, the `parent_run_id` carries the bulk
 launch's `runs.id` so the parent's status reflects the child results.
-The runner's per-procedure semaphore (default 4) means at most four
-`04-topic-to-published` runs execute in parallel system-wide; the
-procedure 5 fan-out queues additional runs and waits for capacity.
+Procedure 5 opens one child run per topic. The current agent decides how
+many child runs to work at once and records progress through the parent
+run's `wait-for-children` step.

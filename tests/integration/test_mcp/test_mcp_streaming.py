@@ -38,6 +38,18 @@ def _call_with_progress(mcp: MCPClient, name: str, arguments: dict[str, Any]) ->
     return r.json()
 
 
+def _article_token(mcp: MCPClient, project_id: int) -> str:
+    return mcp.call_tool_structured(
+        "run.start",
+        {
+            "project_id": project_id,
+            "kind": "procedure",
+            "procedure_slug": "01-research/content-brief",
+            "skill_name": "01-research/content-brief",
+        },
+    )["data"]["run_token"]
+
+
 def test_topic_bulk_create_streaming_accepts_progress_token(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:
@@ -75,11 +87,12 @@ def test_interlink_suggest_accepts_progress_token(
 ) -> None:
     """interlink.suggest with N>10 emits progress."""
     pid = seeded_project["data"]["id"]
+    token = _article_token(mcp_client, pid)
     a = mcp_client.call_tool_structured(
-        "article.create", {"project_id": pid, "title": "A", "slug": "a"}
+        "article.create", {"project_id": pid, "title": "A", "slug": "a", "run_token": token}
     )["data"]["id"]
     b = mcp_client.call_tool_structured(
-        "article.create", {"project_id": pid, "title": "B", "slug": "b"}
+        "article.create", {"project_id": pid, "title": "B", "slug": "b", "run_token": token}
     )["data"]["id"]
     suggestions = [
         {"from_article_id": a, "to_article_id": b, "anchor_text": f"x-{i}", "position": i}

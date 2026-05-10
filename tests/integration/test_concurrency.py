@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel
 
-from content_stack.db.connection import make_memory_engine
+from content_stack.db.connection import make_engine, make_memory_engine
 from content_stack.repositories.articles import ArticleRepository
 from content_stack.repositories.base import ConflictError
 from content_stack.repositories.projects import ProjectRepository
@@ -68,6 +68,50 @@ def test_etag_mismatch_rejects_concurrent_set_draft(session: Session, project_id
         repo.set_draft(art.id, "second writer", expected_etag=shared_etag)
     assert exc_info.value.code == -32008
     assert "expected_etag" in exc_info.value.detail
+
+
+def test_stale_session_etag_compare_and_swap_is_atomic(tmp_path: Path) -> None:
+    """A stale identity-map row cannot overwrite a committed etag change."""
+    engine = make_engine(tmp_path / "article-concurrency.sqlite")
+    SQLModel.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS uq_article_slug ON articles(project_id, slug)")
+        )
+
+    with Session(engine) as setup:
+        project_id = (
+            ProjectRepository(setup)
+            .create(
+                slug="atomic",
+                name="atomic",
+                domain="example.com",
+                locale="en-US",
+            )
+            .data.id
+        )
+        assert project_id is not None
+        repo = ArticleRepository(setup)
+        art = repo.create(project_id=project_id, topic_id=None, title="C", slug="atomic-art").data
+        assert art.id is not None
+        etag = art.step_etag
+        etag = repo.set_brief(art.id, {"x": 1}, expected_etag=etag).data.step_etag
+        shared_etag = repo.set_outline(art.id, "outline", expected_etag=etag).data.step_etag
+        article_id = art.id
+
+    with Session(engine) as s1, Session(engine) as s2:
+        repo1 = ArticleRepository(s1)
+        repo2 = ArticleRepository(s2)
+        repo2.get(article_id)
+
+        out = repo1.set_draft(article_id, "first writer", expected_etag=shared_etag)
+        assert out.data.draft_md == "first writer"
+
+        with pytest.raises(ConflictError):
+            repo2.set_draft(article_id, "second writer", expected_etag=shared_etag)
+
+    with Session(engine) as check:
+        assert ArticleRepository(check).get(article_id).draft_md == "first writer"
 
 
 @pytest.mark.benchmark

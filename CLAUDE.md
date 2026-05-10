@@ -27,6 +27,22 @@ The full canonical list lives in PLAN.md's "Decisions locked" section. Quick ref
 - **Delegate non-trivial implementation.** Main coordinates and never improvises silently. If you intend to deviate from PLAN.md or add scope, surface it in chat first.
 - **Self-review at every checkpoint** (type purity, no hacks, no over-engineering). Commit incrementally per logical step rather than batching.
 
+## Local Serena MCP setup
+
+Use the dedicated content-stack Serena MCP server instead of the shared/global
+`serena` server:
+
+- Codex MCP name: `serena-content-stack`
+- URL: `http://localhost:9123/mcp`
+- launchd label: `com.oraios.serena-mcp.content-stack`
+- launchd plist: `~/Library/LaunchAgents/com.oraios.serena-mcp-content-stack.plist`
+- project root: `/Users/sergeyrura/Bin/content-stack`
+- log: `~/Library/Logs/serena-mcp-content-stack.log`
+
+Do not switch the shared `serena` MCP with `activate_project`; it belongs to
+other projects and can surface stale memories. Do not write, rename, edit, or
+delete Serena memories unless explicitly requested by the user.
+
 ## Repo layout (target — built incrementally per PLAN.md sequencing)
 
 ```

@@ -1,10 +1,10 @@
-"""Fixtures for the M7.A procedure-runner integration tests.
+"""Fixtures for the agent-led procedure controller integration tests.
 
 Each test runs against an in-memory SQLite engine with the same
 schema-priming pattern repository tests use (``SQLModel.metadata.create_all``
 plus the partial-unique indexes that Alembic emits in 0002). The
-``ProcedureRunner`` is constructed against that engine with a fresh
-``StubDispatcher`` per test so handler overrides don't bleed across.
+``ProcedureRunner`` is constructed against that engine and the repo-root
+``procedures/`` directory.
 
 The shared ``scenario`` fixture seeds a project + topic + the publish
 target the procedure-04 publish step expects so tests don't have to
@@ -32,7 +32,6 @@ from content_stack.db.models import (
     TopicSource,
     TopicStatus,
 )
-from content_stack.procedures.llm import StubDispatcher
 from content_stack.procedures.runner import ProcedureRunner
 from content_stack.repositories.projects import ProjectRepository
 
@@ -84,29 +83,20 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def dispatcher() -> StubDispatcher:
-    """One ``StubDispatcher`` per test — fresh handler registry each run."""
-    return StubDispatcher()
-
-
-@pytest.fixture
 def runner(
     engine: object,
     settings: Settings,
-    dispatcher: StubDispatcher,
 ) -> ProcedureRunner:
-    """``ProcedureRunner`` bound to the test engine + stub dispatcher.
+    """``ProcedureRunner`` bound to the test engine.
 
-    Uses the repo-root ``procedures/`` directory so the M7.A
-    procedure-04 spec loads automatically. The runner picks up the
-    sibling ``skills/`` directory for SKILL.md bodies; missing skills
-    are tolerated (the stub doesn't read them).
+    Uses the repo-root ``procedures/`` directory so all authored
+    procedure specs load automatically. The runner picks up the sibling
+    ``skills/`` directory for SKILL.md bodies.
     """
     repo_root = Path(__file__).resolve().parents[3]
     return ProcedureRunner(
         settings=settings,
         engine=engine,
-        dispatcher=dispatcher,
         procedures_dir=repo_root / "procedures",
     )
 
@@ -116,7 +106,7 @@ def scenario(engine: object) -> dict[str, int]:
     """Seed a project + topic + primary publish target.
 
     Procedure 4 reads the project's primary publish target to pick the
-    publish skill at dispatch time; we wire a default ``nuxt-content``
+    publish skill for the agent-facing step package; we wire a default ``nuxt-content``
     target so the runner doesn't trip on a missing publisher. Tests
     that need a different publisher kind override after this fixture.
     """

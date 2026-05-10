@@ -24,6 +24,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -41,7 +43,7 @@ inputs:
     source: args
     type: int
     required: true
-    description: The publish_targets.id whose kind='wordpress' the procedure runner has selected for this dispatch. Procedure 4 publishes to the primary target first, then queues secondary targets.
+    description: The publish_targets.id whose kind='wordpress' the procedure controller selected for this run. Procedure 4 publishes to the primary target first, then queues secondary targets.
 outputs:
   - table: article_publishes
     write: one row per (article_id, target_id, version_published) via publish.recordPublish — published_url + frontmatter_json + status='published' on success, status='failed' + error on failure.
@@ -53,9 +55,9 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable from the primary target, and the publish target is a `kind='wordpress'` row whose `config_json` carries the WordPress site's REST URL, auth method, default status, category / tag id mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to the WordPress Media Library, POSTs the composed post payload to the REST API, records the publish row, and — when the dispatch is for the project's primary target — advances `articles.status` to `published`.
+Procedure 4 calls this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable from the primary target, and the publish target is a `kind='wordpress'` row whose `config_json` carries the WordPress site's REST URL, auth method, default status, category / tag id mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to the WordPress Media Library, POSTs the composed post payload to the REST API, records the publish row, and — when the run is for the project's primary target — advances `articles.status` to `published`.
 
-Procedure 4's publish phase publishes to the primary target first; secondary `wordpress` targets (e.g., a multisite mirror, a sibling locale, or a staging-then-production flow) are dispatched in turn via the procedure runner's per-target replication. Each dispatch is a fresh skill invocation with the target_id passed through args. The skill is idempotent on `(article_id, target_id, version_published)` because the publish.recordPublish call upserts; re-running the same dispatch with the same version produces the same row state. The actual WordPress post is identified by an external post id stored in the publish row's `frontmatter_json.wp_post_id` so re-dispatches PUT to the existing post rather than creating a duplicate.
+Procedure 4's publish phase publishes to the primary target first; secondary `wordpress` targets (e.g., a multisite mirror, a sibling locale, or a staging-then-production flow) are handled by the operator agent as explicit follow-up publish steps. Each invocation receives the target_id through args. The skill is idempotent on `(article_id, target_id, version_published)` because the publish.recordPublish call upserts; re-running the same target with the same version produces the same row state. The actual WordPress post is identified by an external post id stored in the publish row's `frontmatter_json.wp_post_id` so re-runs PUT to the existing post rather than creating a duplicate.
 
 The skill also runs in two non-procedure-driven modes the operator can invoke from the UI. The first is a manual republish triggered after the operator edited the article in the editor UI; the contract is identical, with a fresh `run_id`. The second is a content-refresh republish from procedure 7, where the article carries a new `version_published` and the skill PUTs the refreshed body to the existing WordPress post.
 
@@ -121,8 +123,8 @@ The skill also runs in two non-procedure-driven modes the operator can invoke fr
    The composed payload's serializable form persists to `article_publishes.frontmatter_json` as the snapshot.
 7. **POST or PUT the post.** When the publish row for `(article_id, target_id, version_published)` already carries a `frontmatter_json.wp_post_id` (a prior publish wrote it), the skill PUTs to `<wp_url>/wp-json/wp/v2/posts/<post-id>` to update the existing post. When no prior post id exists, the skill POSTs to `<wp_url>/wp-json/wp/v2/posts/`. Capture the response: `id`, `link`, `slug`, `modified`, `status`. The response's `link` is the canonical published URL.
 8. **Compute the published URL.** Use the response's `link` field — WordPress is authoritative for the URL because permalinks may differ from the target's `public_url_pattern` (WordPress sometimes appends a duplicate-slug counter or the operator chose a non-default permalink structure). The pattern is a fallback for record-keeping when the response link is missing.
-9. **Record the publish row.** Call `publish.recordPublish(article_id, target_id, version_published, published_url=<response.link>, frontmatter_json=<step 6 payload + wp_post_id>, status=<published|failed>, error=<error or null>)`. The repository upserts on `(article_id, target_id, version_published)`. The `wp_post_id` is what makes future re-dispatches PUT instead of POST.
-10. **Set canonical when this is the canonical target.** Same logic as the Nuxt skill: when the article's `canonical_target_id` is null AND this dispatch is for the primary target AND the post wrote `published`, call `publish.setCanonical(article_id, target_id)`.
+9. **Record the publish row.** Call `publish.recordPublish(article_id, target_id, version_published, published_url=<response.link>, frontmatter_json=<step 6 payload + wp_post_id>, status=<published|failed>, error=<error or null>)`. The repository upserts on `(article_id, target_id, version_published)`. The `wp_post_id` is what makes future refreshes PUT instead of POST.
+10. **Set canonical when this is the canonical target.** Same logic as the Nuxt skill: when the article's `canonical_target_id` is null AND this run is for the primary target AND the post wrote `published`, call `publish.setCanonical(article_id, target_id)`.
 11. **Advance article status (primary target only).** Same logic as the Nuxt skill: on the primary target, on first-publish path, on a successful publish, call `article.markPublished(article_id, expected_etag)`.
 12. **Persist the audit row.** Write `runs.metadata_json.wordpress_publish = {target_id, target_kind: 'wordpress', target_is_primary, version_published, slug, wp_post_id, post_url, post_status, role_check, media_ids: [...], categories_resolved: [...], tags_resolved: [...], tags_auto_created: [...], seo_meta_keys: [...], rollback_applied?, error?}`.
 13. **Finish.** Call `run.finish` with `{article_id, target_id, status, version_published, published_url, wp_post_id?, post_status}`. Heartbeats fire after the HTML render (step 3), after each media upload batch (step 4), and after the POST/PUT (step 7).
@@ -144,7 +146,7 @@ The skill also runs in two non-procedure-driven modes the operator can invoke fr
 - **Media upload returns 4xx for a single asset (step 4).** Capture the error, mark the asset failed in the audit row, continue. The body's image reference falls back to the daemon URL; the publish proceeds in degraded mode. Hero failure is hard fail (the post would have no `featured_media`).
 - **Media upload returns 5xx for a single asset.** Retry once. Two consecutive 5xx aborts that asset; same hero-vs-non-hero rule applies.
 - **POST returns 4xx (step 7).** Capture the error in the publish row's `error` field, mark `status='failed'`, surface, do not retry. Common 4xx reasons: permission denied (covered by the role check), invalid slug (auto-collide; WordPress should append `-2` rather than reject), invalid meta keys (some SEO plugins lock down meta updates).
-- **POST returns 5xx.** Capture, mark `status='failed'`, surface, raise so the procedure runner's `retry(3, backoff=exponential)` shape decides whether to re-dispatch.
+- **POST returns 5xx.** Capture, mark `status='failed'`, surface, and let the procedure agent decide whether to retry.
 - **Rollback uploaded media on failed POST.** When the POST failed AND `media_ids[]` is non-empty, attempt to delete each uploaded media row via `DELETE /wp-json/wp/v2/media/<id>?force=true`. Best-effort; failures are logged but do not propagate. The audit row reflects whether the rollback succeeded so the operator can clean up orphan media manually if needed.
 - **`publish.recordPublish` rejects.** Hard failure; the skill must always record its outcome. Surface and abort.
 - **`article.markPublished` etag mismatch.** Refresh, retry once. The publish row is in place either way; only the status advancement is at risk.

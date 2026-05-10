@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -41,7 +43,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after the alt-text-auditor (#14) and before the interlinker (#15). At this point the article is `eeat_passed`, the image package is in place (the auditor's flags are written), and the canonical URL is known to the publish target (when one has been assigned via `articles.canonical_target_id`). The schema-emitter composes a JSON-LD blob per applicable schema type, validates each blob, and writes one `schema_emits` row per type. The publish skills (#17 / #18 / #19) consume the rows and emit the JSON-LD inline in the rendered HTML / frontmatter.
+Procedure 4 calls this skill after the alt-text-auditor (#14) and before the interlinker (#15). At this point the article is `eeat_passed`, the image package is in place (the auditor's flags are written), and the canonical URL is known to the publish target (when one has been assigned via `articles.canonical_target_id`). The schema-emitter composes a JSON-LD blob per applicable schema type, validates each blob, and writes one `schema_emits` row per type. The publish skills (#17 / #18 / #19) consume the rows and emit the JSON-LD inline in the rendered HTML / frontmatter.
 
 The skill also runs in two ad-hoc modes the procedure runner does not orchestrate. The first is operator-invoked re-emission when the article's body or image package changed mid-flight (the operator clicks "regenerate schema" on the Article Detail UI); the skill walks the existing rows, drops any that have become stale, and writes fresh ones. The second is procedure 7's monthly humanize pass, which re-emits schema after the body refresh so the `dateModified` reflects the new version.
 

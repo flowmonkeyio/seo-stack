@@ -92,11 +92,10 @@ keyword-discovery path when the operator has time.
 3. **human-approval** — The operator reviews the proposed topic queue
    in the UI's Topics view, approves / rejects / edits each row. The
    step intentionally pauses (``on_failure=human_review``): in
-   production the dispatcher raises ``LLMDispatcherError`` after
-   writing ``runs.metadata_json.pending_human_review = {topics: [...]}``;
-   the runner pauses the run with ``status='running'`` so heartbeats
-   keep firing. ``procedure.resume`` picks up at the next step once
-   the operator flips ``topics.status='approved'`` on their picks.
+   practice ``_programmatic/topic-approval-pause`` records
+   ``output_json.human_review=true`` and leaves this step current. The
+   agent retries once the operator flips ``topics.status='approved'`` on
+   their picks.
 4. **topical-cluster** (#3) — Second-pass cluster, now over the
    operator-approved subset, builds the final pillar/spoke hierarchy
    the topic queue carries forward. ``on_failure=abort``: a structural

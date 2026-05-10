@@ -16,6 +16,7 @@ const __dirname = dirname(__filename)
 const REPO_ROOT = join(__dirname, '..', '..')
 
 const PORT = Number(process.env.CS_E2E_PORT ?? 5181)
+const SERVE_ARGS = ['-m', 'content_stack', 'serve', '--host', '127.0.0.1', '--port', String(PORT)]
 
 interface DaemonRecord {
   pid: number
@@ -60,6 +61,19 @@ async function readToken(stateDir: string, timeoutMs = 30_000): Promise<string |
   return null
 }
 
+function daemonCommand(): { command: string; args: string[] } {
+  if (process.env.CS_E2E_PYTHON) {
+    return { command: process.env.CS_E2E_PYTHON, args: SERVE_ARGS }
+  }
+
+  const venvPython = join(REPO_ROOT, '.venv', 'bin', 'python')
+  if (existsSync(venvPython)) {
+    return { command: venvPython, args: SERVE_ARGS }
+  }
+
+  return { command: 'uv', args: ['run', 'python', ...SERVE_ARGS] }
+}
+
 export default async function globalSetup(): Promise<void> {
   const stateDir = mkdtempSync(join(tmpdir(), 'cs-e2e-state-'))
   const dataDir = mkdtempSync(join(tmpdir(), 'cs-e2e-data-'))
@@ -72,18 +86,15 @@ export default async function globalSetup(): Promise<void> {
     PYTHONUNBUFFERED: '1',
   }
 
-  const child = spawn(
-    'uv',
-    ['run', 'python', '-m', 'content_stack', 'serve', '--host', '127.0.0.1', '--port', String(PORT)],
-    {
-      cwd: REPO_ROOT,
-      env,
-      stdio: 'pipe',
-      // Run in its own process group so the teardown can SIGKILL the
-      // whole tree (uv -> python -> uvicorn worker) at once.
-      detached: true,
-    },
-  )
+  const daemon = daemonCommand()
+  const child = spawn(daemon.command, daemon.args, {
+    cwd: REPO_ROOT,
+    env,
+    stdio: 'pipe',
+    // Run in its own process group so the teardown can SIGKILL the
+    // whole tree (uv -> python -> uvicorn worker) at once.
+    detached: true,
+  })
   // Surface daemon stderr/stdout to the test runner's output for triage.
   child.stdout?.on('data', (d) => process.stdout.write(`[daemon] ${d}`))
   child.stderr?.on('data', (d) => process.stderr.write(`[daemon] ${d}`))

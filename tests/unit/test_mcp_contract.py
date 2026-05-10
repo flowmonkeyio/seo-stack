@@ -6,8 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from content_stack.mcp.contract import (
-    MUTATING_VERBS,
-    READ_VERBS,
     MCPInput,
     WriteEnvelope,
     verb_is_mutating,
@@ -46,7 +44,7 @@ from content_stack.mcp.server import (
         "gsc.bulkIngest",
         "gsc.rollup",
         "drift.snapshot",
-        "drift.diff",  # diff is the M5 deferral — but verb is "diff" which is a read.
+        "drift.diff",
         "schema.validate",
         "eeat.toggle",
         "article.refreshDue",
@@ -60,15 +58,7 @@ from content_stack.mcp.server import (
 )
 def test_mutating_verb_classification(name: str) -> None:
     """Names with mutating verbs report as mutating."""
-    verb = name.rsplit(".", 1)[-1]
-    if verb in MUTATING_VERBS:
-        assert verb_is_mutating(name)
-    elif verb in READ_VERBS:
-        assert not verb_is_mutating(name)
-    else:
-        # Some verbs in the parametrise list are mutating (recordPublish, refreshDue).
-        # Test fall-through tracks the registry.
-        pass
+    assert verb_is_mutating(name)
 
 
 @pytest.mark.parametrize(

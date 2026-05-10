@@ -11,7 +11,6 @@ from __future__ import annotations
 import ipaddress
 import os
 from pathlib import Path
-from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -58,22 +57,10 @@ class Settings(BaseSettings):
     data_dir: Path = _default_data_dir()
     state_dir: Path = _default_state_dir()
 
-    # ---- M7 procedure runner --------------------------------------------
-    # Selection of the LLM dispatcher behind the procedure runner. The
-    # ``stub`` value is the M7.A default — it lets the runner prove the
-    # daemon-orchestrated dispatch contract (D4) end-to-end without burning
-    # OpenAI / Anthropic tokens. Production deployments switch to
-    # ``openai`` or ``anthropic`` once the real provider dispatchers land
-    # (M7 follow-up). The corresponding integration credential row
-    # (``kind='openai-procedure-runner'`` or
-    # ``kind='anthropic-procedure-runner'``) holds the API key, separate
-    # from any other integration credential per audit M-11.
-    procedure_runner_llm: Literal["stub", "openai", "anthropic"] = "stub"
-
     # The maximum number of FIX-loop iterations the runner takes before
-    # aborting a procedure. Per audit BLOCKER-09 the default of 3 stops
-    # the editor + eeat-gate cycle from running away when the editor
-    # cannot satisfy the gate.
+    # asking the operator to take over. Per audit BLOCKER-09 the default
+    # of 3 stops editor + EEAT-gate remediation from looping endlessly
+    # when a draft cannot satisfy the gate.
     procedure_runner_max_loop_iterations: int = 3
 
     # Default ceiling on parallel runs of the same procedure. Each

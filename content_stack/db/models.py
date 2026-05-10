@@ -604,9 +604,9 @@ class Topic(SQLModel, table=True):
 class PublishTarget(SQLModel, table=True):
     """Per-project publish destinations (PLAN.md L366).
 
-    ``is_primary`` exactly-one-per-project is enforced by partial unique
-    index ``uq_publish_targets_primary`` (PLAN.md L485 + audit B-08), emitted
-    in the M1 migration.
+    ``uq_publish_targets_primary`` enforces at most one primary at the DB
+    layer; the repository keeps exactly one primary when a project has any
+    target rows (PLAN.md L485 + audit B-08).
     """
 
     __tablename__ = "publish_targets"

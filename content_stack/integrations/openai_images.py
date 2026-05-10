@@ -1,8 +1,8 @@
 """OpenAI Images integration wrapper (PLAN.md L1050).
 
-Authentication: Bearer ``Authorization: Bearer <api_key>`` — separate
-row from the procedure-runner LLM key (PLAN.md L1057-L1063), so the
-operator can budget images independently from prose generation.
+Authentication: Bearer ``Authorization: Bearer <api_key>``. This is a
+daemon-side vendor key for image generation only; prose generation uses
+the current operator agent's runtime credentials outside content-stack.
 
 Operation:
 

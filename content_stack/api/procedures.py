@@ -1,11 +1,11 @@
-"""Procedures router — list, run, resume, fork, poll.
+"""Procedures router — list, start, resume, fork, poll.
 
 PLAN.md L611-L617:
 
 - ``GET /procedures`` — list discovered procedure files (frontmatter
   metadata).
-- ``POST /procedures/{slug}/run`` — enqueue a procedure run via the
-  daemon-orchestrated runner (M7+, decision D4); 202 with envelope.
+- ``POST /procedures/{slug}/run`` — open an agent-led procedure run;
+  202 with envelope.
 - ``POST /procedures/runs/{run_id}/resume`` — resume from the next
   pending step.
 - ``POST /procedures/runs/{run_id}/fork`` — clone a run from a step
@@ -26,6 +26,7 @@ from sqlmodel import Session
 
 from content_stack.api.deps import get_session
 from content_stack.config import Settings, get_settings
+from content_stack.db.models import ProcedureRunStepStatus
 from content_stack.repositories.base import (
     ConflictError,
     NotFoundError,
@@ -68,6 +69,22 @@ class ProcedureRunResponse(BaseModel):
     steps: list[ProcedureRunStepOut] = Field(default_factory=list)
 
 
+class ProcedureStepContext(BaseModel):
+    """Agent-facing package for the next procedure step."""
+
+    run: RunOut
+    steps: list[ProcedureRunStepOut] = Field(default_factory=list)
+    run_id: int
+    run_token: str
+    slug: str
+    project_id: int | None
+    orchestration_mode: str
+    procedure_args: dict[str, Any]
+    previous_outputs: dict[str, Any]
+    current_step: dict[str, Any] | None
+    next_action: str
+
+
 class ProcedureRunRequest(BaseModel):
     """Wire shape for ``POST /procedures/{slug}/run``."""
 
@@ -92,6 +109,7 @@ class ProcedureRunEnqueued(BaseModel):
     project_id: int
     started: bool
     parent_run_id: int | None = None
+    orchestration_mode: str = "agent-led"
 
 
 class ProcedureForkRequest(BaseModel):
@@ -100,6 +118,45 @@ class ProcedureForkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"from_step_index": 5}})
 
     from_step_index: int
+
+
+class ProcedureClaimStepRequest(BaseModel):
+    """Wire shape for claiming the next procedure step."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"step_id": "outline"}})
+
+    step_id: str | None = None
+
+
+class ProcedureRecordStepRequest(BaseModel):
+    """Wire shape for recording a caller-owned step result."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "step_id": "outline",
+                "status": "success",
+                "output_json": {"outline_id": 12},
+            }
+        },
+    )
+
+    step_id: str
+    status: ProcedureRunStepStatus
+    output_json: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class ProcedureExecuteProgrammaticStepRequest(BaseModel):
+    """Wire shape for executing a deterministic programmatic step."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"step_id": "generate-topic-plan"}},
+    )
+
+    step_id: str | None = None
 
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -209,12 +266,7 @@ async def run_procedure(
     payload: ProcedureRunRequest,
     request: Request,
 ) -> ProcedureRunEnqueued:
-    """Enqueue a procedure run via the daemon-orchestrated runner.
-
-    Per locked decision D4 (PLAN.md L884-L900): the runner is daemon-side;
-    the client only kicks off + polls. Returns 202 + the envelope so
-    UI / MCP clients can navigate to ``status_url`` for live state.
-    """
+    """Open a procedure run for the current agent / operator to manage."""
     runner = _runner_from(request)
     try:
         envelope = await runner.start(
@@ -278,7 +330,9 @@ async def fork_procedure_run(
     """Fork a procedure run from a step index, copying prior outputs."""
     runner = _runner_from(request)
     try:
-        envelope = await runner.fork(run_id=run_id, from_step_index=payload.from_step_index)
+        envelope = await runner.fork(
+            run_id=run_id, from_step_index=payload.from_step_index
+        )
     except NotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -290,6 +344,117 @@ async def fork_procedure_run(
             detail={"detail": str(exc), "data": exc.data},
         ) from exc
     return ProcedureRunEnqueued(**envelope)
+
+
+@router.get("/runs/{run_id}/current-step", response_model=ProcedureStepContext)
+async def get_current_procedure_step(run_id: int, request: Request) -> ProcedureStepContext:
+    """Return the next caller-managed procedure step package."""
+    runner = _runner_from(request)
+    try:
+        return ProcedureStepContext.model_validate(runner.current_step(run_id=run_id))
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except (ConflictError, ValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+
+
+@router.post("/runs/{run_id}/claim-step", response_model=ProcedureStepContext)
+async def claim_procedure_step(
+    run_id: int,
+    payload: ProcedureClaimStepRequest,
+    request: Request,
+) -> ProcedureStepContext:
+    """Claim the next procedure step for the current agent."""
+    runner = _runner_from(request)
+    try:
+        return ProcedureStepContext.model_validate(
+            runner.claim_step(run_id=run_id, step_id=payload.step_id)
+        )
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+
+
+@router.post("/runs/{run_id}/record-step", response_model=ProcedureStepContext)
+async def record_procedure_step(
+    run_id: int,
+    payload: ProcedureRecordStepRequest,
+    request: Request,
+) -> ProcedureStepContext:
+    """Record a caller-owned procedure step result."""
+    runner = _runner_from(request)
+    try:
+        return ProcedureStepContext.model_validate(
+            runner.record_step(
+                run_id=run_id,
+                step_id=payload.step_id,
+                status=payload.status,
+                output_json=payload.output_json,
+                error=payload.error,
+            )
+        )
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+
+
+@router.post("/runs/{run_id}/execute-programmatic-step", response_model=ProcedureStepContext)
+async def execute_programmatic_procedure_step(
+    run_id: int,
+    payload: ProcedureExecuteProgrammaticStepRequest,
+    request: Request,
+) -> ProcedureStepContext:
+    """Execute the current deterministic ``_programmatic/*`` step."""
+    runner = _runner_from(request)
+    try:
+        return ProcedureStepContext.model_validate(
+            await runner.execute_programmatic_step(run_id=run_id, step_id=payload.step_id)
+        )
+    except NotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"detail": str(exc), "data": exc.data},
+        ) from exc
 
 
 @router.get("/runs/{run_id}", response_model=ProcedureRunResponse)
@@ -304,10 +469,14 @@ async def get_procedure_run(
 
 
 __all__ = [
+    "ProcedureClaimStepRequest",
+    "ProcedureExecuteProgrammaticStepRequest",
     "ProcedureForkRequest",
+    "ProcedureRecordStepRequest",
     "ProcedureRunEnqueued",
     "ProcedureRunRequest",
     "ProcedureRunResponse",
+    "ProcedureStepContext",
     "ProcedureSummary",
     "router",
 ]

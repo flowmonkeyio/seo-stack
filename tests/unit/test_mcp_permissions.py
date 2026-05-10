@@ -19,9 +19,9 @@ from content_stack.mcp.permissions import (
 # ---------------------------------------------------------------------------
 
 
-def test_system_skill_is_full_grant() -> None:
-    """``__system__`` is a full-grant sentinel."""
-    assert is_full_grant(SYSTEM_SKILL)
+def test_system_skill_is_not_full_grant() -> None:
+    """``__system__`` is a narrow bootstrap grant, not an escape hatch."""
+    assert not is_full_grant(SYSTEM_SKILL)
 
 
 def test_test_skill_is_full_grant() -> None:
@@ -40,10 +40,12 @@ def test_real_skill_is_not_full_grant() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_grant_passes_for_system_skill() -> None:
-    """System sentinel can call any tool."""
-    check_grant("article.markPublished", SYSTEM_SKILL)
-    check_grant("project.delete", SYSTEM_SKILL)
+def test_check_grant_for_system_skill_is_bootstrap_only() -> None:
+    """System calls can bootstrap a run, but cannot bypass skill grants."""
+    check_grant("run.start", SYSTEM_SKILL)
+    check_grant("project.create", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("article.markPublished", SYSTEM_SKILL)
 
 
 def test_check_grant_passes_for_test_skill() -> None:

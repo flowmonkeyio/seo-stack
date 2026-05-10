@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { createProject, resetProjects, trackConsoleErrors } from '../helpers'
 
-test.describe('procedures view — list + run modal + 501 surfacing', () => {
+test.describe('procedures view — list + run modal', () => {
   test.beforeEach(async () => {
     await resetProjects()
   })
@@ -23,7 +23,7 @@ test.describe('procedures view — list + run modal + 501 surfacing', () => {
     errors.assertNone()
   })
 
-  test('opens the run modal and surfaces the M7 hint', async ({ page }) => {
+  test('opens the run modal with current runner copy', async ({ page }) => {
     const errors = trackConsoleErrors(page)
     const project = await createProject({
       name: 'M7 Project',
@@ -44,7 +44,7 @@ test.describe('procedures view — list + run modal + 501 surfacing', () => {
     await runButtons.first().click()
     const dialog = page.getByRole('dialog', { name: /Run procedure:/ })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText(/M7/)).toBeVisible()
+    await expect(dialog.getByText(/Runs start immediately/)).toBeVisible()
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).not.toBeVisible()
 

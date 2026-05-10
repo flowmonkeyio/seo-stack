@@ -28,7 +28,7 @@ from typing import Any, ClassVar
 
 import httpx
 
-from content_stack.integrations._base import BaseIntegration, IntegrationCallResult
+from content_stack.integrations._base import BaseIntegration, IntegrationCallResult, JsonBody
 
 
 class DataForSeoIntegration(BaseIntegration):
@@ -73,7 +73,7 @@ class DataForSeoIntegration(BaseIntegration):
         self,
         op: str,
         *,
-        request: dict[str, Any] | None,
+        request: JsonBody | None,
         response: Any,
         estimated: float,
     ) -> float:
@@ -116,7 +116,7 @@ class DataForSeoIntegration(BaseIntegration):
             op="serp",
             method="POST",
             url=f"{self.BASE_URL}/serp/google/organic/live/advanced",
-            json_body={"data": payload},
+            json_body=payload,
             auth=httpx.BasicAuth(self._login, self._password),
         )
 
@@ -139,7 +139,7 @@ class DataForSeoIntegration(BaseIntegration):
             op="keyword_volume",
             method="POST",
             url=f"{self.BASE_URL}/keywords_data/google_ads/search_volume/live",
-            json_body={"data": payload},
+            json_body=payload,
             auth=httpx.BasicAuth(self._login, self._password),
         )
 
@@ -151,9 +151,12 @@ class DataForSeoIntegration(BaseIntegration):
         language: str = "en",
     ) -> IntegrationCallResult:
         """Keyword intersection across competitor domains."""
+        if len(domains) != 2:
+            raise ValueError("DataForSEO domain_intersection expects exactly two domains")
         payload = [
             {
-                "targets": domains,
+                "target1": domains[0],
+                "target2": domains[1],
                 "location_name": location,
                 "language_code": language,
             }
@@ -162,7 +165,7 @@ class DataForSeoIntegration(BaseIntegration):
             op="intersection",
             method="POST",
             url=f"{self.BASE_URL}/dataforseo_labs/google/domain_intersection/live",
-            json_body={"data": payload},
+            json_body=payload,
             auth=httpx.BasicAuth(self._login, self._password),
         )
 
@@ -185,7 +188,7 @@ class DataForSeoIntegration(BaseIntegration):
             op="keywords_for_site",
             method="POST",
             url=f"{self.BASE_URL}/dataforseo_labs/google/keywords_for_site/live",
-            json_body={"data": payload},
+            json_body=payload,
             auth=httpx.BasicAuth(self._login, self._password),
         )
 
@@ -202,13 +205,14 @@ class DataForSeoIntegration(BaseIntegration):
                 "keyword": keyword,
                 "location_name": location,
                 "language_code": language,
+                "people_also_ask_click_depth": 1,
             }
         ]
         return await self.call(
             op="paa",
             method="POST",
-            url=f"{self.BASE_URL}/serp/google/people_also_ask/live/advanced",
-            json_body={"data": payload},
+            url=f"{self.BASE_URL}/serp/google/organic/live/advanced",
+            json_body=payload,
             auth=httpx.BasicAuth(self._login, self._password),
         )
 

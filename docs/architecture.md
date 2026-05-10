@@ -111,15 +111,18 @@ token is 32 random bytes (base64-url encoded) at
 `~/.local/state/content-stack/auth.token` (mode 0600). The
 `BearerTokenMiddleware`
 ([`content_stack/auth.py`](../content_stack/auth.py)) does a
-constant-time check on every request, with two whitelisted paths:
+constant-time check on every request, with three whitelisted paths:
 
 | Path                  | Why whitelisted                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
 | `/api/v1/health`      | Doctor probes liveness before resolving the token.                                             |
 | `/api/v1/auth/ui-token` | The browser SPA bootstraps the token from the daemon at app load; never lands in localStorage. |
+| `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser here; the route validates the OAuth `state` nonce. |
 
-The token rotates on every `make install` re-run; install scripts
-regenerate the Codex + Claude Code MCP configs to match. See
+`content-stack init`, `content-stack install`, and `make install` create the
+token before MCP registration. `content-stack rotate-token --yes` and
+`make rotate-token` regenerate the Codex + Claude Code MCP configs to match;
+restart any already-running daemon so middleware loads the new token. See
 [`./security.md`](./security.md) for the threat-model trade-off on
 the UI bootstrap endpoint.
 
@@ -252,7 +255,7 @@ tables and what they're for.
 | Table                | Purpose                                                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------- |
 | `runs`               | Top-level pipeline audit. Heartbeat-reapable.                                             |
-| `procedure_run_steps` | One row per procedure step; pre-written before dispatch. Drives resume cursor.            |
+| `procedure_run_steps` | One row per procedure step; pre-written before agent execution. Drives resume cursor.     |
 | `run_steps`          | Per-skill audit grain. Cost-of-truth lives here.                                          |
 | `run_step_calls`     | Per-MCP-call audit grain inside a skill step.                                             |
 | `idempotency_keys`   | Mutating-tool dedup. UNIQUE(project_id, tool_name, idempotency_key); 24 h replay window.  |
@@ -363,7 +366,7 @@ Caps blast radius if a token is exfiltrated.
 
 ## 7. MCP server
 
-125 tools registered (`content_stack/mcp/tools/*.py`) over
+130 tools registered (`content_stack/mcp/tools/*.py`) over
 Streamable HTTP at `/mcp`. The MCP server is a single
 `mcp.server.lowlevel.Server` instance built in
 `content_stack/mcp/server.py`; the FastAPI sub-app mount means the
@@ -437,13 +440,15 @@ JSON-RPC error code mapping; every error includes
 
 ---
 
-## 8. Procedure runner
+## 8. Procedure control
 
-Per locked decision **D4**, procedures are daemon-orchestrated. The
-MCP tool `procedure.run(slug, project_id, args)` enqueues a
-server-side runner that dispatches each step as a fresh per-skill
-LLM session. The user's LLM client only kicks off + polls.
-`content_stack/procedures/runner.py:1-67` documents the contract.
+Per locked decision **D4**, procedures are agent-led. The MCP tool
+`procedure.run(slug, project_id, args)` opens a durable run and
+pre-writes the step skeleton. The current external agent then claims
+each step, receives the step's `SKILL.md` body plus allowed tools,
+executes the work directly through MCP, and records the output. The
+daemon is the state, audit, grant, and validation layer; it is not the
+writer brain.
 
 ### 8.1 PROCEDURE.md contract
 
@@ -465,48 +470,49 @@ shape:
 | `resumable`          | Whether `procedure.resume(run_id)` is allowed after abort.                            |
 | `schedule?`          | Cron metadata for procedures 6 + 7 (cron-triggered).                                  |
 
-### 8.2 Step dispatch
+### 8.2 Agent-led step loop
 
 For each step in order:
 
-1. Pre-write a `procedure_run_steps` row with `status='pending'`.
-2. Resolve the dispatcher:
-   - `_programmatic/<name>` → `ProgrammaticStepRegistry.dispatch`
-     (no LLM session; pure repository / integration code).
-   - everything else → bound `LLMDispatcher`
-     (`AnthropicSession` in production; `StubDispatcher` for tests).
-3. The dispatcher's output gets persisted verbatim in
-   `procedure_run_steps.output_json`.
-4. Branch per `ProcedureStep.on_failure` (see section 8.4 below).
-5. Heartbeat the parent `runs.heartbeat_at` every transition.
+1. `procedure.run` pre-writes the `procedure_run_steps` rows as
+   `pending`.
+2. The current agent calls `procedure.claimStep`.
+3. The daemon marks the row `running`, returns the step package, and
+   binds the run token to that step's skill grant.
+4. The current agent follows the skill prompt, calls MCP tools, and may
+   spawn caller-owned subagents for bounded subtasks.
+5. The current agent calls `procedure.recordStep`; the daemon persists
+   `procedure_run_steps.output_json`, updates `runs.last_step`, and
+   exposes the next step.
+6. The current agent applies `ProcedureStep.on_failure` guidance (see
+   section 8.4 below) and decides whether to retry, loop back, pause,
+   fork, or abort.
 
-### 8.3 LLM session model
+### 8.3 Skill execution model
 
-Each LLM step runs in a fresh per-skill session. The dispatcher:
+Each skill step is executed by the current operator agent. The step
+package:
 
 - Loads the skill's `SKILL.md` from
   `skills/<phase>/<name>/SKILL.md`.
-- Sets `CONTENT_STACK_PROJECT_ID`, `CONTENT_STACK_RUN_ID`,
-  `CONTENT_STACK_ARTICLE_ID?`, `CONTENT_STACK_TOPIC_ID?` env vars.
-- Provisions the bearer token + the run_token (signed; resolves to
-  the skill name in `permissions.py`).
-- Tells the LLM to call MCP via Streamable HTTP at
-  `http://127.0.0.1:5180/mcp`.
-
-Context windows stay tight; no 9-step transcript explosion. The
-daemon holds its own LLM credentials (separate from any runtime's)
-as `integration_credentials` rows with `kind='openai'` or
-`kind='anthropic'`.
+- Includes merged procedure args, prior step outputs, article/project
+  context, and the allowed MCP tools.
+- Uses the run token as a scoped permission handle. `procedure.claimStep`
+  updates `runs.metadata_json.skill_name` to the claimed skill so
+  `permissions.py` enforces the same per-skill grants as the skill
+  frontmatter.
+- Keeps the current agent as the orchestration brain. Any subagents are
+  spawned by the current agent and report back to it, not by the daemon.
 
 ### 8.4 Failure modes
 
 | Mode           | Effect                                                                                              |
 | -------------- | --------------------------------------------------------------------------------------------------- |
-| `abort`        | Mark `runs.status='failed'`; raise; no resume by default.                                           |
-| `retry`        | Re-dispatch up to `max_retries` (cap 3); escalate to `abort` on exhaustion.                         |
-| `loop_back`    | Jump back to a prior step id; capped at `settings.procedure_runner_max_loop_iterations` (default 3).|
-| `skip`         | Mark `procedure_run_steps.status='skipped'`; advance.                                               |
-| `human_review` | Mark step paused; emit event for UI; `procedure.resume` picks up.                                   |
+| `abort`        | A failed record marks `runs.status='failed'`.                                                       |
+| `retry`        | The current agent retries up to `max_retries` (cap 3), then escalates.                              |
+| `loop_back`    | The current agent returns to a prior step id, respecting the configured loop cap.                    |
+| `skip`         | The current agent records `procedure_run_steps.status='skipped'` and advances.                      |
+| `human_review` | The controller records a review pause; the current agent retries after operator action.             |
 
 ### 8.5 EEAT three-verdict branch
 
@@ -524,7 +530,7 @@ branches on a verdict for. Per audit BLOCKER-09:
 Three nested tables:
 
 - `procedure_run_steps` — one row per declared step, written before
-  dispatch. Drives the resume cursor.
+  execution. Drives the resume cursor.
 - `run_steps` — one row per skill invocation. Cost-of-truth in
   `cost_cents`.
 - `run_step_calls` — one row per MCP call inside a skill step.
@@ -728,7 +734,7 @@ maps to load-bearing code:
 | **D7 EEAT core floor** | `content_stack/repositories/eeat.py`, seed.py                    | T04 / C01 / R10 cannot be deactivated or unrequired. Eeat-gate refuses to score with 0 active items in any of 8 dimensions. |
 | **B-07 article etag**  | `content_stack/repositories/articles.py`                          | Every `article.set*` requires `expected_etag`; mismatch → 409 (-32008). Step etag regenerates per write. |
 | **B-13 reaper**        | `content_stack/jobs/runs_reaper.py`, lifespan sweep               | Every 5 minutes; flips `running` rows whose heartbeat is > 5 min stale to `aborted`.               |
-| **B-21 daemon-orchestrated** | `content_stack/procedures/runner.py`                          | Procedures run server-side; the user's LLM client only kicks off + polls. Per D4.                  |
+| **B-21 agent-led procedures** | `content_stack/procedures/runner.py`, `content_stack/mcp/tools/runs.py` | Procedures are managed by the current agent; the daemon stores state, grants step-scoped tools, and records outputs. Per D4. |
 | **M-20 idempotency**   | `content_stack/repositories/runs.py:IdempotencyKeyRepository`     | (project_id, tool_name, key) replays within 24 h short-circuit; beyond 24 h are fresh.             |
 | **M-25 budget pre-emption** | `content_stack/integrations/_base.py`                        | Pre-call budget check refuses if `current_month_spend + estimated_cost > monthly_budget_usd`.       |
 | **B-08 publish primary** | partial-unique index `uq_publish_targets_primary`               | Exactly one `is_primary=true` row per project; CHECK + index.                                       |
@@ -761,14 +767,14 @@ treatment. Then for each `runs` row whose procedure declares
 4. The operator clicks "Resume" to call
    `procedure.resume(run_id)`.
 
-Resume policy: re-run the failed step from scratch (idempotent
-skills) by default. `procedure.fork(run_id, from_step)` creates a
-new child run for "redo from step N onward" — used by humanizer
-chains.
+Resume policy: the current agent receives the next pending, running,
+or failed step and decides whether to retry, skip, fork, or abort.
+`procedure.fork(run_id, from_step)` creates a new child run for "redo
+from step N onward" — used by humanizer chains.
 
-Heartbeat: the runner updates `runs.heartbeat_at` every step
-transition; an APScheduler interval refreshes it every 30 s while
-a run is active.
+Heartbeat: the controller updates `runs.heartbeat_at` on run open,
+resume, claim, and record. Agents can also call `run.heartbeat` during
+long steps.
 
 ---
 
@@ -799,11 +805,11 @@ fast UI display.
 db_status, scheduler_running, ...}`. Auth-whitelisted so
 `scripts/doctor.sh` can probe before resolving the token.
 
-`scripts/doctor.sh` performs 16 read-only checks per
-[`../PLAN.md:1466-1496`](../PLAN.md): daemon up? auth token mode?
-seed file mode? MCP registered? skills count? procedures count?
-required API keys? alembic head? EEAT core count = 3 per project?
-launchd plist? localhost binding? Time Machine inclusion (macOS)?
+`scripts/doctor.sh` performs read-only local checks per
+[`../PLAN.md`](../PLAN.md): daemon up, auth token mode, seed file mode,
+DB presence, alembic head, credential decryptability, scheduler health,
+and optional install/runtime hints for MCP, skills, procedures, and
+launchd. JSON output is `{ok, code, checks, info}`.
 
 ### 15.4 Swagger + OpenAPI
 
@@ -811,6 +817,7 @@ launchd plist? localhost binding? Time Machine inclusion (macOS)?
 `/api/openapi.json` serves the raw spec. Both auth-whitelisted is
 NOT the case — they require the bearer token. Operators usually hit
 them with `curl -H "Authorization: Bearer $(cat ~/.local/state/content-stack/auth.token)"`.
+The current REST API publishes 87 OpenAPI paths.
 
 ---
 

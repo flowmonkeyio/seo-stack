@@ -131,10 +131,9 @@ class GscMetricRepository:
     def bulk_ingest(self, project_id: int, rows: Iterable[GscRow]) -> Envelope[int]:
         """Insert rows; dedup via the ``uq_gsc_metrics_dedup`` unique index.
 
-        We rely on SQLite's ``INSERT OR IGNORE`` semantics by attempting
-        each insert inside a SAVEPOINT and swallowing the
-        ``IntegrityError`` for an already-present row. Returns the count
-        of *new* rows actually committed.
+        Each insert runs inside a SAVEPOINT. Duplicate rows roll back only
+        their own SAVEPOINT, so earlier successful inserts in the batch stay
+        pending and the returned count matches what is committed.
         """
         materialised = list(rows)
         inserted = 0
@@ -155,12 +154,13 @@ class GscMetricRepository:
                 avg_position=r.avg_position,
             )
             try:
-                self._s.add(metric)
-                self._s.flush()
+                with self._s.begin_nested():
+                    self._s.add(metric)
+                    self._s.flush()
                 inserted += 1
             except IntegrityError:
-                # Duplicate — rollback the failed flush and continue.
-                self._s.rollback()
+                # Duplicate — the nested SAVEPOINT was rolled back; keep the
+                # outer batch transaction alive.
                 continue
         self._s.commit()
         return Envelope(data=inserted, project_id=project_id)

@@ -66,6 +66,9 @@ describe('costs store', () => {
     await store.refreshBudgets(1)
     expect(store.budgets.length).toBe(1)
     expect(calls).toBeGreaterThan(1)
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) =>
+      String(url).includes('/api/v1/projects/1/budgets/google-paa'),
+    )).toBe(true)
   })
 
   it('upsertBudget() inserts at top when new', async () => {

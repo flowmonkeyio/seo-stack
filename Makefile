@@ -137,4 +137,4 @@ oauth-refresh: ## (M4) Run the GSC OAuth refresh worker once
 	$(PYTHON) -m content_stack.jobs.oauth_refresh --once
 
 rotate-token: ## (M10) Generate new auth token and update MCP configs
-	@echo "Not yet implemented (M10: distribution)"
+	$(PYTHON) -m content_stack rotate-token --yes

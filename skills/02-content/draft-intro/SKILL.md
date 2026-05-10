@@ -18,6 +18,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -40,7 +42,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill immediately after `outline` (#6). The intro is written first because it locks the voice the body and conclusion will match: the opening archetype, the reading level, the implied reader, the level of formality. Skills #8 (body) and #9 (conclusion) read the intro back to maintain continuity.
+Procedure 4 calls this skill immediately after `outline` (#6). The intro is written first because it locks the voice the body and conclusion will match: the opening archetype, the reading level, the implied reader, the level of formality. Skills #8 (body) and #9 (conclusion) read the intro back to maintain continuity.
 
 The intro is `article.setDraft(append=false)`: it overwrites whatever `draft_md` previously held. Re-running this skill replaces the intro and rotates the step_etag; the procedure runner picks up the fresh etag for the body phase.
 

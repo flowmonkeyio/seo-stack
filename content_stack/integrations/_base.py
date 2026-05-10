@@ -46,6 +46,8 @@ DEFAULT_BACKOFF_BASE = 0.5  # seconds; grows 2x each attempt.
 # stored shape so the DB doesn't balloon.
 MAX_LOG_BYTES = 4096
 
+type JsonBody = dict[str, Any] | list[Any]
+
 
 @dataclass
 class IntegrationCallResult:
@@ -115,7 +117,7 @@ class BaseIntegration:
         self,
         op: str,
         *,
-        request: dict[str, Any] | None,
+        request: JsonBody | None,
         response: Any,
         estimated: float,
     ) -> float:
@@ -147,16 +149,23 @@ class BaseIntegration:
             return blob[:MAX_LOG_BYTES] + "…[truncated]"
         return blob
 
-    @staticmethod
-    def _sanitize_request(request_json: dict[str, Any] | None) -> dict[str, Any] | None:
+    @classmethod
+    def _sanitize_request(cls, request_json: JsonBody | None) -> JsonBody | None:
         """Strip fields that look like secrets before persisting."""
         if not request_json:
             return request_json
-        clean: dict[str, Any] = {}
+        if isinstance(request_json, list):
+            return [
+                cls._sanitize_request(item) if isinstance(item, dict | list) else item
+                for item in request_json
+            ]
         sensitive = {"api_key", "apikey", "password", "secret", "client_secret", "authorization"}
+        clean: dict[str, Any] = {}
         for key, value in request_json.items():
             if key.lower() in sensitive:
                 clean[key] = "[redacted]"
+            elif isinstance(value, dict | list):
+                clean[key] = cls._sanitize_request(value)
             else:
                 clean[key] = value
         return clean
@@ -171,7 +180,7 @@ class BaseIntegration:
         url: str,
         *,
         op: str,
-        json: dict[str, Any] | None = None,
+        json: JsonBody | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
@@ -292,7 +301,7 @@ class BaseIntegration:
         op: str,
         method: str = "POST",
         url: str,
-        json_body: dict[str, Any] | None = None,
+        json_body: JsonBody | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
@@ -427,4 +436,5 @@ __all__ = [
     "MAX_LOG_BYTES",
     "BaseIntegration",
     "IntegrationCallResult",
+    "JsonBody",
 ]

@@ -5,9 +5,8 @@ idempotency (audit M-20). The procedure runner (M8) drives ``RunRepository``
 methods; the per-MCP-call grain feeds ``RunStepCallRepository`` so the
 UI's ``RunsView`` can show the full timeline.
 
-Resume / fork are intentionally deferred to M9 — the schema is in
-place but the orchestration logic + procedure-runner integration land
-with APScheduler.
+Resume / fork orchestration lives in ``content_stack.procedures.runner``;
+this repository owns the run rows, audit rows, and stale-run recovery.
 """
 
 from __future__ import annotations
@@ -362,6 +361,7 @@ class RunRepository:
             row.ended_at = _utcnow()
             self._s.add(row)
             assert row.id is not None
+            self._fail_active_procedure_steps(row.id, error="daemon-restart-orphan")
             self._cascade_abort(row.id)
         self._s.commit()
         return len(rows)
@@ -405,7 +405,26 @@ class RunRepository:
                 c.ended_at = _utcnow()
                 self._s.add(c)
                 if c.id is not None:
+                    self._fail_active_procedure_steps(c.id, error=c.error or "parent-aborted")
                     frontier.append(c.id)
+
+    def _fail_active_procedure_steps(self, run_id: int, *, error: str) -> None:
+        """Mark crashed in-flight procedure steps as retryable failures.
+
+        We do not touch pending rows: explicit resume should re-run from the
+        crashed active step, then proceed through the pending tail.
+        """
+        rows = self._s.exec(
+            select(ProcedureRunStep).where(
+                ProcedureRunStep.run_id == run_id,
+                ProcedureRunStep.status == ProcedureRunStepStatus.RUNNING,
+            )
+        ).all()
+        for row in rows:
+            row.status = ProcedureRunStepStatus.FAILED
+            row.error = error
+            row.ended_at = _utcnow()
+            self._s.add(row)
 
 
 # ---------------------------------------------------------------------------

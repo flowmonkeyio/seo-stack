@@ -57,6 +57,10 @@ FIRECRAWL_API_KEY=fc-...
 
 Used by: ``gsc-opportunity-finder``, ``crawl-error-watch``.
 
+This section is intentionally text-first. Google Cloud Console changes
+its layout frequently, so screenshots are deferred until the first
+published operator guide for a specific console version.
+
 1. Open <https://console.cloud.google.com>.
 2. Create a new project (or pick an existing one).
 3. Navigate to **APIs & Services → Library** and enable
@@ -95,35 +99,16 @@ re-running step 12 (the Connect button) picks up where we left off.
 
 ---
 
-## Anthropic (procedure-runner LLM)
+## Runtime LLM keys
 
-Used by: the daemon's procedure runner (D4) — the per-skill LLM
-sessions the runner dispatches when ``settings.procedure_runner_llm
-== "anthropic"``. **Separate from any runtime LLM key** the operator
-uses when typing ``/procedure …`` into Codex CLI / Claude Code; the
-daemon holds its own key so procedures execute unattended.
+Used by: the operator runtime, outside content-stack. Procedure writing
+is agent-led: Codex, Claude Code, or another MCP client is the writer
+and SEO operator, and it uses that runtime's own model credentials.
+Do not store prose-generation OpenAI/Anthropic keys in content-stack
+just so the daemon can spawn unattended writer sessions.
 
-1. Open <https://console.anthropic.com/settings/keys>.
-2. Create a new API key. Restrict to "Restricted" with the
-   ``messages:write`` scope only if your account supports scopes.
-3. In the content-stack UI Integrations tab pick "Anthropic" and
-   paste the key. The row stores under
-   ``integration_credentials.kind='anthropic'`` so the runner's
-   ``AnthropicSession`` dispatcher can resolve it.
-
-Cost: pay-as-you-go per Anthropic's pricing; the runner reports
-spend back into ``run_steps.cost_cents`` per skill invocation, and
-``runs.metadata_json.cost.by_integration.anthropic`` rolls them up.
-
-Env var equivalent (server side / tests):
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Switch the dispatcher with the env var ``CONTENT_STACK_PROCEDURE_RUNNER_LLM=anthropic``
-(default ``stub`` so unit tests don't burn tokens). The OpenAI
-dispatcher uses the same shape under ``kind='openai'``.
+The only OpenAI key content-stack itself needs is the vendor integration
+key for image generation below.
 
 ---
 
@@ -136,8 +121,8 @@ Used by: ``image-generator``.
    ``image.generation`` enabled if your account supports scopes.
 3. Paste into Integrations → OpenAI Images.
 
-This row is **separate** from any runtime LLM key (PLAN.md L1057-L1063)
-so you can budget images independently from prose.
+This row is **separate** from the LLM key used by your external agent
+(PLAN.md L1057-L1063), so you can budget images independently from prose.
 
 Cost: ~$0.04 per ``1024x1024 standard`` image; ~$0.08 for ``1024x1024
 hd`` and the wide / tall variants.
@@ -179,7 +164,9 @@ REDDIT_CLIENT_SECRET=...
 Used by: ``keyword-discovery``.
 
 No credential needed. The Google PAA wrapper delegates to Firecrawl
-under the hood — costs flow through Firecrawl's budget cap.
+under the hood. If you set a direct budget for the wrapper, use kind
+``google-paa``; older ``paa`` budget rows are normalized to ``google-paa``
+by the REST routes.
 
 ---
 

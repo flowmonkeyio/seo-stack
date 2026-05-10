@@ -19,6 +19,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -42,9 +44,9 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after the schema-emitter (#16) and before the active publish skill (#17 / #18 / #19). At that point the article is `eeat_passed`, has a body fixed by the editor, and is about to acquire its canonical URL — the perfect moment to plant the inbound and outbound link suggestions the post will carry into publication. The article-scoped mode runs all seven steps but the contextual-link search (step 5) and the implementation plan (step 7) are scoped to the single article; the other steps still see the full project graph because orphan and anchor analysis only make sense globally.
+Procedure 4 calls this skill after the schema-emitter (#16) and before the active publish skill (#17 / #18 / #19). At that point the article is `eeat_passed`, has a body fixed by the editor, and is about to acquire its canonical URL — the perfect moment to plant the inbound and outbound link suggestions the post will carry into publication. The article-scoped mode runs all seven steps but the contextual-link search (step 5) and the implementation plan (step 7) are scoped to the single article; the other steps still see the full project graph because orphan and anchor analysis only make sense globally.
 
-Procedure 6 (`weekly-gsc-review`) and the operator's UI also dispatch this skill in project-wide mode. In that mode every step audits the full graph; the output is a project-level repair plan plus a fan-out of contextual-link suggestions across whichever articles need new inbound links to clear orphan or under-linked status. The repair plan is informational; the actual writes are still suggestions the operator approves through the UI.
+Procedure 6 (`weekly-gsc-review`) and the operator's UI can also run this skill in project-wide mode. In that mode every step audits the full graph; the output is a project-level repair plan plus a fan-out of contextual-link suggestions across whichever articles need new inbound links to clear orphan or under-linked status. The repair plan is informational; the actual writes are still suggestions the operator approves through the UI.
 
 The skill operates only over `articles WHERE status='published' AND project_id=:active`. Drafts are excluded — there is no value in suggesting links into or out of an article that is not yet live, and the suggester would generate stale rows the moment the draft was rewritten.
 

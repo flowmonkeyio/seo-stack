@@ -17,7 +17,7 @@ def test_integration_test_dispatches_to_firecrawl(
     """``integration.test`` dispatches via the registry to the per-vendor wrapper."""
     httpx_mock.add_response(
         method="POST",
-        url="https://api.firecrawl.dev/v1/scrape",
+        url="https://api.firecrawl.dev/v2/scrape",
         json={"data": {"markdown": "# ok"}},
     )
 

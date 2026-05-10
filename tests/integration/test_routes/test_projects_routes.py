@@ -185,6 +185,19 @@ def test_budget_set_then_get(api: TestClient, project_id: int) -> None:
     assert resp2.json()["monthly_budget_usd"] == 25.0
 
 
+def test_budget_paa_alias_canonicalizes_to_google_paa(api: TestClient, project_id: int) -> None:
+    """Legacy UI ``paa`` budget rows map to the Google PAA wrapper key."""
+    resp = api.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "paa", "monthly_budget_usd": 12.0},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["data"]["kind"] == "google-paa"
+    resp2 = api.get(f"/api/v1/projects/{project_id}/budgets/google-paa")
+    assert resp2.status_code == 200
+    assert resp2.json()["monthly_budget_usd"] == 12.0
+
+
 # ---- Cost ----
 
 
@@ -198,6 +211,33 @@ def test_cost_returns_zero_when_no_runs(api: TestClient, project_id: int) -> Non
 
 
 # ---- Integrations test route — M4 dispatches to vendor wrappers ----
+
+
+def test_project_integrations_include_global_readonly_rows(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    """The project listing includes project-scoped and global credentials."""
+    from sqlmodel import Session
+
+    from content_stack.repositories.projects import IntegrationCredentialRepository
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        IntegrationCredentialRepository(session).set(
+            project_id=None,
+            kind="anthropic",
+            plaintext_payload=b"global-key",
+        )
+
+    api.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={"kind": "firecrawl", "plaintext_payload": "project-key"},
+    )
+    rows = api.get(f"/api/v1/projects/{project_id}/integrations").json()
+    by_kind = {row["kind"]: row for row in rows}
+    assert by_kind["firecrawl"]["project_id"] == project_id
+    assert by_kind["anthropic"]["project_id"] is None
 
 
 def test_integration_test_dispatches_to_wrapper(
@@ -216,7 +256,7 @@ def test_integration_test_dispatches_to_wrapper(
     typed_mock: HTTPXMock = httpx_mock  # type: ignore[assignment]
     typed_mock.add_response(
         method="POST",
-        url="https://api.firecrawl.dev/v1/scrape",
+        url="https://api.firecrawl.dev/v2/scrape",
         json={"data": {"markdown": "# example", "url": "https://example.com"}},
     )
 

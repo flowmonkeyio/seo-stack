@@ -55,5 +55,27 @@ def test_doctor_json_emits_documented_schema(
 
     # The documented info keys per PLAN.md.
     info = payload["info"]
-    for k in ("host", "port", "data_dir", "state_dir", "version", "milestone"):
+    for k in (
+        "host",
+        "port",
+        "data_dir",
+        "state_dir",
+        "version",
+        "milestone",
+        "install_checks",
+        "codex_mcp",
+        "claude_mcp",
+        "launchd",
+    ):
         assert k in info, f"missing info key: {k}"
+
+    for k in (
+        "codex_mcp_registered",
+        "claude_mcp_registered",
+        "launchd_plist_present",
+        "codex_skills_installed",
+        "claude_skills_installed",
+        "codex_procedures_installed",
+        "claude_procedures_installed",
+    ):
+        assert k in payload["checks"], f"missing optional check: {k}"

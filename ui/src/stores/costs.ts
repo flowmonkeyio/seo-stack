@@ -33,7 +33,7 @@ export const INTEGRATION_KINDS = [
   'gsc',
   'openai-images',
   'reddit',
-  'paa',
+  'google-paa',
   'jina',
   'ahrefs',
 ] as const

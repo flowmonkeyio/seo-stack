@@ -1,11 +1,12 @@
 # Authoring procedures
 
-A procedure is an ordered, named playbook the daemon's runner walks
-step-by-step. Each step is either a skill (LLM session) or a
-`_programmatic/<name>` handler (pure Python). The runner persists
-every step's input + output to the audit trail and supports five
-failure modes plus three operator-driven control flows
-(resume / fork / abort).
+A procedure is an ordered, named playbook the current operator agent
+walks step-by-step. Each step is either a skill prompt the current
+agent follows (optionally with caller-owned subagents) or a
+`_programmatic/<name>` handler (pure Python). The daemon persists
+every step's input + output to the audit trail, exposes grants and
+state transitions, and supports five failure modes plus three
+operator-driven control flows (resume / fork / abort).
 
 This guide is the canonical authoring contract for
 `PROCEDURE.md` files. The implementation lives at
@@ -110,7 +111,7 @@ Each step is a YAML map with the following fields:
 | -------------------- | -------- | ---------------- | ------------------------------------------------------------------ |
 | `id`                 | yes      | —                | Lowercase alpha+dash, 1..80 chars, starts with a letter.            |
 | `skill`              | yes      | —                | `<phase>/<name>` for LLM steps, `_programmatic/<name>` for handlers. |
-| `args`               | no       | `{}`             | Merged into the step's `args` payload at dispatch.                  |
+| `args`               | no       | `{}`             | Merged into the agent-facing step package.                          |
 | `on_failure`         | no       | `"abort"`        | One of `abort`, `retry`, `loop_back`, `skip`, `human_review`.       |
 | `loop_back_to`       | no       | `None`           | REQUIRED iff `on_failure == "loop_back"`. Names a prior step id.   |
 | `max_retries`        | no       | `0`              | REQUIRED `>= 1` iff `on_failure == "retry"`.                       |
@@ -176,19 +177,21 @@ failure modes, two override shapes for variants.
   on_failure: abort
 ```
 
-The runner:
+The agent-led flow:
 
-1. Pre-writes a `procedure_run_steps` row with `status='pending'`.
-2. Loads `skills/02-content/outline/SKILL.md`.
-3. Spawns an LLM session via the bound `LLMDispatcher`
-   (`AnthropicSession` in production, `StubDispatcher` in tests).
-4. Sets `CONTENT_STACK_PROJECT_ID`, `CONTENT_STACK_RUN_ID`,
-   `CONTENT_STACK_ARTICLE_ID?`, `CONTENT_STACK_TOPIC_ID?` env vars.
-5. Provisions the bearer token + the run_token (signed; resolves to
-   the skill name via `permissions.py`).
-6. Tells the LLM to call MCP at `http://127.0.0.1:5180/mcp`.
-7. Persists the dispatcher's output verbatim to
-   `procedure_run_steps.output_json`.
+1. `procedure.run` pre-writes a `runs` row and the
+   `procedure_run_steps` skeleton with `status='pending'`.
+2. The current agent calls `procedure.currentStep` or
+   `procedure.claimStep`.
+3. `procedure.claimStep` marks the step `running`, loads
+   `skills/02-content/outline/SKILL.md`, returns the skill body,
+   merged args, previous outputs, and allowed tools, and binds the run
+   token to that step's skill grant in `permissions.py`.
+4. The current agent performs the work directly through MCP tools
+   (or delegates bounded subtasks to caller-owned subagents).
+5. The current agent calls `procedure.recordStep` with the output JSON,
+   which persists to `procedure_run_steps.output_json` and advances the
+   durable cursor.
 
 #### Programmatic steps
 
@@ -198,9 +201,9 @@ The runner:
   on_failure: abort
 ```
 
-The runner dispatches via
-`ProgrammaticStepRegistry.dispatch(name, ctx)`. The handler is pure
-Python; no LLM session is involved. See
+Programmatic steps are deterministic daemon work. The current agent
+calls `procedure.executeProgrammaticStep`, which invokes the registered
+handler once and records its output; no LLM session is involved. See
 [`./extending.md#3-adding-a-_programmatic-step-handler`](./extending.md)
 for the registry contract.
 
@@ -371,15 +374,16 @@ async def _approve_topics(ctx: StepContext) -> StepResult:
     return {"approved_count": ctx.args["approved"]}
 ```
 
-The runner catches `HumanReviewPause`, marks the step paused, and
-emits the event for the UI. `procedure.resume(run_id, args={"approved": [...]})`
-re-dispatches the step with the operator's input merged into `args`.
+The controller catches `HumanReviewPause`, records
+`output_json.human_review=true`, and leaves the same step current. The
+agent waits for the operator to approve the queue, then retries the
+step or records the operator's decision explicitly.
 
 ### 4.2 Estimate-then-spawn (procedure 5)
 
-Procedure 5 (`bulk-content-launch`) spawns N child procedure-4 runs.
-Before spawning, an estimate-cost guard refuses if the estimated
-spend would exceed `--budget-cap-usd`:
+Procedure 5 (`bulk-content-launch`) opens N child procedure-4 runs.
+Before opening children, an estimate-cost guard refuses if the
+estimated spend would exceed `--budget-cap-usd`:
 
 ```yaml
 - id: estimate-cost
@@ -393,32 +397,36 @@ spend would exceed `--budget-cap-usd`:
   on_failure: abort
 ```
 
-The bulk-cost-estimator handler refuses with `BudgetExceededError`
-(-32012) when the estimate exceeds the cap; the procedure aborts
-without spawning anything. Per audit M-25.
+The bulk-cost-estimator handler fails the step when the estimate
+exceeds the cap; because the step declares `on_failure: abort`, the run
+ends without opening child runs. Per audit M-25.
 
 ### 4.3 Compose other procedures (procedure 8)
 
-Procedure 8 (`add-new-site`) composes procedures 1, 2, 5 by
-spawning each as a child run:
+Procedure 8 (`add-new-site`) composes procedures 1, 2/3, and optional
+5 by opening each as a child run:
 
 ```yaml
 - id: bootstrap
-  skill: _programmatic/spawn-bootstrap-project
-  on_failure: abort
-- id: optional-sitemap
-  skill: _programmatic/spawn-one-site-shortcut
+  skill: _programmatic/run-child-procedure
   args:
-    skip_if_no_sitemap: true
-  on_failure: skip
+    child_procedure: 01-bootstrap-project
+  on_failure: human_review
+- id: topic-discovery-shortcut
+  skill: _programmatic/run-child-procedure
+  args:
+    child_procedure: 02-one-site-shortcut
+  on_failure: human_review
 - id: bulk-launch
-  skill: _programmatic/spawn-bulk-content-launch
-  on_failure: abort
+  skill: _programmatic/run-child-procedure
+  args:
+    child_procedure: 05-bulk-content-launch
+  on_failure: human_review
 ```
 
 Each handler calls `ctx.runner.start(slug=..., parent_run_id=ctx.run_id, ...)`.
-The parent's `concurrency_limit` queues additional children when
-capacity is full.
+The handler records the child run id and returns a human-review pause
+until the current agent has completed that child run.
 
 ### 4.4 Cron-triggered (procedures 6 + 7)
 
@@ -442,28 +450,25 @@ off in the UI, the cron job is paused without unregistering.
 
 ---
 
-## 5. Failure handling
+## 5. Failure Handling
 
-The runner branches per `ProcedureStep.on_failure` after each step's
-dispatcher returns or raises:
+The controller does not hide retries or loop-backs inside the daemon.
+It returns the declared `on_failure` policy in each step package, and
+the current agent applies that policy when it records the step.
 
 ### 5.1 `abort`
 
-Mark `runs.status='failed'` (or `'aborted'` for EEAT BLOCK + manual
-abort); raise; no resume by default. The step row gets
-`status='failed'` with the dispatcher's error in `error`.
+If a step with `on_failure: abort` is recorded as `failed`, the run is
+marked `failed` and no current step is returned.
 
-Use for: structural failures that retrying won't fix (missing voice,
-missing primary publish target, schema-emitter producing invalid
-JSON-LD).
+Use for structural failures that retrying will not fix: missing voice,
+missing primary publish target, invalid schema output.
 
 ### 5.2 `retry`
 
-Re-dispatch the same step. Capped at `max_retries` (must be `>= 1`;
-the runner caps at 3 even if a higher value is declared).
-
-Use for: transient LLM hiccups (`draft-*` skills) that succeed on a
-retry. The drafter's malformed-JSON case is the canonical example.
+The agent retries the same step, respecting `max_retries` from the step
+package and the global safety cap. The daemon records each attempt in
+the run audit trail; it does not spawn another model session.
 
 ```yaml
 - id: draft-body
@@ -474,14 +479,9 @@ retry. The drafter's malformed-JSON case is the canonical example.
 
 ### 5.3 `loop_back`
 
-Set the cursor back to a *prior* step. Capped at
-`settings.procedure_runner_max_loop_iterations` (default 3); on
-exhaustion the procedure aborts with `runs.error` describing the
-loop-cap breach.
-
-Use for: `eeat-gate FIX → editor`. The runner stamps the gate's
-`fix_required[]` list onto `runs.metadata_json.eeat`; the editor
-reads the list and targets fixes; eeat-gate re-runs.
+The agent returns to the named prior step and records the repair path in
+the run output. The parser still enforces that `loop_back_to` references
+a prior step and only appears on `on_failure: loop_back`.
 
 ```yaml
 - id: editor
@@ -493,84 +493,52 @@ reads the list and targets fixes; eeat-gate re-runs.
   loop_back_to: editor
 ```
 
-The parser rejects forward jumps (`loop_back_to` referencing a
-later step) and `loop_back_to` on non-`loop_back` steps.
+Use for `eeat-gate FIX -> editor`: the current agent gives the editor
+the gate's `fix_required[]` list, reruns the gate, and stops when the
+loop cap is reached.
 
 ### 5.4 `skip`
 
-Mark `procedure_run_steps.status='skipped'`; advance to the next
-step. The dispatcher's failure is logged but does not propagate.
-
-Use for: quality-enhancing steps that the article can ship without
-(`image-generator`, `alt-text-auditor`, `interlinker`). A failure
-to generate an image doesn't block publishing — the schema-emitter
-handles the missing `image:` JSON-LD field accordingly.
+The agent may record `status='skipped'` and continue. Use for
+quality-enhancing steps the article can ship without, such as
+`image-generator`, `alt-text-auditor`, and `interlinker`.
 
 ### 5.5 `human_review`
 
-Mark `procedure_run_steps.status='paused'`; emit an event for the
-UI; runner stops dispatching this run. The run row stays
-`status='running'` so heartbeats keep firing (and the reaper does
-NOT mark it orphaned).
-
-Use for: operator-approval checkpoints (procedures 2 + 3 use this
-for topic-queue approval).
-
-`procedure.resume(run_id, args={...})` re-dispatches the paused
-step with the operator's args merged in.
+Programmatic handlers raise `HumanReviewPause` when operator or child
+run work is required. The controller records a failed step with
+`output_json.human_review=true` and keeps the run in `running` state.
+The current agent completes the requested work, then retries the same
+step.
 
 ---
 
-## 6. Resume semantics
+## 6. Resume And Fork
 
-`procedure.resume(run_id, args?)` (REST + MCP) re-dispatches the
-last paused / failed step:
+`procedure.resume(run_id)` (REST + MCP) reopens an aborted or paused
+procedure run for caller-owned execution. It does not execute work.
+The next call to `procedure.currentStep` returns the current pending,
+running, or failed step for the agent to handle.
 
-1. Runner reads `procedure_run_steps` for the run's last clean
-   state.
-2. The next step (`status='pending'` or `'running'` or `'paused'`)
-   is the resume point.
-3. If the procedure declares `resumable: false`, resume returns
-   -32008 (state-machine violation).
-4. If `args` is supplied, it merges into the step's `args` payload
-   at dispatch time (used by `human_review` resumes to carry the
-   operator's decision).
-
-By default, the runner re-runs the failed step from scratch
-(idempotent skills are the contract). A per-skill opt-out flag is
-reserved for future use.
-
-`procedure.fork(run_id, from_step)` creates a new child run for
-"redo from step N onward". The child copies prior step outputs as
-inputs but executes step N and beyond fresh. Used by humanizer
-chains where the operator wants to redo step 7 (eeat-gate) without
-re-running steps 1-6.
+`procedure.fork(run_id, from_step_index)` creates a new child run for
+"redo from step N onward". The child copies prior successful outputs as
+skipped step rows and leaves step N and beyond pending. This is the
+preferred way to redo a later chain without mutating the original audit
+trail.
 
 ---
 
 ## 7. Concurrency
 
-Two layers of concurrency control:
+The durable state model is multi-run, but execution concurrency is owned
+by the caller. Bulk and umbrella procedures open child runs with
+`parent_run_id`; the current agent decides whether to handle those child
+runs sequentially, delegate them to caller-owned subagents, or pause
+until the operator chooses.
 
-### 7.1 In-process semaphore
-
-`ProcedureRunner` keeps an `asyncio.Semaphore` per `(slug, project_id)`
-sized to `concurrency_limit`. When N child runs of the same procedure
-target the same project, the (N − concurrency_limit) extras queue
-on the semaphore. Within-process serialisation is fine-grained.
-
-### 7.2 APScheduler `max_instances`
-
-Cross-process serialisation comes from APScheduler's `max_instances=1`
-on each `job_id=procedure-{slug}-{project_id}`. Even if the daemon
-restarts mid-flight and a stale job tries to re-fire, APScheduler
-queues it behind the in-flight one.
-
-### 7.3 Project-wide ceiling
-
-`MAX_CONCURRENCY` env var (default 4) caps simultaneous procedure
-runs system-wide. Beyond the per-procedure semaphore, this protects
-the writer mutex on the SQLite WAL.
+Cron-triggered procedures still use APScheduler only as a trigger
+source: each job opens an agent-led run. APScheduler does not execute
+the procedure steps or spawn writer sessions.
 
 ---
 
@@ -720,8 +688,9 @@ async def _scrape_bonus_pages(ctx: StepContext) -> StepResult:
   test automatically).
 - Mocks the Firecrawl integration; asserts the scrape handler
   writes the right `research_sources` rows.
-- Runs the runner end-to-end with a stub LLM dispatcher; asserts
-  the article advances through each state and lands at `published`.
+- Opens an agent-led procedure run, asserts the step package exposes
+  the scrape handler first, then records mocked outputs through the
+  normal `procedure.claimStep` / `procedure.recordStep` flow.
 
 ---
 
@@ -738,7 +707,7 @@ async def _scrape_bonus_pages(ctx: StepContext) -> StepResult:
 - [`../content_stack/procedures/parser.py`](../content_stack/procedures/parser.py)
   — the canonical frontmatter schema.
 - [`../content_stack/procedures/runner.py`](../content_stack/procedures/runner.py)
-  — the dispatch loop + failure-mode implementation.
+  — the agent-led procedure controller.
 - [`../content_stack/procedures/programmatic.py`](../content_stack/procedures/programmatic.py)
   — the programmatic step registry.
 - [`../PLAN.md`](../PLAN.md) — the canonical spec.

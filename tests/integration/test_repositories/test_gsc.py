@@ -65,6 +65,41 @@ def test_bulk_ingest_dedup(session: Session, project_id: int) -> None:
     assert env.data == 1
 
 
+def test_bulk_ingest_duplicate_does_not_rollback_prior_rows(
+    session: Session, project_id: int
+) -> None:
+    """A duplicate in the middle rolls back only its savepoint, not the batch."""
+    from content_stack.repositories.articles import ArticleRepository
+
+    art = (
+        ArticleRepository(session)
+        .create(
+            project_id=project_id,
+            topic_id=None,
+            title="B",
+            slug="gsc-art-batch",
+        )
+        .data
+    )
+    captured = _now()
+    repo = GscMetricRepository(session)
+    rows = [
+        GscRow(article_id=art.id, captured_at=captured, dimensions_hash="batch-1"),
+        GscRow(article_id=art.id, captured_at=captured, dimensions_hash="batch-1"),
+        GscRow(article_id=art.id, captured_at=captured, dimensions_hash="batch-2"),
+    ]
+
+    env = repo.bulk_ingest(project_id, rows)
+
+    assert env.data == 2
+    persisted = repo.query_project(
+        project_id,
+        since=captured - timedelta(seconds=1),
+        until=captured + timedelta(seconds=1),
+    )
+    assert sorted(r.dimensions_hash for r in persisted) == ["batch-1", "batch-2"]
+
+
 def test_query_article_window(session: Session, project_id: int) -> None:
     repo = GscMetricRepository(session)
     # Ingest article-attached row.

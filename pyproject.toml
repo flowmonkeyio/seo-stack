@@ -80,6 +80,7 @@ include = [
     "Makefile",
     "alembic.ini",
     "PLAN.md",
+    "PRIVACY.md",
     "README.md",
     "pyproject.toml",
 ]

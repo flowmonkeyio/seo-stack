@@ -17,7 +17,7 @@ def test_extract_questions_from_serp_markdown(httpx_mock: HTTPXMock, project_id:
     """``extract`` scrapes Google SERP via Firecrawl and parses PAA questions."""
     httpx_mock.add_response(
         method="POST",
-        url="https://api.firecrawl.dev/v1/scrape",
+        url="https://api.firecrawl.dev/v2/scrape",
         json={
             "data": {
                 "markdown": (

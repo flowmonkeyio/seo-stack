@@ -240,7 +240,9 @@ async function loadAuthors(): Promise<void> {
 
 async function loadVoices(): Promise<void> {
   try {
-    const page = await apiFetch<VoicesPage>(`/api/v1/projects/${projectId.value}/voice`)
+    const page = await apiFetch<VoicesPage>(
+      `/api/v1/projects/${projectId.value}/voice/variants?limit=200`,
+    )
     voices.value = page.items
   } catch {
     voices.value = []

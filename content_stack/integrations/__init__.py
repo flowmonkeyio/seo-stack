@@ -44,9 +44,10 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
 def integration_class_for(kind: str) -> type[BaseIntegration] | None:
     """Resolve the wrapper class for an ``integration_credentials.kind``.
 
-    Returns ``None`` if no wrapper is registered (e.g. ``openai`` /
-    ``anthropic`` for the procedure-runner LLM keys — those have
-    separate dispatch paths).
+    Returns ``None`` if no wrapper is registered. Runtime LLM keys for
+    the current operator agent live outside content-stack; the daemon
+    should not register prose-generation wrappers just to spawn hidden
+    procedure writers.
     """
     return REGISTRY.get(kind)
 

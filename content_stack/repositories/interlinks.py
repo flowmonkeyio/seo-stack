@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from content_stack.db.models import (
@@ -29,6 +30,7 @@ from content_stack.db.models import (
     InternalLinkStatus,
 )
 from content_stack.repositories.base import (
+    ConflictError,
     Envelope,
     NotFoundError,
     Page,
@@ -90,7 +92,25 @@ class InterlinkRepository:
         ]
         for r in rows:
             self._s.add(r)
-        self._s.commit()
+        try:
+            self._s.commit()
+        except IntegrityError as exc:
+            self._s.rollback()
+            raise ConflictError(
+                "live internal link already exists",
+                data={
+                    "project_id": project_id,
+                    "links": [
+                        {
+                            "from_article_id": s.from_article_id,
+                            "to_article_id": s.to_article_id,
+                            "anchor_text": s.anchor_text,
+                            "position": s.position,
+                        }
+                        for s in materialised
+                    ],
+                },
+            ) from exc
         for r in rows:
             self._s.refresh(r)
         return Envelope(

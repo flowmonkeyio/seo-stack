@@ -874,24 +874,31 @@ with `PROCEDURE.md` (markdown + YAML frontmatter).
 
 ### Procedure orchestration model
 
-**Procedures are daemon-orchestrated.** The MCP tool `procedure.run(slug,
-project_id, args)` enqueues a server-side runner (APScheduler) which dispatches
-each step as a fresh per-skill LLM session with a tight prompt. The daemon
-holds its own LLM credentials (one of OpenAI/Anthropic, separate from the
-runtime's). Each skill step:
+**Procedures are agent-led.** The MCP tool `procedure.run(slug,
+project_id, args)` opens a durable run and pre-writes the
+`procedure_run_steps` skeleton. The current external agent (Codex,
+Claude, or another MCP client) is the orchestrator: it decides which
+procedure to run, claims each step, follows the step's `SKILL.md`, uses
+MCP tools directly, optionally delegates bounded subtasks to caller-owned
+subagents, and records the step output.
 
-1. The runner pre-writes a `procedure_run_steps` row with `status='pending'`.
-2. The runner spawns a subprocess running the LLM with the skill's SKILL.md
-   loaded, sets env `CONTENT_STACK_PROJECT_ID`, `CONTENT_STACK_RUN_ID`,
-   `CONTENT_STACK_ARTICLE_ID?`, `CONTENT_STACK_TOPIC_ID?`, and the
-   `Authorization` token; instructs the skill to call MCP via Streamable HTTP.
-3. On step completion the runner updates the step row to `success|failed`,
-   advances the cursor, and continues.
+Each skill step:
 
-The calling LLM client only kicks off via `procedure.run` and polls with
-`procedure.status(run_id)`. Context window per skill stays tight; no
-9-step transcript explosion. `POST /api/v1/procedures/{slug}/run` returns
-202 + `{run_id, status_url, started_at}`.
+1. `procedure.run` pre-writes a `procedure_run_steps` row with
+   `status='pending'`.
+2. The agent calls `procedure.claimStep`, which marks the row `running`,
+   loads the step's `SKILL.md`, returns merged args / previous outputs /
+   allowed tools, and binds the run token to that step's skill grant.
+3. The agent performs the work in the current thread or delegated
+   subagents, using MCP as the state/tool surface.
+4. The agent calls `procedure.recordStep`, which persists
+   `procedure_run_steps.output_json`, updates run metadata, and exposes
+   the next step.
+
+The daemon is the state, audit, grant, and validation layer. It should
+not spawn hidden writer agents behind the caller. `POST
+/api/v1/procedures/{slug}/run` returns 202 + `{run_id, run_token,
+status_url}`.
 
 ### PROCEDURE.md canonical YAML frontmatter
 
@@ -1040,28 +1047,26 @@ post-call.
 | **Firecrawl** | serp-analyzer, content-brief, drift-watch | `kind='firecrawl'`: `{api_key}` | 2 qps |
 | **Google Search Console** | gsc-opportunity-finder, crawl-error-watch | `kind='gsc'`: `{access_token, refresh_token, oauth_redirect_uri, expires_at}` | 1 qps |
 | **OpenAI Images** | image-generator | `kind='openai-images'`: `{api_key}` (daemon-side, separate row from runtime LLM key) | 10 qps |
-| **OpenAI** (procedure runner LLM) | daemon-orchestrated procedures (per D4) | `kind='openai'` or `kind='anthropic'`: `{api_key}` (daemon-side, used by the procedure runner to dispatch per-skill sessions) | n/a |
 | **Reddit** (PRAW) | keyword-discovery | `kind='reddit'`: `{client_id, client_secret, user_agent}` | 5 qps |
 | **Google PAA** (scraper, no key) | keyword-discovery | n/a | 0.5 qps |
 | **Jina Reader** (markdown fallback) | serp-analyzer fallback | optional `kind='jina'`: `{api_key}` | 5 qps |
 
-**LLM credentials clarification.** The daemon needs LLM credentials directly
-to drive the **procedure runner** (per D4) — those are stored as
-`integration_credentials` rows with `kind='openai'` or `kind='anthropic'`,
-**separate from any runtime config**. The user's Codex/Claude Code runtime
-remains independent; runtime LLM calls (the user typing `/procedure …`)
-continue to use the runtime's own credentials. Image generation always uses
-the daemon-side `kind='openai-images'` row regardless of runtime.
+**LLM credentials clarification.** Procedure writing uses the current
+operator agent's runtime credentials. The daemon does not need a separate
+OpenAI/Anthropic key to spawn hidden writer sessions. Image generation
+still uses the daemon-side `kind='openai-images'` row because it is a
+vendor integration, not the operator runtime.
 
 ### Integration first-run flows
 
 - **DataForSEO / Firecrawl / Ahrefs / Reddit / Jina**: API key entry in UI
   Integrations tab; `integration.test` MCP tool verifies the key.
-- **GSC**: 12-step OAuth setup documented in `docs/api-keys.md` with
-  screenshots:
+- **GSC**: 12-step OAuth setup documented in `docs/api-keys.md` as a
+  text-first guide; screenshots are deferred until a console-versioned
+  operator guide:
   1. User creates a Google Cloud project and OAuth client (Web app type).
   2. UI shows the redirect URI to register:
-     `http://localhost:5180/api/v1/integrations/gsc/callback`.
+     `http://localhost:5180/api/v1/integrations/gsc/oauth/callback`.
   3. User clicks "Connect GSC" in UI.
   4. Daemon opens browser to Google's consent screen with `state=<run_id>`.
   5. Google redirects back; daemon swaps `code` for tokens.
@@ -1069,8 +1074,6 @@ the daemon-side `kind='openai-images'` row regardless of runtime.
      oauth_redirect_uri, expires_at}` in `integration_credentials`.
   7. `integration.testGsc` does a `searchanalytics.query` with `rowLimit=1`;
      401 surfaces "re-auth needed".
-- **OpenAI / Anthropic (procedure runner LLM)**: API key entry in UI; tested
-  by dispatching a 1-token completion.
 - **OpenAI Images**: same; tested by generating a 1×1 dummy image
   (auth-only check; size is the smallest billable variant).
 
@@ -1125,8 +1128,11 @@ re-enter API keys`. No silent decryption-to-garbage.
 1. Generate new seed (32 random bytes).
 2. Decrypt every `integration_credentials` row with the old seed in memory.
 3. Re-encrypt with the new seed (new nonce per row).
-4. Atomically swap `seed.bin` (write to `seed.bin.new`, rename, fsync dir).
-5. Keep `seed.bin.bak` for one daemon boot, then auto-delete on next start.
+4. Stage the new seed at `seed.bin.new` and fsync it.
+5. Commit the re-encrypted DB rows.
+6. Atomically promote `seed.bin.new` into `seed.bin` (keeping the old seed at
+   `seed.bin.bak`) and fsync the directory.
+7. Keep `seed.bin.bak` for one daemon boot, then auto-delete on next start.
 
 ### Auth token
 
@@ -1382,34 +1388,27 @@ be regenerated from the Makefile target list to stay in sync.
 
 ### `doctor.sh` check list and exit codes
 
-`doctor.sh` performs the following checks in order. Output is human-readable
-by default; `--json` emits `{checks: [{name, status (pass|warn|fail),
-details}], overall_exit: int}`.
+`doctor.sh` performs read-only local checks. Output is human-readable by
+default; `--json` emits `{ok, code, checks, info}` where every
+`checks.*` value is boolean.
 
-1. Daemon up? (`curl -fsS http://localhost:5180/api/v1/health`). Fail → exit 1.
-2. Auth token file present and mode 0600? Fail → exit 7.
-3. Seed file present and mode 0600? Fail → exit 8.
-4. MCP registered exactly once in Codex (`codex mcp list`). Fail → exit 2.
-5. MCP registered exactly once in Claude Code (`.mcp.json`). Fail → exit 2.
-6. Skills count = 24 in `~/.codex/skills/content-stack/`. Fail → exit 3.
-7. Skills count = 24 in `~/.claude/skills/content-stack/`. Fail → exit 3.
-8. Procedures count = 8 (excluding `_template`) in both runtimes. Fail → exit 3.
-9. Required API keys present per active project (`integration_credentials`
-   resolved via project + global). Warn (not fail) on missing optional keys.
-   Fail → exit 4.
-10. Alembic at head (`alembic current` matches latest revision). Fail → exit 5.
-11. All `integration_credentials` rows decrypt cleanly via daemon API
-    (`integration.test`). Fail → exit 4.
-12. `eeat_criteria` rows with `tier='core'` count = 3 per project. Fail → exit 5.
-13. Launchd plist loaded (`launchctl list | grep com.content-stack.daemon`).
-    Warn → exit 0 (plist optional). Fail (loaded but not running) → exit 6.
-14. Localhost binding verified (`lsof -iTCP:5180 -sTCP:LISTEN` shows 127.0.0.1
-    only). Fail → exit 1.
-15. Streamable HTTP MCP client compatibility: Codex CLI ≥ X, Claude Code ≥ Y
-    (versions pinned in `tests/fixtures/runtime-versions.json`). Warn → exit 0
-    if older but compatible; fail → exit 0 if known-broken (loud message).
-16. Time Machine status (macOS only). Warn if `~/.local/share/content-stack/`
-    is not in the inclusion list.
+1. Daemon up? (`localhost:<port>` TCP connect). Fail → exit 1.
+2. Seed file present and mode 0600? Fail → exit 8.
+3. Auth token file present and mode 0600? Fail → exit 7.
+4. DB file present? Warn only on fresh installs; migrations create it.
+5. Alembic at head if DB exists? Fail → exit 4.
+6. All `integration_credentials` rows decrypt cleanly if DB exists? Fail → exit 8.
+7. Scheduler appears healthy when the daemon is up? Fail → exit 1.
+8. Codex MCP registration exists when Codex CLI is on PATH? Warn only; the CLI may not be installed.
+9. Claude MCP registration file contains `content-stack` when present? Warn only; users may use per-project MCP files.
+10. Runtime skills/procedures install counts match source when the target dirs exist? Warn only; install commands own repair.
+11. Optional launchd plist presence/running status? Warn only; launchd is optional.
+
+The JSON `info` object includes host, port, XDG dirs, seed/token modes,
+version, milestone, credential issues, alembic version, scheduler job
+count, and warning detail arrays. The CLI exit code remains focused on
+daemon/token/seed/schema failures so optional local tooling does not make
+fresh development checkouts look broken.
 
 ---
 
@@ -1445,13 +1444,13 @@ Not "MVP cuts" — full scope, sequenced by dependency:
 2. **DB + repositories** — all 28 tables, SQLModel models, migrations, indexes, seed. Repository layer tested against in-memory SQLite. JSON column shape contracts. M2 acceptance benchmark: 100 sequential `article.setDraft` of 200 KB markdown each completes < 2 s on a 2020 MBP. (3d)
 3. **REST API** — all routers, OpenAPI generation, UI type generation, pagination/filter conventions, REST/MCP parity table. (3d)
 4. **MCP server** — all tools, transport mounted at `/mcp`, end-to-end test from a Codex session, idempotency keys, streaming, error model, result envelope, tool-grant matrix. (3d)
-5. **Integrations** — DataForSEO, Firecrawl, GSC (with OAuth flow + refresh job), OpenAI Images, OpenAI/Anthropic procedure-runner, Reddit, PAA, Jina wrappers. Each unit-tested with VCR-style cassettes. Token-bucket rate limits + budget caps. (3d)
+5. **Integrations** — DataForSEO, Firecrawl, GSC (with OAuth flow + refresh job), OpenAI Images, Reddit, PAA, Jina wrappers. Each unit-tested with mocked HTTP contract tests. Token-bucket rate limits + budget caps. (3d)
 6. **UI** — all views per spec, ProjectSwitcher in sidebar, MarkdownView, MarkdownEditor (textarea + If-Match optimistic concurrency), DataTable. ArticleDetailView subviews (EEAT report, Activity, Interlinks). InterlinksView bulk apply/dismiss. (4d)
 7. **Skills (all 24)** — authored against schema; each tested with a stub project. (5d)
-8. **Procedures (all 8)** — `PROCEDURE.md` for each, daemon-orchestrated runner, tested by running against a seed project. (3d)
+8. **Procedures (all 8)** — `PROCEDURE.md` for each, agent-led run control, step claim/record tools, tested against a seed project. (3d)
 9. **Jobs + scheduling** — APScheduler in-process for weekly GSC review, monthly humanize, OAuth refresh, auto-backup; resumable runs; crash-recovery sweep. (2d)
 10. **Distribution** — install scripts (idempotent), MCP registration helpers (auth token injection), launchd plist, doctor.sh, pipx wheel layout. (1d)
-11. **Documentation** — README, architecture, extending guide, procedures guide, api-keys guide (incl. GSC OAuth screenshots), PRIVACY.md. (1d)
+11. **Documentation** — README, architecture, extending guide, procedures guide, api-keys guide, PRIVACY.md. GSC OAuth setup is documented as a 12-step text guide; screenshots are a future docs enhancement. (1d)
 
 **Total: ~29 working days for everything.** Sequencing is dependency-driven;
 some tracks parallelize across agents. Original audit baseline was 25d; the
@@ -1471,7 +1470,7 @@ document.
 | # | Decision | Locked at |
 |---|---|---|
 | D3 | **Multi-locale** — SINGULAR. `projects.locale TEXT NOT NULL`. Translation = separate project per locale | Schema § Core projects |
-| D4 | **Procedure orchestration** — DAEMON-ORCHESTRATED. Daemon holds its own LLM credentials (one of OpenAI/Anthropic, separate from the runtime's). LLM client only kicks off and polls | Procedures § Procedure orchestration model |
+| D4 | **Procedure orchestration** — AGENT-LED. The current external agent is the SEO/content brain: it chooses procedures, claims steps, follows skills, uses MCP tools directly, may delegate to caller-owned subagents, and records outputs. The daemon stores state, grants, audit, and validation; it does not spawn hidden writer agents | Procedures § Procedure orchestration model |
 | D5 | **Daemon auth** — per-install bearer token at `~/.local/state/content-stack/auth.token` (32 bytes, 0600). Every REST + MCP request requires `Authorization: Bearer <token>`. Host header check + same-origin CORS. Install scripts inject. Rotates on `make install` re-run | Architecture + Security |
 | D6 | **Articles versioning** — separate `article_versions` table. `articles` keeps current. `article.createVersion` MCP copies live → versions before mutating | Schema § Core projects |
 | D7 | **EEAT floor** — `eeat_criteria.tier ENUM('core','recommended','project')`. T04/C01/R10 seeded as `tier='core'`; cannot be deactivated; gate refuses to score if any dimension has 0 active items | Schema § Core projects + Procedures § EEAT gate |
@@ -1536,15 +1535,15 @@ Other previously-open items, all now locked:
 | Browser CSRF / cross-process drive-bys on localhost | Bearer token required on every request (mode 0600); CORS same-origin; Host header check rejects non-loopback; doctor.sh verifies token mode |
 | Multi-target publish drift between `articles.published_url` and `publish_targets` | New `article_publishes` table per `(article_id, target_id, version_published)`; `articles.canonical_target_id` tells interlinker which URL is authoritative; procedure 4 publishes to primary target first, secondaries via `publish_target.replicate` |
 | GSC OAuth token expiry mid-procedure | `jobs/oauth_refresh.py` runs every 50 min, refreshes any token expiring within 10 min; failure surfaces via `/api/v1/health.integrations_reachable.gsc=false`; UI prompts re-auth |
-| Procedure runner context-window blow-up | Daemon-orchestrated procedures (D4); per-skill subprocess sessions; tight prompts; LLM client only kicks off via `procedure.run` and polls |
+| Procedure context-window blow-up | Agent-led procedures (D4); each step returns a tight `SKILL.md` package plus prior outputs, so the current agent can run one step at a time without carrying the full transcript |
 
 ---
 
 ## What "done" looks like for v1
 
-- `make install` brings up the daemon, generates the auth token + seed file,
-  registers MCP for both runtimes (with bearer auth header), copies skills +
-  procedures, and runs doctor with all green (exit 0).
+- `make install` prepares the daemon, generates the auth token + seed file,
+  registers MCP for both runtimes, copies skills + procedures, and runs
+  doctor. `make serve` then brings the daemon up on localhost.
 - `http://localhost:5180` shows the UI; I can register a project end-to-end
   (procedure 1) including voice, compliance, EEAT seed (3 `tier='core'`
   rows present), publish target (one `is_primary=true`), and integration
@@ -1562,5 +1561,5 @@ Other previously-open items, all now locked:
   and the UI immediately reflects all child runs as aborted.
 - I can let the laptop sleep mid-procedure, restart the daemon, and the
   RunsView shows "Resumable" for procedures with `resumable: true`.
-- `scripts/doctor.sh --json` reports overall_exit=0 on a fresh machine
-  after `make install`.
+- `scripts/doctor.sh --json` reports `code=0` on a fresh machine after
+  install is complete and the daemon is running.

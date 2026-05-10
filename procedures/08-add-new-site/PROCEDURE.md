@@ -15,7 +15,6 @@ triggers:
 
 prerequisites:
   - "no projects row already exists for the requested domain (procedure 1's project-create step is the gate)"
-  - "operator has at least one daemon-side LLM credential row so dispatched skill sessions can run"
 
 produces:
   - projects
@@ -49,16 +48,22 @@ steps:
     on_failure: human_review
   - id: topic-discovery-shortcut
     skill: _programmatic/run-child-procedure
+    when:
+      use_shortcut: true
     args:
       child_procedure: 02-one-site-shortcut
     on_failure: human_review
   - id: topic-discovery-deep
     skill: _programmatic/run-child-procedure
+    when:
+      use_shortcut: false
     args:
       child_procedure: 03-keyword-to-topic-queue
     on_failure: human_review
   - id: bulk-launch
     skill: _programmatic/run-child-procedure
+    when:
+      bulk_launch: true
     args:
       child_procedure: 05-bulk-content-launch
     on_failure: human_review
@@ -124,31 +129,20 @@ together so the operator sees one journey.
   research path; best for projects with the time + budget for the
   deeper analysis.
 
-## Nested procedure dispatch (M8 follow-up)
+## Nested child procedures
 
-The runner does **not** yet support a step's ``skill`` field naming
-another procedure as a child. The current
-``_programmatic/run-child-procedure`` step pattern is a
-placeholder: in M7.B's StubDispatcher the step returns an acked
-shape; in production (M8) the runner will recognise this synthetic
-skill key, look up the named child procedure from
-``step.args.child_procedure``, and dispatch ``procedure.run`` for
-that child with ``parent_run_id`` set to this run.
+``_programmatic/run-child-procedure`` opens the named child procedure
+with ``parent_run_id`` set to this umbrella run. It then records a
+human-review pause with the child run id. The current agent manages that
+child run directly (or delegates it to a caller-owned subagent), then
+retries this parent step. On retry, the handler checks the existing
+child run:
 
-Until M8 wires this natively, operators who want the full
-end-to-end onboarding via procedure 8 see one combined run row in
-the UI that:
-
-1. Walks each step (each step's stub returns success in M7.B).
-2. Surfaces the named child procedure in
-   ``runs.metadata_json.step_outputs.<step-id>`` so the UI can
-   render "go run procedure 1 manually" links.
-3. Resumes cleanly via ``procedure.resume`` after the operator
-   completes the named child procedure manually.
-
-This documented fall-back keeps procedure 8 valid against the
-current parser + runner without bending the runner's contract;
-M8 lifts the placeholder and dispatches children natively.
+1. ``running`` -> keeps the parent paused.
+2. ``failed`` / ``aborted`` -> fails this parent step with the child
+   error.
+3. ``success`` -> records the child status and advances to the next
+   umbrella step.
 
 ## Failure handling commentary
 

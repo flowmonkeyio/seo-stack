@@ -9,9 +9,14 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DOCTOR_ARGS=(-m content_stack doctor)
 
 if [[ "${1:-}" == "--json" ]]; then
-    exec uv run --directory "${REPO_ROOT}" python -m content_stack doctor --json
+    DOCTOR_ARGS+=(--json)
 fi
 
-exec uv run --directory "${REPO_ROOT}" python -m content_stack doctor
+if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    exec "${REPO_ROOT}/.venv/bin/python" "${DOCTOR_ARGS[@]}"
+fi
+
+exec "${UV:-uv}" run --directory "${REPO_ROOT}" python "${DOCTOR_ARGS[@]}"

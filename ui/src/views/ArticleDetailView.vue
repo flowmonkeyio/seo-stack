@@ -133,14 +133,9 @@ async function actionMarkDrafted(): Promise<void> {
 
 async function actionMarkEeatPassed(): Promise<void> {
   if (!article.value?.step_etag) return
-  // M5.B manual-override path: the EEAT gate skill #11 lands in M7. We let
-  // the user hit `mark_eeat_passed` directly with run_id=0 + the article's
-  // current eeat criteria version. The skill flow will use a real run id
-  // wired from procedure 4.
   await runVerb('mark EEAT passed', () =>
     articlesStore.markEeatPassed(articleId.value, {
       expected_etag: article.value!.step_etag!,
-      run_id: 0,
       eeat_criteria_version: article.value!.eeat_criteria_version_used ?? 1,
     }),
   )
@@ -151,7 +146,6 @@ async function actionMarkPublished(): Promise<void> {
   await runVerb('publish', () =>
     articlesStore.markPublished(articleId.value, {
       expected_etag: article.value!.step_etag!,
-      run_id: 0,
     }),
   )
 }

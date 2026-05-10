@@ -387,7 +387,7 @@ export interface paths {
         };
         /**
          * List Integrations
-         * @description List integration credentials for a project (payload is never returned).
+         * @description List project credentials plus global credentials (payload is never returned).
          */
         get: operations["list_integrations_api_v1_projects__project_id__integrations_get"];
         put?: never;
@@ -3041,7 +3041,7 @@ export interface components {
             /** Expected Etag */
             expected_etag: string;
             /** Run Id */
-            run_id: number;
+            run_id?: number | null;
             /** Eeat Criteria Version */
             eeat_criteria_version: number;
         };
@@ -3050,7 +3050,7 @@ export interface components {
             /** Expected Etag */
             expected_etag: string;
             /** Run Id */
-            run_id: number;
+            run_id?: number | null;
         };
         /** MarkRefreshDueRequest */
         MarkRefreshDueRequest: {

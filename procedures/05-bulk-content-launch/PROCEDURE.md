@@ -6,8 +6,9 @@ description: |
   Fan out procedure 4 (topic-to-published) across N approved topics
   with budget-aware pre-emption (audit M-25). Estimates cost up
   front, refuses to start if the projected spend exceeds
-  ``--budget-cap-usd``, then schedules procedure-4 child runs in
-  chunks (parent_run_id linked) and waits for completion. Cascade
+  ``--budget-cap-usd``, then opens procedure-4 child runs
+  (parent_run_id linked) and pauses until the current agent completes
+  them. Cascade
   abort is supported via ``run.abort(cascade=true)``.
 
 triggers:
@@ -17,7 +18,7 @@ triggers:
 prerequisites:
   - "topics WHERE status='approved' AND project_id=:project_id non-empty (or matching --topic-ids)"
   - "all procedure 4 prerequisites met (voice, EEAT seed, primary publish target, integration creds)"
-  - "operator passes --budget-cap-usd; the runner refuses to start if estimated cost > cap (audit M-25)"
+  - "operator passes --budget-cap-usd; estimate-cost aborts before child runs open if estimated cost > cap (audit M-25)"
 
 produces:
   - articles
@@ -69,34 +70,30 @@ site" trigger.
 ## When to use
 
 The operator has an approved topic queue (from procedure 2 or 3) and
-wants to publish a batch of articles in one go without manually
-firing procedure 4 N times. Bulk launch handles cost pre-emption,
-concurrency limits, child-run linkage via ``parent_run_id``, and
+wants to publish a batch of articles in one visible flow. Bulk launch
+handles cost pre-emption, child-run linkage via ``parent_run_id``, and
 cascade abort.
 
 ## Step-by-step
 
-1. **estimate-cost** — Sum each procedure 4's per-skill cost templates
-   (from ``settings.skill_cost_estimates`` or the in-spec defaults)
+1. **estimate-cost** — Sum the conservative procedure-4 cost template
    times N topics, plus a buffer for retries. Compare against
    ``--budget-cap-usd``. ``on_failure=abort``: an over-budget batch
    refuses to start so the operator can either trim the topic list
    or raise the cap. Per audit M-25 this pre-emption is a hard gate,
    not a soft warning.
-2. **spawn-procedure-4-batch** — For each topic in chunks of
-   ``concurrency_override`` (default 4): call ``procedure.run`` with
+2. **spawn-procedure-4-batch** — For each topic: open a child run with
    ``slug='04-topic-to-published'``, ``args={topic_id: ...}``,
-   ``parent_run_id=<bulk-run-id>``. The procedure-4 semaphore
-   (also default 4) handles backpressure; this step queues all N
-   children and returns once they're scheduled.
-   ``on_failure=abort``: a failed schedule (e.g., a topic missing
+   ``parent_run_id=<bulk-run-id>``. The step records all child ids;
+   the current agent chooses whether to work them sequentially,
+   delegate them to caller-owned subagents, or pause for the operator.
+   ``on_failure=abort``: a failed open (e.g., a topic missing
    required EEAT seed) means the batch can't proceed.
-3. **wait-for-children** — Heartbeat-poll each child's ``runs.status``
-   row; emit per-child progress to ``runs.metadata_json.bulk_progress``
-   for the UI's bulk-launch view. When ``run.abort(cascade=true)``
-   is invoked on the parent, the runner cancels each child + this
-   step exits with a cascade-aborted summary. ``on_failure=abort``:
-   a wait failure (e.g., a child crash) terminates the batch.
+3. **wait-for-children** — Inspect each child's ``runs.status`` row.
+   If any child is still running, record a human-review pause with the
+   running ids. The current agent completes or aborts those children,
+   then retries this step. ``on_failure=abort``: a failed child can
+   terminate the batch.
 4. **final-summary** — Aggregate the per-child results: success
    count, fail count, aborted count, per-fail link to
    ``RunDetailView``. Persists to

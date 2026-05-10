@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from content_stack.db.models import Run, RunKind, RunStatus
+from content_stack.db.models import (
+    ProcedureRunStep,
+    ProcedureRunStepStatus,
+    Run,
+    RunKind,
+    RunStatus,
+)
 from content_stack.jobs.runs_reaper import (
     DEFAULT_STALE_AFTER_SECONDS,
     make_session_factory,
@@ -62,6 +68,39 @@ async def test_reaper_aborts_stale_running_runs(engine: object) -> None:
         assert stale.status == RunStatus.ABORTED
         assert stale.error == "daemon-restart-orphan"
         assert recent.status == RunStatus.RUNNING
+
+
+async def test_reaper_fails_active_procedure_step(engine: object) -> None:
+    """A crashed in-flight procedure step becomes failed and resumeable."""
+    with Session(engine) as s:  # type: ignore[arg-type]
+        run_id = _seed_run(session=s, heartbeat_offset_seconds=600)
+        active = ProcedureRunStep(
+            run_id=run_id,
+            step_index=0,
+            step_id="content-brief",
+            status=ProcedureRunStepStatus.RUNNING,
+        )
+        pending = ProcedureRunStep(
+            run_id=run_id,
+            step_index=1,
+            step_id="outline",
+            status=ProcedureRunStepStatus.PENDING,
+        )
+        s.add(active)
+        s.add(pending)
+        s.commit()
+
+    await reap_orphaned_runs(
+        session_factory=make_session_factory(engine),  # type: ignore[arg-type]
+    )
+
+    with Session(engine) as s:  # type: ignore[arg-type]
+        rows = s.exec(select(ProcedureRunStep).where(ProcedureRunStep.run_id == run_id)).all()
+        by_step = {row.step_id: row for row in rows}
+        assert by_step["content-brief"].status == ProcedureRunStepStatus.FAILED
+        assert by_step["content-brief"].error == "daemon-restart-orphan"
+        assert by_step["content-brief"].ended_at is not None
+        assert by_step["outline"].status == ProcedureRunStepStatus.PENDING
 
 
 async def test_reaper_no_op_when_no_stale_rows(engine: object) -> None:

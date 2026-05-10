@@ -12,6 +12,7 @@ UI mirrors. The DB is canonical.
 
 **One process. One SQLite DB. Three transports: MCP, REST, static UI.**
 Bound to `127.0.0.1`; per-install bearer-token auth on every request.
+The current REST surface exposes 87 OpenAPI paths.
 
 ---
 
@@ -29,17 +30,26 @@ open http://localhost:5180
 ```
 
 `make install` is idempotent: re-running produces the same end state.
-It runs every install step (Python deps, migrations, UI bundle, skills
-+ procedures into Codex + Claude Code, MCP registration, doctor) and
-rotates the auth token.
+It runs every install step (Python deps, state bootstrap, migrations, UI
+bundle, skills + procedures into Codex + Claude Code, MCP registration,
+doctor). It creates the auth token on first install; rotate later with
+`make rotate-token`.
 
 ### pipx mode (post-publish)
 
 ```bash
 pipx install content-stack
-content-stack install            # mirrors skills/procedures + registers MCP
+content-stack install            # bootstraps state, mirrors assets, registers MCP
 content-stack serve              # daemon foreground
 ```
+
+Token rotation is explicit:
+
+```bash
+content-stack rotate-token --yes  # or: make rotate-token
+```
+
+After rotating, restart any running daemon so it loads the new token.
 
 ### Codex CLI bearer token
 
@@ -62,10 +72,11 @@ bash scripts/doctor.sh --json | jq            # JSON envelope
 ```
 
 Doctor exit codes:
-0 (ok), 1 (daemon down), 2 (MCP not registered), 3 (skills not
-installed), 4 (missing API keys), 5 (DB schema out of date),
-6 (launchd plist not loaded), 7 (auth token missing or wrong mode),
-8 (seed file missing or wrong mode).
+0 (ok), 1 (daemon down), 4 (DB schema out of date), 7 (auth token
+missing or wrong mode), 8 (seed file missing, wrong mode, or unable to
+decrypt stored credentials). Optional MCP, skills, procedures, and
+launchd checks appear in the JSON `checks`/`info` payload without
+changing the exit code.
 
 ### Upgrade
 
@@ -111,9 +122,11 @@ make uninstall                  # removes skills, procedures, MCP entries, launc
   PROCEDURE.md frontmatter + DSL + worked examples + failure modes.
 - [`docs/api-keys.md`](./docs/api-keys.md) — vendor credential setup
   (DataForSEO, Firecrawl, GSC OAuth, OpenAI Images, Reddit, Jina,
-  Ahrefs, daemon-side LLM keys).
+  Ahrefs).
 - [`docs/security.md`](./docs/security.md) — threat-model trade-offs;
   bearer-token bootstrap, prompt-injection hygiene, rate limits.
+- [`PRIVACY.md`](./PRIVACY.md) — local-first data handling and the
+  exact outbound calls the daemon can make.
 - [`docs/upgrade.md`](./docs/upgrade.md) — pipx + clone-mode upgrade
   semantics, breaking-change protocol, cross-machine moves.
 - [`CHANGELOG.md`](./CHANGELOG.md) — version history.

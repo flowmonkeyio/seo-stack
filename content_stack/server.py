@@ -216,13 +216,13 @@ def _build_lifespan(
             if reaped:
                 log.info("daemon.recovery_sweep.reaped", count=reaped)
 
-        # M7: build the procedure runner. It loads PROCEDURE.md files
-        # from the repo's ``procedures/`` directory at construction time
-        # — a malformed file aborts startup which is what we want
+        # Build the agent-led procedure controller. It loads PROCEDURE.md
+        # files from the repo's ``procedures/`` directory at construction
+        # time — a malformed file aborts startup which is what we want
         # (operator sees the parse error in the lifespan log, not a
-        # mysterious 500 on the first ``procedure.run`` call). M8 binds
-        # the scheduler so subsequent ``runner.start`` calls dispatch
-        # via APScheduler.
+        # mysterious 500 on the first ``procedure.run`` call). The
+        # controller owns durable state and step-scoped grants; the
+        # current external agent owns execution.
         runner = ProcedureRunner(
             settings=settings,
             engine=engine,

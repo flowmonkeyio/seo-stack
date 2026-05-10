@@ -1,16 +1,9 @@
-"""``procedure.list`` / ``procedure.status`` work today; the rest are M7 live now.
+"""MCP procedure tools expose agent-led procedure state.
 
-Pre-M7 these tools returned ``MilestoneDeferralError(milestone='M7')``;
-M7.A replaced the deferrals with the daemon-orchestrated runner per
-locked decision D4. The remaining M7 marker is M7's follow-up
-(real OpenAI / Anthropic dispatchers); the runner itself + the
-StubDispatcher land in M7.A.
-
-Tests that used to assert on the M7 deferral envelope now assert on
-the live ``procedure.run`` / ``procedure.resume`` / ``procedure.fork``
-behaviour. Smoke checks only — full coverage lives in
-``tests/integration/test_procedure_runner/`` and
-``tests/integration/test_routes/test_procedures_run_route.py``.
+``procedure.run`` opens durable state; the current agent claims,
+executes, and records steps. Deterministic ``_programmatic/*`` work is
+available only through the explicit ``procedure.executeProgrammaticStep``
+tool, not a daemon-spawned writer session.
 """
 
 from __future__ import annotations
@@ -74,11 +67,7 @@ def test_procedure_run_unknown_slug_surfaces_404(
 
 
 def test_procedure_run_returns_envelope(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """``procedure.run`` enqueues the runner + returns the envelope.
-
-    Asserts the wire shape; full happy-path coverage lives in the
-    procedure runner's integration tests.
-    """
+    """``procedure.run`` opens an agent-led run + returns the envelope."""
     payload = mcp_client.call_tool_structured(
         "procedure.run",
         {
@@ -90,8 +79,85 @@ def test_procedure_run_returns_envelope(mcp_client: MCPClient, seeded_project: d
     data = payload["data"]
     assert data["slug"] == "04-topic-to-published"
     assert data["started"] is True
+    assert data["orchestration_mode"] == "agent-led"
     assert data["run_token"]
     assert data["run_id"] >= 1
+
+
+def test_agent_led_claim_and_record_step(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """Agent-led procedures expose the skill prompt and persist caller output."""
+    started = mcp_client.call_tool_structured(
+        "procedure.run",
+        {
+            "slug": "04-topic-to-published",
+            "project_id": seeded_project["data"]["id"],
+            "args": {"topic_id": 1},
+        },
+    )["data"]
+    run_id = started["run_id"]
+    run_token = started["run_token"]
+
+    current = mcp_client.call_tool_structured("procedure.currentStep", {"run_id": run_id})
+    assert current["next_action"] == "claim_step"
+    assert current["current_step"]["step_id"] == "brief"
+    assert current["current_step"]["status"] == "pending"
+    assert "article.create" in current["current_step"]["allowed_tools"]
+    assert "content-brief" in current["current_step"]["skill"]
+    assert current["current_step"]["skill_body"]
+
+    claimed = mcp_client.call_tool_structured(
+        "procedure.claimStep", {"run_id": run_id, "step_id": "brief"}
+    )["data"]
+    assert claimed["next_action"] == "execute_step"
+    assert claimed["current_step"]["status"] == "running"
+
+    recorded = mcp_client.call_tool_structured(
+        "procedure.recordStep",
+        {
+            "run_id": run_id,
+            "step_id": "brief",
+            "status": "success",
+            "output_json": {"article_id": 123, "brief_set": True},
+            "run_token": run_token,
+        },
+    )["data"]
+    assert recorded["next_action"] == "claim_step"
+    assert recorded["current_step"]["step_id"] == "outline"
+    assert recorded["previous_outputs"]["brief"]["brief_set"] is True
+
+    status = mcp_client.call_tool_structured("procedure.status", {"run_id": run_id})
+    assert status["steps"][0]["status"] == "success"
+    assert status["steps"][0]["output_json"]["article_id"] == 123
+
+
+def test_agent_led_execute_programmatic_step(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    """A procedure run token can execute deterministic programmatic steps explicitly."""
+    started = mcp_client.call_tool_structured(
+        "procedure.run",
+        {
+            "slug": "05-bulk-content-launch",
+            "project_id": seeded_project["data"]["id"],
+            "args": {"topic_ids": [123], "budget_cap_usd": 10.0},
+        },
+    )["data"]
+    run_id = started["run_id"]
+    run_token = started["run_token"]
+
+    current = mcp_client.call_tool_structured(
+        "procedure.currentStep", {"run_id": run_id, "run_token": run_token}
+    )
+    assert current["next_action"] == "execute_programmatic_step"
+    assert current["current_step"]["step_id"] == "estimate-cost"
+    assert "procedure.executeProgrammaticStep" in current["current_step"]["allowed_tools"]
+
+    executed = mcp_client.call_tool_structured(
+        "procedure.executeProgrammaticStep",
+        {"run_id": run_id, "step_id": "estimate-cost", "run_token": run_token},
+    )["data"]
+    assert executed["previous_outputs"]["estimate-cost"]["n_topics"] == 1
+    assert executed["current_step"]["step_id"] == "spawn-procedure-4-batch"
 
 
 def test_procedure_run_accepts_all_8_slugs(mcp_client: MCPClient, seeded_project: dict) -> None:

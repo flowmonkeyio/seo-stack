@@ -33,7 +33,7 @@ const kvItems = computed(() => {
     { key: 'updated', label: 'Updated', value: p.updated_at },
     { key: 'locale', label: 'Locale', value: p.locale },
     { key: 'niche', label: 'Niche', value: p.niche ?? '—' },
-    { key: 'is_active', label: 'Active', value: p.is_active },
+    { key: 'is_active', label: 'Active', value: p.is_active ? 'active' : 'inactive' },
     {
       key: 'schedule',
       label: 'Schedule',
@@ -88,12 +88,6 @@ watch(projectId, loadRuns)
         Project details
       </h2>
       <KvList :items="kvItems">
-        <template #item:is_active="{ value }">
-          <StatusBadge
-            :status="value ? 'active' : 'inactive'"
-            kind="project"
-          />
-        </template>
         <template #item:schedule="{ value }">
           <pre
             v-if="value"

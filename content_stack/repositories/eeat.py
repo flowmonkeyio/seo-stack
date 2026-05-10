@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, select
@@ -188,6 +189,7 @@ class EeatEvaluationRepository:
                 EeatEvaluation.article_id == article_id,
                 EeatEvaluation.run_id == run_id,
                 EeatEvaluation.criterion_id == EeatCriterion.id,
+                cast(Any, EeatCriterion.active).is_(True),
             )
         ).all()
         # Bin per dimension.

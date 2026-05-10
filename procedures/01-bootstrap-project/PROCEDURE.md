@@ -7,8 +7,8 @@ description: |
   collects the voice profile, seeds compliance rules + the EEAT rubric
   (with T04 / C01 / R10 locked at tier='core' per D7), wires the
   publish target + integration credentials, and runs a final
-  verification sweep. Operator-driven setup; the LLM walks the
-  operator through each artifact and the runner tracks per-step
+  verification sweep. Operator-driven setup; the current agent walks the
+  operator through each artifact and the controller tracks per-step
   completion in ``procedure_run_steps`` so a half-finished bootstrap
   resumes cleanly.
 
@@ -17,8 +17,7 @@ triggers:
   - "Parent procedure: invoked from procedure 8 (add-new-site) as the first child"
 
 prerequisites:
-  - "no projects row already exists for the requested slug (the runner refuses with -32014 / 409 on conflict)"
-  - "operator has at least one daemon-side LLM credential row (`integration_credentials.kind='openai'` or `'anthropic'`) so dispatched skill sessions can run"
+  - "no projects row already exists for the requested slug (project-create refuses with -32014 / 409 on conflict)"
 
 produces:
   - projects
@@ -87,13 +86,13 @@ The first thing an operator does for a new site. Procedure 8
 (`add-new-site`) chains this as its first step; standalone use covers
 "I'm onboarding a project the operator-facing UI doesn't yet show".
 
-The procedure is operator-driven by design — the LLM client walks the
-operator through each artefact and the runner tracks progress in
+The procedure is operator-driven by design — the current agent walks the
+operator through each artefact and the controller tracks progress in
 ``procedure_run_steps``. The `human_review` failure mode on the
-prompt-driven steps means the runner pauses politely if the operator
+prompt-driven steps records a pause if the operator
 hasn't supplied everything yet (e.g., they want to come back tomorrow
-to paste API keys); ``procedure.resume`` picks up at the next pending
-step.
+to paste API keys); the current agent retries that step once the
+operator has supplied the missing artifact.
 
 ## Step-by-step
 
@@ -155,22 +154,21 @@ step.
   than let downstream procedures fail with confusing symptoms.
 - **voice-profile / publish-target / integration-creds** →
   ``human_review``. These steps can take days while the operator
-  drafts the voice or wrangles OAuth callbacks; pausing the run with
-  ``status='running'`` lets the heartbeat keep firing without
-  burning a runner slot, and ``procedure.resume`` picks up cleanly.
+  drafts the voice or wrangles OAuth callbacks; the run stays visible
+  and retryable without a daemon-side writer session waiting in the
+  background.
 - **compliance-seed** → ``skip``. A missing template for a niche
   shouldn't block the bootstrap; the operator can author rules
   manually post-bootstrap.
 
-## Programmatic-step note (M7.B + M8 follow-up)
+## Programmatic-step note
 
 The seven steps use the ``_programmatic/<name>`` skill prefix —
-synthetic skill keys that don't (yet) live under ``skills/``. The
-StubDispatcher returns a permissive acked-style response for these in
-M7.B's tests. M8 wires them up to dedicated repository calls (no LLM
-session needed) so production bootstrap is a tight script that
-doesn't burn LLM tokens for what's mostly DB CRUD + OAuth callbacks.
+synthetic skill keys that do not live under ``skills/``. The current
+agent calls ``procedure.executeProgrammaticStep`` for each of these;
+the daemon runs dedicated repository code and returns structured output.
+No LLM session is spawned for DB CRUD or OAuth callback checkpoints.
 
 The ``human_review`` mode on the operator-prompt steps means that in
-M7.B the runner pauses on a stub failure — operators interact via the
-UI's Procedures detail view, then call ``procedure.resume``.
+practice the controller records a review pause — operators interact via
+the UI's Procedures detail view, then the agent retries the step.

@@ -42,9 +42,32 @@ describe('procedures store', () => {
       })
     }) as typeof fetch
     const store = useProceduresStore()
-    await expect(store.runProcedure('bootstrap', {})).rejects.toBeInstanceOf(
+    await expect(store.runProcedure('bootstrap', 1, {})).rejects.toBeInstanceOf(
       ProcedureNotImplementedError,
     )
+  })
+
+  it('runProcedure() posts the backend run request shape', async () => {
+    const bodies: unknown[] = []
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return new Response(
+        JSON.stringify({
+          run_id: 9,
+          run_token: 'token',
+          status_url: '/api/v1/procedures/runs/9',
+          slug: '04-topic-to-published',
+          project_id: 7,
+          started: true,
+          parent_run_id: null,
+        }),
+        { status: 202, headers: { 'content-type': 'application/json' } },
+      )
+    }) as typeof fetch
+    const store = useProceduresStore()
+    const result = await store.runProcedure('04-topic-to-published', 7, { topic_id: 42 })
+    expect(bodies).toEqual([{ project_id: 7, args: { topic_id: 42 } }])
+    expect(result.run_id).toBe(9)
   })
 
   it('getRun() caches the response', async () => {

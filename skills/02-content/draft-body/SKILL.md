@@ -18,6 +18,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -40,7 +42,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill after `draft-intro` (#7). The body fills the H2 / H3 frame the outline drew, citing the research sources the brief seeded. The body is the largest single chunk of word count in any article — typically 70–80% of the target — so this skill iterates section-by-section with heartbeats so the procedure runner can show progress and the operator can intervene if a section drifts.
+Procedure 4 calls this skill after `draft-intro` (#7). The body fills the H2 / H3 frame the outline drew, citing the research sources the brief seeded. The body is the largest single chunk of word count in any article — typically 70–80% of the target — so this skill iterates section-by-section with heartbeats so the procedure controller can show progress and the operator can intervene if a section drifts.
 
 The body uses `article.setDraft(append=true)`: each section appends to the existing `draft_md`. A re-run replaces only the sections affected when the procedure runner reframes the article via `expected_etag` rotation.
 

@@ -24,11 +24,16 @@ from content_stack.crypto.aes_gcm import (
 from content_stack.crypto.kdf import derive_key
 from content_stack.crypto.seed import (
     SeedFileError,
+    abort_staged_seed_rotation,
     backup_seed_path,
     cleanup_old_backup,
+    commit_staged_seed_rotation,
     ensure_seed_file,
     load_seed,
+    reencrypt_rows_for_seed_rotation,
     rotate_seed,
+    stage_seed_rotation,
+    staged_seed_path,
 )
 
 
@@ -221,6 +226,48 @@ def test_rotate_seed_reencrypts_every_row_and_keeps_old_seed(tmp_path: Path) -> 
         )
         == b"bravo-secret"
     )
+
+
+def test_seed_rotation_can_stage_after_db_reencrypt(tmp_path: Path) -> None:
+    """Lower-level helpers let CLI commit DB rows before promoting the seed."""
+    seed_path = tmp_path / "seed.bin"
+    old_seed = ensure_seed_file(seed_path)
+    configure_seed_path(seed_path)
+    ct, nonce = encrypt(b"secret", project_id=1, kind="firecrawl")
+    rows = [
+        {
+            "id": 1,
+            "project_id": 1,
+            "kind": "firecrawl",
+            "encrypted_payload": ct,
+            "nonce": nonce,
+        }
+    ]
+
+    new_seed, rotated = reencrypt_rows_for_seed_rotation(seed_path, rows=rows)
+    assert load_seed(seed_path) == old_seed
+    assert rotated[0]["encrypted_payload"] != ct
+
+    staged = stage_seed_rotation(seed_path, new_seed)
+    assert staged == staged_seed_path(seed_path)
+    assert load_seed(seed_path) == old_seed
+
+    commit_staged_seed_rotation(seed_path)
+    assert load_seed(seed_path) == new_seed
+    assert backup_seed_path(seed_path).exists()
+
+
+def test_staged_seed_blocks_boot_until_rotation_finishes(tmp_path: Path) -> None:
+    """A crash with ``seed.bin.new`` present surfaces as explicit operator action."""
+    seed_path = tmp_path / "seed.bin"
+    ensure_seed_file(seed_path)
+    stage_seed_rotation(seed_path, b"\x01" * 32)
+
+    with pytest.raises(SeedFileError, match="incomplete seed rotation"):
+        ensure_seed_file(seed_path)
+
+    assert abort_staged_seed_rotation(seed_path) is True
+    assert ensure_seed_file(seed_path)
 
 
 def test_rotate_seed_aborts_on_decrypt_failure(tmp_path: Path) -> None:

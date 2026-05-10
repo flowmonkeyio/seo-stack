@@ -54,6 +54,7 @@ class ProcedureStep(BaseModel):
     loop_back_to: str | None = None
     max_retries: int = 0
     concurrency_group: str | None = None
+    when: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _validate_id(self) -> ProcedureStep:
@@ -137,13 +138,13 @@ class ProcedureVariant(BaseModel):
     Two shapes supported:
 
     - ``args_overrides`` — dict keyed by step id; merges into that step's
-      ``args`` at dispatch time.
+      ``args`` in the agent-facing step package.
     - ``steps_omit`` — list of step ids to skip entirely (status='skipped').
 
     Variants are applied at ``ProcedureRunner.start`` time when the caller
-    passes ``variant=<name>``. The runner deep-copies the spec, applies
-    the overrides, then dispatches; the original spec stays untouched
-    so concurrent runs of different variants don't cross-contaminate.
+    passes ``variant=<name>``. The controller deep-copies the spec and
+    applies the overrides; the original spec stays untouched so concurrent
+    runs of different variants don't cross-contaminate.
     """
 
     model_config = ConfigDict(extra="forbid")

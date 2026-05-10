@@ -638,8 +638,9 @@ async def list_integrations(
     project_id: int,
     session: Session = Depends(get_session),
 ) -> list[IntegrationCredentialOut]:
-    """List integration credentials for a project (payload is never returned)."""
-    return IntegrationCredentialRepository(session).list(project_id)
+    """List project credentials plus global credentials (payload is never returned)."""
+    repo = IntegrationCredentialRepository(session)
+    return [*repo.list(project_id), *repo.list(None)]
 
 
 @router.post(
@@ -1105,6 +1106,13 @@ async def delete_schedule(
 # ---------------------------------------------------------------------------
 
 
+def _canonical_budget_kind(kind: str) -> str:
+    """Normalize legacy UI aliases to integration wrapper keys."""
+    if kind == "paa":
+        return "google-paa"
+    return kind
+
+
 @router.get(
     "/{project_id}/budgets/{kind}",
     response_model=IntegrationBudgetOut,
@@ -1115,7 +1123,7 @@ async def get_budget(
     session: Session = Depends(get_session),
 ) -> IntegrationBudgetOut:
     """Read the current month's budget + spend for ``(project_id, kind)``."""
-    return IntegrationBudgetRepository(session).get(project_id, kind)
+    return IntegrationBudgetRepository(session).get(project_id, _canonical_budget_kind(kind))
 
 
 @router.post(
@@ -1132,7 +1140,7 @@ async def create_budget(
     return write_response(
         IntegrationBudgetRepository(session).set(
             project_id=project_id,
-            kind=body.kind,
+            kind=_canonical_budget_kind(body.kind),
             monthly_budget_usd=body.monthly_budget_usd,
             alert_threshold_pct=body.alert_threshold_pct,
             qps=body.qps,
@@ -1155,7 +1163,7 @@ async def update_budget(
     return write_response(
         IntegrationBudgetRepository(session).set(
             project_id=project_id,
-            kind=kind,
+            kind=_canonical_budget_kind(kind),
             monthly_budget_usd=body.monthly_budget_usd,
             alert_threshold_pct=body.alert_threshold_pct,
             qps=body.qps,

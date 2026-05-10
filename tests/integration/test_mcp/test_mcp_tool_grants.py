@@ -19,16 +19,22 @@ def _start_run_for_skill(mcp: MCPClient, project_id: int, skill_name: str) -> st
     return env["data"]["run_token"]
 
 
+def _create_article_with_skill(mcp: MCPClient, project_id: int, slug: str) -> dict:
+    """Create an article through a real granted skill token."""
+    token = _start_run_for_skill(mcp, project_id, "01-research/content-brief")
+    return mcp.call_tool_structured(
+        "article.create",
+        {"project_id": project_id, "title": slug, "slug": slug, "run_token": token},
+    )
+
+
 def test_skill_with_grant_can_call_allowed_tool(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:
     """The ``_test_editor`` skill can call article.get."""
     pid = seeded_project["data"]["id"]
     token = _start_run_for_skill(mcp_client, pid, "_test_editor")
-    art = mcp_client.call_tool_structured(
-        "article.create",
-        {"project_id": pid, "title": "T", "slug": "t"},
-    )
+    art = _create_article_with_skill(mcp_client, pid, "t")
     aid = art["data"]["id"]
     # Now call article.get with the test_editor token — allowed.
     got = mcp_client.call_tool_structured("article.get", {"article_id": aid, "run_token": token})
@@ -75,10 +81,10 @@ def test_unknown_skill_with_provisioned_token_is_forbidden(
     assert err["code"] == -32007
 
 
-def test_unmatched_token_falls_to_test_grant(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """A run_token that doesn't match any row → __test__ (full grant)."""
+def test_unmatched_token_is_forbidden(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """A run_token that doesn't match any row cannot call tools."""
     pid = seeded_project["data"]["id"]
-    art = mcp_client.call_tool_structured(
+    err = mcp_client.call_tool_error(
         "article.create",
         {
             "project_id": pid,
@@ -87,14 +93,49 @@ def test_unmatched_token_falls_to_test_grant(mcp_client: MCPClient, seeded_proje
             "run_token": "totally-bogus-token-not-in-runs",
         },
     )
-    assert art["data"]["slug"] == "t-test-bypass"
+    assert err["code"] == -32007
+    assert err["data"]["skill"] == "__invalid__"
 
 
-def test_no_run_token_is_system_grant(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """No run_token → ``__system__`` skill (full grant)."""
+def test_no_run_token_is_bootstrap_only(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """No run_token can bootstrap runs, but cannot mutate article state."""
     pid = seeded_project["data"]["id"]
-    art = mcp_client.call_tool_structured(
+    run = mcp_client.call_tool_structured(
+        "run.start",
+        {"project_id": pid, "kind": "procedure", "skill_name": "_test_editor"},
+    )
+    assert run["data"]["run_token"]
+
+    err = mcp_client.call_tool_error(
         "article.create",
         {"project_id": pid, "title": "T2", "slug": "t-sys"},
     )
-    assert art["data"]["slug"] == "t-sys"
+    assert err["code"] == -32007
+    assert err["data"]["skill"] == "__system__"
+
+
+def test_run_token_cannot_read_other_project_object(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    """Object-id-only reads are checked against the resolved run's project."""
+    pid_1 = seeded_project["data"]["id"]
+    project_2 = mcp_client.call_tool_structured(
+        "project.create",
+        {
+            "slug": "second-project",
+            "name": "Second Project",
+            "domain": "second.example",
+            "locale": "en-US",
+        },
+    )
+    pid_2 = project_2["data"]["id"]
+    token_1 = _start_run_for_skill(mcp_client, pid_1, "_test_editor")
+    art_2 = _create_article_with_skill(mcp_client, pid_2, "other-project-article")
+
+    err = mcp_client.call_tool_error(
+        "article.get",
+        {"article_id": art_2["data"]["id"], "run_token": token_1},
+    )
+    assert err["code"] == -32007
+    assert err["data"]["run_project_id"] == pid_1
+    assert err["data"]["result_project_id"] == pid_2

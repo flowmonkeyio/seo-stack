@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session, SQLModel, select
 
+from content_stack.db.connection import make_engine
 from content_stack.db.models import EeatCriterion, EeatTier
 from content_stack.repositories.base import (
     BudgetExceededError,
@@ -229,6 +230,42 @@ def test_publish_targets_set_primary_unique(session: Session, project_id: int) -
     assert primary_id == b.data.id
 
 
+def test_publish_targets_first_target_becomes_primary(session: Session, project_id: int) -> None:
+    from content_stack.db.models import PublishTargetKind
+
+    repo = PublishTargetRepository(session)
+    out = repo.add(project_id=project_id, kind=PublishTargetKind.NUXT_CONTENT)
+
+    assert out.data.is_primary is True
+
+
+def test_publish_targets_cannot_unset_only_primary(session: Session, project_id: int) -> None:
+    from content_stack.db.models import PublishTargetKind
+
+    repo = PublishTargetRepository(session)
+    out = repo.add(project_id=project_id, kind=PublishTargetKind.NUXT_CONTENT)
+
+    with pytest.raises(ConflictError):
+        repo.update(out.data.id, is_primary=False)
+
+
+def test_publish_targets_remove_primary_promotes_remaining(
+    session: Session, project_id: int
+) -> None:
+    from content_stack.db.models import PublishTargetKind
+
+    repo = PublishTargetRepository(session)
+    first = repo.add(project_id=project_id, kind=PublishTargetKind.NUXT_CONTENT).data
+    second = repo.add(project_id=project_id, kind=PublishTargetKind.WORDPRESS).data
+
+    repo.remove(first.id)
+    rows = repo.list(project_id)
+
+    assert len(rows) == 1
+    assert rows[0].id == second.id
+    assert rows[0].is_primary is True
+
+
 # -------- Integrations --------
 
 
@@ -311,6 +348,42 @@ def test_budget_month_rollover(session: Session, project_id: int) -> None:
     out = repo.record_call(project_id=project_id, kind="firecrawl", cost_usd=0.8, now=feb)
     assert out.data.current_month_calls == 1
     assert out.data.current_month_spend == pytest.approx(0.8)
+
+
+def test_budget_preemption_uses_atomic_increment_with_stale_session(tmp_path) -> None:
+    engine = make_engine(tmp_path / "budget-race.sqlite")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as setup:
+        project_id = (
+            ProjectRepository(setup)
+            .create(
+                slug="budget-race",
+                name="budget-race",
+                domain="example.com",
+                locale="en-US",
+            )
+            .data.id
+        )
+        assert project_id is not None
+        IntegrationBudgetRepository(setup).set(
+            project_id=project_id,
+            kind="dataforseo",
+            monthly_budget_usd=1.0,
+        )
+
+    with Session(engine) as s1, Session(engine) as s2:
+        repo1 = IntegrationBudgetRepository(s1)
+        repo2 = IntegrationBudgetRepository(s2)
+        repo2.get(project_id, "dataforseo")
+
+        repo1.record_call(project_id=project_id, kind="dataforseo", cost_usd=0.6)
+        with pytest.raises(BudgetExceededError):
+            repo2.record_call(project_id=project_id, kind="dataforseo", cost_usd=0.6)
+
+    with Session(engine) as check:
+        budget = IntegrationBudgetRepository(check).get(project_id, "dataforseo")
+        assert budget.current_month_spend == pytest.approx(0.6)
+        assert budget.current_month_calls == 1
 
 
 # -------- Scheduled jobs --------

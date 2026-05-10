@@ -51,7 +51,7 @@ if [[ "${ACTION}" == "register" ]] && already_registered; then
 fi
 
 if [[ ! -f "${TOKEN_PATH}" ]]; then
-    echo "auth token missing at ${TOKEN_PATH} — run \`make serve\` once first." >&2
+    echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`content-stack init\` first." >&2
     exit 1
 fi
 # Codex CLI's HTTP MCP server resolves the bearer token via an environment

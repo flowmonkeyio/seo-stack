@@ -7,9 +7,10 @@ Includes the partial / hot-path indexes that SQLModel cannot express
 declaratively:
 
 - ``uq_internal_links_unique`` — partial unique excluding ``status='dismissed'``
-  (PLAN.md L479 + audit B-09).
-- ``uq_publish_targets_primary`` — partial unique enforcing exactly-one
-  primary per project (PLAN.md L485 + audit B-08).
+  and treating ``position IS NULL`` as one bucket (PLAN.md L479 + audit B-09).
+- ``uq_publish_targets_primary`` — partial unique enforcing at most one
+  primary per project; repository code maintains at least one when rows exist
+  (PLAN.md L485 + audit B-08).
 - ``idx_runs_running_heartbeat`` — partial index for the daemon-restart
   orphan sweep (PLAN.md L474).
 
@@ -26,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-import sqlmodel  # noqa: F401  (autogenerate references sqlmodel.sql.sqltypes)
+import sqlmodel
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -862,7 +863,7 @@ def upgrade() -> None:
     # Partial unique excluding dismissed (PLAN.md L479, audit B-09).
     op.execute(
         "CREATE UNIQUE INDEX uq_internal_links_unique "
-        "ON internal_links(from_article_id, to_article_id, anchor_text, position) "
+        "ON internal_links(from_article_id, to_article_id, anchor_text, COALESCE(position, -1)) "
         "WHERE status != 'dismissed'"
     )
 

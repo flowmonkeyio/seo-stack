@@ -31,6 +31,7 @@ the bearer-token check. Currently:
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk token file from the browser, so it fetches the bearer token at app boot via this endpoint. | **See below.** |
+| `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser back to the daemon and cannot attach the SPA's bearer header. | The route accepts only a callback with a matching stored OAuth `state` nonce, then removes that nonce from persisted config. |
 
 ## Token-bootstrap trade-off (M5.A)
 
@@ -93,15 +94,19 @@ tries to drive a tight loop against a paid integration.
 Both the clone-mode `make install` and the pipx-mode
 `content-stack install` paths share the same install code:
 
-- **Auth token**: rotates on every `make install` re-run; the
-  registration scripts (`register-mcp-codex.sh`,
-  `register-mcp-claude.sh`) overwrite the saved MCP configs with the
-  new token. `pipx upgrade` does NOT rotate by itself; operators
-  rotate explicitly via `content-stack rotate-token --yes`.
+- **Auth token**: created by `content-stack init`, `content-stack install`,
+  or `make install` before MCP registration. `pipx upgrade` does NOT rotate
+  by itself; operators rotate explicitly via `content-stack rotate-token
+  --yes` or `make rotate-token`. Rotation refreshes saved MCP configs, but a
+  daemon that is already running keeps the token it loaded at startup until it
+  is restarted.
 - **Seed file**: never rotated by install. Cross-machine moves
   require copying `seed.bin` alongside the DB; without it,
   `integration_credentials` rows are unrecoverable. See
-  [`./upgrade.md#cross-machine-moves`](./upgrade.md).
+  [`./upgrade.md#cross-machine-moves`](./upgrade.md). Rotation stages
+  `seed.bin.new` before committing re-encrypted rows; if a crash leaves
+  that staged file behind, daemon startup refuses to continue until the
+  operator finishes or restores the rotation.
 - **Wheel layout (pipx)**: skills + procedures are bundled under
   `content_stack/_assets/`. The console script copies them via
   `importlib.resources` so users without the repo on disk get the

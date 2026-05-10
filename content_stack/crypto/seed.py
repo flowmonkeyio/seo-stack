@@ -5,11 +5,12 @@ The seed is 32 bytes from ``os.urandom`` stored at
 ``auth.ensure_token`` pattern: TOCTOU-safe ``O_EXCL`` create, refuse to
 load if the file exists with the wrong mode (PLAN.md L1110-L1113).
 
-Rotation (``content-stack rotate-seed --reencrypt``) writes the new seed
-to ``seed.bin.new``, fsyncs the parent directory, atomically renames
-into place, and keeps the old seed as ``seed.bin.bak`` for one daemon
-boot — the next ``ensure_seed_file`` call deletes the backup so a stale
-seed can't sit on disk indefinitely (PLAN.md L1140-L1142).
+Rotation (``content-stack rotate-seed --reencrypt``) first re-encrypts
+rows in memory, stages the new seed at ``seed.bin.new``, lets the CLI
+commit the DB rows, then promotes the staged seed into place. The old
+seed is kept as ``seed.bin.bak`` for one daemon boot — the next
+``ensure_seed_file`` call deletes the backup so a stale seed can't sit
+on disk indefinitely (PLAN.md L1140-L1142).
 """
 
 from __future__ import annotations
@@ -49,6 +50,11 @@ def _new_seed_path(seed_path: Path) -> Path:
     return seed_path.with_suffix(seed_path.suffix + ".new")
 
 
+def staged_seed_path(seed_path: Path) -> Path:
+    """Return the staged rotation seed path (``seed.bin.new``)."""
+    return _new_seed_path(seed_path)
+
+
 def _file_mode_bits(path: Path) -> int:
     """Return the permission bits of ``path`` masked to standard rwx triplets."""
     return stat.S_IMODE(path.stat().st_mode)
@@ -85,6 +91,14 @@ def ensure_seed_file(seed_path: Path) -> bytes:
 
     Returns the 32-byte seed bytes.
     """
+    staged = _new_seed_path(seed_path)
+    if staged.exists():
+        raise SeedFileError(
+            f"incomplete seed rotation: staged seed exists at {staged}; "
+            "finish the rotation or restore the database before starting the daemon",
+            data={"seed_path": str(seed_path), "staged_seed_path": str(staged)},
+        )
+
     if seed_path.exists():
         seed = load_seed(seed_path)
         cleanup_old_backup(seed_path)
@@ -153,17 +167,29 @@ def rotate_seed(
        caller can retry.
     2. Generate a fresh 32-byte seed.
     3. Re-encrypt every row under the new seed (new nonce per row).
-    4. Atomically swap the seed file: write to ``seed.bin.new``,
-       fsync, rename ``seed.bin → seed.bin.bak`` and ``seed.bin.new
-       → seed.bin``. ``seed.bin.bak`` is auto-deleted on the next
-       boot via ``cleanup_old_backup``.
+    4. Stage and atomically promote the seed file: write to
+       ``seed.bin.new``, fsync, rename ``seed.bin → seed.bin.bak`` and
+       ``seed.bin.new → seed.bin``. ``seed.bin.bak`` is auto-deleted on
+       the next boot via ``cleanup_old_backup``.
 
     Returns ``(new_seed, rotated_rows)`` where ``rotated_rows`` is the
     same list of dicts with ``encrypted_payload`` and ``nonce`` updated.
-    The DB write is the *caller's* responsibility — we keep the rotation
-    routine pure so the CLI can wrap both halves in a single SQLite
-    transaction (PLAN.md L1138-L1140 "abort and keep the old seed").
+    The DB write is the *caller's* responsibility. The CLI uses the
+    lower-level stage/commit helpers so it can commit the DB rows before
+    promoting the staged seed.
     """
+    new_seed, rotated_rows = reencrypt_rows_for_seed_rotation(seed_path, rows=rows)
+    stage_seed_rotation(seed_path, new_seed)
+    commit_staged_seed_rotation(seed_path)
+    return new_seed, rotated_rows
+
+
+def reencrypt_rows_for_seed_rotation(
+    seed_path: Path,
+    *,
+    rows: list[dict[str, Any]],
+) -> tuple[bytes, list[dict[str, Any]]]:
+    """Return ``(new_seed, rotated_rows)`` without mutating seed files."""
     # Local import to avoid a circular import at module load time.
     from content_stack.crypto.aes_gcm import decrypt as _decrypt
     from content_stack.crypto.aes_gcm import encrypt as _encrypt
@@ -176,20 +202,18 @@ def rotate_seed(
 
     old_seed = load_seed(seed_path)
 
-    # Phase 1: decrypt under the old seed. If anything fails we propagate
-    # before any disk mutation happens.
     plaintexts: list[bytes] = []
     for row in rows:
-        plaintext = _decrypt(
-            row["encrypted_payload"],
-            nonce=row["nonce"],
-            project_id=row["project_id"],
-            kind=row["kind"],
-            seed=old_seed,
+        plaintexts.append(
+            _decrypt(
+                row["encrypted_payload"],
+                nonce=row["nonce"],
+                project_id=row["project_id"],
+                kind=row["kind"],
+                seed=old_seed,
+            )
         )
-        plaintexts.append(plaintext)
 
-    # Phase 2: encrypt under a fresh seed.
     new_seed = secrets.token_bytes(_SEED_BYTES)
     rotated_rows: list[dict[str, Any]] = []
     for plaintext, row in zip(plaintexts, rows, strict=True):
@@ -206,11 +230,22 @@ def rotate_seed(
                 "nonce": new_nonce,
             }
         )
+    return new_seed, rotated_rows
 
-    # Phase 3: write new seed atomically; then rotate old → bak.
+
+def stage_seed_rotation(seed_path: Path, new_seed: bytes) -> Path:
+    """Write ``new_seed`` to ``seed.bin.new`` and fsync it."""
+    if len(new_seed) != _SEED_BYTES:
+        raise SeedFileError(
+            f"new seed has length {len(new_seed)}; expected {_SEED_BYTES}",
+            data={"seed_path": str(seed_path), "length": len(new_seed)},
+        )
     new_path = _new_seed_path(seed_path)
-    backup = backup_seed_path(seed_path)
-
+    if new_path.exists():
+        raise SeedFileError(
+            f"cannot stage seed rotation: {new_path} already exists",
+            data={"seed_path": str(seed_path), "staged_seed_path": str(new_path)},
+        )
     fd = os.open(
         new_path,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -222,28 +257,57 @@ def rotate_seed(
     finally:
         os.close(fd)
     os.chmod(new_path, _REQUIRED_MODE)
+    _fsync_parent(seed_path)
+    return new_path
 
+
+def commit_staged_seed_rotation(seed_path: Path) -> None:
+    """Promote ``seed.bin.new`` to ``seed.bin`` and keep old seed as backup."""
+    new_path = _new_seed_path(seed_path)
+    backup = backup_seed_path(seed_path)
+    if not new_path.exists():
+        raise SeedFileError(
+            f"cannot commit seed rotation: staged seed at {new_path} is missing",
+            data={"seed_path": str(seed_path), "staged_seed_path": str(new_path)},
+        )
+    load_seed(new_path)
     # Move current seed into the backup slot, then move new seed into place.
     if backup.exists():
         backup.unlink()
     os.rename(seed_path, backup)
     os.rename(new_path, seed_path)
-    # fsync the parent directory so the renames hit the disk before we
-    # report success.
+    _fsync_parent(seed_path)
+
+
+def abort_staged_seed_rotation(seed_path: Path) -> bool:
+    """Delete ``seed.bin.new`` after a pre-commit rotation failure."""
+    new_path = _new_seed_path(seed_path)
+    if new_path.exists():
+        new_path.unlink()
+        _fsync_parent(seed_path)
+        return True
+    return False
+
+
+def _fsync_parent(seed_path: Path) -> None:
+    """fsync the parent directory so seed-file renames are durable."""
     parent_fd = os.open(str(seed_path.parent), os.O_RDONLY)
     try:
         os.fsync(parent_fd)
     finally:
         os.close(parent_fd)
 
-    return new_seed, rotated_rows
-
 
 __all__ = [
     "SeedFileError",
+    "abort_staged_seed_rotation",
     "backup_seed_path",
     "cleanup_old_backup",
+    "commit_staged_seed_rotation",
     "ensure_seed_file",
     "load_seed",
+    "reencrypt_rows_for_seed_rotation",
     "rotate_seed",
+    "stage_seed_rotation",
+    "staged_seed_path",
 ]

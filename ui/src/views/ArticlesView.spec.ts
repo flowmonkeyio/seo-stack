@@ -41,6 +41,9 @@ describe('ArticlesView', () => {
     expect(w.text()).toContain('Articles')
     expect(w.text()).toContain('Briefing')
     expect(w.text()).toContain('Published')
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) =>
+      String(url).includes('/api/v1/projects/1/voice/variants?limit=200'),
+    )).toBe(true)
   })
 
   it('shows empty state when no articles + no filter selected', async () => {

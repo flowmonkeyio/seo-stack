@@ -1,21 +1,18 @@
-// Procedures store — list / get_run / poll status.
+// Procedures store — list / run / get_run / poll status.
 //
 // Wires to:
 // - `GET  /api/v1/procedures`              — list procedure summaries
-// - `POST /api/v1/procedures/{slug}/run`   — currently 501 (M7)
+// - `POST /api/v1/procedures/{slug}/run`   — enqueue a daemon-side procedure run
 // - `GET  /api/v1/procedures/runs/{id}`    — `{run, steps[]}`
-//
-// `runProcedure` is the only mutating verb here and the daemon returns 501
-// at M5.C; the store surfaces a NotImplementedError so the view can show
-// the "available in M7" hint in place of failing silently.
 
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, apiWrite, ApiError } from '@/lib/client'
+import { apiFetch, ApiError } from '@/lib/client'
 import type { components } from '@/api'
 
 export type ProcedureSummary = components['schemas']['ProcedureSummary']
+export type ProcedureRunEnqueued = components['schemas']['ProcedureRunEnqueued']
 export type ProcedureRunResponse = components['schemas']['ProcedureRunResponse']
 export type ProcedureRunStep = components['schemas']['ProcedureRunStepOut']
 
@@ -47,17 +44,21 @@ export const useProceduresStore = defineStore('procedures', () => {
     }
   }
 
-  async function runProcedure(slug: string, args: Record<string, unknown>): Promise<unknown> {
+  async function runProcedure(
+    slug: string,
+    projectId: number,
+    args: Record<string, unknown>,
+  ): Promise<ProcedureRunEnqueued> {
     try {
-      return await apiWrite<unknown>(`/api/v1/procedures/${slug}/run`, {
+      return await apiFetch<ProcedureRunEnqueued>(`/api/v1/procedures/${slug}/run`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(args),
+        body: JSON.stringify({ project_id: projectId, args }),
       })
     } catch (err) {
       if (err instanceof ApiError && err.status === 501) {
         throw new ProcedureNotImplementedError(
-          'Procedure runner is not yet implemented (M7)',
+          'Procedure runner is not available on this daemon',
           err.status,
         )
       }

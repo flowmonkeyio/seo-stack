@@ -39,18 +39,19 @@ inputs:
   example_id: "An int identifier the procedure operates on."
   optional_flag: "An optional bool toggle (default false)."
 
-# Steps — the playbook. One row per step, executed sequentially. Each
+# Steps — the playbook. One row per step, managed sequentially by the
+# current agent. Each
 # step's `skill` is the path-like skill key (e.g. `02-content/editor`);
 # the runner resolves the skill body from `skills/<key>/SKILL.md` and
 # the tool grants from `content_stack.mcp.permissions.SKILL_TOOL_GRANTS`.
 #
 # `on_failure` modes:
 #   abort       — terminal failure; runs.status=failed.
-#   retry       — re-dispatch up to max_retries; escalate to abort on exhaustion.
-#   loop_back   — jump to the named prior step (loop_back_to). The runner
-#                 caps iterations at settings.procedure_runner_max_loop_iterations.
+#   retry       — agent retries up to max_retries; escalate to abort on exhaustion.
+#   loop_back   — agent returns to the named prior step (loop_back_to).
+#                 The controller exposes the loop cap in step context.
 #   skip        — mark the step skipped, advance to the next.
-#   human_review — pause the run; operator resumes via procedure.resume.
+#   human_review — record a review pause; agent retries after operator action.
 steps:
   - id: first-step
     skill: 01-research/keyword-discovery
@@ -58,7 +59,7 @@ steps:
   # - id: another-step
   #   skill: 02-content/editor
   #   args:
-  #     # Step-level args; merged with procedure args at dispatch time.
+  #     # Step-level args; merged with procedure args in the step package.
   #     extra_field: example
   #   on_failure: retry
   #   max_retries: 2

@@ -4,10 +4,11 @@ Per PLAN.md L1344-L1364 (audit MAJOR-23) the scheduler is built once at
 daemon startup and held on ``app.state.scheduler``. Job sources:
 
 1. **Procedure runs** (``runner.start`` → ``add_job(..., trigger='date')``).
-   The job_id pattern ``run-{run_id}`` keeps APScheduler's per-id
-   ``max_instances=1`` honest, and the SQLAlchemyJobStore persists the
-   pending job across daemon restarts so a crash mid-procedure can
-   resume cleanly.
+   The job_id pattern ``run-{run_id}`` makes in-flight runs observable
+   and cancellable while the daemon is alive. The actual execution state
+   is persisted in the application's ``runs`` / ``run_steps`` tables;
+   APScheduler's memory marker is re-created by the runner and is not a
+   durable mid-step resume mechanism.
 2. **Cron-triggered procedures** (procedure 6 + 7's ``schedule.cron``).
    One job per active project, registered at lifespan startup. Job_id
    ``procedure-{slug}-{project_id}``.
@@ -94,8 +95,11 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
         "long": ThreadPoolExecutor(max_workers=2),
     }
     jobstores: dict[str, Any] = {
-        # The persistent SQL store is the canonical home for procedure
-        # runs (so a daemon crash mid-procedure can resume on restart).
+        # Kept available for simple picklable jobs. Procedure execution
+        # state is stored in our own runs/run_steps tables instead; the
+        # runner's live markers use the memory jobstore because they
+        # close over asyncio tasks and cannot be resumed by unpickling an
+        # APScheduler job.
         "default": SQLAlchemyJobStore(
             engine=engine,
             tablename="apscheduler_jobs",

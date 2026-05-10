@@ -1,3 +1,3 @@
-"""Daemon-orchestrated procedure runner (per D4). Populated in M8."""
+"""Agent-led procedure control surface (per D4)."""
 
 from __future__ import annotations

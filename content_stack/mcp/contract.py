@@ -73,9 +73,14 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "setPrimary",
         "setCanonical",
         "recordPublish",
+        "claimStep",
+        "executeProgrammaticStep",
+        "recordStepCall",
+        "recordStep",
         "record",
         "rotate",
         "refresh",
+        "refreshDue",
         "reapStale",
         "createVersion",
         "markRefreshDue",
@@ -88,7 +93,11 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "start",
         "finish",
         "heartbeat",
+        "insertStep",
         "suggest",
+        # Drift diff produces a WriteEnvelope and records comparison output;
+        # keep it under mutation/idempotency discipline even while deferred.
+        "diff",
     }
 )
 
@@ -116,7 +125,6 @@ READ_VERBS: frozenset[str] = frozenset(
         "getReport",
         "getActive",
         "lookup",
-        "diff",
         "fetch",
     }
 )
@@ -131,7 +139,16 @@ def verb_is_mutating(name: str) -> bool:
     test fixtures can stress the helper without inventing namespaces.
     """
     verb = name.rsplit(".", 1)[-1]
-    return verb in MUTATING_VERBS
+    if verb in MUTATING_VERBS:
+        return True
+    # CamelCase aliases like setBrief / refreshDue should inherit the base
+    # mutating prefix. Require an uppercase boundary so read-ish verbs such
+    # as "getActive" stay controlled by the explicit read registry.
+    return any(
+        verb.startswith(prefix) and len(verb) > len(prefix) and verb[len(prefix)].isupper()
+        for prefix in MUTATING_VERBS
+        if prefix.islower()
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -40,13 +42,13 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill once per draft cycle, after `draft-conclusion` (#9) closes the draft phase. The editor is the single most important quality gate before the EEAT pass: it scrubs the surface tells that mark LLM-authored prose, calibrates emphasis and visual breaks against the project's voice profile, and tightens clauses that the section-by-section drafting necessarily left baggy. The EEAT gate (#11) reads `articles.edited_md` directly — it does not see the raw `draft_md`.
+Procedure 4 calls this skill once per draft cycle, after `draft-conclusion` (#9) closes the draft phase. The editor is the single most important quality gate before the EEAT pass: it scrubs the surface tells that mark LLM-authored prose, calibrates emphasis and visual breaks against the project's voice profile, and tightens clauses that the section-by-section drafting necessarily left baggy. The EEAT gate (#11) reads `articles.edited_md` directly — it does not see the raw `draft_md`.
 
-The editor also handles the EEAT-FIX loop. When the EEAT gate returns FIX, the procedure runner re-runs this skill with `runs.metadata_json.fix_required=[{criterion_id, finding, severity}]` so the editor can target specific deficiencies the gate detected. The runner increments a fix-loop counter; once the counter reaches its cap (default 3), the run aborts to avoid infinite ping-pong between editor and gate.
+The editor also handles the EEAT-FIX loop. When the EEAT gate returns FIX, the procedure agent runs this skill again with `runs.metadata_json.fix_required=[{criterion_id, finding, severity}]` so the editor can target specific deficiencies the gate detected. The agent increments a fix-loop counter; once the counter reaches its cap (default 3), the run aborts to avoid infinite ping-pong between editor and gate.
 
 ## Inputs
 
-- `article.get(article_id)` — returns `draft_md` (the assembled output of skills #7/8/9), `outline_md` (preserved as a structural reference), `brief_json`, the live `step_etag`. Confirm `status='drafted'` (the conclusion advanced it). On a FIX-loop re-run, `runs.metadata_json.fix_required[]` from the prior gate run is read by the procedure runner and surfaced via the run's args.
+- `article.get(article_id)` — returns `draft_md` (the assembled output of skills #7/8/9), `outline_md` (preserved as a structural reference), `brief_json`, the live `step_etag`. Confirm `status='drafted'` (the conclusion advanced it). On a FIX-loop rerun, `runs.metadata_json.fix_required[]` from the prior gate run is surfaced by the procedure agent.
 - `voice.get(project_id)` — the load-bearing input. The editor calibrates against the voice's `tone` slider, `formality` slider, `structure.examples`, `structure.example_density`, `structure.visual_breaks`, `formatting.em_dashes`, `formatting.emojis`, and any explicit prohibitions captured in `voice_md`. Skip voice and the editor renders generic LLM prose; the EEAT gate's tone-consistency dimension penalises that hard.
 - `compliance.list(project_id)` — every active rule. The editor confirms each rendered rule (header / after-intro / every-section / footer) survived the draft phase intact. Compliance bodies are immutable; the editor must not paraphrase them.
 - `eeat.list(project_id)` — the active criteria. The editor pre-checks the FIX-class signals (citation density, header presence, claim specificity) so the EEAT gate's first look is on a polished article.
@@ -82,7 +84,7 @@ The editor also handles the EEAT-FIX loop. When the EEAT gate returns FIX, the p
    - **Sparing** — one to two per article, only at section closes or in lists where they aid scanning.
    - **Generous** — voice-permitting; cap at one per paragraph regardless.
    Strip every emoji from headings unconditionally — headings are SEO surface and emojis hurt rendering on some publish targets.
-8. **Pass 6 — AI-tell removal (the load-bearing pass).** This is where the editor earns its keep. Scan the entire draft for the surface signals that mark LLM-authored prose. The procedure runner reads the count of removals as a quality KPI; the EEAT gate's tone-consistency dimension reads the residual count. Three categories of tell to scrub:
+8. **Pass 6 — AI-tell removal (the load-bearing pass).** This is where the editor earns its keep. Scan the entire draft for the surface signals that mark LLM-authored prose. The procedure agent records the count of removals as a quality KPI; the EEAT gate's tone-consistency dimension reads the residual count. Three categories of tell to scrub:
    - **Filler stems** — phrases that announce a thought without adding to it. The editor strips every instance of stems that follow this shape: "It is important to note that...", "It is worth mentioning that...", "Interestingly enough...", "In today's world...", "In this article, we will...", "It is no surprise that...", "It cannot be overstated that...", "Without a doubt...", "Needless to say...". Replacement is usually nothing — the sentence reads better with the stem deleted entirely. When the stem signalled an actual transition the prose needed, replace with a one-word transition that pulls weight ("Also", "Still", "Today", "Because of this") or with a sentence-level pivot the editor writes fresh.
    - **Transition overuse** — connector words that the LLM drafts every other paragraph. Reduce drastically: at most one per page of body for words like "Additionally", "Furthermore", "Moreover", "However", "Therefore", "Consequently", "In addition", "On the other hand". Replace surplus instances with sentence-level pivots (a new sentence that names the contrast or addition without the connector word) or with shorter connectors ("And", "But", "So", "Yet"). The voice profile may permit higher density when its `formality` slider is set high.
    - **Overused structures** — the LLM defaults that flatten prose. Three patterns to break:
@@ -112,23 +114,23 @@ The editor also handles the EEAT-FIX loop. When the EEAT gate returns FIX, the p
     - FIX with `criterion_code` in `{A01..A10}` (Authority) → confirm citations to authoritative domains; flag missing.
     For every FIX item, mark `{fix_id, addressed: bool, addressed_in_pass}` in `runs.metadata_json.editor.fix_addressed[]` so the next EEAT gate run can audit.
 15. **Compose `edited_md`.** The structural shape mirrors `draft_md`: H1 + intro + body H2/H3 + conclusion + compliance footer + (optional) about-author + references. The differences are at the prose level — every change traced to a pass entry in the change log.
-16. **Persist.** Call `article.setEdited(article_id, edited_md=..., expected_etag=<live etag>)`. The repository writes `edited_md`, advances `articles.status` from `drafted` to `edited`, and rotates `step_etag`. The procedure runner hands the new etag to skill #12 (humanizer) — humanizer runs after editor and writes back to `edited_md` without changing status.
+16. **Persist.** Call `article.setEdited(article_id, edited_md=..., expected_etag=<live etag>)`. The repository writes `edited_md`, advances `articles.status` from `drafted` to `edited`, and rotates `step_etag`. The procedure agent passes the new etag to skill #12 (humanizer) — humanizer runs after editor and writes back to `edited_md` without changing status.
 17. **Finish.** Call `run.finish` with `{article_id, passes_run: [1..10], total_changes, ai_tell_count, citation_changes, fix_addressed_count, fix_loop_iteration}`. Heartbeats fire after each of the 10 passes so a long edit run stays visible.
 
 ## Outputs
 
 - `articles.edited_md` — fully edited markdown with the full structural shape preserved.
 - `articles.status` — advanced from `drafted` to `edited`.
-- `articles.step_etag` — rotated; the procedure runner hands the new value to skill #12.
+- `articles.step_etag` — rotated; the procedure agent passes the new value to skill #12.
 - `runs.metadata_json.editor` — structured change log per pass, AI-tell removal log, citation changes, fix-addressed map.
 
 ## Failure handling
 
-- **Status not `drafted`.** Abort. The conclusion skill should have advanced via `markDrafted`. If status is `outlined`, the conclusion never ran; the procedure runner restarts from #9. If status is `edited`, the editor already ran; the FIX-loop re-run path uses the same skill but the procedure runner manages the etag rotation and increments the fix-loop counter.
+- **Status not `drafted`.** Abort. The conclusion skill should have advanced via `markDrafted`. If status is `outlined`, the conclusion never ran; the procedure agent restarts from #9. If status is `edited`, the editor already ran; the FIX-loop rerun path uses the same skill but the procedure agent manages the etag rotation and increments the fix-loop counter.
 - **Voice profile missing.** Abort. The editor without voice produces generic prose; the EEAT gate's tone-consistency dimension flags it. Procedure 1 should have seeded a default voice; if it didn't, the bootstrap is broken — surface and stop.
 - **Citation marker count changes unexpectedly.** When `[^N]` count in `edited_md` differs from `draft_md` and the editor did not log the change in `runs.metadata_json.editor.citation_changes[]`, refuse to persist; the change log is the audit trail and an unrecorded change is a bug. Re-run the relevant pass.
 - **AI-tell removal stripped a citation.** Means a stem like "Studies show that X[^4]" got over-aggressively trimmed. Detected via citation invariant; restore the citation marker, persist a `runs.metadata_json.editor.citation_restored[]` entry, continue.
-- **FIX-loop iteration cap reached.** Default cap is 3 (per audit M-29). Procedure runner aborts the run before re-dispatching the editor when the counter hits the cap; the editor itself does not enforce the cap because it has no state for it.
+- **FIX-loop iteration cap reached.** Default cap is 3 (per audit M-29). The procedure agent aborts the run instead of retrying the editor again when the counter hits the cap; the editor itself does not enforce the cap because it has no state for it.
 - **Etag mismatch.** Refuse to persist; refresh via `article.get`; retry once.
 - **Compliance rule body modified inadvertently.** Detect via byte-for-byte comparison against the rule's `body` field; restore the original; log in `runs.metadata_json.editor.compliance_restored[]`.
 

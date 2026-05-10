@@ -15,6 +15,8 @@ allowed_tools:
   - run.heartbeat
   - run.finish
   - run.recordStepCall
+  - procedure.currentStep
+  - procedure.recordStep
 inputs:
   project_id:
     source: env
@@ -37,7 +39,7 @@ outputs:
 
 ## When to use
 
-Procedure 4 dispatches this skill once per article version, between the editor (#10) and the EEAT gate (#11). The editor scrubs the surface tells (filler stems, transition overuse, weak structures) and calibrates against the voice profile; the humanizer is the second pass that handles what survives — rhythm uniformity (the most reliable AI-tell signal), second-order phrase patterns the editor's blacklist did not catch, and the absence of voice-appropriate asides where the brief permits them. The output is rewritten in place: `articles.edited_md` is replaced (not appended), `articles.status` does not change, and the article remains in the `edited` state for the gate to score.
+Procedure 4 calls this skill once per article version, between the editor (#10) and the EEAT gate (#11). The editor scrubs the surface tells (filler stems, transition overuse, weak structures) and calibrates against the voice profile; the humanizer is the second pass that handles what survives — rhythm uniformity (the most reliable AI-tell signal), second-order phrase patterns the editor's blacklist did not catch, and the absence of voice-appropriate asides where the brief permits them. The output is rewritten in place: `articles.edited_md` is replaced (not appended), `articles.status` does not change, and the article remains in the `edited` state for the gate to score.
 
 The humanizer also runs inside procedure 7 (`monthly-humanize-pass`): for each article whose `articles.status='refresh_due'`, the procedure creates a new version via `article.createVersion`, runs the humanizer against the new version's `edited_md`, then re-runs the editor + gate against the updated content. Per audit P-I1, the humanizer runs **once per article version** — re-running on the same version is forbidden because successive humanizer passes drift away from voice.
 
@@ -50,7 +52,7 @@ The humanizer also runs inside procedure 7 (`monthly-humanize-pass`): for each a
 ## Steps
 
 1. **Read context.** Resolve the article. Confirm `status='edited'`. Pull `edited_md`, the voice profile, and the live `step_etag`. Read `runs.metadata_json.editor.ai_tell_log[]` (when present) so the humanizer doesn't re-flag the same tells the editor already addressed — second-order work only.
-2. **Idempotency check.** Per audit P-I1, the humanizer runs once per article version. Detect whether this version already had a humanizer pass by querying recent runs of this article: if any prior `runs` row has `kind='humanize-pass'`, `status='success'`, `article_id=<this article>`, AND that run's completion timestamp is later than `articles.updated_at` of the most recent edit (i.e., no editor pass intervened), abort with a clear message. The procedure runner is responsible for sequencing humanizer once per version; this check is a defence-in-depth invariant rather than a primary control.
+2. **Idempotency check.** Per audit P-I1, the humanizer runs once per article version. Detect whether this version already had a humanizer pass by querying recent runs of this article: if any prior `runs` row has `kind='humanize-pass'`, `status='success'`, `article_id=<this article>`, AND that run's completion timestamp is later than `articles.updated_at` of the most recent edit (i.e., no editor pass intervened), abort with a clear message. The procedure agent is responsible for sequencing humanizer once per version; this check is a defence-in-depth invariant rather than a primary control.
 3. **Initialise the change log.** The humanizer writes `runs.metadata_json.humanizer` with a structured shape: `{rhythm_deltas: [...], second_order_tells_removed: [...], asides_injected: [...], voice_drift_score, citation_invariant_held}`. Each rewrite gets logged so the EEAT gate's tone-consistency dimension and any future audit can trace what changed.
 4. **Pass 1 — Sentence rhythm analysis.** Walk the article paragraph by paragraph. For each paragraph, compute the sentence-length distribution (word counts per sentence; mean and standard deviation across the paragraph). The fingerprint of LLM-uniform prose is low standard deviation: when most sentences in a paragraph land in a tight band (e.g., 14–18 words), the rhythm reads as machine-shaped even when the words are correct. Flag every paragraph whose standard deviation falls below a per-voice threshold (default: 5 words; voice profiles can override via `voice.humanizer.rhythm_floor`). Compute the same metric across the full article — uniform article-level rhythm is the strongest single AI tell.
 5. **Pass 2 — Sentence rhythm rewrite.** For each flagged paragraph, vary the sentence lengths:
@@ -72,25 +74,25 @@ The humanizer also runs inside procedure 7 (`monthly-humanize-pass`): for each a
    - Each aside cites no research source and makes no testable claim — asides are voice texture, not evidence. The EEAT gate's R10 check ignores them.
    When the voice profile forbids first-person or any personal aside, this pass is skipped entirely. Surface the skip in `runs.metadata_json.humanizer.asides_skipped='voice-prohibits'`.
    For every injected aside, log a `{paragraph_anchor, aside_text, voice_persona_used}` entry in `asides_injected[]`.
-8. **Citation invariant check.** Throughout every pass, the humanizer MUST NOT modify the `[^N]` markers. The marker syntax is load-bearing for the EEAT gate's R10 check and the conclusion skill's footnote definitions. Count markers in `edited_md` before and after the humanizer's rewrites; the counts must match exactly. Where they do not, the rewrite that broke the invariant gets rolled back and re-attempted without affecting the marker. Log `citation_invariant_held=true` when the final count matches; on mismatch the humanizer aborts with a recoverable error and the procedure runner re-dispatches once.
+8. **Citation invariant check.** Throughout every pass, the humanizer MUST NOT modify the `[^N]` markers. The marker syntax is load-bearing for the EEAT gate's R10 check and the conclusion skill's footnote definitions. Count markers in `edited_md` before and after the humanizer's rewrites; the counts must match exactly. Where they do not, the rewrite that broke the invariant gets rolled back and re-attempted without affecting the marker. Log `citation_invariant_held=true` when the final count matches; on mismatch the humanizer aborts with a recoverable error and the procedure agent may retry once.
 9. **Voice drift detection.** Compute a coarse voice-drift score: tokenise the rewritten article and compare its tone fingerprint (formality words, hedge words, first-person count, rhetorical-question count) against the voice profile's expected fingerprint. The drift score is normalised to 0–100 where 0 means perfect alignment and 100 means a fully disjoint tone. Surface in `runs.metadata_json.humanizer.voice_drift_score`. Drift scores above 30 trigger a warning but do not abort; the EEAT gate's tone-consistency dimension reads the rewritten article and decides FIX vs. SHIP independently. Drift scores above 60 abort the humanizer and roll back to the pre-humanizer `edited_md` — the editor's output is the safer baseline to ship to the gate.
-10. **Persist.** Call `article.setEdited(article_id, edited_md=<rewritten markdown>, expected_etag=<live etag>)`. The repository writes `edited_md` (replacing whatever was there from the editor's pass), rotates `step_etag`, and does NOT change status (status was already `edited`; setEdited's documented behaviour is `drafted → edited`, which is a no-op when called from `edited`). The procedure runner picks up the new etag for skill #11 (eeat-gate).
+10. **Persist.** Call `article.setEdited(article_id, edited_md=<rewritten markdown>, expected_etag=<live etag>)`. The repository writes `edited_md` (replacing whatever was there from the editor's pass), rotates `step_etag`, and does NOT change status (status was already `edited`; setEdited's documented behaviour is `drafted → edited`, which is a no-op when called from `edited`). The procedure agent passes the new etag to skill #11 (eeat-gate).
 11. **Finish.** Call `run.finish` with `{article_id, paragraphs_analyzed, paragraphs_rewritten, second_order_tells_removed_count, asides_injected_count, voice_drift_score, citation_invariant_held}`. Heartbeats fire after each pass so a slow rewrite stays visible.
 
 ## Outputs
 
 - `articles.edited_md` — humanized markdown with varied rhythm, second-order tells stripped, voice-appropriate asides injected.
-- `articles.step_etag` — rotated; the procedure runner hands the new value to skill #11.
+- `articles.step_etag` — rotated; the procedure agent passes the new value to skill #11.
 - `runs.metadata_json.humanizer` — structured change log per pass.
 
 ## Failure handling
 
-- **Status not `edited`.** Abort. The editor advances `drafted → edited`; if status is `drafted`, the editor never ran; if `eeat_passed`, the gate already approved and the humanizer is too late. Procedure runner sequences correctly; the check is defence-in-depth.
-- **Idempotency check trips (already humanized).** Abort with the clear message; the procedure runner is responsible for not re-dispatching humanizer on the same version. This is the audit P-I1 safety net.
+- **Status not `edited`.** Abort. The editor advances `drafted → edited`; if status is `drafted`, the editor never ran; if `eeat_passed`, the gate already approved and the humanizer is too late. The procedure agent sequences correctly; the check is defence-in-depth.
+- **Idempotency check trips (already humanized).** Abort with the clear message; the procedure agent is responsible for not running humanizer again on the same version. This is the audit P-I1 safety net.
 - **Citation marker count diverges.** Roll back the offending rewrite, retry without affecting the marker. Two consecutive rollbacks on the same paragraph aborts the humanizer and persists the editor's pre-humanizer output.
 - **Voice drift score exceeds 60.** Abort and roll back to the editor's `edited_md`. The EEAT gate scores the editor-only output; the operator audits the humanizer's run metadata to decide whether the voice profile needs adjustment or whether the humanizer over-applied.
 - **Aside injection fails because the voice persona is empty.** Skip the aside pass; log `asides_skipped='voice-persona-empty'`; continue. The other passes still run.
-- **Etag mismatch on `setEdited`.** Refresh via `article.get`; retry once with the new etag. Two conflicts aborts and the procedure runner re-dispatches.
+- **Etag mismatch on `setEdited`.** Refresh via `article.get`; retry once with the new etag. Two conflicts abort and the procedure agent decides whether to retry or fork.
 - **`runs` query for prior humanize-pass returns ambiguous results.** Default to the conservative path: assume the version was already humanized; abort. The operator can override by manually setting `articles.updated_at` (procedure 7's `article.createVersion` step bumps it correctly).
 
 ## Variants
