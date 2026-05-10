@@ -24,6 +24,11 @@ This contract applies to every content-stack skill. The skill-specific
   requires them.
 - External vendor operations must pass through content-stack integrations so
   rate limits, quota, and budget accounting remain auditable.
+- If a required integration is missing or fails its health probe, do not ask
+  the operator to paste secrets into chat. Return `NEEDS_INPUT` with the direct
+  setup URL
+  `http://localhost:5180/projects/{project_id}/integrations?required=<kinds>`
+  and list the canonical vendor kinds needed by the step.
 - Record long-running work with heartbeats and finish/record-step calls so the
   UI can show progress and resume safely.
 

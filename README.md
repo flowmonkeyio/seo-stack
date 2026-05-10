@@ -421,6 +421,9 @@ Use this flow from the site repo, not from the content-stack repo.
    `workspace.connect`.
 6. Configure the project's voice, compliance rules, authors, integrations,
    publish target, sitemap, and schedule through the UI or setup tools.
+   For vendors, the agent should share a direct integrations link such as
+   `http://localhost:5180/projects/1/integrations?required=dataforseo,firecrawl`
+   instead of asking for secrets in chat.
 7. Run `01-bootstrap-project` or `08-add-new-site`.
 8. Approve topics in the UI when a procedure pauses for human review.
 9. Run `04-topic-to-published` for a single approved topic or

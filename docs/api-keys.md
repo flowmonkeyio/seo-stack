@@ -8,6 +8,16 @@ and a project-bound AAD; PLAN.md L1106-L1124).
 The "First-run flows" section in PLAN.md L1065-L1088 is the canonical
 spec; this doc is the operator-facing how-to.
 
+Recommended setup flow:
+
+1. Let the agent identify the vendors needed for the current procedure.
+2. Open the project integrations page the agent gives you, for example
+   ``http://localhost:5180/projects/1/integrations?required=dataforseo,firecrawl``.
+3. Connect vendors from the named cards. Do not paste secrets into agent
+   chat and do not add vendor keys to the website repository.
+4. Return to the agent. The agent should run the relevant
+   ``integration.test`` / ``integration.testGsc`` probe before continuing.
+
 ---
 
 ## DataForSEO

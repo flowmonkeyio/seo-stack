@@ -31,15 +31,26 @@ hidden tool by name. Do not try to call hidden daemon tools directly.
 4. Use `toolbox.describe`/`toolbox.call` for credential, voice, compliance,
    EEAT, publish-target, schedule, sitemap, article, and publishing tools that
    are not in the direct list.
-5. For static/workspace publishing, apply rendered bundles in the current repo
+5. When a procedure needs missing vendor credentials, do not ask the user to
+   paste secrets into chat. Name the missing vendors and give the user the
+   project integrations URL:
+   `http://localhost:5180/projects/{project_id}/integrations?required=<comma-separated-kinds>`.
+   Use canonical kinds such as `dataforseo`, `firecrawl`, `gsc`,
+   `openai-images`, `reddit`, `jina`, and `ahrefs`. After the user connects
+   them in the UI, call `integration.test` / `integration.testGsc` through the
+   toolbox before continuing.
+6. For static/workspace publishing, apply rendered bundles in the current repo
    only after previewing and understanding the repository conventions.
-6. For WordPress, Ghost, admin API, or direct DB publishing, let the daemon use
+7. For WordPress, Ghost, admin API, or direct DB publishing, let the daemon use
    stored credentials and record the publish result.
 
 ## Common Flows
 
 - Connect repo: resolve workspace, create/select project, call
   `workspace.connect`, then inspect content conventions.
+- Connect vendors: inspect the procedure or skill's needed integrations, share
+  `/projects/{project_id}/integrations?required=...`, wait for the operator to
+  connect them in the UI, then run the relevant health probes.
 - Continue work: call `workspace.startSession`, resolve the project, then claim
   the next procedure step.
 - Execute a step: read the step package, follow the referenced skill guidance,
