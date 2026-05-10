@@ -1,54 +1,42 @@
 # SEO Stack
 
-Local SEO operations for agents that research, write, publish, and refresh
-content.
+SEO content operations for teams who want an AI agent to research, write,
+publish, and refresh content without losing control of the process.
 
-SEO Stack turns the agent already working in a website repository into the SEO
-operator for that site. The agent researches topics, writes and edits content,
-creates assets, emits schema, suggests links, publishes, and refreshes old
-pages. A local daemon keeps the durable state: projects, topics, runs,
-credentials, quality gates, publish targets, and audit history.
+SEO Stack lets you open Codex or Claude Code inside any website repository and
+ask for normal marketing work:
 
-The split is intentional:
+- "Find content opportunities for this site."
+- "Turn these keywords into an article plan."
+- "Write and publish the next approved article."
+- "Tell me which old pages need a refresh."
+- "Set up WordPress publishing and tell me what credentials are missing."
 
-- **The current agent is the brain.** It decides what should happen next,
-  follows procedures, writes content, and may delegate bounded work to
-  caller-owned subagents.
-- **The daemon is the control plane.** It owns SQLite state, encrypted
-  credentials, permissions, validation, run cursors, schedules, and audit
-  records.
-- **The plugin is the developer experience.** It lets agents use content-stack
-  from any website repository without adding `.env`, `.mcp.json`,
-  `.content-stack/`, or prompt files to that repo.
-- **The UI is the human console.** It gives the operator a place to configure
-  projects, connect vendors, approve topics, inspect runs, and review outputs.
+The agent does the work. SEO Stack keeps the memory: projects, topics, drafts,
+images, links, schema, publishing targets, credentials, approvals, and the
+history of what happened.
 
-content-stack is local-first and loopback-only: one Python daemon, one
-SQLite/WAL database, one installed plugin, and one compact MCP bridge per
-agent client.
+You do not need to teach every website repo about SEO Stack. Install it once,
+start the agent from the site you are working on, and let the agent connect
+that site to the local SEO workspace.
 
 ## Table of Contents
 
-- [Installation](#installation)
+- [Install](#install)
 - [Quick Start](#quick-start)
-- [Commands](#commands)
-- [How The Agent Flow Works](#how-the-agent-flow-works)
-- [Workflows](#workflows)
-- [Agent Tools](#agent-tools)
-- [Skills](#skills)
-- [Procedures](#procedures)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Integrations](#integrations)
-- [Publishing Targets](#publishing-targets)
+- [What You Can Ask For](#what-you-can-ask-for)
+- [How It Works](#how-it-works)
+- [Article Creation Flow](#article-creation-flow)
+- [Site Workflows](#site-workflows)
 - [Operations Console](#operations-console)
-- [Development](#development)
+- [Integrations](#integrations)
+- [Publishing](#publishing)
 - [Requirements](#requirements)
 - [Uninstall](#uninstall)
-- [Documentation](#documentation)
-- [Status](#status)
+- [Troubleshooting](#troubleshooting)
+- [Technical Reference](#technical-reference)
 
-## Installation
+## Install
 
 ### Clone Install
 
@@ -65,31 +53,27 @@ Open the console:
 open http://localhost:5180
 ```
 
-`make install` is idempotent. It installs Python dependencies, initializes
-daemon state, applies migrations, verifies the packaged UI bundle, installs the
-content-stack plugin, registers MCP entries for Codex and Claude Code, and runs
-doctor checks.
+`make install` sets up the local app, database, plugin, agent connection, and
+doctor checks. It is safe to rerun.
 
 ### Codex Token Setup
 
-Codex's HTTP MCP registration reads the daemon bearer token from an environment
-variable name. Add this after install:
+Codex reads the local app token from an environment variable. Add this after
+install:
 
 ```bash
 export CONTENT_STACK_TOKEN="$(cat ~/.local/state/content-stack/auth.token)"
 ```
 
-Restart Codex after installing or rotating the token so it reloads plugin and
-MCP configuration.
+Restart Codex after install so it reloads plugins and tools.
 
-### Optional macOS Auto-Start
-
-Foreground daemon mode works everywhere the package supports. On macOS you can
-also install a launchd job:
+### Optional Auto-Start On macOS
 
 ```bash
 make install-launchd
 ```
+
+Foreground mode with `make serve` still works fine.
 
 ### Package Install
 
@@ -103,21 +87,23 @@ content-stack serve
 
 ## Quick Start
 
-Start from the website repository, not from the content-stack repository.
+Start from the website repository, not from the SEO Stack repository.
 
 ```bash
 cd /path/to/your-site
 codex
 ```
 
-Then ask the agent for the operation you want:
+Then ask:
 
 ```text
-Connect this repo to content-stack and set up the SEO project.
+Connect this repo to SEO Stack and set up the project.
 ```
 
+After that, you can ask for real work:
+
 ```text
-Find keyword opportunities and build a topic queue for this site.
+Find content opportunities and build a topic queue.
 ```
 
 ```text
@@ -125,312 +111,108 @@ Take the next approved topic and publish the article.
 ```
 
 ```text
-Review published content and tell me which articles need refresh.
+Review Search Console and tell me what needs attention.
 ```
 
-The agent should:
-
-1. Resolve the current workspace.
-2. Create or select a content-stack project.
-3. Bind the repository to the project.
-4. Start the right procedure.
-5. Claim each step, read the relevant skill guidance, call the allowed tools,
-   and record the result.
-6. Pause for human review when the procedure requires it.
-
-If integrations are missing, the agent should share the relevant console link,
-for example:
+If a vendor connection is missing, the agent should send you a link to the
+right setup screen, for example:
 
 ```text
 http://localhost:5180/projects/1/integrations?required=dataforseo,firecrawl,gsc
 ```
 
-Credentials belong in the content-stack daemon, not in chat and not in the
-website repository.
+Secrets belong in the console setup flow, not in chat and not in the website
+repository.
 
-## Commands
+## What You Can Ask For
 
-content-stack does not require a slash-command vocabulary. The main interface
-is a normal agent conversation backed by procedures and MCP tools.
-
-### Operator Prompts
-
-| Ask The Agent | Typical Procedure |
+| Ask For | What SEO Stack Helps The Agent Do |
 | --- | --- |
-| "Connect this repo to content-stack." | Workspace resolve/connect, then project setup if needed. |
-| "Set up this site for SEO content operations." | `01-bootstrap-project` or `08-add-new-site` |
-| "Find content opportunities for this niche." | `03-keyword-to-topic-queue` |
-| "Write and publish the next approved article." | `04-topic-to-published` |
-| "Launch this batch of approved topics." | `05-bulk-content-launch` |
-| "Review GSC and tell me what to do next." | `06-weekly-gsc-review` |
-| "Refresh decaying content." | `07-monthly-humanize-pass` plus `content-refresher` |
+| Set up a new site | Create the project, connect the repo, define voice, compliance, authors, integrations, schedules, and publishing. |
+| Find content ideas | Research keywords, competitors, SERPs, audience questions, and topic clusters. |
+| Plan an article | Create the title, angle, search intent, outline, source list, schema plan, and image plan. |
+| Write an article | Draft the article in sections, edit it, humanize it, and check it against quality gates. |
+| Create SEO assets | Generate image prompts/assets, write alt text, and keep image metadata organized. |
+| Add schema | Create and validate JSON-LD for the article. |
+| Improve internal links | Suggest links between related articles and repair stale links. |
+| Publish content | Push to a static content repo, WordPress, or Ghost and record the publish result. |
+| Refresh old pages | Find decaying content, snapshot the old version, update the page, and republish. |
+| Monitor the site | Review Search Console, crawl issues, page drift, and refresh opportunities. |
 
-### Local CLI
+## How It Works
 
-| Command | Purpose |
-| --- | --- |
-| `make install` | Install dependencies, initialize state, install plugin, register MCP, and run doctor. |
-| `make serve` | Run the daemon in the foreground on `127.0.0.1:5180`. |
-| `content-stack restart` | Restart the daemon after backend/UI/token changes. |
-| `make doctor` | Diagnose local install, daemon, token, plugin, and MCP state. |
-| `make build-ui` | Rebuild `content_stack/ui_dist/` from `ui/`. |
-| `make uninstall` | Remove installed plugin/MCP entries while preserving DB and token state. |
-
-## How The Agent Flow Works
-
-content-stack is agent-led, not daemon-led.
+Think of SEO Stack as a local workspace for SEO operations.
 
 ```text
-Website repository
-  |
-  | Codex / Claude Code loads the content-stack plugin
-  v
-Plugin MCP bridge
-  |
-  | compact direct tools + toolbox.describe/toolbox.call
-  v
-Local content-stack daemon on 127.0.0.1:5180
-  |
-  | FastAPI REST, MCP Streamable HTTP, Vue console
-  v
-SQLite/WAL database at ~/.local/share/content-stack/content-stack.db
-  |
-  | encrypted credentials, project state, runs, publish records
-  v
-Vendor APIs and publishing targets
+You talk to the agent in a website repo
+        |
+        v
+The SEO Stack plugin gives the agent the right tools
+        |
+        v
+The local SEO Stack app remembers projects, credentials, content, and runs
+        |
+        v
+The console lets you review, approve, configure, and debug
 ```
 
-The normal loop:
+The important part: **you stay in the loop**. The agent can write, research,
+publish, and call specialist tools, but SEO Stack keeps the work visible and
+recoverable.
 
-1. The operator opens an agent inside a website repository.
-2. The installed plugin starts a lightweight MCP bridge.
-3. The bridge connects to the singleton local daemon.
-4. The agent calls `workspace.startSession` or `workspace.resolve`.
-5. The agent creates/selects a project and calls `workspace.connect`.
-6. The agent starts a run with `procedure.run`.
-7. For each step, the agent calls `procedure.claimStep`.
-8. The daemon returns the step package: skill body, inputs, prior outputs, and
-   allowed tools.
-9. The agent does the work directly and records the result with
-   `procedure.recordStep`.
-10. The daemon advances the cursor and preserves the audit trail.
+The local app stores:
 
-The daemon does not secretly launch writer agents. It stores state and enforces
-contracts. The current agent owns judgment and execution.
+- Sites and repository bindings.
+- Topic queues and clusters.
+- Briefs, drafts, edited content, sources, images, schema, and versions.
+- Publishing targets and publish records.
+- Vendor credentials and integration status.
+- Work history, errors, approvals, and resumable runs.
 
-## Workflows
+Website repositories do not need SEO Stack config files unless you explicitly
+want to add project-specific notes.
 
-| Workflow | What The Agent Does |
+## Article Creation Flow
+
+The article workflow is described in plain English inside the product. The
+technical step names are listed later for maintainers.
+
+| Step | Plain-English Meaning |
 | --- | --- |
-| New site setup | Connects the repo, creates the project, configures voice, compliance, EEAT, integrations, publish targets, sitemap, and schedule. |
-| Keyword discovery | Expands seed keywords into SERP-informed topics, clusters, and approval queues. |
-| Single article | Runs brief, outline, draft, edit, humanize, EEAT, assets, schema, links, and publish for one approved topic. |
-| Bulk launch | Opens child article runs for a batch of approved topics and manages parallelism intentionally. |
-| Content refresh | Scores old articles, snapshots versions, updates content, repairs links, rechecks quality, and republishes. |
-| Weekly review | Uses GSC, crawl, drift, and internal-link data to find opportunities and regressions. |
-| Integration setup | Detects missing vendor credentials and routes the operator to the console setup flow. |
+| Research the article | Understand the keyword, search intent, competitors, sources, and angle. |
+| Build the structure | Create the H1/H2/H3 plan and decide what each section must prove. |
+| Write the opening | Explain the promise of the article and why the reader should keep going. |
+| Write the main sections | Draft the substance section by section using the research and source plan. |
+| Write the ending | Close the loop, summarize the decision, and include any required disclosure or reference footer. |
+| Edit for quality | Remove weak claims, improve flow, tighten headings, and check usefulness. |
+| Make it sound natural | Remove robotic phrasing and align the piece with the site's voice. |
+| Check trust signals | Score the article for experience, expertise, authority, and trust. |
+| Create images | Generate or attach hero, inline, and social images when needed. |
+| Check image accessibility | Audit alt text, dimensions, format, and placement. |
+| Add structured data | Create article schema so search engines understand the page. |
+| Suggest internal links | Find relevant pages to link to and from. |
+| Publish | Send the final article to the selected publishing target. |
 
-### Workhorse Article Flow
+The quality gate can return:
 
-`04-topic-to-published` is the canonical article workflow:
+| Result | Meaning |
+| --- | --- |
+| Ship | The article is ready to publish. |
+| Fix | The article needs another edit pass. |
+| Block | The article should not publish until a serious issue is resolved. |
 
-```text
-content-brief
-  -> outline
-  -> draft-intro
-  -> draft-body
-  -> draft-conclusion
-  -> editor
-  -> humanizer
-  -> eeat-gate
-  -> image-generator
-  -> alt-text-auditor
-  -> schema-emitter
-  -> interlinker
-  -> publish target
-```
+## Site Workflows
 
-Important behavior:
-
-- `eeat-gate` returns `SHIP`, `FIX`, or `BLOCK`.
-- `FIX` loops back to editing, with retry limits.
-- `BLOCK` prevents publishing.
-- Asset, alt-text, and interlink steps can be skipped when appropriate.
-- Schema and publish steps are abort-on-failure.
-- The publish step resolves to the project's primary target adapter.
-
-## Agent Tools
-
-The plugin keeps the direct MCP surface compact so agents do not carry a huge
-tool catalog in context. Advanced and step-scoped tools are available through
-the toolbox bridge only when granted.
-
-### Direct Tools
-
-| Family | Examples | Purpose |
+| Workflow | Plain-English Name | What It Does |
 | --- | --- | --- |
-| Workspace | `workspace.startSession`, `workspace.resolve`, `workspace.connect`, `workspace.listBindings`, `workspace.updateProfile` | Connect the current repo to a project without writing repo-local setup files. |
-| Projects | `project.create`, `project.get`, `project.list`, `project.update`, `project.setActive`, `project.getActive` | Create, select, inspect, and update projects. |
-| Procedures | `procedure.list`, `procedure.run`, `procedure.currentStep`, `procedure.claimStep`, `procedure.recordStep`, `procedure.resume`, `procedure.fork`, `procedure.executeProgrammaticStep` | Start and walk durable agent-led procedures. |
-| Runs | `run.get`, `run.list`, `run.heartbeat`, `run.abort` | Inspect and control active or historical work. |
-| Meta | `meta.enums` | Read canonical enum values and legal state transitions. |
-| Toolbox | `toolbox.describe`, `toolbox.call` | Discover and invoke hidden setup or step-scoped tools. |
-
-### Toolbox Families
-
-| Family | What It Covers |
-| --- | --- |
-| Voice and compliance | Voice profiles, disclosure rules, validators, and policy text. |
-| EEAT | Criteria, evaluations, scoring, and SHIP/FIX/BLOCK gates. |
-| Topics and clusters | Topic queue, approvals, topical maps, and cluster membership. |
-| Articles and sources | Briefs, outlines, drafts, edited markdown, versions, and source ledgers. |
-| Assets | Image rows, alt text, dimensions, formats, placement, and prompts. |
-| Schema | JSON-LD creation, primary-row invariants, validation, and publish freezing. |
-| Interlinks | Suggested links, approval, apply/dismiss, and repair flows. |
-| Publishing | Targets, previews, canonical target records, and publish rows. |
-| Integrations | DataForSEO, Firecrawl, GSC, OpenAI Images, Reddit, PAA, Jina, and Ahrefs inputs. |
-| Cost | Budgets, usage checks, and pre-call spend controls. |
-| GSC and sitemap | Sitemap ingestion, URL inspection, performance rollups, and opportunity detection. |
-| Drift | Live HTML capture, baseline comparison, and regression state. |
-
-If a procedure step is not granted a tool, the bridge rejects the call.
-
-## Skills
-
-Skills are agent-readable operating manuals. They explain how to perform a
-specific SEO task, what evidence is required, which tools are allowed, and what
-output must be recorded.
-
-| Phase | Skills |
-| --- | --- |
-| Research | `keyword-discovery`, `serp-analyzer`, `competitor-sitemap-shortcut`, `topical-cluster`, `content-brief` |
-| Content | `outline`, `draft-intro`, `draft-body`, `draft-conclusion`, `editor`, `humanizer`, `eeat-gate` |
-| Assets | `image-generator`, `alt-text-auditor` |
-| Publishing | `schema-emitter`, `interlinker`, `nuxt-content-publish`, `wordpress-publish`, `ghost-publish` |
-| Ongoing | `gsc-opportunity-finder`, `drift-watch`, `crawl-error-watch`, `refresh-detector`, `content-refresher` |
-
-The installed plugin also includes a root `content-stack` skill that teaches
-the agent how to resolve workspaces, pick procedures, use direct tools, and
-invoke toolbox calls.
-
-Skill quality contracts live in:
-
-- `skills/references/skill-operating-contract.md`
-- `skills/references/seo-quality-baseline.md`
-
-## Procedures
-
-Procedures are durable playbooks. The current agent walks them; the daemon
-stores state, step outputs, and audit records.
-
-| Procedure | Purpose |
-| --- | --- |
-| `01-bootstrap-project` | Create base project setup: voice, compliance, EEAT, integrations, publish targets, and scheduling inputs. |
-| `02-one-site-shortcut` | Import one site into the topic workflow. |
-| `03-keyword-to-topic-queue` | Turn seed keywords and discovery inputs into a deduplicated topic queue. |
-| `04-topic-to-published` | Move one approved topic to a published article. |
-| `05-bulk-content-launch` | Run and monitor multiple topic-to-published child runs. |
-| `06-weekly-gsc-review` | Find opportunities, drift, crawl issues, and refresh candidates. |
-| `07-monthly-humanize-pass` | Refresh and humanize eligible published content. |
-| `08-add-new-site` | Connect and launch another site. |
-
-## Features
-
-### Research and Planning
-
-- Keyword expansion from seeds.
-- SERP analysis and intent classification.
-- Competitor sitemap shortcuts.
-- Topical clustering and pillar/spoke planning.
-- Briefs with source ledgers, schema hints, EEAT plans, and asset directives.
-
-### Content Production
-
-- Structured outline generation.
-- Intro, body, and conclusion drafting.
-- Editorial pass and humanizer pass.
-- EEAT scoring with core criteria.
-- Version snapshots before refresh.
-
-### Assets and Schema
-
-- Article image generation prompts and asset records.
-- Alt-text audits with format, size, placement, and loading guidance.
-- JSON-LD generation and validation.
-- Canonical primary schema row enforcement.
-
-### Publishing and Linking
-
-- Internal-link suggestions with approval before apply.
-- Nuxt Content/static markdown publishing.
-- WordPress REST publishing.
-- Ghost Admin API publishing.
-- Publish records and canonical target tracking.
-
-### Ongoing SEO Operations
-
-- GSC opportunity discovery.
-- Crawl error monitoring.
-- Drift detection against live pages.
-- Refresh scoring based on age, trend, and drift.
-- Scheduled review procedures.
-
-## Architecture
-
-| Component | Path | Role |
-| --- | --- | --- |
-| Daemon | `content_stack/` | FastAPI app, repositories, integrations, MCP tools, jobs, and CLI. |
-| Database | `~/.local/share/content-stack/content-stack.db` | Canonical local state for projects, runs, artifacts, credentials, and publish records. |
-| Plugin | `plugins/content-stack/` | Repo-agnostic Codex/agent plugin surface. |
-| Skills | `skills/` | Agent-readable task guidance. |
-| Procedures | `procedures/` | Agent-led playbooks with durable step state. |
-| UI | `ui/` | Vue operations console source. |
-| Packaged UI | `content_stack/ui_dist/` | Built console assets served by the daemon. |
-| Docs | `docs/` | Architecture, extending, procedures, security, upgrade, and vendor setup. |
-| Scripts | `scripts/` | Install, registration, doctor, launchd, and type generation helpers. |
-
-Security defaults:
-
-- Daemon binds to `127.0.0.1`.
-- REST and MCP require a per-install bearer token.
-- Integration credentials are encrypted at rest.
-- Website repositories do not need checked-in content-stack config.
-- Runtime prose-generation keys stay with the agent runtime, not in
-  content-stack.
-
-## Integrations
-
-Vendor integrations are configured in the daemon and used through granted
-tools. The agent should never ask the operator to paste secrets into chat.
-
-Supported integration families:
-
-| Integration | Use |
-| --- | --- |
-| DataForSEO | Keyword, SERP, and ranking data. |
-| Firecrawl | Page crawl, extraction, and drift capture. |
-| Google Search Console | Performance, indexing, crawl inspection, and opportunity discovery. |
-| OpenAI Images | Article images, OG assets, and inline visual assets. |
-| Reddit | Audience language and question mining. |
-| Google People Also Ask | Question discovery and intent expansion. |
-| Jina Reader | Markdown extraction fallback. |
-| Ahrefs exports | Enterprise competitor inputs and sitemap shortcuts. |
-
-The console integrations page is the preferred setup flow.
-
-## Publishing Targets
-
-A project can have one primary target and optional secondary targets.
-
-| Target | What Happens |
-| --- | --- |
-| Nuxt Content / static repo | Writes markdown/frontmatter and assets into a local content repo, then commits, pushes, and records the publish. |
-| WordPress | Uploads media and posts through the WordPress REST API. |
-| Ghost | Uploads images and posts through the Ghost Admin API. |
-
-Target rows store adapter-specific config such as repo path, content directory,
-image directory, branch, remote, URL pattern, frontmatter template, API
-endpoint, and credential reference.
+| New site setup | Set up this site | Connects the repository and prepares voice, compliance, authors, integrations, schedules, and publishing. |
+| Existing site import | Bring this site into SEO Stack | Pulls an existing site into the topic and content workflow. |
+| Keyword planning | Turn keywords into content ideas | Converts seed keywords and competitor inputs into a topic queue. |
+| Article production | Write and publish one article | Takes one approved topic through research, writing, quality checks, assets, links, schema, and publishing. |
+| Batch launch | Publish a batch carefully | Runs multiple article workflows while keeping progress and approvals visible. |
+| Weekly review | Find this week's SEO opportunities | Reviews Search Console, crawl issues, drift, and internal-link opportunities. |
+| Monthly refresh | Keep content from going stale | Finds older pages that need updates, refreshes them, and republishes. |
+| Add another site | Add a new site to the workspace | Connects another repo/project without changing the current site setup. |
 
 ## Operations Console
 
@@ -440,56 +222,51 @@ The console runs at:
 http://localhost:5180
 ```
 
-Main areas:
+Use it to:
 
-| Area | Purpose |
+- Create and manage projects.
+- Connect integrations.
+- Review and approve topics.
+- Inspect clusters and content plans.
+- Track article status.
+- Edit briefs, drafts, sources, images, schema, and publish records.
+- Review internal-link suggestions.
+- Inspect Search Console data.
+- Track drift and refresh candidates.
+- Debug agent runs.
+
+## Integrations
+
+Integrations are optional. Connect only what a project needs.
+
+| Integration | What It Helps With |
 | --- | --- |
-| Projects | Create and select sites. |
-| Overview | Inspect project state and setup completeness. |
-| Integrations | Add and test vendor credentials. |
-| Topics | Review, approve, reject, and cluster topics. |
-| Clusters | Inspect topical maps and pillar/spoke structure. |
-| Articles | Track article status and refresh state. |
-| Article detail | Edit brief, outline, draft, edited body, assets, schema, publishes, EEAT, versions, links, and drift. |
-| Interlinks | Review suggestions and repair broken links. |
-| GSC | Inspect performance, rollups, and redirects. |
-| Drift | Compare live page state against baselines. |
-| Runs | Debug procedure and tool execution. |
-| Procedures | Browse and start procedure runs. |
+| DataForSEO | Keyword ideas, SERP data, and ranking intelligence. |
+| Firecrawl | Crawling pages and capturing live page state. |
+| Google Search Console | Queries, clicks, indexing, crawl inspection, and refresh opportunities. |
+| OpenAI Images | Hero images, inline images, and social previews. |
+| Reddit | Audience language, pain points, and question mining. |
+| Google People Also Ask | Question discovery and intent expansion. |
+| Jina Reader | Clean extraction when pages are hard to parse. |
+| Ahrefs exports | Competitor and sitemap inputs when you already have exports. |
 
-## Development
+The agent should tell you which integrations are useful for the task and link
+you to the setup page.
 
-Useful commands:
+## Publishing
 
-```bash
-make install          # Full local install pipeline
-make serve            # Run daemon on 127.0.0.1:5180
-make doctor           # Diagnose local install
-make test             # Python tests + UI unit tests
-make test-ui-unit     # Vitest unit tests
-make test-ui-e2e      # Playwright e2e tests
-make lint             # Ruff checks
-make typecheck        # Mypy
-make build-ui         # Build UI bundle into content_stack/ui_dist/
-make gen-types        # Regenerate ui/src/api.ts from the daemon OpenAPI spec
-```
+SEO Stack supports target-based publishing. A project has one primary target
+and can have optional secondary targets.
 
-Focused examples:
+| Target | What Happens |
+| --- | --- |
+| Static content repo | Writes markdown/frontmatter and assets into a local content repository, then records the publish. |
+| WordPress | Uploads media and creates or updates posts through the WordPress API. |
+| Ghost | Uploads images and creates or updates posts through the Ghost Admin API. |
 
-```bash
-uv run pytest tests/integration/test_procedure_runner/test_agent_led_controller.py
-pnpm --dir ui type-check
-pnpm --dir ui lint
-pnpm --dir ui test
-pnpm --dir ui build
-```
-
-Restart the daemon after backend or packaged UI changes:
-
-```bash
-content-stack restart
-content-stack restart --force
-```
+Publishing targets keep their own settings: content folder, image folder,
+branch, remote, URL pattern, frontmatter template, API endpoint, and credential
+reference.
 
 ## Requirements
 
@@ -503,7 +280,7 @@ content-stack restart --force
 ## Uninstall
 
 Remove installed plugin, skills, procedures, MCP entries, and launchd job while
-preserving the local DB, seed, and auth token:
+preserving the local database, seed, and auth token:
 
 ```bash
 make uninstall
@@ -516,7 +293,213 @@ State is preserved under:
 ~/.local/state/content-stack/
 ```
 
-## Documentation
+## Troubleshooting
+
+### The agent says SEO Stack is unavailable
+
+Start the local app:
+
+```bash
+make serve
+make doctor
+```
+
+Then restart Codex or Claude Code.
+
+### The plugin is installed but not showing up
+
+Restart the agent client. In Codex, run:
+
+```text
+/plugins
+```
+
+The installed plugin should be named `content-stack`.
+
+### The token was rotated
+
+Restart the local app and the agent client. The app reads the token at startup.
+
+### The site repo is not detected
+
+Run the agent from the website repository root and ask it to connect the repo
+again.
+
+### Publishing refuses because the target repo is dirty
+
+SEO Stack avoids overwriting uncommitted local changes. Commit, stash, or clean
+the target repository, then rerun or resume the publish step.
+
+### Vendor credentials are missing
+
+Add credentials through the console integrations page. Mocked or skipped vendor
+calls are fine for development, but production workflows should use configured
+integrations.
+
+## Technical Reference
+
+The top of this README uses product language. This section keeps the exact
+implementation names for developers and agent maintainers.
+
+### Architecture
+
+| Component | Path | Role |
+| --- | --- | --- |
+| Local app / daemon | `content_stack/` | FastAPI app, repositories, integrations, MCP tools, jobs, and CLI. |
+| Database | `~/.local/share/content-stack/content-stack.db` | Local state for projects, content, credentials, runs, and publish records. |
+| Plugin | `plugins/content-stack/` | Repo-agnostic Codex/agent plugin. |
+| Skills | `skills/` | Agent-readable task guidance. |
+| Procedures | `procedures/` | Playbooks with durable step state. |
+| UI source | `ui/` | Vue operations console. |
+| Packaged UI | `content_stack/ui_dist/` | Built console assets served by the local app. |
+| Docs | `docs/` | Architecture, extending, procedures, security, upgrade, and vendor setup. |
+
+### Developer Commands
+
+Useful commands:
+
+```bash
+make install          # Full local install pipeline
+make serve            # Run the local app on 127.0.0.1:5180
+make doctor           # Diagnose local install
+make test             # Python tests + UI unit tests
+make test-ui-unit     # Vitest unit tests
+make test-ui-e2e      # Playwright e2e tests
+make lint             # Ruff checks
+make typecheck        # Mypy
+make build-ui         # Build UI bundle into content_stack/ui_dist/
+make gen-types        # Regenerate ui/src/api.ts from the local API spec
+```
+
+Focused UI checks:
+
+```bash
+pnpm --dir ui type-check
+pnpm --dir ui lint
+pnpm --dir ui test
+pnpm --dir ui build
+```
+
+Restart after backend, token, or packaged UI changes:
+
+```bash
+content-stack restart
+content-stack restart --force
+```
+
+### Exposed Agent Tools
+
+These tools are visible to the agent at startup:
+
+| Tool | Plain-English Use |
+| --- | --- |
+| `workspace.startSession` | Start work from the current website repo. |
+| `workspace.resolve` | Check whether this repo is already connected. |
+| `workspace.connect` | Connect this repo to a project. |
+| `workspace.listBindings` | Show repo-to-project bindings. |
+| `workspace.updateProfile` | Update saved repo profile hints. |
+| `project.list` | List SEO projects. |
+| `project.create` | Create a project. |
+| `project.get` | Read one project. |
+| `project.update` | Update project details. |
+| `project.setActive` | Mark a project as active in the UI. |
+| `project.getActive` | Read the active project. |
+| `meta.enums` | Read legal statuses and enum values. |
+| `procedure.list` | List available playbooks. |
+| `procedure.run` | Start a playbook run. |
+| `procedure.status` | Check playbook progress. |
+| `procedure.resume` | Resume a paused run. |
+| `procedure.fork` | Fork a run from an earlier step. |
+| `procedure.currentStep` | See the current step package. |
+| `procedure.claimStep` | Claim the next step for the agent to perform. |
+| `procedure.recordStep` | Save the result of a completed step. |
+| `procedure.executeProgrammaticStep` | Run a built-in non-writing step. |
+| `run.get` | Read one run. |
+| `run.list` | List runs. |
+| `run.heartbeat` | Keep a run marked alive while work continues. |
+| `run.abort` | Stop a run. |
+| `toolbox.describe` | Inspect hidden setup or step-specific tools. |
+| `toolbox.call` | Call one hidden setup or step-specific tool. |
+
+### Setup Tools Available Through The Toolbox
+
+These are not shown as direct tools, but the agent can call them through
+`toolbox.call` during setup:
+
+| Tool | Plain-English Use |
+| --- | --- |
+| `integration.list` | List connected vendors. |
+| `integration.set` | Add or update vendor credentials. |
+| `integration.test` | Test a vendor connection. |
+| `integration.testGsc` | Test Google Search Console access. |
+| `integration.remove` | Remove a vendor credential. |
+| `voice.set` | Save the site's writing voice. |
+| `voice.get` | Read the active writing voice. |
+| `voice.listVariants` | List available voice variants. |
+| `voice.setActive` | Choose the active voice. |
+| `target.list` | List publishing targets. |
+| `target.add` | Add a publishing target. |
+| `target.update` | Update a publishing target. |
+| `target.remove` | Remove a publishing target. |
+| `target.setPrimary` | Choose the primary publishing target. |
+| `compliance.list` | List disclosure/compliance rules. |
+| `compliance.add` | Add a compliance rule. |
+| `compliance.update` | Update a compliance rule. |
+| `compliance.remove` | Remove a compliance rule. |
+| `eeat.list` | List quality criteria. |
+| `eeat.toggle` | Enable or disable a criterion where allowed. |
+| `eeat.bulkSet` | Update criteria in bulk. |
+| `schedule.list` | List schedules. |
+| `schedule.set` | Add or update a schedule. |
+| `schedule.toggle` | Enable or disable a schedule. |
+| `sitemap.fetch` | Fetch and store sitemap URLs. |
+
+Playbook steps can expose additional step-specific tools through the same
+toolbox. The agent receives those grants only when the current step needs them.
+
+### Internal Skill Names
+
+| User-Friendly Name | Internal Skill |
+| --- | --- |
+| Find keyword ideas | `keyword-discovery` |
+| Analyze search results | `serp-analyzer` |
+| Import competitor sitemap ideas | `competitor-sitemap-shortcut` |
+| Build topic clusters | `topical-cluster` |
+| Create the article plan | `content-brief` |
+| Build the article structure | `outline` |
+| Write the opening | `draft-intro` |
+| Write the main sections | `draft-body` |
+| Write the ending | `draft-conclusion` |
+| Edit for quality | `editor` |
+| Make it sound natural | `humanizer` |
+| Check trust and expertise | `eeat-gate` |
+| Create images | `image-generator` |
+| Audit image alt text | `alt-text-auditor` |
+| Create structured data | `schema-emitter` |
+| Suggest internal links | `interlinker` |
+| Publish to a static repo | `nuxt-content-publish` |
+| Publish to WordPress | `wordpress-publish` |
+| Publish to Ghost | `ghost-publish` |
+| Find Search Console opportunities | `gsc-opportunity-finder` |
+| Watch for live page drift | `drift-watch` |
+| Watch crawl/indexing problems | `crawl-error-watch` |
+| Detect content that needs refresh | `refresh-detector` |
+| Refresh an existing article | `content-refresher` |
+
+### Internal Procedure Names
+
+| User-Friendly Workflow | Internal Procedure |
+| --- | --- |
+| Set up this site | `01-bootstrap-project` |
+| Bring one existing site into SEO Stack | `02-one-site-shortcut` |
+| Turn keywords into content ideas | `03-keyword-to-topic-queue` |
+| Write and publish one article | `04-topic-to-published` |
+| Launch a batch of articles | `05-bulk-content-launch` |
+| Run the weekly SEO review | `06-weekly-gsc-review` |
+| Refresh/humanize old content monthly | `07-monthly-humanize-pass` |
+| Add another site | `08-add-new-site` |
+
+### Documentation Map
 
 - `PLAN.md`: canonical product and implementation spec.
 - `docs/architecture.md`: architecture, security model, and invariants.
@@ -528,57 +511,3 @@ State is preserved under:
 - `docs/upgrade.md`: upgrade, rollback, and migration notes.
 - `PRIVACY.md`: data handling and outbound calls.
 - `CHANGELOG.md`: release history.
-
-## Troubleshooting
-
-### MCP says connection refused
-
-The daemon is not listening yet, or the plugin bridge could not auto-start it.
-
-```bash
-make serve
-make doctor
-```
-
-Then restart the agent client.
-
-### Plugin is installed but unavailable
-
-Restart Codex or Claude Code after install. In Codex, run:
-
-```text
-/plugins
-```
-
-The installed plugin should be named `content-stack`.
-
-### Token mismatch after rotation
-
-Restart the daemon and the agent client. The daemon reads the token at startup.
-
-### Website repo is not detected
-
-Run the agent from the website repository root. The agent should resolve the
-workspace and call `workspace.connect` if no binding exists.
-
-### Publish refuses because the target repo is dirty
-
-Static publishing skills avoid clobbering local changes. Commit, stash, or
-clean the target repository, then rerun or resume the procedure.
-
-### Vendor credentials are missing
-
-Add credentials through the console integrations page. Mocked or skipped vendor
-calls are fine for development, but production procedures should use configured
-integrations.
-
-## Status
-
-content-stack is built around a plugin-first, repo-agnostic flow:
-
-1. Install content-stack once on the machine.
-2. Start an agent from whichever website repository needs work.
-3. Let that agent choose and run procedures using content-stack tools and
-   skills.
-4. Keep state, credentials, and audit history in the local daemon.
-5. Improve skills and procedures without polluting website repositories.
