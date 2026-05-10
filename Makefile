@@ -104,7 +104,7 @@ install-procedures-codex: ## (M9) Install procedures into ~/.codex/procedures/co
 install-procedures-claude: ## (M9) Install procedures into ~/.claude/procedures/content-stack/
 	@bash scripts/install-procedures-claude.sh
 
-install-plugins: ## Install content-stack plugin into ~/plugins and ~/.agents marketplace
+install-plugins: ## Install content-stack plugin into ~/.codex/plugins and ~/.agents marketplace
 	@bash scripts/install-plugins.sh
 
 install-launchd: ## (M9) Write launchd plist for auto-start (macOS, optional)

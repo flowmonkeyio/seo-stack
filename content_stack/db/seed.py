@@ -636,7 +636,7 @@ def seed_eeat_criteria(session: Session, project_id: int) -> int:
 
 
 def seed_schema_emits_templates(session: Session) -> int:
-    """Seed the 6 default schema-emit templates as global rows.
+    """Seed the default schema-emit templates as global rows.
 
     ``article_id IS NULL`` flags these as templates that the per-project
     bootstrap procedure clones into per-article rows. Idempotent on
@@ -674,7 +674,7 @@ def seed_schema_emits_templates(session: Session) -> int:
 
 
 def seed_schema_emits_templates_via_op() -> None:
-    """Insert the 6 schema templates from inside an Alembic upgrade.
+    """Insert the schema templates from inside an Alembic upgrade.
 
     Uses ``INSERT OR IGNORE`` so re-running the migration after a
     partial failure (or against a DB seeded by a parallel path) does

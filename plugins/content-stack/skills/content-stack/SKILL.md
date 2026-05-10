@@ -14,6 +14,11 @@ procedures under `procedures/`. Treat those files as the local operating manual
 for step-level SEO work; use the daemon's `procedure.*` and `workspace.*` tools
 for durable state.
 
+The MCP bridge intentionally exposes a compact direct tool list. Use direct
+tools for workspace/project/procedure control. Use `toolbox.describe` to inspect
+hidden setup or current-step tools, then `toolbox.call` to invoke exactly one
+hidden tool by name. Do not try to call hidden daemon tools directly.
+
 ## Operating Rules
 
 1. Do not create `.env`, `.mcp.json`, `AGENTS.md`, `CLAUDE.md`, or
@@ -23,9 +28,9 @@ for durable state.
    `workspace.resolve` using repo hints supplied by the plugin MCP bridge.
 3. If no binding exists, guide the user through `workspace.connect`; the binding
    is stored in the daemon DB, not in the website repo.
-4. Use content-stack MCP tools for durable writes and credential/publish
-   operations. Use local repo inspection for templates, schemas, routes, tests,
-   and build conventions.
+4. Use `toolbox.describe`/`toolbox.call` for credential, voice, compliance,
+   EEAT, publish-target, schedule, sitemap, article, and publishing tools that
+   are not in the direct list.
 5. For static/workspace publishing, apply rendered bundles in the current repo
    only after previewing and understanding the repository conventions.
 6. For WordPress, Ghost, admin API, or direct DB publishing, let the daemon use
@@ -37,5 +42,8 @@ for durable state.
   `workspace.connect`, then inspect content conventions.
 - Continue work: call `workspace.startSession`, resolve the project, then claim
   the next procedure step.
+- Execute a step: read the step package, follow the referenced skill guidance,
+  call `toolbox.describe` for needed `allowed_tools`, invoke them with
+  `toolbox.call`, then `procedure.recordStep`.
 - Publish: preview through the daemon, apply or push via the selected publisher,
   run repo checks when files changed, and record the result.

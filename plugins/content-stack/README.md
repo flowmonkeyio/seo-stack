@@ -13,6 +13,31 @@ Website repositories should not need content-stack setup files. Repo-specific
 knowledge is discovered from the current working directory and persisted in the
 daemon through `workspace.*` tools.
 
+Installers hydrate the personal Codex plugin location
+`~/.codex/plugins/content-stack` and register it through
+`~/.agents/plugins/marketplace.json` with source path
+`./.codex/plugins/content-stack`. Restart Codex after install or upgrade, then
+use `/plugins` to inspect or toggle the plugin.
+
+## Agent-Facing MCP Surface
+
+The daemon keeps the full internal MCP catalog for the UI, tests, and advanced
+automation, but the plugin bridge exposes a small agent console:
+
+- Direct tools: workspace binding/session tools, project list/create/get/update
+  and active-project selection, `meta.enums`, `procedure.*`, and a few `run.*`
+  status/control calls.
+- Hidden setup helpers: credentials, voice, publish target, compliance, EEAT,
+  schedule, and sitemap tools are available through `toolbox.describe` and
+  `toolbox.call`.
+- Step tools: when `procedure.currentStep` or `procedure.claimStep` returns a
+  step package, the bridge reads `current_step.allowed_tools`; those tools
+  become callable through `toolbox.call` for that run.
+
+Agents should use direct tools for setup and procedure control, then use
+`toolbox.describe` before calling any hidden tool. This keeps the model context
+small without removing the daemon's richer capabilities.
+
 The installed plugin is hydrated with the full content-stack skill catalog under
 `skills/catalog/` and the procedure catalog under `procedures/`, so runtime
 clients load content-stack through one plugin rather than loose per-project

@@ -591,7 +591,7 @@ tool is not in `SKILL_TOOL_GRANTS[skill_name]`.
 
 ### 5.1 Sentinel skills
 
-Two reserved names get full grants:
+Two reserved names define bootstrap/test behaviour:
 
 - `__system__` — direct REST/UI calls (no run_token present); this gets
   a deliberately narrow bootstrap allow-list.

@@ -9,8 +9,10 @@ Reads the DB URL from `Settings.db_path` (env-overridable via
 from __future__ import annotations
 
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
+from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 # Importing the models package as a side effect populates
@@ -57,11 +59,21 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode using a fresh engine + WAL PRAGMAs."""
+def _make_online_engine():
+    """Build the migration engine from explicit config or Settings."""
+    explicit = config.get_main_option("sqlalchemy.url")
+    if explicit:
+        if explicit.startswith("sqlite:///"):
+            return make_engine(Path(explicit.removeprefix("sqlite:///")))
+        return create_engine(explicit)
     settings = get_settings()
     settings.ensure_dirs()
-    engine = make_engine(settings.db_path)
+    return make_engine(settings.db_path)
+
+
+def run_migrations_online() -> None:
+    """Run migrations in 'online' mode using a fresh engine + WAL PRAGMAs."""
+    engine = _make_online_engine()
     with engine.connect() as connection:
         context.configure(
             connection=connection,

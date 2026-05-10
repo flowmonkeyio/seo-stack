@@ -13,10 +13,15 @@ import os
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
+from sqlmodel import SQLModel
 from typer.testing import CliRunner
 
+import content_stack.db.models  # noqa: F401  (populate SQLModel metadata)
 from content_stack import install as installer
 from content_stack.cli import app
+from content_stack.config import Settings
+from content_stack.db.connection import make_engine
 
 
 @pytest.fixture
@@ -62,7 +67,7 @@ def test_copy_procedures_excludes_template(sandbox: Path) -> None:
 def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
     target, count = installer.copy_plugins(home=sandbox)
 
-    assert target == sandbox / "plugins" / "content-stack"
+    assert target == sandbox / ".codex" / "plugins" / "content-stack"
     assert count == 1
     assert (target / ".codex-plugin" / "plugin.json").is_file()
     assert (target / "skills" / "content-stack" / "SKILL.md").is_file()
@@ -174,7 +179,9 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.stdout
-    assert (sandbox / "plugins" / "content-stack" / ".codex-plugin" / "plugin.json").is_file()
+    assert (
+        sandbox / ".codex" / "plugins" / "content-stack" / ".codex-plugin" / "plugin.json"
+    ).is_file()
     assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
     assert not (sandbox / ".codex" / "procedures" / "content-stack").exists()
 
@@ -208,6 +215,39 @@ def test_cli_init_force_rejected(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["init", "--force"])
     assert result.exit_code == 2
+
+
+def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
+    """A daemon-created DB stuck at the empty revision upgrades cleanly."""
+    settings = Settings()
+    settings.ensure_dirs()
+    engine = make_engine(settings.db_path)
+    SQLModel.metadata.create_all(engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
+            conn.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES ('0001_initial_empty')")
+            )
+    finally:
+        engine.dispose()
+
+    result = CliRunner().invoke(app, ["migrate"], catch_exceptions=False)
+
+    assert result.exit_code == 0, result.stdout
+    assert "stamped existing create_all schema" in result.stdout
+
+    engine = make_engine(settings.db_path)
+    try:
+        with engine.connect() as conn:
+            version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            templates = conn.execute(
+                text("SELECT count(*) FROM schema_emits WHERE article_id IS NULL")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert version == "0004_workspace_bindings"
+    assert templates >= 5
 
 
 def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:

@@ -29,7 +29,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
     sandbox_home: Path, scripts_dir: Path
 ) -> None:
     output = _run(scripts_dir / "install-plugins.sh", sandbox_home)
-    plugin_root = sandbox_home / "plugins" / "content-stack"
+    plugin_root = sandbox_home / ".codex" / "plugins" / "content-stack"
     marketplace = sandbox_home / ".agents" / "plugins" / "marketplace.json"
     payload = json.loads(marketplace.read_text(encoding="utf-8"))
 
@@ -40,12 +40,16 @@ def test_install_plugins_creates_plugin_and_marketplace(
         plugin_root / "skills" / "catalog" / "01-research" / "keyword-discovery" / "SKILL.md"
     ).is_file()
     assert (plugin_root / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
-    assert any(p["name"] == "content-stack" for p in payload["plugins"])
+    assert any(
+        p["name"] == "content-stack"
+        and p["source"]["path"] == "./.codex/plugins/content-stack"
+        for p in payload["plugins"]
+    )
 
 
 def test_install_plugins_idempotent(sandbox_home: Path, scripts_dir: Path) -> None:
     _run(scripts_dir / "install-plugins.sh", sandbox_home)
-    target = sandbox_home / "plugins"
+    target = sandbox_home / ".codex" / "plugins"
     snap1 = _snapshot(target)
 
     _run(scripts_dir / "install-plugins.sh", sandbox_home)
@@ -61,7 +65,7 @@ def test_install_plugins_remove_preserves_marketplace_file(
 
     _run(scripts_dir / "install-plugins.sh", sandbox_home, "--remove")
 
-    plugin_root = sandbox_home / "plugins" / "content-stack"
+    plugin_root = sandbox_home / ".codex" / "plugins" / "content-stack"
     marketplace = sandbox_home / ".agents" / "plugins" / "marketplace.json"
     payload = json.loads(marketplace.read_text(encoding="utf-8"))
     assert not plugin_root.exists()

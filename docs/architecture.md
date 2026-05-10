@@ -376,6 +376,14 @@ Streamable HTTP at `/mcp`. The MCP server is a single
 bearer-token middleware (via `PROTECTED_PREFIXES`) gates every tool
 call before it lands on a handler.
 
+The installable plugin does not expose all 139 tools to agents. Its
+`content-stack mcp-bridge` proxies to the daemon but filters `tools/list`
+to a compact control surface: workspace/project setup, procedure control,
+selected run status calls, and the bridge-local `toolbox.describe` /
+`toolbox.call` helpers. Setup helpers and current-step `allowed_tools`
+remain callable through the toolbox, so context stays small while the
+daemon retains the full internal surface for UI/tests/automation.
+
 ### 7.1 Tool contract
 
 Every tool has `tools/<resource>.py` with a `class FooInput(MCPInput)`
@@ -399,13 +407,15 @@ then asserts that the requested tool is in
 `SKILL_TOOL_GRANTS[skill_name]`; mismatch raises
 `ToolNotGrantedError` (JSON-RPC -32007 forbidden).
 
-Two sentinel skill names get full grants:
+Two sentinel skill names define bootstrap/test behaviour:
 
-- `__system__` — direct REST/UI calls (no run_token present).
-- `__test__` — test fixtures (mints arbitrary tokens for unit tests).
+- `__system__` — narrow bootstrap grant for direct calls with no
+  `run_token`.
+- `__test__` — full-grant fixture sentinel used only by tests.
 
 Production callers always present a provisioned token; the system
-surface (REST/UI) carries `None` and resolves to `__system__`.
+surface carries `None` and resolves to the explicit `__system__`
+allow-list.
 
 ### 7.3 Idempotency keys
 
@@ -698,7 +708,7 @@ The Makefile orchestrator:
 5. `register-mcp-codex.sh` + `register-mcp-claude.sh` — upsert MCP
    server entries with current bearer token.
 6. `install-plugins.sh` — mirrors `plugins/content-stack/` into
-   `~/plugins/content-stack/`, hydrates it with `skills/catalog/` and
+   `~/.codex/plugins/content-stack/`, hydrates it with `skills/catalog/` and
    `procedures/`, and upserts the local plugin marketplace.
 7. `scripts/doctor.sh` — post-install diagnose.
 
@@ -709,7 +719,7 @@ regenerates the MCP configs to match.
 ### 12.2 pipx mode
 
 `pipx install content-stack` then `content-stack install` hydrates
-`~/plugins/content-stack/` from the wheel's bundled
+`~/.codex/plugins/content-stack/` from the wheel's bundled
 `content_stack/_assets/{plugins,skills,procedures}/` via the same code
 paths. The wheel includes the committed `ui_dist/` (it's inside the
 package), so end users never need pnpm.

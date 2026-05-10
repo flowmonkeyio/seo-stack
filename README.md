@@ -33,6 +33,9 @@ open http://localhost:5180
 It runs every install step (Python deps, state bootstrap, migrations, UI
 bundle, user-local content-stack plugin, MCP registration, doctor). It creates
 the auth token on first install; rotate later with `make rotate-token`.
+Restart Codex after installing or upgrading so it re-reads
+`~/.agents/plugins/marketplace.json`; use `/plugins` to inspect or toggle the
+`content-stack` plugin.
 
 ### pipx mode (post-publish)
 

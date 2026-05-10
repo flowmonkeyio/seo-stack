@@ -18,7 +18,7 @@ Public surface:
   a checked-out repo with ``skills/`` + ``procedures/`` siblings, else
   ``"pipx"``.
 - :func:`copy_skills` / :func:`copy_procedures` / :func:`copy_plugins` —
-  mirror assets into ``~/.codex/...``, ``~/.claude/...``, or ``~/plugins`` with
+  mirror assets into ``~/.codex/...`` or ``~/.claude/...`` with
   mtime-aware copy and
   ``--delete``-style cleanup of stale files.
 - :func:`register_mcp_codex` / :func:`register_mcp_claude` — Python
@@ -266,7 +266,7 @@ def copy_procedures(
 def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
     """Mirror and hydrate plugin packages into the home-local plugin directory."""
     home_dir = home if home is not None else Path.home()
-    target = home_dir / "plugins" / "content-stack"
+    target = home_dir / ".codex" / "plugins" / "content-stack"
     source_root = _resolve_source("plugins")
     if isinstance(source_root, Path):
         _mirror_path(source_root / "content-stack", target, exclude_dirs=())
@@ -327,7 +327,7 @@ def register_plugin_marketplace(
         plugins.append(
             {
                 "name": "content-stack",
-                "source": {"source": "local", "path": "./plugins/content-stack"},
+                "source": {"source": "local", "path": "./.codex/plugins/content-stack"},
                 "policy": {
                     "installation": "INSTALLED_BY_DEFAULT",
                     "authentication": "ON_USE",

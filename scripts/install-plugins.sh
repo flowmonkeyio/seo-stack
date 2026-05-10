@@ -2,7 +2,7 @@
 #
 # content-stack plugin installer.
 #
-# Mirrors `plugins/content-stack/` into `${HOME}/plugins/content-stack/`, hydrates
+# Mirrors `plugins/content-stack/` into `${HOME}/.codex/plugins/content-stack/`, hydrates
 # it with the skill/procedure catalog, and upserts a home-local Codex-compatible
 # marketplace entry at `${HOME}/.agents/plugins/marketplace.json`.
 # This keeps website repositories clean: the plugin is global/user-local, while
@@ -20,7 +20,7 @@ done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOME_DIR="${CONTENT_STACK_HOME:-${HOME}}"
-TARGET="${HOME_DIR}/plugins/content-stack"
+TARGET="${HOME_DIR}/.codex/plugins/content-stack"
 MARKETPLACE="${HOME_DIR}/.agents/plugins/marketplace.json"
 
 mkdir -p "${TARGET}" "$(dirname "${MARKETPLACE}")"
@@ -79,7 +79,7 @@ plugins[:] = [
 if action == "install":
     plugins.append({
         "name": "content-stack",
-        "source": {"source": "local", "path": "./plugins/content-stack"},
+        "source": {"source": "local", "path": "./.codex/plugins/content-stack"},
         "policy": {
             "installation": "INSTALLED_BY_DEFAULT",
             "authentication": "ON_USE",

@@ -21,6 +21,7 @@ import typer
 
 from content_stack import __milestone__, __version__
 from content_stack.config import Settings, get_settings
+from content_stack.mcp.bridge import AgentBridgeProxy, bridge_error
 
 app = typer.Typer(
     name="content-stack",
@@ -132,27 +133,6 @@ def serve(
 # ---- plugin bridge --------------------------------------------------------
 
 
-def _bridge_response_text(text: str) -> str:
-    """Extract a JSON-RPC body from either JSON or single-event SSE text."""
-    stripped = text.strip()
-    if not stripped.startswith("event:"):
-        return stripped
-    for line in stripped.splitlines():
-        if line.startswith("data:"):
-            return line.removeprefix("data:").strip()
-    return stripped
-
-
-def _bridge_error(request_id: object, code: int, message: str) -> str:
-    return json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {"code": code, "message": message},
-        }
-    )
-
-
 @app.command(name="mcp-bridge")
 def mcp_bridge(
     host: Annotated[
@@ -192,6 +172,7 @@ def mcp_bridge(
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
     }
+    proxy = AgentBridgeProxy(url=url, headers=headers)
 
     with httpx.Client(timeout=None) as client:
         for raw in sys.stdin:
@@ -205,19 +186,17 @@ def mcp_bridge(
                 if isinstance(payload, dict):
                     request_id = payload.get("id")
             except json.JSONDecodeError as exc:
-                sys.stdout.write(_bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
+                sys.stdout.write(bridge_error(None, -32700, f"Parse error: {exc.msg}") + "\n")
                 sys.stdout.flush()
                 continue
 
             try:
-                response = client.post(url, content=line, headers=headers)
-                response.raise_for_status()
-                out = _bridge_response_text(response.text)
+                out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
             except Exception as exc:
                 if request_id is None:
                     typer.echo(f"mcp-bridge: daemon request failed: {exc}", err=True)
                     continue
-                out = _bridge_error(request_id, -32000, f"Daemon request failed: {exc}")
+                out = bridge_error(request_id, -32000, f"Daemon request failed: {exc}")
 
             if out:
                 sys.stdout.write(out)
@@ -306,23 +285,14 @@ def _check_alembic_at_head(settings: Settings, db_present: bool) -> tuple[bool, 
     if not db_present:
         return True, None
     try:
-        from alembic.config import Config
         from alembic.script import ScriptDirectory
-        from sqlalchemy import text as sa_text
 
-        from content_stack.db.connection import make_engine
+        from content_stack.db.migrate import alembic_config, current_alembic_version
 
-        engine = make_engine(settings.db_path)
-        try:
-            with engine.connect() as conn:
-                row = conn.execute(sa_text("SELECT version_num FROM alembic_version")).first()
-                current = row[0] if row else None
-            cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-            script = ScriptDirectory.from_config(cfg)
-            head = script.get_current_head()
-            return current == head, current
-        finally:
-            engine.dispose()
+        current = current_alembic_version(settings)
+        script = ScriptDirectory.from_config(alembic_config(settings))
+        head = script.get_current_head()
+        return current == head, current
     except Exception:  # pragma: no cover — defensive
         return False, None
 
@@ -425,7 +395,7 @@ def _installed_asset_count(home: Path, runtime: Literal["codex", "claude"], kind
 
 
 def _installed_plugin_count(home: Path) -> int:
-    target = home / "plugins"
+    target = home / ".codex" / "plugins"
     if not target.is_dir():
         return 0
     return sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
@@ -445,7 +415,7 @@ def _plugin_marketplace_has_content_stack(home: Path) -> bool:
     return any(
         isinstance(p, dict)
         and p.get("name") == "content-stack"
-        and (p.get("source") or {}).get("path") == "./plugins/content-stack"
+        and (p.get("source") or {}).get("path") == "./.codex/plugins/content-stack"
         for p in plugins
     )
 
@@ -683,15 +653,12 @@ def init(
 @app.command()
 def migrate() -> None:
     """Run alembic migrations forward to head."""
-    from alembic import command
-    from alembic.config import Config
+    from content_stack.db.migrate import upgrade_to_head
 
     settings = get_settings()
-    settings.ensure_dirs()
-    cfg_path = Path(__file__).resolve().parent.parent / "alembic.ini"
-    cfg = Config(str(cfg_path))
-    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
-    command.upgrade(cfg, "head")
+    result = upgrade_to_head(settings)
+    if result.stamped_existing_schema:
+        typer.echo("migrate: stamped existing create_all schema at alembic head.")
     typer.echo(f"migrate: alembic upgraded to head ({settings.db_path}).")
 
 

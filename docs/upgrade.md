@@ -34,7 +34,7 @@ available as explicit make targets for compatibility.
 | Step | Behaviour |
 |---|---|
 | Schema | `alembic upgrade head` runs at every daemon start. Down-migrations exist but are discouraged. |
-| Plugin | `rsync -a --delete` mirrors and hydrates `~/plugins/content-stack`. **Retired skills / procedures disappear** from the plugin catalog on the next install. |
+| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/content-stack`. **Retired skills / procedures disappear** from the plugin catalog on the next install. |
 | MCP registration | Codex CLI: `codex mcp add` is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. |
 | Auth token | **Does not rotate on upgrade.** Run `content-stack rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | If the existing plist matches the generated one, it's a no-op. If different, `--force` overwrites with a `.bak` retained. |

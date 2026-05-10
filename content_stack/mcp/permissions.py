@@ -48,20 +48,27 @@ INVALID_SKILL = "__invalid__"
 # prefix so production skill names cannot accidentally collide.
 _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
-        # Bootstrapping: callers need to create/select a project and open
-        # a run before they have a run_token. Everything else should carry
-        # the token returned by run.start/procedure.run.
+        # Bootstrapping: callers need to create/select a project, configure
+        # project-level operating defaults, and open a procedure before they
+        # have a run_token. Article/content writes still require a step grant.
         "meta.enums",
         "project.create",
         "project.get",
+        "project.getActive",
         "project.list",
         "project.setActive",
         "project.update",
+        "compliance.add",
+        "compliance.list",
+        "compliance.remove",
+        "compliance.update",
+        "eeat.bulkSet",
         "eeat.list",
         "eeat.toggle",
         "gsc.bulkIngest",
         "gsc.rollup",
         "integration.list",
+        "integration.remove",
         "integration.set",
         "integration.test",
         "integration.testGsc",
@@ -74,8 +81,10 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "procedure.claimStep",
         "procedure.currentStep",
         "procedure.executeProgrammaticStep",
+        "procedure.fork",
         "procedure.list",
         "procedure.recordStep",
+        "procedure.resume",
         "procedure.run",
         "procedure.status",
         "run.get",
@@ -92,6 +101,14 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.start",
         "sitemap.fetch",
         "source.update",
+        "schedule.list",
+        "schedule.set",
+        "schedule.toggle",
+        "target.add",
+        "target.list",
+        "target.remove",
+        "target.setPrimary",
+        "target.update",
         "topic.approve",
         "topic.assignCluster",
         "topic.bulkCreate",
@@ -100,6 +117,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "topic.get",
         "topic.list",
         "topic.reject",
+        "voice.get",
+        "voice.listVariants",
         "voice.set",
         "voice.setActive",
         "workspace.connect",

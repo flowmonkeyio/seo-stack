@@ -33,6 +33,7 @@ from content_stack.config import Settings, get_settings
 from content_stack.crypto import cleanup_old_backup
 from content_stack.crypto.aes_gcm import configure_seed_path
 from content_stack.db.connection import make_engine
+from content_stack.db.migrate import upgrade_to_head
 from content_stack.jobs.cron_procedures import register_cron_procedures
 from content_stack.jobs.drift_rollup import (
     daily_drift_rollup,
@@ -179,13 +180,12 @@ def _build_lifespan(
         cleanup_old_backup(settings.seed_path)
         token = ensure_token(settings.token_path)
 
+        # Bring the SQLite schema to the tracked Alembic head on every daemon
+        # boot. The follow-up ``create_all`` remains a no-op safety net for
+        # tests and partially-initialised dev databases.
+        upgrade_to_head(settings)
         engine = make_engine(settings.db_path)
 
-        # Ensure schema exists. In production the M0 cli runs ``make migrate``
-        # before starting the daemon; the lifespan's ``create_all`` is a
-        # safety net for fresh installs and tests that don't pre-run alembic.
-        # ``create_all`` is a no-op when the tables are already there, so it
-        # adds zero cost on warm starts.
         SQLModel.metadata.create_all(engine)
         # Emit the migration-only partial-unique indexes so the M1.B
         # invariants exercised by integration tests (B-08, B-09, M-20) are

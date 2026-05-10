@@ -164,7 +164,7 @@ unless noted.
 | `build-ui` | yes | no | `cd ui && pnpm install --frozen-lockfile && pnpm build`. Output committed at `content_stack/ui_dist/`. CI verifies the committed bundle matches `ui/src/`. |
 | `register-codex` | yes | no | `scripts/register-mcp-codex.sh`: idempotent upsert of `content-stack` MCP server with current auth token. |
 | `register-claude` | yes | no | `scripts/register-mcp-claude.sh`: parse `.mcp.json`, upsert `content-stack`, atomic write with `.bak`. |
-| `install-plugins` | yes | no | `rsync -a --delete plugins/content-stack/ ~/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, and upsert `~/.agents/plugins/marketplace.json`. |
+| `install-plugins` | yes | no | `rsync -a --delete plugins/content-stack/ ~/.codex/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, and upsert `~/.agents/plugins/marketplace.json`. |
 | `install-skills-codex` | yes | no | Legacy compatibility: `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. Not part of default install. |
 | `install-skills-claude` | yes | no | Legacy compatibility against `~/.claude/skills/content-stack/`. Not part of default install. |
 | `install-procedures-codex` | yes | no | Legacy compatibility: `rsync -a --delete procedures/ ~/.codex/procedures/content-stack/`, excluding `_template/`. |
@@ -309,7 +309,7 @@ content-stack/
 │   └── _template/
 │
 ├── scripts/
-│   ├── install-plugins.sh           # hydrate ~/plugins/content-stack/
+│   ├── install-plugins.sh           # hydrate ~/.codex/plugins/content-stack/
 │   ├── install-codex.sh             # legacy loose skills installer
 │   ├── install-claude.sh            # legacy loose skills installer
 │   ├── install-procedures-codex.sh  # legacy loose procedures installer
@@ -1364,7 +1364,7 @@ the configs.
 
 | Script | Behaviour | Idempotency |
 |---|---|---|
-| `install-plugins.sh` | `rsync -a --delete plugins/content-stack/ ~/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, upsert marketplace. | yes |
+| `install-plugins.sh` | `rsync -a --delete plugins/content-stack/ ~/.codex/plugins/content-stack/`, hydrate `skills/catalog/` and `procedures/`, upsert marketplace. | yes |
 | `install-codex.sh` | Legacy compatibility: `rsync -a --delete skills/ ~/.codex/skills/content-stack/`. | yes |
 | `install-claude.sh` | Legacy compatibility against `~/.claude/skills/content-stack/`. | yes |
 | `install-procedures-codex.sh` | Legacy compatibility: `rsync -a --delete --exclude='_template' procedures/ ~/.codex/procedures/content-stack/`. | yes |
@@ -1426,10 +1426,10 @@ fresh development checkouts look broken.
 - **`pipx` mode**: skills, procedures, and plugins are bundled in the wheel under
   `content_stack/_assets/skills/`, `content_stack/_assets/procedures/`, and
   `content_stack/_assets/plugins/`.
-  The console script hydrates `~/plugins/content-stack/` from those bundled
+  The console script hydrates `~/.codex/plugins/content-stack/` from those bundled
   assets. `make install` (clone-mode) and `content-stack install` (pipx-mode)
   call the same code paths.
-- **Plugins** are copied into `~/plugins/content-stack/` by
+- **Plugins** are copied into `~/.codex/plugins/content-stack/` by
   `scripts/install-plugins.sh` (clone-mode) or the equivalent console-script
   helper (pipx-mode), then hydrated with the skills and procedures catalog.
   Legacy loose skill/procedure installers remain as explicit compatibility
