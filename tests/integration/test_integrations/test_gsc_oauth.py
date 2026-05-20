@@ -40,9 +40,8 @@ def test_build_authorize_url_includes_required_params() -> None:
     assert "client_id=client-id-fake" in url
     assert "access_type=offline" in url
     assert "prompt=consent" in url
-    # Both required scopes should be present.
     assert "webmasters.readonly" in url
-    assert "indexing" in url
+    assert "indexing" not in url
 
 
 def test_exchange_code_round_trips_token_bundle(httpx_mock: HTTPXMock) -> None:
@@ -54,7 +53,7 @@ def test_exchange_code_round_trips_token_bundle(httpx_mock: HTTPXMock) -> None:
             "access_token": "ya29.fresh",
             "refresh_token": "1//rt",
             "expires_in": 3600,
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         },
     )
@@ -79,7 +78,7 @@ def test_refresh_access_token_grants_new_access_token(httpx_mock: HTTPXMock) -> 
         json={
             "access_token": "ya29.new",
             "expires_in": 3600,
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         },
     )
@@ -104,7 +103,7 @@ def test_refresh_expiring_tokens_walks_db_and_refreshes(
         "access_token": "ya29.old",
         "refresh_token": "1//rt-active",
         "expires_at": expiring.isoformat(),
-        "scope": "webmasters.readonly indexing",
+        "scope": "webmasters.readonly",
         "token_type": "Bearer",
     }
     out = repo.set(
@@ -120,7 +119,7 @@ def test_refresh_expiring_tokens_walks_db_and_refreshes(
         json={
             "access_token": "ya29.refreshed",
             "expires_in": 3600,
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         },
     )

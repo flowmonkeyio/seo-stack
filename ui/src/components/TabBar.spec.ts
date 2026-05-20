@@ -69,4 +69,27 @@ describe('TabBar', () => {
     expect(document.activeElement).toBe(buttons[2].element)
     w.unmount()
   })
+
+  it('uses one stage dropdown and only shows tabs from the active group', async () => {
+    const groupedTabs = [
+      { key: 'brief', label: 'Brief', group: 'Plan' },
+      { key: 'sources', label: 'Sources', group: 'Plan' },
+      { key: 'draft', label: 'Draft', group: 'Write' },
+      { key: 'edited', label: 'Edited', group: 'Write' },
+      { key: 'schema', label: 'Schema', group: 'Quality' },
+    ]
+    const w = mount(TabBar, {
+      props: { tabs: groupedTabs, activeKey: 'draft', ariaLabel: 'Article workflow' },
+      attachTo: document.body,
+    })
+
+    expect(w.get('[role="combobox"]').text()).toContain('Write')
+    expect(w.findAll('button[role="tab"]').map((b) => b.text())).toEqual(['Draft', 'Edited'])
+
+    await w.get('[role="combobox"]').trigger('click')
+    await w.findAll('[role="option"]')[0].trigger('click')
+
+    expect(w.emitted('change')?.[0][0]).toBe('brief')
+    w.unmount()
+  })
 })

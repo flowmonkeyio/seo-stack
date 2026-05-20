@@ -75,7 +75,7 @@ format: ## (M0) Apply ruff format + auto-fix lints
 typecheck: ## (M0) Run mypy on the package
 	$(UV) run mypy content_stack
 
-gen-types: ## (M2) Regenerate ui/src/api.ts from the daemon's OpenAPI spec
+gen-types: ## (M2) Regenerate ui/src/api.ts from the source OpenAPI spec
 	bash scripts/gen-types.sh
 
 doctor: ## (M0) Diagnose install (M0 minimal — full check list grows through M10)

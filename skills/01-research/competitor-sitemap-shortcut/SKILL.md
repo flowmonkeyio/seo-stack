@@ -14,6 +14,7 @@ allowed_tools:
   - topic.list
   - integration.test
   - sitemap.fetch
+  - ahrefs.keywordsForSite
   - run.start
   - run.heartbeat
   - run.finish
@@ -88,7 +89,7 @@ The skill does not read `projects.competitors_json` because no such column exist
    - Drop pagination duplicates (`/page/2/...`).
    - Drop the project's own URLs (host match against `projects.domain`).
    The patterns are heuristic; document the filter list inline so the operator can tune them per niche. After filtering, cap the survivors per competitor at `per_competitor_url_cap` (default 500) — the cluster skill's pairwise SERP overlap is O(N²) and 500 URLs already produces a very rich map.
-4. **Optional Ahrefs join.** When `use_ahrefs=true` AND the project has an Ahrefs credential, pull a ranking export per competitor via the daemon's Ahrefs integration. The export's stable column shape is `URL, Keyword, Position, Volume, Traffic`. Inner-join on `URL`; the matched rows pick up volume + ranking-position metadata that flows through to the topic row's `priority` field. Document the column shape inline so future Ahrefs API drift fails loud rather than silently producing zeroes.
+4. **Optional Ahrefs join.** When `use_ahrefs=true` AND the project has an Ahrefs credential, use `toolbox.describe` for `ahrefs.keywordsForSite`, then call it through `toolbox.call` per competitor. Inner-join returned keyword rows on URL when the payload includes URL-level data; otherwise attach domain-level keyword metadata only to prioritisation notes. Record the returned field names in run metadata so future Ahrefs API drift fails loud rather than silently producing zeroes.
 5. **Build candidate topics.** For each surviving URL the skill mints a topic candidate:
    - `title` — derived from the URL's slug (last path segment, hyphens to spaces, title-cased) as a placeholder; the cluster skill's downstream SERP analysis will replace it with the actual page title once available.
    - `primary_kw` — the slug-derived title in lower case as a starting estimate; re-derived properly during clustering.

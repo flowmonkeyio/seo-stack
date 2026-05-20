@@ -29,12 +29,7 @@ test.describe('project detail — EEAT core invariant', () => {
     // per PLAN.md D7 / §schema.
     const coreLabel = page.locator('span', { hasText: 'core' }).first()
     await expect(coreLabel).toBeVisible()
-    const coreRow = coreLabel.locator('xpath=ancestor::li').first()
-    const activeCheckbox = coreRow.getByLabel('active')
-    const requiredCheckbox = coreRow.getByLabel('required')
-    // Toggles must be disabled in the UI (greyed out).
-    await expect(activeCheckbox).toBeDisabled()
-    await expect(requiredCheckbox).toBeDisabled()
+    await expect(page.getByRole('button', { name: /edit criterion/i })).toHaveCount(0)
 
     // Find the criterion id on a core row from the server, then directly
     // try to PATCH active=false. Server must respond 409.

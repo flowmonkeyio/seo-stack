@@ -5,10 +5,7 @@
 // component) which is wired through the `:run_id?` sub-route. Selecting
 // a row navigates to /projects/:id/runs/:run_id.
 //
-// Wires to:
-// - `GET  /api/v1/projects/{id}/runs?kind=&status=&parent_run_id=&limit=&after=`
-// - `POST /api/v1/runs/{id}/abort?cascade=true|false`
-// - `POST /api/v1/runs/{id}/heartbeat`
+// Wires to read-only run listing/detail endpoints.
 
 import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -20,19 +17,21 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import {
   UiButton,
   UiCallout,
+  UiFormField,
+  UiInput,
   UiPageShell,
+  UiPanel,
   UiSegmentedControl,
+  UiSelect,
 } from '@/components/ui'
 import RunDetail from './RunDetail.vue'
 import { useRunsStore, type Run } from '@/stores/runs'
-import { useToastsStore } from '@/stores/toasts'
 import { RunKind as RunKindEnum, RunStatus as RunStatusEnum } from '@/api'
 import type { DataTableColumn } from '@/components/types'
 
 const route = useRoute()
 const router = useRouter()
 const runsStore = useRunsStore()
-const toasts = useToastsStore()
 
 const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
 const runId = computed<number | null>(() => {
@@ -53,6 +52,10 @@ const STATUS_OPTIONS: { key: 'all' | `${RunStatusEnum}`; label: string }[] = [
 ]
 
 const KIND_OPTIONS = Object.values(RunKindEnum)
+const kindOptions = computed(() => [
+  { value: '', label: 'All kinds' },
+  ...KIND_OPTIONS.map((kind) => ({ value: kind, label: kind })),
+])
 
 const columns: DataTableColumn<Run>[] = [
   { key: 'id', label: 'ID', widthClass: 'w-20' },
@@ -111,25 +114,6 @@ function onRowClick(row: Run): void {
   void router.push(`/projects/${projectId.value}/runs/${row.id}`)
 }
 
-async function abortRow(row: Run): Promise<void> {
-  if (row.status !== 'running') return
-  try {
-    await runsStore.abort(row.id, true)
-    toasts.success('Run aborted', `#${row.id}`)
-  } catch (err) {
-    toasts.error('Abort failed', err instanceof Error ? err.message : undefined)
-  }
-}
-
-async function heartbeatRow(row: Run): Promise<void> {
-  try {
-    await runsStore.heartbeat(row.id)
-    toasts.success('Heartbeat sent', `#${row.id}`)
-  } catch (err) {
-    toasts.error('Heartbeat failed', err instanceof Error ? err.message : undefined)
-  }
-}
-
 async function loadMore(): Promise<void> {
   await runsStore.loadMore(projectId.value)
 }
@@ -153,8 +137,16 @@ watch(runId, () => {
     <ProjectPageHeader
       :project-id="projectId"
       :title="runId !== null ? `Run #${runId}` : 'Runs'"
-      :description="runId !== null ? 'Inspect run metadata, steps, heartbeats, and execution output.' : 'Audit procedure, skill, and tool runs with status, kind, parent, and date filters.'"
-      :breadcrumbs="runId !== null ? [{ label: 'Runs', to: `/projects/${projectId}/runs` }, { label: `Run #${runId}` }] : [{ label: 'Runs' }]"
+      :description="
+        runId !== null
+          ? 'Inspect run metadata, steps, heartbeats, and execution output.'
+          : 'Audit procedure, skill, and tool runs with status, kind, parent, and date filters.'
+      "
+      :breadcrumbs="
+        runId !== null
+          ? [{ label: 'Runs', to: `/projects/${projectId}/runs` }, { label: `Run #${runId}` }]
+          : [{ label: 'Runs' }]
+      "
     >
       <template
         v-if="runId !== null"
@@ -183,65 +175,53 @@ watch(runId, () => {
       :project-id="projectId"
     />
 
-    <div v-else>
-      <UiSegmentedControl
-        :model-value="filters.status ?? 'all'"
-        :options="STATUS_OPTIONS"
-        label="Run status filter"
-        @select="onStatusSelect"
-      />
+    <div
+      v-else
+      class="space-y-4"
+    >
+      <UiPanel
+        aria-label="Run filters"
+        class="p-4"
+      >
+        <UiSegmentedControl
+          :model-value="filters.status ?? 'all'"
+          :options="STATUS_OPTIONS"
+          label="Run status filter"
+          @select="onStatusSelect"
+        />
 
-      <div class="mt-3 flex flex-wrap items-center gap-3 text-sm">
-        <label class="flex items-center gap-2">
-          <span class="text-fg-muted">Kind</span>
-          <select
-            :value="filters.kind ?? ''"
-            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-            aria-label="Filter kind"
-            @change="setKindFilter(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">
-              All
-            </option>
-            <option
-              v-for="k in KIND_OPTIONS"
-              :key="k"
-              :value="k"
-            >
-              {{ k }}
-            </option>
-          </select>
-        </label>
-        <label class="flex items-center gap-2">
-          <span class="text-fg-muted">Parent run id</span>
-          <input
-            type="number"
-            min="1"
-            :value="filters.parent_run_id ?? ''"
-            class="h-8 w-24 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-            aria-label="Parent run id"
-            @change="setParentFilter(($event.target as HTMLInputElement).value)"
-          >
-        </label>
-        <label class="flex items-center gap-2">
-          <span class="text-fg-muted">Since</span>
-          <input
-            type="date"
-            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-            aria-label="Since date"
-            @change="setSince(($event.target as HTMLInputElement).value)"
-          >
-        </label>
-        <label class="flex items-center gap-2">
-          <span class="text-fg-muted">Until</span>
-          <input
-            type="date"
-            class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-            aria-label="Until date"
-            @change="setUntil(($event.target as HTMLInputElement).value)"
-          >
-        </label>
-      </div>
+        <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[240px_180px_180px_180px]">
+          <UiFormField label="Kind">
+            <UiSelect
+              :model-value="filters.kind ?? ''"
+              :options="kindOptions"
+              @update:model-value="
+                (value: string | number | null) => setKindFilter(String(value ?? ''))
+              "
+            />
+          </UiFormField>
+          <UiFormField label="Parent run id">
+            <UiInput
+              type="number"
+              min="1"
+              :model-value="filters.parent_run_id ?? ''"
+              @change="(value: string | number | null) => setParentFilter(String(value ?? ''))"
+            />
+          </UiFormField>
+          <UiFormField label="Since">
+            <UiInput
+              type="date"
+              @change="(value: string | number | null) => setSince(String(value ?? ''))"
+            />
+          </UiFormField>
+          <UiFormField label="Until">
+            <UiInput
+              type="date"
+              @change="(value: string | number | null) => setUntil(String(value ?? ''))"
+            />
+          </UiFormField>
+        </div>
+      </UiPanel>
 
       <DataTable
         :items="filteredItems"
@@ -253,7 +233,12 @@ watch(runId, () => {
         :sort-key="runsStore.sort.replace(/^-/, '')"
         :sort-dir="runsStore.sort.startsWith('-') ? 'desc' : 'asc'"
         @row-click="onRowClick"
-        @sort="(col: string, dir: 'asc' | 'desc' | null) => runsStore.setSort(`${dir === 'desc' ? '-' : ''}${col}` as 'started_at' | '-started_at' | 'id' | '-id')"
+        @sort="
+          (col: string, dir: 'asc' | 'desc' | null) =>
+            runsStore.setSort(
+              `${dir === 'desc' ? '-' : ''}${col}` as 'started_at' | '-started_at' | 'id' | '-id',
+            )
+        "
         @load-more="loadMore"
       >
         <template #cell:status="{ row }">
@@ -262,35 +247,17 @@ watch(runId, () => {
               :status="(row as Run).status"
               kind="run"
             />
-            <button
-              v-if="(row as Run).status === 'running'"
-              type="button"
-              class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :aria-label="`Abort run ${(row as Run).id}`"
-              @click.stop="abortRow(row as Run)"
-            >
-              Abort
-            </button>
-            <button
-              v-if="(row as Run).status === 'running'"
-              type="button"
-              class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-              :aria-label="`Heartbeat run ${(row as Run).id}`"
-              @click.stop="heartbeatRow(row as Run)"
-            >
-              Heartbeat
-            </button>
           </div>
         </template>
         <template #cell:parent_run_id="{ row }">
-          <button
+          <UiButton
             v-if="(row as Run).parent_run_id !== null"
-            type="button"
-            class="text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-300"
+            variant="link"
+            size="sm"
             @click.stop="router.push(`/projects/${projectId}/runs/${(row as Run).parent_run_id}`)"
           >
             #{{ (row as Run).parent_run_id }}
-          </button>
+          </UiButton>
           <span v-else>—</span>
         </template>
       </DataTable>

@@ -1,6 +1,6 @@
 ---
 name: ghost-publish
-description: Render edited_md to HTML, upload article assets via PUT /ghost/api/admin/images/upload, POST or PUT the post via /ghost/api/admin/posts/?source=html with feature_image / tags / authors / codeinjection_head, and record the result via publish.recordPublish; advance to published on the primary target.
+description: Deferred Ghost publisher spec. The doc-backed Admin API flow renders edited_md to HTML, uploads article assets via POST /ghost/api/admin/images/upload/, POSTs or PUTs posts with ?source=html, and records publish state, but Procedure 4 must not route here until Ghost image/post operations are implemented as hidden toolkit tools.
 version: 0.1.0
 runtime_compat: ["codex", "claude-code"]
 derived_from: original
@@ -43,7 +43,7 @@ inputs:
     source: args
     type: int
     required: true
-    description: The publish_targets.id whose kind='ghost' the procedure controller selected for this run. Procedure 4 publishes to the primary target first, then queues secondary targets.
+    description: The publish_targets.id whose kind='ghost' a manual or future fully wired publisher selected for this run. Procedure 4 does not currently select Ghost targets.
 outputs:
   - table: article_publishes
     write: one row per (article_id, target_id, version_published) via publish.recordPublish — published_url + frontmatter_json + status='published' on success, status='failed' + error on failure.
@@ -62,11 +62,13 @@ skill-specific steps below.
 
 ## When to use
 
-Procedure 4 calls this skill after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable, and the publish target is a `kind='ghost'` row whose `config_json` carries the Ghost site's URL, the default post status, the format preference (HTML / Lexical / mobiledoc), tag and author mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to Ghost's image endpoint, POSTs (or PUTs) the post to the Admin API with `?source=html`, records the publish row, and — when the run is for the primary target — advances `articles.status` to `published`.
+This is a doc-backed publisher specification, not an active Procedure 4 publisher. The daemon currently has Ghost credential probing through `integration.test`, but it does not yet expose the Ghost image upload / post create / post update operations as hidden toolkit tools. Procedure 4 must fail loudly for `kind='ghost'` primary targets until those operations exist, are granted in `content_stack/mcp/permissions.py`, and are named in this skill's `allowed_tools`.
 
-Procedure 4 publishes to the primary target first; secondary `ghost` targets (e.g., a multi-publication setup, or a Ghost-side mirror of a Nuxt primary) are handled by the operator agent as explicit follow-up publish steps. Each invocation receives the `target_id` through args. The skill is idempotent on `(article_id, target_id, version_published)` because publish.recordPublish upserts. The Ghost post is identified externally by a `ghost_post_id` stored in the publish row's `frontmatter_json` so re-runs PUT to the existing post.
+Once fully wired, this skill should run after the interlinker (#15) and the schema-emitter (#16). At that point the article is `eeat_passed`, the canonical URL is resolvable, and the publish target is a `kind='ghost'` row whose `config_json` carries the Ghost site's URL, the default post status, the format preference (HTML / Lexical / mobiledoc), tag and author mappings, and the per-target frontmatter / meta template. The skill renders the markdown body to HTML, uploads each asset to Ghost's image endpoint, POSTs (or PUTs) the post to the Admin API with `?source=html`, records the publish row, and — when the run is for the primary target — advances `articles.status` to `published`.
 
-The skill also runs in two non-procedure-driven modes the operator can invoke from the UI: a manual republish after a UI edit, and a content-refresh republish from procedure 7 against a humanized version. The contract is identical in both modes; only the status sequencing differs.
+The future publish phase should publish to the primary target first; secondary `ghost` targets (e.g., a multi-publication setup, or a Ghost-side mirror of a Nuxt primary) are handled by the operator agent as explicit follow-up publish steps. Each invocation receives the `target_id` through args. The skill is idempotent on `(article_id, target_id, version_published)` because publish.recordPublish upserts. The Ghost post is identified externally by a `ghost_post_id` stored in the publish row's `frontmatter_json` so re-runs PUT to the existing post.
+
+The skill can later run in two non-procedure-driven modes the operator can invoke from the UI: a manual republish after a UI edit, and a content-refresh republish from procedure 7 against a humanized version. The contract is identical in both modes; only the status sequencing differs.
 
 A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute expiration) signed with the secret half of an Admin API key. The daemon's HTTP helper handles minting and refreshing tokens; the skill never reads the secret directly. The skill defaults `email_only=true` (or `status='draft'` when the operator's UI confirmation is part of the publish flow) so a publish step never accidentally blasts an email to the publication's subscribers — that decision belongs to the human/operator agent.
 
@@ -88,13 +90,13 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 - `schema.get(schema_id)` (the principal `schema_emits.is_primary=true` row's id, plus secondaries) — read each schema row's `schema_json` and emit them inside a `<script type="application/ld+json">` block in the post's `codeinjection_head`. Ghost does not have a first-class JSON-LD field; the head injection is the canonical seam.
 - `asset.list(article_id)` — every asset row. The skill uploads each asset to the Admin API's `images/upload/` endpoint and rewrites the body's image references to the Ghost-hosted URLs.
 - `source.list(article_id, used=true)` — feeds the references block in the body when the target's frontmatter template renders one.
-- `integration.test` — pre-flight credential probe. The wrapper's test call (typically `GET /ghost/api/admin/users/me/`) verifies the Admin API key is valid and the JWT lifecycle works before any image uploads happen.
+- `integration.test` — pre-flight credential probe. The wrapper's test call (`GET /ghost/api/admin/users/?limit=1&include=roles`) verifies the Admin API key is valid and the JWT lifecycle works before any image uploads happen.
 - `meta.enums` — the `publish_targets.kind` and `article_publishes.status` enums.
 
 ## Steps
 
 1. **Read context.** Resolve the article. Confirm the status is `eeat_passed` or `published`. Pull the target row, confirm `kind='ghost'` and `is_active=true`. Compute `version_published` per the same rule as the Nuxt and WordPress skills.
-2. **Pre-flight credential and SEO preview.** Call `integration.test` against the target's `integration_credential_id`. The probe confirms the daemon's HTTP helper can mint a JWT from the Admin API key and reach `GET /ghost/api/admin/users/me/`. Surface the response (the user's role and slug) in `runs.metadata_json.ghost_publish.role_check`. Refuse to proceed when the response is 401 (invalid key) or when the user's role is `Owner` (publishing with the owner credential is over-privileged for automation; the operator should provision an `Editor` or `Author` integration). Then call `publish.preview(article_id, target_id)` and block on indexability, canonical, robots/noindex, public image, paid-link `rel`, structured-data, or sitemap/lastmod regressions. Default `Editor` role is the recommended setting.
+2. **Pre-flight credential and SEO preview.** Call `integration.test` against the target's `integration_credential_id`. The probe confirms the daemon's HTTP helper can mint a JWT from the Admin API key and reach `GET /ghost/api/admin/users/?limit=1&include=roles`. Surface the response's sampled roles in `runs.metadata_json.ghost_publish.role_check`. Refuse to proceed when the response is 401 (invalid key). Then call `publish.preview(article_id, target_id)` and block on indexability, canonical, robots/noindex, public image, paid-link `rel`, structured-data, or sitemap/lastmod regressions.
 3. **Render markdown to HTML.** Convert `edited_md` to HTML via `markdown-it` configured for Ghost's HTML dialect:
    - Tables → `<table class="kg-card-no-border">` (or the project's preferred table card class).
    - Code blocks → `<pre><code class="language-…">` (Ghost's themes consume the `language-…` class for syntax highlighting).
@@ -106,7 +108,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
    When the target's `format='lexical'` or `format='mobiledoc'` was chosen, perform the additional conversion through Ghost's published converter library; the HTML render is still the canonical source-of-truth and the format-specific render is derived from it.
 4. **Upload assets.** For each asset row in `asset.list`:
    - Resolve the source bytes from the daemon's local filesystem.
-   - PUT the bytes to `<ghost_url>/ghost/api/admin/images/upload/` as multipart form-data with the `file` part carrying the bytes and a `purpose` field (`image` for hero / inline / og, `profile_image` for author avatars — the skill only uploads article assets, not avatars). Capture the response's `url` field as the Ghost-hosted URL.
+   - POST the bytes to `<ghost_url>/ghost/api/admin/images/upload/` as multipart form-data with the `file` part carrying the bytes and a `purpose` field (`image` for hero / inline / og, `profile_image` for author avatars — the skill only uploads article assets, not avatars). Capture the response's `url` field as the Ghost-hosted URL.
    - On 4xx capture the error. Hero upload failure is hard fail because the post's `feature_image` would be invalid. For inline assets, either remove the image reference with an audit warning or abort when the image is load-bearing. Never publish daemon-local asset URLs into the live Ghost post.
    - On 5xx retry once. Two consecutive 5xx aborts that asset's upload but not the run.
    The JWT minted in step 2 may have expired between assets when an upload pass takes longer than 5 minutes; the daemon's HTTP helper auto-mints a fresh JWT mid-flow. The skill does not handle the lifecycle.
@@ -152,7 +154,7 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 ## Failure handling
 
 - **Status not `eeat_passed` or `published`.** Abort. Sequencing bug.
-- **Target row not found / `kind` mismatch.** Abort. Procedure runner's per-target replication should have filtered.
+- **Target row not found / `kind` mismatch.** Abort. A future wired procedure runner or manual publisher should have filtered.
 - **Credential probe fails (step 2 — auth).** Abort. The operator fixes the integration_credentials row and re-runs.
 - **Credential role is `Owner`.** Abort with a clear message asking the operator to provision an `Editor` integration.
 - **Image upload returns 4xx for a single asset.** Capture and mark failed in audit. Hero failure is hard fail. For inline/body images, remove the unresolved reference or abort according to the target policy; never publish daemon-local asset URLs.
@@ -170,4 +172,4 @@ A note on JWTs and email send: Ghost's Admin API uses short-lived JWTs (5-minute
 - **`fast`** — uploads images in parallel rather than serial; skips the optional `feature_image_caption` field; uses Ghost's auto-create-on-empty-slug for tags rather than pre-validating against `tag_map[]`. Useful in `bulk-content-launch`.
 - **`standard`** — the default flow above.
 - **`pillar`** — adds a step between asset upload and post composition: the skill uploads the principal schema's `Article` blob to Ghost's `pages` endpoint as well, creating a structured-data sibling page (some Ghost themes consume this for pillar overviews). Useful for projects whose theme treats pillar pages distinctly from blog posts.
-- **`refresh`** — invoked by procedure 7. Identical to `standard` except the article's status is already `published`, the skill PUTs to the existing post id (after a fresh GET to capture `updated_at`), and `email_only` is unconditionally `true` (a refresh must never email subscribers a duplicate of the original post; refreshes are not new content from the reader's perspective).
+- **`refresh`** — invoked by procedure 7 once Ghost publishing is fully wired. Identical to `standard` except the article's status is already `published`, the skill PUTs to the existing post id (after a fresh GET to capture `updated_at`), and `email_only` is unconditionally `true` (a refresh must never email subscribers a duplicate of the original post; refreshes are not new content from the reader's perspective).

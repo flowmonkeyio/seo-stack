@@ -32,9 +32,11 @@ from content_stack.mcp.server import (
         "interlink.suggest",
         "interlink.bulkApply",
         "voice.setActive",
+        "schedule.remove",
         "target.setPrimary",
         "publish.setCanonical",
         "publish.recordPublish",
+        "publish.recordExternal",
         "run.start",
         "run.finish",
         "run.heartbeat",
@@ -43,6 +45,7 @@ from content_stack.mcp.server import (
         "run.fork",
         "gsc.bulkIngest",
         "gsc.rollup",
+        "gscOauth.start",
         "drift.snapshot",
         "drift.diff",
         "schema.validate",
@@ -62,7 +65,8 @@ def test_mutating_verb_classification(name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["article.get", "article.list", "topic.list", "meta.enums", "cost.queryAll"]
+    "name",
+    ["article.get", "article.list", "topic.list", "meta.enums", "cost.queryAll", "gscOauth.get"],
 )
 def test_read_verb_not_mutating(name: str) -> None:
     """Read verbs are not mutating."""

@@ -28,7 +28,7 @@ from starlette.responses import Response
 
 from content_stack import __version__
 from content_stack.api import register_routers
-from content_stack.auth import BearerTokenMiddleware, ensure_token
+from content_stack.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
 from content_stack.config import Settings, get_settings
 from content_stack.crypto import cleanup_old_backup
 from content_stack.crypto.aes_gcm import configure_seed_path
@@ -194,6 +194,7 @@ def _build_lifespan(
 
         app.state.settings = settings
         app.state.token = token
+        app.state.ui_token = derive_ui_token(token)
         app.state.engine = engine
         app.state.started_at = time.monotonic()
 
@@ -341,6 +342,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_seed_path(settings.seed_path)
     cleanup_old_backup(settings.seed_path)
     token = ensure_token(settings.token_path)
+    ui_token = derive_ui_token(token)
 
     app = FastAPI(
         title="content-stack",
@@ -356,10 +358,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url="/api/openapi.json",
     )
+    app.state.ui_token = ui_token
 
     # Middleware order — Starlette runs the *last-added* first on the
     # request path, so we add inside-out: auth, then CORS, then host check.
-    app.add_middleware(BearerTokenMiddleware, token=token)
+    app.add_middleware(BearerTokenMiddleware, token=token, ui_token=ui_token)
     app.add_middleware(
         CORSMiddleware,
         # Same-origin only: no cross-origin browser fetches.
@@ -378,6 +381,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # a tool handler has already cleared the BearerTokenMiddleware.
     register_mcp(app)
 
+    app.mount(
+        "/generated-assets",
+        StaticFiles(directory=settings.generated_assets_dir),
+        name="generated-assets",
+    )
     _mount_ui(app, settings)
 
     return app
@@ -412,7 +420,7 @@ def _mount_ui(app: FastAPI, settings: Settings) -> None:
             in case so we don't paper over a missing API endpoint with
             the SPA shell.
             """
-            if full_path.startswith(("api/", "mcp/")):
+            if full_path.startswith(("api/", "mcp/", "generated-assets/")):
                 return JSONResponse({"detail": "Not Found"}, status_code=404)
             target = ui_dist / full_path
             try:

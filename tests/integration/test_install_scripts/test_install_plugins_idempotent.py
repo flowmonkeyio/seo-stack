@@ -51,8 +51,7 @@ def test_install_plugins_creates_plugin_and_marketplace(
     ).is_file()
     assert (plugin_root / "procedures" / "04-topic-to-published" / "PROCEDURE.md").is_file()
     assert any(
-        p["name"] == "content-stack"
-        and p["source"]["path"] == "./.codex/plugins/content-stack"
+        p["name"] == "content-stack" and p["source"]["path"] == "./.codex/plugins/content-stack"
         for p in payload["plugins"]
     )
 

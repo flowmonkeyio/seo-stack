@@ -1,25 +1,9 @@
-// Runs store — list / get / children / abort / heartbeat.
-//
-// Wires to:
-// - `GET  /api/v1/projects/{id}/runs?kind=&status=&parent_run_id=&limit=&after=`
-//        cursor-paginated; sorts by id desc server-side per repository.
-// - `GET  /api/v1/runs/{id}`              — single run row
-// - `GET  /api/v1/runs/{id}/children`     — direct children
-// - `POST /api/v1/runs/{id}/abort?cascade=true|false`
-// - `POST /api/v1/runs/{id}/heartbeat`    — admin/test
-//
-// The wire shape is `RunOut` per `runs` table — there is NO endpoint that
-// returns run_steps + run_step_calls keyed by run id at M5.C. That's PLAN.md
-// L603 and audit M-29 surfacing as a backend gap; the RunsView's
-// "step expansion" feature falls back to `runs.metadata_json` shaped as
-// `{step_index, step_id, ...}` from the procedure_run_steps endpoint
-// (`/api/v1/procedures/runs/{run_id}`). This is documented in the M5.C
-// report quality concerns.
+// Runs store — read-only list / get / children / procedure-step companion view.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, apiWrite } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import type { components } from '@/api'
 
 export type Run = components['schemas']['RunOut']
@@ -34,9 +18,7 @@ export interface RunFilters {
   kind: RunKind | null
   status: RunStatus | null
   parent_run_id: number | null
-  /** ISO datetime — clients narrow by `started_at >= since` client-side. */
   since: string | null
-  /** ISO datetime — clients narrow by `started_at < until` client-side. */
   until: string | null
 }
 
@@ -50,7 +32,6 @@ export const useRunsStore = defineStore('runs', () => {
   const error = ref<string | null>(null)
   const currentProjectId = ref<number | null>(null)
   const currentDetail = ref<Run | null>(null)
-  /** Children by parent run id — the detail view fetches once and caches. */
   const childrenByParent = ref<Map<number, Run[]>>(new Map())
   const filters = ref<RunFilters>({
     kind: null,
@@ -73,11 +54,7 @@ export const useRunsStore = defineStore('runs', () => {
   }
 
   function _ingestPage(page: RunsPage, append: boolean): void {
-    if (append) {
-      items.value = [...items.value, ...page.items]
-    } else {
-      items.value = [...page.items]
-    }
+    items.value = append ? [...items.value, ...page.items] : [...page.items]
     nextCursor.value = page.next_cursor ?? null
     totalEstimate.value = page.total_estimate ?? items.value.length
   }
@@ -92,7 +69,7 @@ export const useRunsStore = defineStore('runs', () => {
       )
       _ingestPage(page, false)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load runs'
+      error.value = formatApiError(err, 'failed to load runs')
     } finally {
       loading.value = false
     }
@@ -107,7 +84,7 @@ export const useRunsStore = defineStore('runs', () => {
       )
       _ingestPage(page, true)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load more runs'
+      error.value = formatApiError(err, 'failed to load more runs')
     } finally {
       loading.value = false
     }
@@ -125,56 +102,18 @@ export const useRunsStore = defineStore('runs', () => {
     return rows
   }
 
-  async function abort(runId: number, cascade = false): Promise<Run> {
-    const params = new URLSearchParams()
-    if (cascade) params.set('cascade', 'true')
-    const url = params.toString() === ''
-      ? `/api/v1/runs/${runId}/abort`
-      : `/api/v1/runs/${runId}/abort?${params.toString()}`
-    const row = await apiWrite<Run>(url, { method: 'POST' })
-    _replaceLocal(row)
-    if (currentDetail.value?.id === runId) currentDetail.value = row
-    return row
-  }
-
-  async function heartbeat(runId: number): Promise<Run | null> {
-    interface Envelope {
-      data: Run | null
-      run_id: number | null
-      project_id: number | null
-    }
-    const envelope = await apiFetch<Envelope>(`/api/v1/runs/${runId}/heartbeat`, {
-      method: 'POST',
-    })
-    if (envelope.data) {
-      _replaceLocal(envelope.data)
-      if (currentDetail.value?.id === runId) currentDetail.value = envelope.data
-    }
-    return envelope.data
-  }
-
-  /**
-   * Fetch the procedure-run companion view for a run that originated from a
-   * procedure. The endpoint returns `{run, steps[]}` where `steps` are
-   * procedure_run_steps rows (per audit M-29). For non-procedure runs this
-   * call returns 404 and we resolve to `null`.
-   */
   async function getProcedureRunSteps(runId: number): Promise<ProcedureRunResponse | null> {
     try {
       return await apiFetch<ProcedureRunResponse>(`/api/v1/procedures/runs/${runId}`)
-    } catch {
-      return null
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null
+      throw err
     }
-  }
-
-  function _replaceLocal(row: Run): void {
-    const idx = items.value.findIndex((r) => r.id === row.id)
-    if (idx >= 0) items.value.splice(idx, 1, row)
   }
 
   function getById(id: number): Run | null {
     if (currentDetail.value?.id === id) return currentDetail.value
-    return items.value.find((r) => r.id === id) ?? null
+    return items.value.find((run) => run.id === id) ?? null
   }
 
   function setFilter<K extends keyof RunFilters>(key: K, value: RunFilters[K]): void {
@@ -185,21 +124,10 @@ export const useRunsStore = defineStore('runs', () => {
     sort.value = key
   }
 
-  /**
-   * Client-side date narrowing. The REST endpoint doesn't natively accept
-   * since/until so we keep this in the store; it's also where the sort
-   * order is applied (the wire returns id desc).
-   */
   const filteredItems = computed<Run[]>(() => {
     let arr = items.value
-    if (filters.value.since) {
-      const lo = filters.value.since
-      arr = arr.filter((r) => r.started_at >= lo)
-    }
-    if (filters.value.until) {
-      const hi = filters.value.until
-      arr = arr.filter((r) => r.started_at < hi)
-    }
+    if (filters.value.since) arr = arr.filter((run) => run.started_at >= filters.value.since!)
+    if (filters.value.until) arr = arr.filter((run) => run.started_at < filters.value.until!)
     const key = sort.value
     const dir = key.startsWith('-') ? -1 : 1
     const field = key.replace(/^-/, '') as 'id' | 'started_at'
@@ -246,8 +174,6 @@ export const useRunsStore = defineStore('runs', () => {
     loadMore,
     get,
     children,
-    abort,
-    heartbeat,
     getProcedureRunSteps,
     setFilter,
     setSort,

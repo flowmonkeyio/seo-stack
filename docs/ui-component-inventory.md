@@ -11,7 +11,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiButtonGroup` | segmented |
 | `UiInput` | label/help/error wired via UiFormField |
 | `UiTextarea` | autosize optional |
-| `UiSelect` | native; UiDropdownMenu for rich |
+| `UiSelect` | custom listbox-style select; no native browser select chrome |
 | `UiCheckbox` | indeterminate supported |
 | `UiSwitch` | role="switch" |
 | `UiRadioGroup` | keyboard arrows |
@@ -41,7 +41,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiSectionHeader` | inside cards/panels |
 | `UiToolbar` | sticky action bar |
 | `UiFilterBar` | search + chips + filters |
-| `UiBulkActionBar` | replaces filter bar on selection |
+| `UiBulkActionBar` | generic primitive only; not used in observer-mode product views |
 | `UiMetricCard` | label + value + delta |
 | `UiDescriptionList` | label/value rows |
 
@@ -49,35 +49,25 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `ProjectHeader` | name + slug + state + action slot |
-| `ProjectStatusSummary` | grid of UiMetricCard |
-| `IntegrationProviderCard` | provider + health + connect/configure/disconnect |
-| `IntegrationSetupDialog` | provider credential setup, daemon-owned secrets, OAuth/API/local modes |
-| `RunTimeline` | step accordion with progress |
-| `RunStepAccordion` | collapsible step output viewer for logs and JSON payloads |
-| `ArticleStatusStepper` | 7-step linear stepper |
-| `ArticleActionBar` | sticky article detail save/publish/refresh actions |
-| `ArticleAssetCard` | asset preview, kind, dimensions, alt text, and actions |
-| `EeatScoreCard` | radial + breakdown rows |
-| `BudgetMeter` | spend/cap + tone band |
-| `LinkSuggestionCard` | interlink candidate row with accept/dismiss/inspect |
-| `GscOpportunityCard` | GSC query opportunity with CTR / position metrics |
-| `DriftBaselineCard` | drift severity, score, changed fields, and diff action |
-| `ScheduleRuleCard` | cron, cap, next-run preview, and run-now actions |
-| `ProcedureCard` | procedure list card with run/view actions |
-| `SourceLedger` | citations and provenance rows |
-| `SchemaEditorPanel` | JSON-LD editor with schema.org type picker |
-| `ComplianceRuleRow` | compliance rule state and edit/toggle actions |
-| `EeatCriterionRow` | expandable EEAT criterion review row |
-| `PublishingTargetCard` | target status, last publish, retry/configure actions |
-| `CredentialHealthBadge` | integration status badge backed by `status.ts` |
-| `MarkdownSectionEditor` | Markdown editor with toolbar, dirty state, and sanitized preview |
+| `ProjectPageHeader` | project-aware title, breadcrumbs, read-only action slot, and route chrome |
+
+Removed action-oriented demo components:
+
+`ArticleActionBar`, `ArticleAssetCard`, `ArticleStatusStepper`, `BudgetMeter`,
+`ComplianceRuleRow`, `CredentialHealthBadge`, `DriftBaselineCard`,
+`EeatCriterionRow`, `EeatScoreCard`, `GscOpportunityCard`,
+`IntegrationProviderCard`, `IntegrationSetupDialog`, `LinkSuggestionCard`,
+`MarkdownSectionEditor`, `ProcedureCard`, `ProjectHeader`,
+`ProjectStatusSummary`, `PublishingTargetCard`, `RunStepAccordion`,
+`RunTimeline`, `ScheduleRuleCard`, `SchemaEditorPanel`, and `SourceLedger`.
+They were removed from `ui/src` because they exposed or demonstrated product
+mutations that now belong to the agent/MCP path.
 
 ## Design-system showcase
 
-The implementation surface is available at `/__design-system`. It renders the
-semantic tokens, canonical status mappings, shipped primitives, and shipped
-domain components with content-stack examples.
+The `/__design-system` route was removed from the shipped app. Keep any future
+component demos outside the production router, and do not ship action-demo
+components into `ui/src/components/domain`.
 
 ## Inline duplication patterns to remove
 
@@ -100,24 +90,21 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 | View | Primary primitives | Domain components |
 |---|---|---|
 | Projects list | UiPageHeader, UiFilterBar, UiBadge, UiButton | (none) |
-| Project overview | UiPageHeader, UiCard, UiDescriptionList, UiMetricCard | ProjectHeader, ProjectStatusSummary, BudgetMeter |
-| Project integrations tab | UiCard, UiButton, UiCallout, UiDialog | IntegrationProviderCard, IntegrationSetupDialog |
-| Articles list | UiFilterBar, UiBulkActionBar, DataTable, UiBadge | (none) |
-| Article detail | UiPageHeader, UiTabBar, UiCard | ArticleStatusStepper, EeatScoreCard, ArticleActionBar |
+| Project overview | UiPageHeader, UiDescriptionList, UiMetricCard, DataTable | ProjectPageHeader |
+| Project integrations tab | UiPanel, UiButton, UiCallout, UiBadge | ProjectPageHeader |
+| Articles list | UiSegmentedControl, DataTable, UiBadge | ProjectPageHeader |
+| Article detail | UiPageHeader, TabBar, UiPanel, UiCodeBlock, UiJsonBlock | (none) |
 | Topics list | UiFilterBar, DataTable, UiBadge | (none) |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
-| Run detail | UiPageHeader, UiCard, UiCodeBlock, UiJsonBlock | RunTimeline, RunStepAccordion |
-| Procedures list | DataTable, UiBadge | ProcedureCard |
-| GSC | DataTable, UiMetricCard | GscOpportunityCard |
-| Drift | DataTable, UiBadge, UiDiffBlock | DriftBaselineCard |
+| Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock | (none) |
+| Procedures list | DataTable, UiBadge | ProjectPageHeader |
+| GSC | DataTable, UiMetricCard | ProjectPageHeader |
+| Drift | DataTable, UiBadge, UiDiffBlock | ProjectPageHeader |
 
 ## Refactor priority
 
 If you're carving up the work:
 
-1. **Articles list** — highest reuse impact (filter bar + bulk + table + badges).
-2. **Article detail header/status area** — proves stepper + score card + action bar shapes.
-3. **Project integrations tab** — proves card + dialog modal-heavy flow.
-4. **Runs / Run detail** — proves timeline + accordion.
-5. **Topics list** — duplicate of articles patterns; should drop in trivially after #1.
-6. Everything else — incremental.
+1. Keep the observer-mode route audit green.
+2. Keep `read-only-ui.spec.ts` scanning product code for write calls.
+3. Add new domain components only when they display state without owning product mutations.

@@ -142,16 +142,97 @@ def test_publish_target_set_primary_invariant(api: TestClient, project_id: int) 
     """Two ``is_primary=true`` targets — only the latest stays primary."""
     t1 = api.post(
         f"/api/v1/projects/{project_id}/publish-targets",
-        json={"kind": "nuxt-content", "is_primary": True},
+        json={
+            "kind": "nuxt-content",
+            "config_json": {
+                "repo_path": "/tmp/site",
+                "content_dir": "content/blog",
+            },
+            "is_primary": True,
+        },
     )
     t2 = api.post(
         f"/api/v1/projects/{project_id}/publish-targets",
-        json={"kind": "wordpress", "is_primary": True},
+        json={
+            "kind": "wordpress",
+            "config_json": {"wp_url": "https://wp.example"},
+            "is_primary": True,
+        },
     )
     assert t1.status_code == 201 and t2.status_code == 201
+    assert t1.json()["data"]["config_json"] == {
+        "repo_path": "/tmp/site",
+        "content_subdir": "content/blog",
+    }
     listing = api.get(f"/api/v1/projects/{project_id}/publish-targets").json()
     primaries = [r for r in listing if r["is_primary"]]
     assert len(primaries) == 1
+
+
+def test_publish_target_requires_provider_config(api: TestClient, project_id: int) -> None:
+    """Publish target config is typed enough for the UI to show actionable errors."""
+    resp = api.post(
+        f"/api/v1/projects/{project_id}/publish-targets",
+        json={"kind": "ghost", "config_json": {}},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["code"] == -32602
+    assert detail["detail"] == "ghost_url is required"
+    assert detail["data"] == {"kind": "ghost", "field": "ghost_url"}
+
+
+def test_publish_target_rejects_secret_config(api: TestClient, project_id: int) -> None:
+    """Credentials belong in integrations, not publish-target routing metadata."""
+    resp = api.post(
+        f"/api/v1/projects/{project_id}/publish-targets",
+        json={
+            "kind": "wordpress",
+            "config_json": {
+                "wp_url": "https://wp.example",
+                "application_password": "secret",
+            },
+        },
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["code"] == -32602
+    assert detail["data"] == {
+        "kind": "wordpress",
+        "secret_key": "application_password",
+    }
+    assert "integration credentials" in detail["hint"]
+
+
+def test_publish_target_update_validates_effective_config(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    """Patches validate the merged kind/config, not just freshly created rows."""
+    created = api.post(
+        f"/api/v1/projects/{project_id}/publish-targets",
+        json={
+            "kind": "nuxt-content",
+            "config_json": {
+                "repo_path": "/tmp/site",
+                "content_dir": "content/blog",
+            },
+        },
+    )
+    assert created.status_code == 201
+    target_id = created.json()["data"]["id"]
+
+    resp = api.patch(
+        f"/api/v1/projects/{project_id}/publish-targets/{target_id}",
+        json={"kind": "ghost"},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["detail"] == "ghost_url is required"
+    assert detail["data"] == {"kind": "ghost", "field": "ghost_url"}
 
 
 # ---- Schedules ----
@@ -183,6 +264,10 @@ def test_budget_set_then_get(api: TestClient, project_id: int) -> None:
     resp2 = api.get(f"/api/v1/projects/{project_id}/budgets/dataforseo")
     assert resp2.status_code == 200
     assert resp2.json()["monthly_budget_usd"] == 25.0
+
+    listing = api.get(f"/api/v1/projects/{project_id}/budgets")
+    assert listing.status_code == 200
+    assert [row["kind"] for row in listing.json()] == ["dataforseo"]
 
 
 def test_budget_paa_alias_canonicalizes_to_google_paa(api: TestClient, project_id: int) -> None:
@@ -270,3 +355,70 @@ def test_integration_test_dispatches_to_wrapper(
     body = resp.json()
     assert body["ok"] is True
     assert body["vendor"] == "firecrawl"
+    assert body["status"] == "ok"
+    assert body["summary"] == "firecrawl credentials are reachable"
+    assert body["checked_at"]
+
+
+def test_integration_test_dispatches_to_wordpress_wrapper(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: object,
+) -> None:
+    from pytest_httpx import HTTPXMock
+
+    typed_mock: HTTPXMock = httpx_mock  # type: ignore[assignment]
+    typed_mock.add_response(
+        method="GET",
+        url="https://wp.example/wp-json/wp/v2/users/me?context=edit",
+        json={"id": 7, "name": "Editor", "roles": ["editor"]},
+    )
+
+    cr = api.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={
+            "kind": "wordpress",
+            "plaintext_payload": "editor:app-pass",
+            "config_json": {"wp_url": "https://wp.example"},
+        },
+    )
+    cid = cr.json()["data"]["id"]
+    resp = api.post(f"/api/v1/projects/{project_id}/integrations/{cid}/test")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["vendor"] == "wordpress"
+    assert body["status"] == "ok"
+    assert body["metadata"]["user_id"] == 7
+
+
+def test_integration_test_dispatches_to_ghost_wrapper(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: object,
+) -> None:
+    from pytest_httpx import HTTPXMock
+
+    typed_mock: HTTPXMock = httpx_mock  # type: ignore[assignment]
+    typed_mock.add_response(
+        method="GET",
+        url="https://ghost.example/ghost/api/admin/users/?limit=1&include=roles",
+        json={"users": [{"id": "u1", "name": "Editor", "roles": [{"name": "Editor"}]}]},
+    )
+
+    cr = api.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={
+            "kind": "ghost",
+            "plaintext_payload": "keyid:00112233445566778899aabbccddeeff",
+            "config_json": {"ghost_url": "https://ghost.example", "api_version": "v5.0"},
+        },
+    )
+    cid = cr.json()["data"]["id"]
+    resp = api.post(f"/api/v1/projects/{project_id}/integrations/{cid}/test")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["vendor"] == "ghost"
+    assert body["status"] == "ok"
+    assert body["metadata"]["user_id"] == "u1"

@@ -54,24 +54,69 @@ onMounted(() => {
 interface NavItem {
   label: string
   to: string
-  milestone?: string
+  description?: string
+  matchPrefix?: boolean
 }
 
-const projectNav = computed<NavItem[]>(() => {
+interface NavSection {
+  label: string
+  items: NavItem[]
+}
+
+const projectNavSections = computed<NavSection[]>(() => {
   const id = activeProject.value?.id
   if (!id) return []
   return [
-    { label: 'Overview', to: `/projects/${id}/overview` },
-    { label: 'Clusters', to: `/projects/${id}/clusters` },
-    { label: 'Topics', to: `/projects/${id}/topics` },
-    { label: 'Articles', to: `/projects/${id}/articles` },
-    { label: 'Interlinks', to: `/projects/${id}/interlinks` },
-    { label: 'GSC', to: `/projects/${id}/gsc` },
-    { label: 'Drift', to: `/projects/${id}/drift` },
-    { label: 'Runs', to: `/projects/${id}/runs` },
-    { label: 'Procedures', to: `/projects/${id}/procedures` },
+    {
+      label: 'Command',
+      items: [
+        { label: 'Overview', to: `/projects/${id}/overview`, description: 'Readiness and next action' },
+      ],
+    },
+    {
+      label: 'Content pipeline',
+      items: [
+        { label: 'Clusters', to: `/projects/${id}/clusters`, description: 'Topical structure' },
+        { label: 'Topics', to: `/projects/${id}/topics`, description: 'Queue and approvals' },
+        { label: 'Articles', to: `/projects/${id}/articles`, description: 'Production workspace', matchPrefix: true },
+        { label: 'Procedures', to: `/projects/${id}/procedures`, description: 'Guided operations' },
+      ],
+    },
+    {
+      label: 'Project setup',
+      items: [
+        { label: 'Voice', to: `/projects/${id}/voice`, description: 'Editorial profile' },
+        { label: 'Compliance', to: `/projects/${id}/compliance`, description: 'Rules and disclosures' },
+        { label: 'EEAT', to: `/projects/${id}/eeat`, description: 'Quality criteria' },
+        { label: 'Publishing', to: `/projects/${id}/targets`, description: 'Targets and channels' },
+        { label: 'Integrations', to: `/projects/${id}/integrations`, description: 'Vendor credentials' },
+        { label: 'Schedules', to: `/projects/${id}/schedules`, description: 'Recurring work' },
+        { label: 'Cost & Budget', to: `/projects/${id}/cost-budget`, description: 'Spend controls' },
+      ],
+    },
+    {
+      label: 'Monitoring',
+      items: [
+        { label: 'Interlinks', to: `/projects/${id}/interlinks`, description: 'Internal link queue' },
+        { label: 'Search Console', to: `/projects/${id}/gsc`, description: 'Queries and redirects' },
+        { label: 'Drift', to: `/projects/${id}/drift`, description: 'Content baselines' },
+        { label: 'Runs', to: `/projects/${id}/runs`, description: 'Execution audit', matchPrefix: true },
+      ],
+    },
   ]
 })
+
+function navItemClass(item: NavItem): string {
+  const active = item.matchPrefix
+    ? route.path === item.to || route.path.startsWith(`${item.to}/`)
+    : route.path === item.to
+  return [
+    'relative block rounded-md px-3 py-1.5 text-sm transition-colors duration-fast focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+    active
+      ? 'bg-accent-subtle text-accent-fg shadow-xs before:absolute before:bottom-1.5 before:left-1 before:top-1.5 before:w-0.5 before:rounded-full before:bg-accent'
+      : 'text-fg-default hover:bg-bg-surface-alt',
+  ].join(' ')
+}
 
 function closeDrawer(): void {
   drawerOpen.value = false
@@ -85,10 +130,10 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col md:flex-row">
+  <div class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row">
     <button
       type="button"
-      class="m-2 inline-flex items-center justify-center rounded-sm border border-default bg-bg-surface px-3 py-1.5 text-sm text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden"
+      class="m-3 inline-flex items-center justify-center rounded-md border border-default bg-bg-surface px-3 py-2 text-sm font-medium text-fg-default shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus md:hidden"
       :aria-expanded="drawerOpen"
       aria-controls="cs-sidebar"
       @click="drawerOpen = !drawerOpen"
@@ -98,88 +143,105 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
     <aside
       id="cs-sidebar"
-      class="border-b border-default bg-bg-surface md:w-60 md:flex-shrink-0 md:border-b-0 md:border-r"
+      class="border-b border-default bg-bg-surface md:sticky md:top-0 md:h-screen md:w-64 md:flex-shrink-0 md:border-b-0 md:border-r"
       :class="drawerOpen ? 'block' : 'hidden md:block'"
       aria-label="Primary navigation"
     >
-      <div class="flex items-center gap-2 px-4 py-4 md:px-6">
-        <span
-          class="inline-flex h-8 w-8 items-center justify-center rounded-sm bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
-          aria-hidden="true"
-        >cs</span>
-        <div>
-          <div class="text-sm font-semibold leading-tight">
-            content-stack
-          </div>
-          <div class="text-xs text-fg-muted">
-            M5 build
+      <div class="flex h-full flex-col">
+        <div class="border-b border-subtle px-4 py-4">
+          <div class="flex items-center gap-3">
+            <span
+              class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-bg-inverse font-mono text-sm font-bold text-fg-inverse"
+              aria-hidden="true"
+            >cs</span>
+            <div class="min-w-0">
+              <div class="truncate text-sm font-semibold leading-tight text-fg-strong">
+                content-stack
+              </div>
+              <div class="text-xs text-fg-muted">
+                Operator console
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="px-3 pb-3 md:px-4">
-        <ProjectSwitcher />
-      </div>
+        <div class="border-b border-subtle px-3 py-3">
+          <ProjectSwitcher />
+        </div>
 
-      <nav class="px-2 pb-4 md:px-4">
-        <ul class="space-y-1 text-sm">
-          <li>
+        <nav class="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
+          <div class="mb-3">
             <RouterLink
               to="/projects"
-              class="block rounded-sm px-3 py-2 text-fg-default hover:bg-bg-surface-alt"
-              active-class="bg-bg-surface-alt font-medium text-fg-strong"
+              class="relative block rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-fast"
+              :class="route.path === '/projects'
+                ? 'bg-accent-subtle text-accent-fg shadow-xs before:absolute before:bottom-1.5 before:left-1 before:top-1.5 before:w-0.5 before:rounded-full before:bg-accent'
+                : 'text-fg-default hover:bg-bg-surface-alt'"
               @click="closeDrawer"
             >
-              All projects
-            </RouterLink>
-          </li>
-        </ul>
-
-        <p
-          v-if="projectNav.length === 0"
-          class="mt-4 px-3 text-xs text-fg-muted"
-        >
-          Pick a project to see the navigation.
-        </p>
-        <ul
-          v-else
-          class="mt-4 space-y-1 text-sm"
-        >
-          <li
-            v-for="item in projectNav"
-            :key="item.to"
-          >
-            <RouterLink
-              :to="item.to"
-              class="flex items-center justify-between rounded-sm px-3 py-2 text-fg-default hover:bg-bg-surface-alt"
-              active-class="bg-bg-surface-alt font-medium text-fg-strong"
-              @click="closeDrawer"
-            >
-              <span>{{ item.label }}</span>
-              <span
-                v-if="item.milestone"
-                class="rounded-xs bg-warning-subtle px-1.5 py-0.5 text-[10px] font-medium text-warning-fg"
-              >
-                {{ item.milestone }}
+              <span class="block min-w-0 truncate pl-2 font-medium">
+                All projects
               </span>
             </RouterLink>
-          </li>
-        </ul>
-      </nav>
+          </div>
 
-      <div class="border-t border-subtle px-4 py-3">
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-sm border border-default px-3 py-1.5 text-xs text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-          :aria-pressed="theme === 'dark'"
-          @click="toggleTheme"
-        >
-          <span>{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
-        </button>
+          <p
+            v-if="projectNavSections.length === 0"
+            class="rounded-md border border-dashed border-subtle px-3 py-3 text-sm text-fg-muted"
+          >
+            Pick a project to see its operating navigation.
+          </p>
+          <div
+            v-else
+            class="space-y-3"
+          >
+            <section
+              v-for="section in projectNavSections"
+              :key="section.label"
+              :aria-label="`${section.label} navigation`"
+            >
+              <h2 class="mb-0.5 px-3 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                {{ section.label }}
+              </h2>
+              <ul class="space-y-0.5">
+                <li
+                  v-for="item in section.items"
+                  :key="item.to"
+                >
+                  <RouterLink
+                    :to="item.to"
+                    :class="navItemClass(item)"
+                    :title="item.description"
+                    @click="closeDrawer"
+                  >
+                    <span class="block min-w-0 truncate pl-2 font-medium">
+                      {{ item.label }}
+                    </span>
+                  </RouterLink>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </nav>
+
+        <div class="border-t border-subtle px-4 py-3">
+          <button
+            type="button"
+            class="inline-flex w-full items-center justify-between rounded-md border border-default bg-bg-surface px-3 py-2 text-xs text-fg-default hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            :aria-pressed="theme === 'dark'"
+            @click="toggleTheme"
+          >
+            <span>{{ theme === 'dark' ? 'Dark' : 'Light' }} theme</span>
+            <span
+              class="h-2 w-2 rounded-full bg-current opacity-50"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
       </div>
     </aside>
 
-    <main class="relative flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+    <main class="relative min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
       <ul
         v-if="toastItems.length > 0"
         class="pointer-events-none fixed inset-x-4 top-3 z-50 mx-auto flex max-w-md flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"

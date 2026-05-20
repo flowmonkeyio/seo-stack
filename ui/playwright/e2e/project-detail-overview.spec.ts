@@ -17,13 +17,13 @@ test.describe('project detail — overview tab', () => {
     })
     await page.goto(`/projects/${project.id}/overview`)
 
-    await expect(page.getByRole('heading', { name: 'Overview Project' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
     await expect(page.getByText('overview-project').first()).toBeVisible()
-    await expect(page.getByText('Project details')).toBeVisible()
+    await expect(page.getByText('Project identity')).toBeVisible()
+    await expect(page.getByText('Overview Project').first()).toBeVisible()
     await expect(page.getByText('Recent activity')).toBeVisible()
-    // KvList rows present (terms render as <dt> elements with role term).
-    await expect(page.locator('dt', { hasText: 'Locale' })).toBeVisible()
-    await expect(page.locator('dt', { hasText: 'Niche' })).toBeVisible()
+    await expect(page.getByText('Locale')).toBeVisible()
+    await expect(page.getByText('Niche')).toBeVisible()
     errors.assertNone()
   })
 })

@@ -1,23 +1,18 @@
 <script setup lang="ts">
-// ProjectSwitcher — combobox showing the active project + dropdown to swap.
+// ProjectSwitcher — read-only project navigation dropdown.
 //
 // Behavior:
 //   - Displays the active project name + chevron in collapsed state
 //   - Click to open dropdown with list of all projects (active first)
-//   - "+ New project" item at the bottom navigates to /projects (where
-//     the New Project modal lives — single source of truth for create)
-//   - Selecting a project calls `projectsStore.activate(id)` and
-//     navigates to `/projects/{id}/overview`
+//   - Selecting a project only navigates to `/projects/{id}/overview`
 
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 
 import { useProjectsStore } from '@/stores/projects'
-import { useToastsStore } from '@/stores/toasts'
 
 const projects = useProjectsStore()
-const toasts = useToastsStore()
 const router = useRouter()
 const { items, activeProject } = storeToRefs(projects)
 
@@ -39,22 +34,7 @@ const sortedItems = computed(() => {
 
 async function pick(id: number): Promise<void> {
   close()
-  if (activeProject.value?.id === id) {
-    await router.push(`/projects/${id}/overview`)
-    return
-  }
-  try {
-    await projects.activate(id)
-    toasts.success('Project switched')
-    await router.push(`/projects/${id}/overview`)
-  } catch (err) {
-    toasts.error('Failed to switch project', err instanceof Error ? err.message : undefined)
-  }
-}
-
-function newProject(): void {
-  close()
-  void router.push({ path: '/projects', query: { new: '1' } })
+  await router.push(`/projects/${id}/overview`)
 }
 
 function onClickOutside(e: MouseEvent): void {
@@ -131,13 +111,6 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
       >
         No projects yet.
       </div>
-      <button
-        type="button"
-        class="mt-1 block w-full border-t border-subtle px-3 py-2 text-left text-sm font-medium text-fg-link hover:bg-accent-subtle"
-        @click="newProject"
-      >
-        + New project
-      </button>
     </div>
   </div>
 </template>

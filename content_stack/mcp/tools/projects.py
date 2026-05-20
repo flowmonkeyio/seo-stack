@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict
 
+from content_stack.config import Settings
 from content_stack.db.models import (
     CompliancePosition,
     ComplianceRuleKind,
@@ -673,6 +674,38 @@ class IntegrationTestGscInput(MCPInput):
     project_id: int
 
 
+class GscOauthGetInput(MCPInput):
+    """Return local setup details for the GSC OAuth flow."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
+
+
+class GscOauthInfoOutput(BaseModel):
+    """Local setup details for the GSC OAuth flow."""
+
+    redirect_uri: str
+    configured: bool
+    missing: list[str]
+    hint: str | None = None
+
+
+class GscOauthStartInput(MCPInput):
+    """Create a GSC OAuth state nonce and return the Google consent URL."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
+
+    project_id: int
+    redirect_uri: str | None = None
+
+
+class GscOauthStartOutput(BaseModel):
+    """Google consent URL plus the callback URI used to build it."""
+
+    authorization_url: str
+    state: str
+    redirect_uri: str
+
+
 async def _integration_list(
     inp: IntegrationListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[IntegrationCredentialOut]:
@@ -737,6 +770,26 @@ async def _integration_test(
                 data={"credential_id": inp.credential_id},
             )
         extra["login"] = login
+    elif row.kind == "wordpress":
+        config = row.config_json or {}
+        site_url = config.get("wp_url") or config.get("site_url") or config.get("base_url")
+        if not site_url:
+            raise ValidationError(
+                "wordpress credential missing config_json.wp_url",
+                data={"credential_id": inp.credential_id},
+            )
+        extra["site_url"] = str(site_url)
+    elif row.kind == "ghost":
+        config = row.config_json or {}
+        site_url = config.get("ghost_url") or config.get("site_url") or config.get("base_url")
+        if not site_url:
+            raise ValidationError(
+                "ghost credential missing config_json.ghost_url",
+                data={"credential_id": inp.credential_id},
+            )
+        extra["site_url"] = str(site_url)
+        if config.get("api_version"):
+            extra["api_version"] = str(config["api_version"])
     if row.project_id is None:
         raise NotFoundError(
             f"credential {inp.credential_id} is global; integration.test requires a project",
@@ -796,6 +849,74 @@ async def _integration_remove(
     return WriteEnvelope[IntegrationCredentialOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
     )
+
+
+_GSC_OAUTH_ENV_VARS = ("GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET")
+
+
+async def _gsc_oauth_get(
+    _inp: GscOauthGetInput,
+    _ctx: MCPContext,
+    _emit: ProgressEmitter,
+) -> GscOauthInfoOutput:
+    missing = _missing_gsc_oauth_env_vars()
+    return GscOauthInfoOutput(
+        redirect_uri=_default_gsc_redirect_uri(Settings()),
+        configured=len(missing) == 0,
+        missing=missing,
+        hint=_gsc_oauth_setup_hint() if missing else None,
+    )
+
+
+async def _gsc_oauth_start(
+    inp: GscOauthStartInput,
+    ctx: MCPContext,
+    _emit: ProgressEmitter,
+) -> WriteEnvelope[GscOauthStartOutput]:
+    import secrets
+
+    from content_stack.integrations.gsc import build_authorize_url
+    from content_stack.repositories.base import ValidationError
+
+    missing = _missing_gsc_oauth_env_vars()
+    if missing:
+        raise ValidationError(
+            "GSC OAuth client not configured",
+            data={"vendor": "gsc", "missing": missing, "hint": _gsc_oauth_setup_hint()},
+        )
+
+    state = secrets.token_urlsafe(32)
+    redirect_uri = inp.redirect_uri or _default_gsc_redirect_uri(Settings())
+    authorization_url = build_authorize_url(state=state, redirect_uri=redirect_uri)
+    env = IntegrationCredentialRepository(ctx.session).set(
+        project_id=inp.project_id,
+        kind="gsc",
+        plaintext_payload=b"{}",
+        config_json={"oauth_state": state, "redirect_uri": redirect_uri},
+    )
+    return WriteEnvelope[GscOauthStartOutput](
+        data=GscOauthStartOutput(
+            authorization_url=authorization_url,
+            state=state,
+            redirect_uri=redirect_uri,
+        ),
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
+def _default_gsc_redirect_uri(settings: Settings) -> str:
+    return f"http://{settings.host}:{settings.port}/api/v1/integrations/gsc/oauth/callback"
+
+
+def _missing_gsc_oauth_env_vars() -> list[str]:
+    import os
+
+    return [name for name in _GSC_OAUTH_ENV_VARS if not os.environ.get(name)]
+
+
+def _gsc_oauth_setup_hint() -> str:
+    return "Set GSC_OAUTH_CLIENT_ID and GSC_OAUTH_CLIENT_SECRET, then restart the daemon."
 
 
 # ---------------------------------------------------------------------------
@@ -943,6 +1064,14 @@ class ScheduleToggleInput(MCPInput):
     enabled: bool
 
 
+class ScheduleRemoveInput(MCPInput):
+    """Disable a scheduled job, mirroring REST DELETE semantics."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"job_id": 1}})
+
+    job_id: int
+
+
 async def _schedule_list(
     inp: ScheduleListInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> list[ScheduledJobOut]:
@@ -967,6 +1096,15 @@ async def _schedule_toggle(
     inp: ScheduleToggleInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[ScheduledJobOut]:
     env = ScheduledJobRepository(ctx.session).toggle(inp.job_id, enabled=inp.enabled)
+    return WriteEnvelope[ScheduledJobOut](
+        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
+
+
+async def _schedule_remove(
+    inp: ScheduleRemoveInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ScheduledJobOut]:
+    env = ScheduledJobRepository(ctx.session).toggle(inp.job_id, enabled=False)
     return WriteEnvelope[ScheduledJobOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
     )
@@ -1247,6 +1385,24 @@ def register(registry: ToolRegistry) -> None:
             _integration_remove,
         )
     )
+    registry.register(
+        ToolSpec(
+            "gscOauth.get",
+            "Return local GSC OAuth setup details.",
+            GscOauthGetInput,
+            GscOauthInfoOutput,
+            _gsc_oauth_get,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "gscOauth.start",
+            "Create a GSC OAuth state nonce and return the Google consent URL.",
+            GscOauthStartInput,
+            WriteEnvelope[GscOauthStartOutput],
+            _gsc_oauth_start,
+        )
+    )
 
     # budget.*
     registry.register(
@@ -1312,6 +1468,15 @@ def register(registry: ToolRegistry) -> None:
             ScheduleToggleInput,
             WriteEnvelope[ScheduledJobOut],
             _schedule_toggle,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "schedule.remove",
+            "Disable a scheduled job, mirroring REST DELETE semantics.",
+            ScheduleRemoveInput,
+            WriteEnvelope[ScheduledJobOut],
+            _schedule_remove,
         )
     )
 

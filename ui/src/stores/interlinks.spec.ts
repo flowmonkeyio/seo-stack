@@ -17,8 +17,6 @@ const LINK_SUGGESTED = {
   updated_at: '2026-05-01T00:00:00Z',
 }
 
-const LINK_APPLIED = { ...LINK_SUGGESTED, id: 2, status: 'applied' as const }
-
 describe('interlinks store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -45,51 +43,13 @@ describe('interlinks store', () => {
     expect(store.items.length).toBe(1)
   })
 
-  it('apply() flips status in items', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: { ...LINK_SUGGESTED, status: 'applied' }, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose interlink mutation methods to the UI store', () => {
     const store = useInterlinksStore()
-    store.items = [LINK_SUGGESTED] as never
-    await store.apply(1, 1)
-    expect(store.items[0].status).toBe('applied')
-  })
-
-  it('bulkApply() merges all returned rows', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: [
-            { ...LINK_SUGGESTED, status: 'applied' },
-            { ...LINK_APPLIED, status: 'applied' },
-          ],
-          project_id: 1,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useInterlinksStore()
-    store.items = [LINK_SUGGESTED, LINK_APPLIED] as never
-    await store.bulkApply(1, [1, 2])
-    expect(store.items.find((l) => l.id === 1)?.status).toBe('applied')
-    expect(store.items.find((l) => l.id === 2)?.status).toBe('applied')
-  })
-
-  it('repair() POSTs the article id', async () => {
-    let body: string | null = null
-    globalThis.fetch = vi.fn(async (_input, init) => {
-      body = String(init?.body ?? '')
-      return new Response(
-        JSON.stringify({ data: [], project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useInterlinksStore()
-    await store.repair(1, 42)
-    expect(body).toContain('"article_id":42')
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.apply).toBeUndefined()
+    expect(exposed.dismiss).toBeUndefined()
+    expect(exposed.bulkApply).toBeUndefined()
+    expect(exposed.repair).toBeUndefined()
   })
 
   it('records error state when refresh fails', async () => {

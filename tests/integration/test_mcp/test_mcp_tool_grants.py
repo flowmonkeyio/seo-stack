@@ -69,8 +69,8 @@ def test_unknown_skill_with_provisioned_token_is_forbidden(
     ``resolve_run_token`` reads the run row's ``metadata_json.skill_name``;
     skills not present in ``SKILL_TOOL_GRANTS`` get an empty grant set,
     so any tool call from such a token raises ToolNotGrantedError.
-    The escape hatch is ``__system__`` (no token) or ``__test__``
-    (unmatched bytes), both of which the test harness uses.
+    The escape hatch is the explicit ``__test__`` sentinel, which only
+    the test harness can bind.
     """
     pid = seeded_project["data"]["id"]
     token = _start_run_for_skill(mcp_client, pid, "unknown-skill")
@@ -97,8 +97,10 @@ def test_unmatched_token_is_forbidden(mcp_client: MCPClient, seeded_project: dic
     assert err["data"]["skill"] == "__invalid__"
 
 
-def test_no_run_token_is_bootstrap_only(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """No run_token can bootstrap runs, but cannot mutate article state."""
+def test_no_run_token_can_operate_state_but_not_vendor(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    """No run_token is the agent-owned setup surface, not vendor access."""
     pid = seeded_project["data"]["id"]
     run = mcp_client.call_tool_structured(
         "run.start",
@@ -106,9 +108,15 @@ def test_no_run_token_is_bootstrap_only(mcp_client: MCPClient, seeded_project: d
     )
     assert run["data"]["run_token"]
 
-    err = mcp_client.call_tool_error(
+    art = mcp_client.call_tool_structured(
         "article.create",
         {"project_id": pid, "title": "T2", "slug": "t-sys"},
+    )
+    assert art["data"]["slug"] == "t-sys"
+
+    err = mcp_client.call_tool_error(
+        "dataforseo.serp",
+        {"project_id": pid, "keyword": "best crm software"},
     )
     assert err["code"] == -32007
     assert err["data"]["skill"] == "__system__"

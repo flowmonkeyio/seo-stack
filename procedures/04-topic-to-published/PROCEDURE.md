@@ -18,7 +18,6 @@ prerequisites:
   - "topic.status = 'approved'"
   - "project has voice_profiles with is_default=true"
   - "project has eeat_criteria with tier='core' for all 3 vetoes (T04 / C01 / R10)"
-  - "project has at least one publish_targets row with is_active=true (and a primary)"
   - "project has integration_credentials.kind='openai-images' set when image-generator is in scope"
 
 produces:
@@ -81,7 +80,7 @@ steps:
     skill: 04-publishing/interlinker
     on_failure: skip
   - id: publish
-    skill: 04-publishing/nuxt-content-publish
+    skill: 04-publishing/agent-publish
     on_failure: abort
 
 variants:
@@ -166,13 +165,19 @@ child results.
 10. **interlinker** (#15 interlinker) — Suggest internal links from the
    project's existing articles. `on_failure=skip`: suggestions are
    advisory and the publish step works without them.
-11. **publish** (#17/#18/#19) — Push the article to the project's
-    primary publish target. The controller inspects
-    `project.publish_targets WHERE is_primary=true AND is_active=true`
-    and selects the appropriate skill (`#17 nuxt-content-publish`,
-    `#18 wordpress-publish`, or `#19 ghost-publish`) in the step package.
-    `on_failure=abort`: a publish failure reverts to manual
-    intervention rather than retrying through the chain.
+11. **publish** (#17) — Publish the article and record the durable
+    publish row. The authored default is `agent-publish`: the current
+    operator agent publishes through whatever external capability is
+    available in the main thread (website repo, direct DB/admin MCP,
+    API tool, or a manual operator action) and then records the result
+    via `publish.recordExternal`. If the project has a primary active
+    target whose kind is wired to a production publisher, the controller
+    swaps the step package to that concrete skill; currently only
+    `kind='nuxt-content'` maps to `nuxt-content-publish`. Unsupported
+    targets do not block the run; they fall back to `agent-publish` so
+    the main thread can still publish independently. `on_failure=abort`:
+    a publish failure reverts to manual intervention rather than
+    retrying through the chain.
 
 ## EEAT three-verdict semantics (audit BLOCKER-09)
 

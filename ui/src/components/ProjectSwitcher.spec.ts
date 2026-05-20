@@ -79,13 +79,12 @@ describe('ProjectSwitcher', () => {
     expect(options[1].text()).toContain('Beta')
   })
 
-  it('calls activate + navigates when a non-active project is picked', async () => {
+  it('navigates without activating when a non-active project is picked', async () => {
     const projects = useProjectsStore()
     projects.items = sample as never
     projects.activeProjectId = 1
     const router = makeRouter()
     await router.push('/projects')
-    const activateSpy = vi.spyOn(projects, 'activate').mockResolvedValue(sample[1] as never)
     const pushSpy = vi.spyOn(router, 'push')
     const w = mount(ProjectSwitcher, {
       global: { plugins: [router] },
@@ -94,7 +93,7 @@ describe('ProjectSwitcher', () => {
     const options = w.findAll('[role="option"]')
     await options[1].trigger('click')
     await flushPromises()
-    expect(activateSpy).toHaveBeenCalledWith(2)
+    expect((projects as unknown as Record<string, unknown>).activate).toBeUndefined()
     expect(pushSpy).toHaveBeenCalledWith('/projects/2/overview')
   })
 })

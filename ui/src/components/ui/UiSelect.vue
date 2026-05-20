@@ -1,29 +1,37 @@
 <!--
-  UiSelect — native <select> styled to match UiInput. Use for short option lists.
-  For typeahead / large lists, use UiCombobox (not in this base set).
+  UiSelect — custom listbox select styled to match UiInput.
 
-  Options can be either strings or {value, label, disabled?, group?}.
+  Use for short, bounded option sets. Options can be strings or
+  { value, label, disabled?, group? } objects.
 -->
 <script setup lang="ts">
-import { computed, useAttrs } from 'vue';
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId } from 'vue'
+import type { ComputedRef } from 'vue'
 
-defineOptions({ inheritAttrs: false });
+defineOptions({ inheritAttrs: false })
 
 export type UiSelectOption =
   | string
-  | { value: string | number; label: string; disabled?: boolean; group?: string };
+  | { value: string | number; label: string; disabled?: boolean; group?: string }
 
 export interface UiSelectProps {
-  modelValue?: string | number | null;
-  options: UiSelectOption[];
-  size?: 'sm' | 'md' | 'lg';
-  placeholder?: string;
-  disabled?: boolean;
-  invalid?: boolean;
-  required?: boolean;
-  block?: boolean;
-  id?: string;
-  ariaDescribedby?: string;
+  modelValue?: string | number | null
+  options: UiSelectOption[]
+  size?: 'sm' | 'md' | 'lg'
+  placeholder?: string
+  disabled?: boolean
+  invalid?: boolean
+  required?: boolean
+  block?: boolean
+  id?: string
+  ariaDescribedby?: string
+}
+
+interface NormalizedOption {
+  value: string | number
+  label: string
+  disabled?: boolean
+  group?: string
 }
 
 const props = withDefaults(defineProps<UiSelectProps>(), {
@@ -33,119 +41,249 @@ const props = withDefaults(defineProps<UiSelectProps>(), {
   block: true,
   id: undefined,
   ariaDescribedby: undefined,
-});
+})
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string | number | null): void;
-  (e: 'change', value: string | number | null): void;
-}>();
+  (e: 'update:modelValue', value: string | number | null): void
+  (e: 'change', value: string | number | null): void
+}>()
 
-const attrs = useAttrs();
+const attrs = useAttrs()
+const field = inject<{
+  id: ComputedRef<string>
+  describedBy: ComputedRef<string | undefined>
+  invalid: ComputedRef<boolean>
+  required: ComputedRef<boolean>
+} | null>('uiFormField', null)
+const autoId = useId()
+const rootRef = ref<HTMLDivElement | null>(null)
+const buttonRef = ref<HTMLButtonElement | null>(null)
+const open = ref(false)
+const activeIndex = ref(0)
 
-const sizeClass = computed(() => ({
-  sm: 'h-7 text-sm pl-2 pr-7',
-  md: 'h-8 text-sm pl-2.5 pr-8',
-  lg: 'h-10 text-base pl-3 pr-9',
-}[props.size]));
+const controlId = computed(() => props.id ?? field?.id.value ?? `select-${autoId}`)
+const listboxId = computed(() => `${controlId.value}-listbox`)
+const controlDescribedBy = computed(() => props.ariaDescribedby ?? field?.describedBy.value)
+const controlInvalid = computed(() => props.invalid || field?.invalid.value)
+const controlRequired = computed(() => props.required || field?.required.value)
 
-interface NormalizedOption { value: string | number; label: string; disabled?: boolean; group?: string }
 const normalized = computed<NormalizedOption[]>(() =>
-  props.options.map(o =>
-    typeof o === 'string' ? { value: o, label: o } : o
-  )
-);
+  props.options.map((option) =>
+    typeof option === 'string' ? { value: option, label: option } : option,
+  ),
+)
 
 const grouped = computed(() => {
-  const groups = new Map<string | null, NormalizedOption[]>();
-  for (const opt of normalized.value) {
-    const k = opt.group ?? null;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k)!.push(opt);
+  const groups = new Map<string | null, NormalizedOption[]>()
+  for (const option of normalized.value) {
+    const key = option.group ?? null
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(option)
   }
-  return Array.from(groups.entries());
-});
+  return Array.from(groups.entries())
+})
 
-function onChange(ev: Event) {
-  const value = (ev.target as HTMLSelectElement).value;
-  // Coerce back to number if matching option was numeric.
-  const matched = normalized.value.find(o => String(o.value) === value);
-  const out = matched && typeof matched.value === 'number' ? matched.value : value;
-  emit('update:modelValue', out);
-  emit('change', out);
+const selectedOption = computed(() =>
+  normalized.value.find((option) => String(option.value) === String(props.modelValue ?? '')),
+)
+
+const selectedLabel = computed(() => selectedOption.value?.label ?? props.placeholder ?? 'Select')
+const selectedIndex = computed(() =>
+  normalized.value.findIndex((option) => String(option.value) === String(props.modelValue ?? '')),
+)
+
+const sizeClass = computed(
+  () =>
+    ({
+      sm: 'h-7 text-sm pl-2 pr-8',
+      md: 'h-8 text-sm pl-2.5 pr-8',
+      lg: 'h-10 text-base pl-3 pr-9',
+    })[props.size],
+)
+
+function firstEnabledIndex(): number {
+  return Math.max(
+    0,
+    normalized.value.findIndex((option) => !option.disabled),
+  )
 }
+
+function setActiveFromSelection(): void {
+  const selected = selectedIndex.value
+  activeIndex.value =
+    selected >= 0 && !normalized.value[selected]?.disabled ? selected : firstEnabledIndex()
+}
+
+function setOpen(next: boolean): void {
+  if (props.disabled) return
+  open.value = next
+  if (next) setActiveFromSelection()
+}
+
+function moveActive(direction: 1 | -1): void {
+  const options = normalized.value
+  if (options.length === 0) return
+  for (let step = 1; step <= options.length; step++) {
+    const candidate = (activeIndex.value + direction * step + options.length) % options.length
+    if (!options[candidate]?.disabled) {
+      activeIndex.value = candidate
+      return
+    }
+  }
+}
+
+function selectOption(option: NormalizedOption): void {
+  if (option.disabled) return
+  emit('update:modelValue', option.value)
+  emit('change', option.value)
+  open.value = false
+  void nextTick(() => buttonRef.value?.focus())
+}
+
+function onButtonKeydown(event: KeyboardEvent): void {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    if (!open.value) setOpen(true)
+    else moveActive(1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    if (!open.value) setOpen(true)
+    else moveActive(-1)
+  } else if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+    event.preventDefault()
+    if (!open.value) setOpen(true)
+    else {
+      const option = normalized.value[activeIndex.value]
+      if (option) selectOption(option)
+    }
+  } else if (event.key === 'Escape') {
+    open.value = false
+  }
+}
+
+function onPointerDown(event: PointerEvent): void {
+  if (!open.value) return
+  const root = rootRef.value
+  if (root && !root.contains(event.target as Node)) open.value = false
+}
+
+onMounted(() => document.addEventListener('pointerdown', onPointerDown))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown))
 </script>
 
 <template>
   <div
-    :class="[
-      'ui-select relative inline-flex items-center rounded-sm border bg-bg-surface transition-colors duration-fast',
-      invalid ? 'border-danger' : 'border-default hover:border-strong',
-      disabled && 'bg-bg-sunken cursor-not-allowed opacity-60',
-      block && 'w-full',
-    ]"
+    ref="rootRef"
+    :class="['ui-select relative inline-block', block && 'w-full']"
   >
-    <select
+    <button
       v-bind="attrs"
-      :id="id"
-      :value="modelValue ?? ''"
+      :id="controlId"
+      ref="buttonRef"
+      type="button"
+      role="combobox"
+      :aria-expanded="open"
+      :aria-controls="listboxId"
+      :aria-invalid="controlInvalid || undefined"
+      :aria-describedby="controlDescribedBy"
+      :aria-required="controlRequired || undefined"
       :disabled="disabled"
-      :required="required"
-      :aria-invalid="invalid || undefined"
-      :aria-describedby="ariaDescribedby"
       :class="[
-        'ui-select__field focus-ring w-full appearance-none bg-transparent border-0 outline-none text-fg-default disabled:cursor-not-allowed',
+        'ui-select__button focus-ring flex w-full items-center rounded-sm border bg-bg-surface text-left text-fg-default shadow-xs transition-colors duration-fast',
+        controlInvalid ? 'border-danger' : 'border-default hover:border-strong hover:bg-bg-surface-alt',
+        disabled &&
+          'cursor-not-allowed bg-bg-sunken text-fg-disabled opacity-70 hover:border-default hover:bg-bg-sunken',
         sizeClass,
       ]"
-      @change="onChange"
+      @click="setOpen(!open)"
+      @keydown="onButtonKeydown"
     >
-      <option
-        v-if="placeholder"
-        value=""
-        disabled
+      <span
+        class="min-w-0 flex-1 truncate"
+        :class="!selectedOption && 'text-fg-disabled'"
       >
-        {{ placeholder }}
-      </option>
+        {{ selectedLabel }}
+      </span>
+      <span
+        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle transition-transform duration-fast"
+        :class="open && 'rotate-180'"
+        aria-hidden="true"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+    </button>
+
+    <div
+      v-if="open"
+      :id="listboxId"
+      role="listbox"
+      :aria-labelledby="controlId"
+      class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-y-auto rounded-md border border-default bg-bg-surface p-1 shadow-lg"
+    >
       <template
-        v-for="([group, opts]) in grouped"
+        v-for="[group, groupOptions] in grouped"
         :key="group ?? '_none'"
       >
-        <optgroup
+        <div
           v-if="group"
-          :label="group"
+          class="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
         >
-          <option
-            v-for="o in opts"
-            :key="o.value"
-            :value="o.value"
-            :disabled="o.disabled"
+          {{ group }}
+        </div>
+        <button
+          v-for="option in groupOptions"
+          :id="`${controlId}-${option.value}`"
+          :key="option.value"
+          type="button"
+          role="option"
+          :aria-selected="String(option.value) === String(modelValue ?? '')"
+          :disabled="option.disabled"
+          :class="[
+            'flex min-h-8 w-full items-center justify-between gap-2 rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
+            String(option.value) === String(modelValue ?? '')
+              ? 'bg-accent text-fg-on-accent'
+              : normalized[activeIndex]?.value === option.value
+                ? 'bg-bg-surface-alt text-fg-strong'
+                : 'text-fg-default hover:bg-bg-surface-alt',
+            option.disabled && 'cursor-not-allowed opacity-50',
+          ]"
+          @mouseenter="
+            activeIndex = normalized.findIndex((candidate) => candidate.value === option.value)
+          "
+          @click="selectOption(option)"
+        >
+          <span class="truncate">{{ option.label }}</span>
+          <span
+            v-if="String(option.value) === String(modelValue ?? '')"
+            aria-hidden="true"
+            class="shrink-0"
           >
-            {{ o.label }}
-          </option>
-        </optgroup>
-        <template v-else>
-          <option
-            v-for="o in opts"
-            :key="o.value"
-            :value="o.value"
-            :disabled="o.disabled"
-          >
-            {{ o.label }}
-          </option>
-        </template>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m5 12 5 5 9-12" />
+            </svg>
+          </span>
+        </button>
       </template>
-    </select>
-    <span
-      class="ui-select__chevron pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle"
-      aria-hidden="true"
-    >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      ><path d="m6 9 6 6 6-6" /></svg>
-    </span>
+    </div>
   </div>
 </template>

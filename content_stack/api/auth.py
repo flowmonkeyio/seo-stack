@@ -1,10 +1,10 @@
-"""UI token bootstrap endpoint — ``GET /api/v1/auth/ui-token``.
+"""UI read-only token bootstrap endpoint — ``GET /api/v1/auth/ui-token``.
 
 The Vue UI ships in the same origin as the daemon, but JavaScript in the
 browser cannot read the token file at ``~/.local/state/content-stack/auth.token``
 directly (file system access is blocked). This endpoint is the bridge: the
-SPA fetches its bearer token at boot via a same-origin GET and then attaches
-``Authorization: Bearer <token>`` to every subsequent ``/api/v1/*`` request.
+SPA fetches a read-only bearer token at boot via a same-origin GET and then
+attaches ``Authorization: Bearer <token>`` to subsequent read requests.
 
 **Whitelist note (security trade-off; documented in docs/security.md):**
 
@@ -25,9 +25,8 @@ The residual exposure is *another local process on the same machine* that
 can connect to ``127.0.0.1:5180`` — those processes can fetch the token
 just by GETting this endpoint. This is a regression from the file-mode-0600
 posture in that narrow case, accepted as the cost of admitting a browser
-client. Operators who want the older posture can run the UI in a separate
-browser profile or paste the token by hand (a future hardening, out of
-scope for M5).
+client. The token returned here is now REST read-only; the disk-backed daemon
+token remains the agent/MCP token for mutations.
 """
 
 from __future__ import annotations
@@ -46,11 +45,11 @@ class UiTokenResponse(BaseModel):
 
 @router.get("/ui-token", response_model=UiTokenResponse)
 async def get_ui_token(request: Request) -> UiTokenResponse:
-    """Return the daemon's bearer token to the same-origin Vue UI.
+    """Return the browser's read-only bearer token to the same-origin Vue UI.
 
-    The token is loaded once at app boot in ``server._build_lifespan`` and
-    stored on ``request.app.state.token``; we just hand it back. No I/O,
+    The token is derived once at app boot in ``server.create_app`` and stored
+    on ``request.app.state.ui_token``; we just hand it back. No I/O,
     no allocation, no logging of the token value.
     """
-    token: str = request.app.state.token
+    token: str = request.app.state.ui_token
     return UiTokenResponse(token=token)

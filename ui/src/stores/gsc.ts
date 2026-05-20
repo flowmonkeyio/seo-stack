@@ -1,34 +1,17 @@
-// GSC store — raw rows + redirects + ad-hoc rollup.
-//
-// Wires to:
-// - `GET  /api/v1/projects/{id}/gsc?since=ISO&until=ISO` — raw rows in window
-// - `POST /api/v1/gsc/bulk` — operator-driven bulk ingest (M5+)
-// - `POST /api/v1/projects/{id}/gsc/rollup?day=YYYY-MM-DD` — ad-hoc rollup
-// - `GET  /api/v1/projects/{id}/redirects` (cursor pagination)
-// - `POST /api/v1/projects/{id}/redirects` — create 301/302
-// - `GET  /api/v1/articles/{id}/gsc?since=&until=` — per-article query
-//
-// The raw "daily rollup" view is filled from `gsc_metrics_daily` rows but the
-// daemon doesn't (yet) expose a dedicated GET for that table — we surface the
-// raw rows aggregated by `captured_at::date` for now and flag it as a known
-// quality concern in the M5.C report. This is an explicit deferral and not a
-// scope-creep fix here.
+// GSC store — read-only raw rows, redirects, and client-side daily rollup.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, apiWrite } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import type { components } from '@/api'
 
 export type GscMetric = components['schemas']['GscMetricOut']
 export type Redirect = components['schemas']['RedirectOut']
 type RedirectsPage = components['schemas']['PageResponse_RedirectOut_']
-type CreateRedirectRequest = components['schemas']['CreateRedirectRequest']
 
 export interface GscFilters {
-  /** ISO datetime — inclusive lower bound. */
   since: string
-  /** ISO datetime — exclusive upper bound. */
   until: string
 }
 
@@ -72,7 +55,7 @@ export const useGscStore = defineStore('gsc', () => {
       )
       rawRows.value = Array.isArray(rows) ? rows : []
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load GSC rows'
+      error.value = formatApiError(err, 'failed to load GSC rows')
     } finally {
       loading.value = false
     }
@@ -88,7 +71,7 @@ export const useGscStore = defineStore('gsc', () => {
       redirects.value = page.items
       redirectsCursor.value = page.next_cursor ?? null
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load redirects'
+      error.value = formatApiError(err, 'failed to load redirects')
     } finally {
       redirectsLoading.value = false
     }
@@ -108,31 +91,10 @@ export const useGscStore = defineStore('gsc', () => {
       redirects.value = [...redirects.value, ...page.items]
       redirectsCursor.value = page.next_cursor ?? null
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load redirects'
+      error.value = formatApiError(err, 'failed to load redirects')
     } finally {
       redirectsLoading.value = false
     }
-  }
-
-  async function createRedirect(
-    projectId: number,
-    body: CreateRedirectRequest,
-  ): Promise<Redirect> {
-    const row = await apiWrite<Redirect>(`/api/v1/projects/${projectId}/redirects`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    redirects.value = [row, ...redirects.value]
-    return row
-  }
-
-  async function rollupDay(projectId: number, day: string): Promise<unknown> {
-    const params = new URLSearchParams({ day })
-    return apiWrite<unknown>(
-      `/api/v1/projects/${projectId}/gsc/rollup?${params.toString()}`,
-      { method: 'POST' },
-    )
   }
 
   async function queryArticle(
@@ -148,13 +110,6 @@ export const useGscStore = defineStore('gsc', () => {
     filters.value = { ...filters.value, [key]: value }
   }
 
-  /**
-   * Client-side daily rollup: groups raw rows by `captured_at::date` and
-   * sums clicks/impressions, averaging position. This is a stand-in for a
-   * dedicated `GET /gsc/daily` endpoint (PLAN.md §schema lists
-   * gsc_metrics_daily but no read REST API exists at M5.C — flagged as a
-   * quality concern in the milestone report).
-   */
   const dailyRollup = computed(() => {
     interface Bucket {
       day: string
@@ -165,9 +120,9 @@ export const useGscStore = defineStore('gsc', () => {
       ctr_sum: number
     }
     const buckets = new Map<string, Bucket>()
-    for (const r of rawRows.value) {
-      const day = r.captured_at.slice(0, 10)
-      const b = buckets.get(day) ?? {
+    for (const row of rawRows.value) {
+      const day = row.captured_at.slice(0, 10)
+      const bucket = buckets.get(day) ?? {
         day,
         impressions: 0,
         clicks: 0,
@@ -175,20 +130,20 @@ export const useGscStore = defineStore('gsc', () => {
         count: 0,
         ctr_sum: 0,
       }
-      b.impressions += r.impressions
-      b.clicks += r.clicks
-      b.avg_position_sum += r.avg_position
-      b.ctr_sum += r.ctr
-      b.count += 1
-      buckets.set(day, b)
+      bucket.impressions += row.impressions
+      bucket.clicks += row.clicks
+      bucket.avg_position_sum += row.avg_position
+      bucket.ctr_sum += row.ctr
+      bucket.count += 1
+      buckets.set(day, bucket)
     }
-    const out = Array.from(buckets.values()).map((b) => ({
-      id: b.day,
-      day: b.day,
-      impressions: b.impressions,
-      clicks: b.clicks,
-      ctr: b.count === 0 ? 0 : b.ctr_sum / b.count,
-      avg_position: b.count === 0 ? 0 : b.avg_position_sum / b.count,
+    const out = Array.from(buckets.values()).map((bucket) => ({
+      id: bucket.day,
+      day: bucket.day,
+      impressions: bucket.impressions,
+      clicks: bucket.clicks,
+      ctr: bucket.count === 0 ? 0 : bucket.ctr_sum / bucket.count,
+      avg_position: bucket.count === 0 ? 0 : bucket.avg_position_sum / bucket.count,
     }))
     out.sort((a, b) => (a.day < b.day ? 1 : -1))
     return out
@@ -216,8 +171,6 @@ export const useGscStore = defineStore('gsc', () => {
     refresh,
     refreshRedirects,
     loadMoreRedirects,
-    createRedirect,
-    rollupDay,
     queryArticle,
     setFilter,
     reset,

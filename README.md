@@ -14,7 +14,9 @@ ask for normal marketing work:
 
 The agent does the work. SEO Stack keeps the memory: projects, topics, drafts,
 images, links, schema, publishing targets, credentials, approvals, and the
-history of what happened.
+history of what happened. The browser console is an observer console: use it to
+inspect state and follow agent progress, not to run the content operation by
+hand.
 
 You do not need to teach every website repo about SEO Stack. Install it once,
 start the agent from the site you are working on, and let the agent connect
@@ -115,14 +117,14 @@ Review Search Console and tell me what needs attention.
 ```
 
 If a vendor connection is missing, the agent should send you a link to the
-right setup screen, for example:
+right visibility screen, for example:
 
 ```text
 http://localhost:5180/projects/1/integrations?required=dataforseo,firecrawl,gsc
 ```
 
-Secrets belong in the console setup flow, not in chat and not in the website
-repository.
+Secrets and setup changes belong in the local SEO Stack daemon through the
+agent-mediated setup tools, not in the website repository.
 
 ## What You Can Ask For
 
@@ -153,12 +155,13 @@ The SEO Stack plugin gives the agent the right tools
 The local SEO Stack app remembers projects, credentials, content, and runs
         |
         v
-The console lets you review, approve, configure, and debug
+The console lets you observe, audit, and debug
 ```
 
 The important part: **you stay in the loop**. The agent can write, research,
-publish, and call specialist tools, but SEO Stack keeps the work visible and
-recoverable.
+publish, configure setup, and call specialist tools, while SEO Stack keeps the
+work visible and recoverable. The UI is read-only by design; use the agent to
+change project state.
 
 The local app stores:
 
@@ -222,18 +225,19 @@ The console runs at:
 http://localhost:5180
 ```
 
-Use it to:
+Use it to inspect:
 
-- Create and manage projects.
-- Connect integrations.
-- Review and approve topics.
-- Inspect clusters and content plans.
-- Track article status.
-- Edit briefs, drafts, sources, images, schema, and publish records.
-- Review internal-link suggestions.
-- Inspect Search Console data.
-- Track drift and refresh candidates.
-- Debug agent runs.
+- Projects and repository bindings.
+- Integration readiness and missing setup.
+- Topic queues, clusters, and article status.
+- Briefs, drafts, edited content, sources, images, schema, versions, and publish records.
+- Internal-link suggestions and link health.
+- Search Console data, drift baselines, cost history, schedules, and refresh candidates.
+- Agent runs, step output, child runs, errors, and recovery context.
+
+Use the agent, not the browser UI, to create, edit, connect, publish, approve,
+or otherwise change state. The agent has the MCP tools required for setup and
+operations; the console keeps those actions visible after they happen.
 
 ## Integrations
 
@@ -250,8 +254,9 @@ Integrations are optional. Connect only what a project needs.
 | Jina Reader | Clean extraction when pages are hard to parse. |
 | Ahrefs exports | Competitor and sitemap inputs when you already have exports. |
 
-The agent should tell you which integrations are useful for the task and link
-you to the setup page.
+The agent should tell you which integrations are useful for the task, link you
+to the readiness screen, and use the local setup tools when a connection needs
+to be added, tested, reconnected, or removed.
 
 ## Publishing
 

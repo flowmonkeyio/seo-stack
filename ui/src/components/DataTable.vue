@@ -130,12 +130,22 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
     emit('row-click', row)
   }
 }
+
+function onCardKeydown(e: KeyboardEvent, row: T): void {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    emit('row-click', row)
+  } else if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault()
+    toggleSelection(row)
+  }
+}
 </script>
 
 <template>
   <div class="cs-datatable-wrapper relative">
     <div
-      class="overflow-x-auto rounded-md border border-default"
+      class="hidden overflow-x-auto rounded-md border border-default md:block"
       tabindex="0"
     >
       <table
@@ -244,6 +254,73 @@ function onKeydown(e: KeyboardEvent, row: T, index: number): void {
         </tbody>
       </table>
     </div>
+    <div
+      class="space-y-2 md:hidden"
+      :aria-label="ariaLabel"
+      :aria-busy="loading"
+    >
+      <article
+        v-for="row in displayItems"
+        :key="`mobile-${String(keyOf(row))}`"
+        role="button"
+        tabindex="0"
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        :class="{ 'bg-accent-subtle': isSelected(row) }"
+        :aria-selected="isSelected(row)"
+        @click="emit('row-click', row)"
+        @keydown="onCardKeydown($event, row)"
+      >
+        <div
+          v-if="selection"
+          class="mb-2 flex items-center gap-2"
+        >
+          <input
+            type="checkbox"
+            :checked="isSelected(row)"
+            :aria-label="`Select row ${String(keyOf(row))}`"
+            class="h-4 w-4 rounded-xs border-border-default accent-accent"
+            @click.stop="toggleSelection(row)"
+          >
+          <span class="text-xs font-medium uppercase text-fg-subtle">Select</span>
+        </div>
+        <dl class="grid gap-2">
+          <div
+            v-for="col in columns"
+            :key="`mobile-${String(keyOf(row))}-${col.key}`"
+            class="grid grid-cols-[7.5rem_1fr] gap-2 text-sm"
+          >
+            <dt class="text-xs font-medium uppercase text-fg-subtle">
+              {{ col.label }}
+            </dt>
+            <dd
+              class="min-w-0 break-words text-fg-default"
+              :class="col.cellClass"
+            >
+              <slot
+                :name="`cell:${col.key}`"
+                :row="row"
+                :value="row[col.key]"
+              >
+                {{ formatCell(col, row) }}
+              </slot>
+            </dd>
+          </div>
+        </dl>
+      </article>
+      <div
+        v-if="!loading && displayItems.length === 0"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface p-6 text-center text-sm text-fg-muted"
+      >
+        {{ emptyMessage }}
+      </div>
+      <div
+        v-if="loading && displayItems.length === 0"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface p-6 text-center text-sm text-fg-muted"
+      >
+        Loading…
+      </div>
+    </div>
+
     <div
       v-if="nextCursor !== null && nextCursor !== undefined"
       class="mt-3 flex justify-center"

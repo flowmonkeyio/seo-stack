@@ -48,6 +48,8 @@ test.describe('console errors — zero across full nav', () => {
       `/projects/${project.id}/eeat`,
       `/projects/${project.id}/targets`,
       `/projects/${project.id}/integrations`,
+      `/projects/${project.id}/schedules`,
+      `/projects/${project.id}/cost-budget`,
       `/projects/${project.id}/clusters`,
       `/projects/${project.id}/topics`,
       `/projects/${project.id}/articles`,
@@ -63,7 +65,11 @@ test.describe('console errors — zero across full nav', () => {
       `/projects/${project.id}/articles/${article.id}/versions`,
       `/projects/${project.id}/articles/${article.id}/interlinks`,
       `/projects/${project.id}/articles/${article.id}/drift`,
+      `/projects/${project.id}/interlinks`,
+      `/projects/${project.id}/gsc`,
+      `/projects/${project.id}/drift`,
       `/projects/${project.id}/runs`,
+      `/projects/${project.id}/procedures`,
     ]
     for (const path of paths) {
       await page.goto(path)

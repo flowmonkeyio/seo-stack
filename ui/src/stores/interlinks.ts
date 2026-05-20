@@ -1,33 +1,14 @@
-// Interlinks store — list / suggest / apply / dismiss / repair / bulk_apply.
-//
-// Wires to:
-// - `GET    /api/v1/projects/{id}/interlinks` (cursor-paginated;
-//   server-side filters: status, from_article_id, to_article_id)
-// - `POST   /api/v1/projects/{id}/interlinks` (single create — for tests)
-// - `POST   /api/v1/projects/{id}/interlinks/suggest` (bulk suggestion)
-// - `POST   /api/v1/projects/{id}/interlinks/{link_id}/apply`
-// - `POST   /api/v1/projects/{id}/interlinks/{link_id}/dismiss`
-// - `POST   /api/v1/projects/{id}/interlinks/repair`
-// - `POST   /api/v1/projects/{id}/interlinks/bulk-apply`
-//
-// Score is a UI-only convenience: the wire row doesn't carry a score field
-// (the suggester ranks server-side; we display position as a stand-in).
-// A later milestone may extend the wire shape; for now we sort by id.
+// Interlinks store — read-only link inventory with filters.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, apiWrite } from '@/lib/client'
+import { apiFetch } from '@/lib/client'
 import type { components } from '@/api'
 
 export type InternalLink = components['schemas']['InternalLinkOut']
 export type InternalLinkStatus = components['schemas']['InternalLinkStatus']
 type InternalLinksPage = components['schemas']['PageResponse_InternalLinkOut_']
-type InterlinkSuggestion = components['schemas']['InterlinkSuggestion']
-type SuggestRequest = components['schemas']['SuggestRequest']
-type RepairRequest = components['schemas']['RepairRequest']
-type BulkApplyRequest = components['schemas']['BulkApplyRequest']
-type CreateInterlinkRequest = components['schemas']['CreateInterlinkRequest']
 
 const DEFAULT_LIMIT = 50
 
@@ -35,8 +16,6 @@ export interface InterlinkFilters {
   status: InternalLinkStatus | null
   from_article_id: number | null
   to_article_id: number | null
-  /** Lower bound on (uniformly distributed) row id used as a stable
-   *  client-side sort heuristic when the server doesn't expose score. */
   score_min: number
 }
 
@@ -71,11 +50,7 @@ export const useInterlinksStore = defineStore('interlinks', () => {
   }
 
   function _ingestPage(page: InternalLinksPage, append: boolean): void {
-    if (append) {
-      items.value = [...items.value, ...page.items]
-    } else {
-      items.value = [...page.items]
-    }
+    items.value = append ? [...items.value, ...page.items] : [...page.items]
     nextCursor.value = page.next_cursor ?? null
     totalEstimate.value = page.total_estimate ?? items.value.length
   }
@@ -119,98 +94,10 @@ export const useInterlinksStore = defineStore('interlinks', () => {
     sort.value = key
   }
 
-  async function suggest(
-    projectId: number,
-    suggestions: InterlinkSuggestion[],
-  ): Promise<InternalLink[]> {
-    const body: SuggestRequest = { suggestions }
-    const rows = await apiWrite<InternalLink[]>(
-      `/api/v1/projects/${projectId}/interlinks/suggest`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    )
-    items.value = [...rows, ...items.value]
-    totalEstimate.value = totalEstimate.value + rows.length
-    return rows
-  }
-
-  async function create(
-    projectId: number,
-    body: CreateInterlinkRequest,
-  ): Promise<InternalLink[]> {
-    const rows = await apiWrite<InternalLink[]>(`/api/v1/projects/${projectId}/interlinks`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    items.value = [...rows, ...items.value]
-    totalEstimate.value = totalEstimate.value + rows.length
-    return rows
-  }
-
-  async function apply(projectId: number, linkId: number): Promise<InternalLink> {
-    const row = await apiWrite<InternalLink>(
-      `/api/v1/projects/${projectId}/interlinks/${linkId}/apply`,
-      { method: 'POST' },
-    )
-    _replaceLocal(row)
-    return row
-  }
-
-  async function dismiss(projectId: number, linkId: number): Promise<InternalLink> {
-    const row = await apiWrite<InternalLink>(
-      `/api/v1/projects/${projectId}/interlinks/${linkId}/dismiss`,
-      { method: 'POST' },
-    )
-    _replaceLocal(row)
-    return row
-  }
-
-  async function bulkApply(projectId: number, ids: number[]): Promise<InternalLink[]> {
-    const body: BulkApplyRequest = { ids }
-    const rows = await apiWrite<InternalLink[]>(
-      `/api/v1/projects/${projectId}/interlinks/bulk-apply`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    )
-    for (const row of rows) _replaceLocal(row)
-    return rows
-  }
-
-  async function repair(projectId: number, articleId: number): Promise<InternalLink[]> {
-    const body: RepairRequest = { article_id: articleId }
-    const rows = await apiWrite<InternalLink[]>(
-      `/api/v1/projects/${projectId}/interlinks/repair`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-    )
-    for (const row of rows) _replaceLocal(row)
-    return rows
-  }
-
-  function _replaceLocal(row: InternalLink): void {
-    const idx = items.value.findIndex((l) => l.id === row.id)
-    if (idx >= 0) items.value.splice(idx, 1, row)
-  }
-
-  /**
-   * Client-side sort+filter view honouring `score_min` (a UI heuristic —
-   * the wire shape doesn't expose a score column; we treat row id as a
-   * proxy so the slider still gives users a way to narrow the result set).
-   */
   const filteredItems = computed<InternalLink[]>(() => {
     let arr = items.value
     const minId = Math.floor(filters.value.score_min * 1000)
-    if (minId > 0) arr = arr.filter((l) => l.id >= minId)
+    if (minId > 0) arr = arr.filter((link) => link.id >= minId)
     const key = sort.value
     const dir = key.startsWith('-') ? -1 : 1
     const field = key.replace(/^-/, '') as 'id' | 'created_at'
@@ -252,12 +139,6 @@ export const useInterlinksStore = defineStore('interlinks', () => {
     loadMore,
     setFilter,
     setSort,
-    suggest,
-    create,
-    apply,
-    dismiss,
-    bulkApply,
-    repair,
     reset,
   }
 })

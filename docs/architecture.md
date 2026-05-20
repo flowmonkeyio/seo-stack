@@ -116,7 +116,7 @@ constant-time check on every request, with three whitelisted paths:
 | Path                  | Why whitelisted                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
 | `/api/v1/health`      | Doctor probes liveness before resolving the token.                                             |
-| `/api/v1/auth/ui-token` | The browser SPA bootstraps the token from the daemon at app load; never lands in localStorage. |
+| `/api/v1/auth/ui-token` | The browser SPA bootstraps a derived read-only token from the daemon at app load; never lands in localStorage. |
 | `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser here; the route validates the OAuth `state` nonce. |
 
 `content-stack init`, `content-stack install`, and `make install` create the
@@ -327,8 +327,8 @@ Outermost first:
 1. `HostHeaderMiddleware` — runs even on auth-whitelisted paths.
 2. `CORSMiddleware` — same-origin only.
 3. `BearerTokenMiddleware` — constant-time bearer check, with
-   `WHITELIST_PREFIXES` at `content_stack/auth.py` for `/api/v1/health`
-   and `/api/v1/auth/ui-token`.
+   `WHITELIST_PREFIXES` at `content_stack/auth.py` for `/api/v1/health`,
+   `/api/v1/auth/ui-token`, and the Google Search Console OAuth callback.
 
 (Starlette runs the last-added middleware first on the request path,
 so the wiring order in `server.py:362-372` adds them inside-out.)
@@ -369,14 +369,14 @@ Caps blast radius if a token is exfiltrated.
 
 ## 7. MCP server
 
-139 tools registered (`content_stack/mcp/tools/*.py`) over
+163 tools registered (`content_stack/mcp/tools/*.py`) over
 Streamable HTTP at `/mcp`. The MCP server is a single
 `mcp.server.lowlevel.Server` instance built in
 `content_stack/mcp/server.py`; the FastAPI sub-app mount means the
 bearer-token middleware (via `PROTECTED_PREFIXES`) gates every tool
 call before it lands on a handler.
 
-The installable plugin does not expose all 139 tools to agents. Its
+The installable plugin does not expose all 163 tools to agents. Its
 `content-stack mcp-bridge` proxies to the daemon but filters `tools/list`
 to a compact control surface: workspace/project setup, procedure control,
 selected run status calls, and the bridge-local `toolbox.describe` /
@@ -555,7 +555,7 @@ The UI's RunsView walks this hierarchy.
 
 ## 9. Skills + procedures catalogue
 
-24 skills × 5 phases; 8 procedures + 1 template.
+25 skills × 5 phases; 8 procedures + 1 template.
 
 ### 9.1 Skills
 
@@ -570,8 +570,14 @@ Phases:
 2. **Content production** — `outline`, `draft-intro`, `draft-body`,
    `draft-conclusion`, `editor`, `eeat-gate`, `humanizer`.
 3. **Assets** — `image-generator`, `alt-text-auditor`.
-4. **Publishing** — `interlinker`, `schema-emitter`,
-   `nuxt-content-publish`, `wordpress-publish`, `ghost-publish`.
+4. **Publishing** — `interlinker`, `schema-emitter`, `agent-publish`,
+   `nuxt-content-publish`. `agent-publish` is the targetless default:
+   the main operator agent publishes through available external tooling and
+   records the result via `publish.recordExternal`. `nuxt-content-publish`
+   is auto-selected only for a primary active Nuxt target. `wordpress-publish`
+   and `ghost-publish` remain documented skill drafts with doc-backed
+   credential wrappers, but are not procedure-wired publishers until their
+   hidden media/post toolkit operations are implemented.
 5. **Ongoing operations** — `gsc-opportunity-finder`, `drift-watch`,
    `crawl-error-watch`, `refresh-detector`, `content-refresher`.
 
@@ -606,7 +612,7 @@ runtime).
 
 ## 10. Integrations layer
 
-`content_stack/integrations/` — eight pure wrappers, no business
+`content_stack/integrations/` — vendor wrappers with no business
 logic. Each extends `BaseIntegration` (`_base.py`) and implements
 `call(op, **kwargs)` + `test_credentials()`. The base class handles:
 
@@ -622,6 +628,10 @@ logic. Each extends `BaseIntegration` (`_base.py`) and implements
   every vendor hit lands in `run_step_calls` with cost_cents +
   duration_ms.
 - Sanitised request / response logging — never log secret tokens.
+- Artifact normalization where the vendor does not return URLs. OpenAI
+  Images GPT models return base64 image data, so the wrapper writes it
+  under `data_dir/generated-assets` and returns `/generated-assets/...`
+  URLs for `article_assets.url`.
 
 Wrappers can override `_estimate_cost_usd` and
 `_extract_actual_cost_usd` so the cost-of-truth column
@@ -835,7 +845,7 @@ launchd. JSON output is `{ok, code, checks, info}`.
 `/api/openapi.json` serves the raw spec. Both auth-whitelisted is
 NOT the case — they require the bearer token. Operators usually hit
 them with `curl -H "Authorization: Bearer $(cat ~/.local/state/content-stack/auth.token)"`.
-The current REST API publishes 87 OpenAPI paths.
+The current REST API publishes 88 OpenAPI paths.
 
 ---
 

@@ -39,17 +39,9 @@ describe('drift store', () => {
     expect(store.items.find((r) => r.parent_article_id === 20)).toBeDefined()
   })
 
-  it('snapshot() prepends a row to items', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: BASELINE, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose snapshot mutation methods to the UI store', () => {
     const store = useDriftStore()
-    await store.snapshot(10, { baseline_md: '# Hello' })
-    expect(store.items.length).toBe(1)
-    expect(store.items[0].parent_article_id).toBe(10)
+    expect((store as unknown as Record<string, unknown>).snapshot).toBeUndefined()
   })
 
   it('threshold filter narrows by current_score', () => {

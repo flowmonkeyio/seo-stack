@@ -12,6 +12,9 @@ allowed_tools:
   - source.add
   - source.list
   - integration.test
+  - dataforseo.serp
+  - firecrawl.scrape
+  - jina.read
   - run.start
   - run.heartbeat
   - run.finish
@@ -58,7 +61,7 @@ skill-specific steps below.
 
 ## When to use
 
-Two-phase pattern: scrape → audit. Run this skill when you need to understand what is currently ranking for a target keyword and how those pages stack up against the on-page rubric. Procedure 3 (`keyword-to-topic-queue`) drives the project-scope variant after `keyword-discovery`; procedure 4 (`topic-to-published`) runs the article-scope variant during research planning.
+Two-phase pattern: scrape → audit. Run this skill when you need to understand what is currently ranking for a target keyword and how those pages stack up against the on-page rubric. Procedure 3 (`keyword-to-topic-queue`) drives the project-scope variant after `keyword-discovery`. Procedure 4 (`topic-to-published`) does not currently include this as a separate step; its `content-brief` step performs source collection directly through the granted toolkit tools and may reuse prior `serp-analyzer` output when it exists.
 
 Skip this skill for purely informational meta-research where you only need URL counts — the upstream `cluster.list` + previously-cached SERP data are usually sufficient.
 
@@ -67,13 +70,13 @@ Skip this skill for purely informational meta-research where you only need URL c
 - `project.get` resolves locale + niche so SERP queries route to the right Google market.
 - When `article_id` is supplied, `article.get` returns the article row including `brief_json.primary_kw` (which the skill uses if `primary_kw` is omitted) and the project-level voice / compliance rules indirectly via `project_id`.
 - `source.list` returns existing research-source rows so the skill skips already-audited URLs.
-- `integration.test` confirms Firecrawl is healthy. Audit work is driven by the Firecrawl wrapper; if it's down, the skill aborts.
+- `integration.test` confirms Firecrawl is healthy. Use `toolbox.describe` for `dataforseo.serp`, `firecrawl.scrape`, and `jina.read`; call those hidden tools only through `toolbox.call`.
 
 ## Steps
 
 1. **Resolve target keyword.** If `article_id` is supplied, read the article and use its `brief_json.primary_kw`. Otherwise the procedure runner passed `primary_kw` directly. Refuse to start if neither is present.
-2. **Map the SERP cheaply.** Use the organic URL list supplied by the procedure args or by the prior keyword-discovery run. Filter out paid results, featured snippets, and PAA boxes when that metadata is available — only organic positions count. If no SERP URL list is present and the active tool grant does not expose a SERP-fetch tool, stop with `BLOCKED` instead of calling an ungranted vendor endpoint or native browser fetch.
-3. **Map-then-crawl discipline.** The audit costs scale linearly with URLs. Use only the content-stack integration path exposed to this run; do not bypass the daemon with direct Firecrawl/Jina/native fetch calls. When a crawl payload is unavailable, downgrade that URL to a SERP-only finding and mark confidence `low`. The procedure runner sets `args.budget_cap_usd` if the operator wants a hard ceiling — read it from the step args and skip remaining URLs once the cap is hit.
+2. **Map the SERP cheaply.** Use the organic URL list supplied by the procedure args or by the prior keyword-discovery run. If no SERP URL list is present, call `dataforseo.serp` through `toolbox.call`. Filter out paid results, featured snippets, and PAA boxes when that metadata is available — only organic positions count.
+3. **Map-then-crawl discipline.** The audit costs scale linearly with URLs. Use `firecrawl.scrape` through `toolbox.call` for each selected URL and `jina.read` only as a fallback when Firecrawl fails. Do not bypass the daemon with direct Firecrawl/Jina/native fetch calls. When a crawl payload is unavailable, downgrade that URL to a SERP-only finding and mark confidence `low`. The procedure runner sets `args.budget_cap_usd` if the operator wants a hard ceiling — read it from the step args and skip remaining URLs once the cap is hit.
 4. **Per-URL on-page audit.** For every scraped URL, run the rubric. The rubric has six categories — score each on a 0–100 scale and capture concrete findings:
    - **On-page SEO** — title and meta description quality (unique, descriptive, not stuffed, not boilerplate; length is only a truncation heuristic), H1 presence and uniqueness, H2/H3 hierarchy depth, URL slug hygiene, canonical tag presence, meta robots correctness, hreflang correctness when locale != en-US.
    - **Content quality** — completeness against the query intent, not a fixed word-count rule; readability proxy (sentence-length variance, paragraph density), evidence of first-hand experience or expertise markers, freshness signals (publication date, last-updated date), and whether the page adds original value beyond summarising the SERP.
@@ -102,4 +105,4 @@ Skip this skill for purely informational meta-research where you only need URL c
 
 - **`fast`** — top 5 URLs only, content-quality + on-page-SEO categories only, skip schema and CWV proxy. Useful for the procedure-3 sweep where the cluster step is the load-bearing analysis.
 - **`standard`** — top 10 URLs, all six categories. The default flow.
-- **`deep`** — top 20 URLs, all six categories, plus a Jina Reader fallback for any URL Firecrawl fails on (Jina handles paywalled and JS-heavy edge cases differently). Ideal during a procedure-4 brief.
+- **`deep`** — top 20 URLs, all six categories, plus a Jina Reader fallback for any URL Firecrawl fails on (Jina handles paywalled and JS-heavy edge cases differently). Use before procedure 4 when the operator wants a deeper competitive audit than the brief step's built-in source collection.

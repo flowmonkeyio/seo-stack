@@ -1,4 +1,5 @@
 export { default as UiBadge } from './UiBadge.vue'
+export { default as UiAdvancedJsonPanel } from './UiAdvancedJsonPanel.vue'
 export { default as UiBulkActionBar } from './UiBulkActionBar.vue'
 export { default as UiBreadcrumbs } from './UiBreadcrumbs.vue'
 export { default as UiButton } from './UiButton.vue'

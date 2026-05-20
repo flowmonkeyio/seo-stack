@@ -559,7 +559,7 @@ def mcp_bridge(
             try:
                 out = proxy.handle(client, payload=payload, line=line, request_id=request_id)
             except Exception as original_exc:
-                exc = original_exc
+                failure_message = str(original_exc)
                 if not autostart_attempted and not _tcp_can_connect(
                     bridge_host,
                     bridge_port,
@@ -577,7 +577,7 @@ def mcp_bridge(
                                 request_id=request_id,
                             )
                         except Exception as retry_exc:
-                            exc = retry_exc
+                            failure_message = str(retry_exc)
                         else:
                             if out:
                                 sys.stdout.write(out)
@@ -586,9 +586,9 @@ def mcp_bridge(
                                 sys.stdout.flush()
                             continue
                 if request_id is None:
-                    typer.echo(f"mcp-bridge: daemon request failed: {exc}", err=True)
+                    typer.echo(f"mcp-bridge: daemon request failed: {failure_message}", err=True)
                     continue
-                out = bridge_error(request_id, -32000, f"Daemon request failed: {exc}")
+                out = bridge_error(request_id, -32000, f"Daemon request failed: {failure_message}")
 
             if out:
                 sys.stdout.write(out)

@@ -40,7 +40,7 @@ describe('AssetsTab', () => {
     expect(w.text()).toContain('Assets')
     expect(w.text()).toContain('https://images.example.com/hero.png')
     expect(w.text()).toContain('alt: A hero')
-    expect(w.text()).toContain('1200×630')
+    expect(w.text()).toContain('1200x630')
   })
 
   it('shows the "no assets" empty state', async () => {

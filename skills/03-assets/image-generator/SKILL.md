@@ -16,6 +16,7 @@ allowed_tools:
   - asset.update
   - cost.queryProject
   - integration.test
+  - openaiImages.generate
   - run.start
   - run.heartbeat
   - run.finish
@@ -64,6 +65,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
 - `asset.list(article_id)` — every asset already attached to this article. The skill uses this to dedupe (a hero already exists; do not generate another) and to pick the next free `position` integer for inline images (existing inlines occupy 1..N; the next one is N+1).
 - `meta.enums` — surfaces the `ArticleAssetKind` enum (hero / inline / thumbnail / og / twitter / infographic / screenshot / gallery) so the skill emits canonical kind strings.
 - `integration.test` — pre-flight credential probe. The wrapper's `test_credentials` shape returns `{ok: true, vendor: 'openai-images', models_count: N}` when the API key is live; the skill calls this once at start-up rather than discovering a 401 mid-run.
+- `openaiImages.generate` — hidden toolkit tool. Use `toolbox.describe` for the schema and `toolbox.call` for each generation request. Use the GPT Image path by default (`model='gpt-image-1.5'`, `quality='low'|'medium'|'high'|'auto'`, `output_format='webp'|'png'|'jpeg'`). The daemon wrapper persists GPT Image base64 output into `generated-assets` and returns local `/generated-assets/...` URLs; pass those URLs to `asset.create`.
 
 ## Steps
 
@@ -78,7 +80,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
 3. **Resolve the style cue.** Apply this precedence: `image_directives.style` > voice_md style cue > none. When the result is `none`, abort with a clear operator message — image generation without a style cue produces inconsistent brand visuals and is forbidden. Persist the chosen style in `runs.metadata_json.image_generator.style_resolved` so the auditor and any human reviewer can see what guided the prompts.
 4. **Plan the image slots.** For each requested image, decide its `kind` and `position`:
    - **Hero** (kind=`hero`, position=`0`) — exactly one per article. Generated first because the auditor's LCP / `fetchpriority='high'` rules apply to it. When `asset.list` already returns a hero row, skip — the operator is asking for inline-only refill.
-   - **OG / social** (kind=`og`, position=`null`) — at most one per article. Generated when the directive's count requests social-share imagery; the publish skills (#17/18/19) consume it as the `og:image` frontmatter. Optional second variant kind=`twitter` for projects whose voice prefers a Twitter-card-shaped variant.
+   - **OG / social** (kind=`og`, position=`null`) — at most one per article. Generated when the directive's count requests social-share imagery; the active publish skill consumes it as the `og:image` frontmatter. Optional second variant kind=`twitter` for projects whose voice prefers a Twitter-card-shaped variant.
    - **Inline** (kind=`inline`, position=`1..N`) — one per inline anchor. Anchor selection: when `inline_anchors[]` was supplied, use those H2/H3 texts; otherwise pick anchors automatically by walking `outline_md` and picking every other H2 boundary up to the requested count.
    - **Thumbnail** (kind=`thumbnail`, position=`null`) — generated only when the brief explicitly requests it (rare; most publish targets derive thumbnails server-side from the hero).
    For each planned slot, capture the surrounding context: for hero, the H1 + first body paragraph; for og, the H1 + meta description; for inline, the section under whose H2/H3 the image will sit.
@@ -92,7 +94,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
 7. **Pre-call cost gate.** Estimate the run's USD cost as the sum of per-image rates per the wrapper's pricing table (`1024x1024 standard` ≈ $0.04, `1792x1024 hd` ≈ $0.12, etc.). Call `cost.queryProject(project_id, kind='openai-images')` to read `current_month_spend` and `monthly_budget_usd`. When `current_month_spend + estimate > monthly_budget_usd`, abort with a `BudgetExceededError` and surface the shortfall in `runs.metadata_json.image_generator.budget_failure`. The procedure runner catches the error and aborts the procedure cleanly rather than burning a partial generation.
 8. **Generate the images.** For each slot in plan order (hero first, then og, then inlines):
    - Heartbeat with `{slot, kind, position, model, size, quality}` so the UI shows progress.
-   - Call the daemon's `OpenAIImagesIntegration.generate(prompt, size, quality, n=1, model=...)`. The wrapper enforces the per-call rate limit (default 10 qps), records cost into `run_step_calls`, and returns the OpenAI response with the generated image URL or base64 data and the operative size/quality.
+   - Call `openaiImages.generate` through `toolbox.call`, passing the GPT Image model unless the operator has explicitly selected another supported OpenAI image model. The wrapper enforces the per-call rate limit (default 10 qps), records cost into `run_step_calls`, persists any returned base64 image bytes into daemon-local generated assets, and returns the generated image URL plus the operative size/quality.
    - On 4xx (auth / quota / content-policy reject) — capture the error, mark the slot as failed in the metadata, continue. The skill is best-effort per slot; a single rejection should not fail the run.
    - On 5xx — retry once with the same prompt. Two consecutive 5xx aborts that slot.
    - On a content-policy reject specifically (the API rewrites or refuses the prompt), log `runs.metadata_json.image_generator.policy_rejects[]` with the slot id and the API's reason. The auditor's report flags missing inline images so the operator knows which sections need a manual replacement.
@@ -105,7 +107,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
    The alt text is a candidate; the auditor (#14) is the final gate and may rewrite via `asset.update`.
 10. **Persist the asset.** For each generated image call `asset.create(article_id, kind, prompt, url, alt_text, width, height, position)`:
     - `prompt` is the full composed prompt from step 5 (after any real-person rewrite). The repository keeps it for audit so a future re-generation can inspect what produced the image.
-    - `url` is the URL the wrapper returned. When the OpenAI API returned base64 data instead of a URL, the daemon's helper writes the bytes under `~/.local/share/content-stack/assets/<project_slug>/<article_id>/<asset_id>.<ext>` and the URL points at the daemon's own `/api/v1/assets/<asset_id>` route — this keeps blobs out of SQLite.
+    - `url` is the URL the wrapper returned. Do not pass base64 image data to `asset.create`; the asset row's URL field is intentionally short and publish skills expect either an external URL or the daemon's own `/generated-assets/<file>` route.
     - `width` / `height` come from the operative size (e.g., `1792x1024` → `width=1792, height=1024`).
     - `position` is `0` for hero, `null` for og / twitter / thumbnail (those are not ordered with inlines), and `1..N` for inline (next free integer per `asset.list`).
     - The repository validates `kind` against the canonical enum and rejects unknown values; the skill always emits canonical strings from `meta.enums`.
@@ -132,7 +134,7 @@ The skill also runs in two ad-hoc modes the procedure runner does not orchestrat
 
 ## Variants
 
-- **`fast`** — hero only, no og, no inlines. Useful in `bulk-content-launch` where downstream targets compute their own thumbnails. Default size `1024x1024`, quality `standard`.
-- **`standard`** — the default flow above: hero + og + the inline count from the directive. Default size `1792x1024 hd` for hero, `1024x1024 standard` for og, `1024x1024 standard` for each inline.
-- **`pillar`** — hero + og + twitter + every inline anchor in the outline (typically 4–8 inlines). Defaults to `hd` quality across the board because pillar articles carry the heaviest LCP signal load. Cost is meaningfully higher; the budget gate is more likely to trip — the operator should size the per-project image budget accordingly.
+- **`fast`** — hero only, no og, no inlines. Useful in `bulk-content-launch` where downstream targets compute their own thumbnails. Default size `1024x1024`, quality `medium`.
+- **`standard`** — the default flow above: hero + og + the inline count from the directive. Default size is `1536x1024` with `quality='medium'` for hero, `1024x1024` with `quality='medium'` for og, and `1024x1024` with `quality='medium'` for each inline.
+- **`pillar`** — hero + og + twitter + every inline anchor in the outline (typically 4–8 inlines). Defaults to `quality='high'` across the board because pillar articles carry the heaviest LCP signal load. Cost is meaningfully higher; the budget gate is more likely to trip — the operator should size the per-project image budget accordingly.
 - **`refresh`** — invoked by procedure 7. Reads `image_directives.regenerate_on_refresh`; when true, regenerates the hero (only) and replaces the existing hero row's `url` via `asset.update` rather than creating a new row, so the publish step's frontmatter does not need a new asset id. When false, the variant is a no-op and the procedure proceeds without image work.

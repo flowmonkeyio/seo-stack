@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// VoiceTab — manage voice profiles for the project.
+// VoiceTab — read-only voice profile visibility.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
-import { apiFetch, apiWrite } from '@/lib/client'
+import MarkdownView from '@/components/MarkdownView.vue'
+import { UiBadge, UiButton, UiEmptyState, UiSectionHeader } from '@/components/ui'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import type { components } from '@/api'
 import type { DataTableColumn } from '@/components/types'
@@ -21,19 +22,29 @@ const projectId = computed<number>(() => Number.parseInt(route.params.id as stri
 
 const voices = ref<Voice[]>([])
 const loading = ref(false)
-const editing = ref<Voice | null>(null)
-const formOpen = ref(false)
-const draft = ref({ name: '', voice_md: '' })
-const saving = ref(false)
+const selectedVoiceId = ref<number | null>(null)
+
+const defaultVoice = computed(() => voices.value.find((voice) => voice.is_default) ?? null)
+const selectedVoice = computed(() => {
+  return (
+    voices.value.find((voice) => voice.id === selectedVoiceId.value) ??
+    defaultVoice.value ??
+    voices.value[0] ??
+    null
+  )
+})
+const configuredVoices = computed(() =>
+  voices.value.filter((voice) => (voice.voice_md ?? '').trim().length > 0),
+)
 
 const columns: DataTableColumn<Voice>[] = [
   { key: 'name', label: 'Name' },
-  { key: 'is_default', label: 'Default', format: (v) => (v ? 'yes' : 'no') },
+  { key: 'is_default', label: 'Role', format: (value) => (value ? 'Default' : 'Variant') },
   { key: 'version', label: 'Version' },
   {
     key: 'created_at',
     label: 'Created',
-    format: (v) => (v ? new Date(String(v)).toLocaleString() : ''),
+    format: (value) => (value ? new Date(String(value)).toLocaleString() : '-'),
   },
 ]
 
@@ -45,79 +56,18 @@ async function loadVoices(): Promise<void> {
       `/api/v1/projects/${projectId.value}/voice/variants?limit=200`,
     )
     voices.value = res.items ?? []
+    if (selectedVoiceId.value && !voices.value.some((voice) => voice.id === selectedVoiceId.value)) {
+      selectedVoiceId.value = null
+    }
   } catch (err) {
-    toasts.error('Failed to load voices', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load voices', formatApiError(err))
   } finally {
     loading.value = false
   }
 }
 
-function startNew(): void {
-  editing.value = null
-  formOpen.value = true
-  draft.value = { name: '', voice_md: '' }
-}
-
-function edit(v: Voice): void {
-  editing.value = v
-  formOpen.value = true
-  draft.value = { name: v.name, voice_md: v.voice_md ?? '' }
-}
-
-function cancel(): void {
-  editing.value = null
-  formOpen.value = false
-  draft.value = { name: '', voice_md: '' }
-}
-
-async function save(): Promise<void> {
-  if (!draft.value.name.trim()) {
-    toasts.error('Voice name is required')
-    return
-  }
-  saving.value = true
-  try {
-    if (editing.value) {
-      // Replace via the active put-voice endpoint (creates a new default).
-      await apiWrite<Voice>(`/api/v1/projects/${projectId.value}/voice`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: draft.value.name, voice_md: draft.value.voice_md }),
-      })
-      toasts.success('Voice updated')
-    } else {
-      await apiWrite<Voice>(`/api/v1/projects/${projectId.value}/voice/variants`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: draft.value.name,
-          voice_md: draft.value.voice_md,
-          is_default: voices.value.length === 0,
-        }),
-      })
-      toasts.success('Voice added')
-    }
-    editing.value = null
-    formOpen.value = false
-    draft.value = { name: '', voice_md: '' }
-    await loadVoices()
-  } catch (err) {
-    toasts.error('Failed to save voice', err instanceof Error ? err.message : undefined)
-  } finally {
-    saving.value = false
-  }
-}
-
-async function setDefault(v: Voice): Promise<void> {
-  try {
-    await apiWrite<Voice>(`/api/v1/projects/${projectId.value}/voice/${v.id}/activate`, {
-      method: 'POST',
-    })
-    toasts.success('Default voice updated')
-    await loadVoices()
-  } catch (err) {
-    toasts.error('Failed to set default', err instanceof Error ? err.message : undefined)
-  }
+function selectVoice(voice: Voice): void {
+  selectedVoiceId.value = voice.id
 }
 
 onMounted(loadVoices)
@@ -125,88 +75,156 @@ watch(projectId, loadVoices)
 </script>
 
 <template>
-  <section class="space-y-4">
-    <div class="flex items-baseline justify-between">
-      <h2 class="text-base font-semibold">
-        Voice profiles
-      </h2>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-        @click="startNew"
-      >
-        New voice
-      </button>
-    </div>
-    <DataTable
-      :items="voices"
-      :columns="columns"
-      :loading="loading"
-      aria-label="Voice profiles"
-      empty-message="No voice profiles yet."
-      @row-click="edit"
+  <section class="space-y-6">
+    <UiSectionHeader
+      title="Voice profiles"
+      description="Read-only view of the editorial voice inventory the agent can use during drafting and editing."
     >
-      <template #cell:is_default="{ row }">
-        <span
-          v-if="(row as Voice).is_default"
-          class="text-emerald-600 dark:text-emerald-400"
+      <template #actions>
+        <UiButton
+          size="sm"
+          variant="secondary"
+          :disabled="loading"
+          @click="loadVoices"
         >
-          ✓ default
-        </span>
-        <button
-          v-else
-          type="button"
-          class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          @click.stop="setDefault(row as Voice)"
-        >
-          Set default
-        </button>
+          {{ loading ? 'Refreshing...' : 'Refresh' }}
+        </UiButton>
       </template>
-    </DataTable>
+    </UiSectionHeader>
+
+    <div class="grid gap-3 md:grid-cols-3">
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          Default profile
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ defaultVoice?.name ?? 'Not selected' }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          The default profile is the agent's first choice when a procedure has no override.
+        </p>
+      </div>
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          Profiles
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ voices.length }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          Visible variants available to agent procedures.
+        </p>
+      </div>
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          With guidance
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ configuredVoices.length }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          Profiles containing markdown voice guidance.
+        </p>
+      </div>
+    </div>
+
+    <UiEmptyState
+      v-if="!loading && voices.length === 0"
+      title="No voice profiles"
+      description="Voice profiles appear here after agent setup."
+      size="sm"
+    />
 
     <div
-      v-if="formOpen"
-      class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      v-else
+      class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.75fr)]"
     >
-      <h3 class="mb-3 text-base font-semibold">
-        {{ editing ? `Edit ${editing.name}` : 'New voice profile' }}
-      </h3>
-      <label class="mb-3 block text-sm">
-        <span class="font-medium">Name</span>
-        <input
-          v-model="draft.name"
-          type="text"
-          required
-          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-          autocomplete="off"
+      <DataTable
+        :items="voices"
+        :columns="columns"
+        :loading="loading"
+        aria-label="Voice profiles"
+        empty-message="No voice profiles yet."
+        @row-click="selectVoice"
+      >
+        <template #cell:is_default="{ row }">
+          <UiBadge
+            :tone="(row as Voice).is_default ? 'success' : 'neutral'"
+            variant="outline"
+          >
+            {{ (row as Voice).is_default ? 'Default' : 'Variant' }}
+          </UiBadge>
+        </template>
+      </DataTable>
+
+      <aside class="rounded-md border border-default bg-bg-surface p-4 shadow-xs">
+        <div
+          v-if="selectedVoice"
+          class="space-y-4"
         >
-      </label>
-      <label class="block text-sm">
-        <span class="mb-1 block font-medium">Voice markdown</span>
-        <MarkdownEditor
-          v-model:value="draft.voice_md"
-          :auto-save-ms="0"
-          :show-preview="false"
-        />
-      </label>
-      <div class="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          :disabled="saving"
-          @click="cancel"
+          <header class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-sm font-semibold text-fg-strong">
+                {{ selectedVoice.name }}
+              </h3>
+              <UiBadge
+                v-if="selectedVoice.is_default"
+                tone="success"
+              >
+                Default
+              </UiBadge>
+              <UiBadge tone="neutral">
+                v{{ selectedVoice.version }}
+              </UiBadge>
+            </div>
+            <p class="text-xs text-fg-muted">
+              Created
+              {{ selectedVoice.created_at ? new Date(selectedVoice.created_at).toLocaleString() : '-' }}
+            </p>
+          </header>
+
+          <div v-if="selectedVoice.voice_md?.trim()">
+            <p class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+              Guidance
+            </p>
+            <div class="cs-voice-markdown">
+              <MarkdownView
+                :source="selectedVoice.voice_md"
+              />
+            </div>
+          </div>
+          <div
+            v-else
+            class="rounded-md border border-dashed border-subtle bg-bg-surface-alt p-4 text-sm text-fg-muted"
+          >
+            No voice guidance has been recorded for this profile.
+          </div>
+        </div>
+        <p
+          v-else
+          class="text-sm text-fg-muted"
         >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          :disabled="saving"
-          @click="save"
-        >
-          {{ saving ? 'Saving…' : editing ? 'Save changes' : 'Create voice' }}
-        </button>
-      </div>
+          Select a profile to inspect its guidance.
+        </p>
+      </aside>
     </div>
   </section>
 </template>
+
+<style scoped>
+.cs-voice-markdown :deep(.cs-markdown h1) {
+  font-size: 1rem;
+  line-height: 1.35;
+  margin: 0 0 0.5rem;
+}
+
+.cs-voice-markdown :deep(.cs-markdown h2) {
+  font-size: 0.95rem;
+  line-height: 1.35;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.cs-voice-markdown :deep(.cs-markdown p) {
+  margin: 0.35rem 0;
+}
+</style>

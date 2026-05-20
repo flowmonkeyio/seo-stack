@@ -15,6 +15,8 @@ allowed_tools:
   - drift.get
   - drift.diff
   - integration.test
+  - firecrawl.scrape
+  - gsc.pagespeed
   - run.start
   - run.heartbeat
   - run.finish
@@ -62,6 +64,7 @@ The skill graceful-degrades when `drift.diff` raises `MilestoneDeferralError` (t
 - `drift.get(baseline_id)` — fetch one baseline by id when the diff needs the full prior element bag rather than just the metadata `drift.list` returns.
 - `drift.diff(baseline_id, current_md)` — the comparison call. Returns a structured diff (per-rule findings + severity + response-time recommendation) plus the new `current_score`. Until the M6 comparison engine lands, this raises `MilestoneDeferralError` which the skill catches and routes to the snapshot-only path.
 - `integration.test` — pre-flight Firecrawl probe. The wrapper's `test()` call confirms the credential is live before the audit walks the article roster. The skill aborts cleanly when the probe fails because every subsequent fetch would 401.
+- `firecrawl.scrape` and `gsc.pagespeed` — hidden toolkit tools. Use `toolbox.describe` for their schemas and `toolbox.call` for live fetches; never use native browser/network fetches for audited drift captures.
 - `meta.enums` — surfaces `drift_baselines.severity` (the enum the diff returns) and `runs.kind='drift-check'` so the skill emits canonical strings.
 
 ## Steps
@@ -77,7 +80,7 @@ The skill captures one canonical element bag per article and wires the diff agai
    - Remove every `utm_*` key (campaign tracking; not part of the canonical URL).
    - Remove the trailing slash from the path when the path is non-root and ends with `/`.
    The normalised URL is what the audit fetches. The pre-normalised URL is captured in the audit row so a future audit can detect a normalisation regression.
-4. **Capture the live HTML.** Call the Firecrawl scrape endpoint via the integrations wrapper for the normalised URL. The wrapper enforces the project's per-integration QPS budget; long projects with hundreds of articles take time, so heartbeats fire every 10 articles. The wrapper returns the raw HTML, the HTTP status code, and the rendered metadata bag (title, meta description, canonical, robots, headings, schema, open graph, CWV when available). Compose the canonical element bag for the article:
+4. **Capture the live HTML.** Call `firecrawl.scrape` through `toolbox.call` for the normalised URL. The wrapper enforces the project's per-integration QPS budget; long projects with hundreds of articles take time, so heartbeats fire every 10 articles. When CWV is enabled, call `gsc.pagespeed` through `toolbox.call` for field/lab performance data. Compose the canonical element bag for the article:
    - **title** — the `<title>` element's text, trimmed and unicode-normalised (NFC).
    - **meta_description** — the `<meta name="description" content="…">` content, trimmed and NFC-normalised. Empty string when absent.
    - **canonical** — the `<link rel="canonical" href="…">` value. The drift signal is canonical-mismatch (the page declares a different canonical than its own URL); the diff returns CRITICAL severity for any change here because canonical drift breaks search-engine indexing.
@@ -91,7 +94,7 @@ The skill captures one canonical element bag per article and wires the diff agai
    - **open_graph** — a key-sorted dict of every `<meta property="og:*">` attribute the page declared.
    - **paid_link_rels** — audit affiliate/sponsored/user-generated outbound links for `rel` values. Missing `sponsored`/`nofollow` on paid links is a compliance and spam-policy risk.
    - **rendered_internal_link_counts** — rendered inbound/outbound counts for the article body so template or renderer drift does not silently strip links.
-   - **cwv** — Core Web Vitals (`lcp`, `fid_or_inp`, `cls`) from Firecrawl's CWV endpoint when the integration tier permits and `schedule_json.drift.cwv.enabled=true`. Captured as a numeric triple plus a fetch timestamp; null when unavailable.
+   - **cwv** — Core Web Vitals (`lcp`, `fid_or_inp`, `cls`) from PageSpeed Insights when `schedule_json.drift.cwv.enabled=true`. Captured as a numeric triple plus a fetch timestamp; null when unavailable.
    - **status_code** — the HTTP response status. Anything outside 200 is a diff signal (a 404 / 410 / 500 on a published URL is an outage).
    - **html_hash** — SHA-256 of the body HTML after stripping scripts, styles, comments, and whitespace runs. The hash is the cheap "did anything change" signal; the bag's other fields explain what.
    Serialise the bag to canonical JSON (sorted keys, no extra whitespace) and call `drift.snapshot(article_id, baseline_md=<canonical_json_string>)`. The repository writes the baseline row; capture the returned `baseline_id`.

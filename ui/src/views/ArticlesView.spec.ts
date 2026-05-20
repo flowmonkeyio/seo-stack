@@ -27,7 +27,7 @@ describe('ArticlesView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders heading + status pill bar + new-article button', async () => {
+  it('renders heading + status pill bar without create controls', async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(
         JSON.stringify({ items: [], next_cursor: null, total_estimate: 0 }),
@@ -41,9 +41,7 @@ describe('ArticlesView', () => {
     expect(w.text()).toContain('Articles')
     expect(w.text()).toContain('Briefing')
     expect(w.text()).toContain('Published')
-    expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) =>
-      String(url).includes('/api/v1/projects/1/voice/variants?limit=200'),
-    )).toBe(true)
+    expect(w.findAll('button').some((button) => button.text() === 'New article')).toBe(false)
   })
 
   it('shows empty state when no articles + no filter selected', async () => {

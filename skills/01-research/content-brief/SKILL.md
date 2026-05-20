@@ -18,6 +18,10 @@ allowed_tools:
   - source.add
   - source.list
   - integration.test
+  - dataforseo.serp
+  - dataforseo.keywordVolume
+  - firecrawl.scrape
+  - jina.read
   - run.start
   - run.heartbeat
   - run.finish
@@ -78,6 +82,7 @@ Skip this skill when the operator hand-authored a brief in the UI — that flow 
 - `eeat.list(project_id)` — the active EEAT criteria. The brief notes which expertise/authority/trust signals the article must surface (e.g., a credentialed author bio, primary-source citations, original data) so the EEAT gate (#11) doesn't fail later for missing signals the brief could have flagged.
 - `article.get` — when the procedure runner is resuming a brief on an existing article row, read the prior state.
 - `source.list(article_id)` — when resuming, deduplicate against sources already collected.
+- `dataforseo.serp`, `dataforseo.keywordVolume`, `firecrawl.scrape`, and `jina.read` — hidden toolkit tools for source collection. Use `toolbox.describe` for schemas and `toolbox.call` for every external fetch.
 
 ## Steps
 
@@ -90,7 +95,7 @@ Skip this skill when the operator hand-authored a brief in the UI — that flow 
    - **Light depth** — target one to five citable sources; suitable for opinion pieces, listicles, or content where authority lives in the author's voice rather than external evidence.
    - **Medium depth** — target six to eleven sources; the default for most informational and commercial articles where the EEAT gate will check for evidence-backed claims.
    - **Heavy depth** — target twelve to twenty sources; required for YMYL topics (medical, financial, legal) where the EEAT gate's `tier='core'` veto criteria expect dense citation.
-   For each source the skill captures a structured ledger entry: `url`, `title`, `domain`, `snippet`, `source_type`, `quality_tier`, `primary_or_secondary`, `claim_roles[]`, `relevance`, `credibility_notes`, `recency_requirement`, `conflict_notes`, `required`, `confidence`, and `accessed_at`. The skill collects these by reading the prior `serp-analyzer` run's audited URLs and existing `research_sources`. When the SERP/source set is too thin or stale and no granted source-collection tool is exposed in this run, stop with `NEEDS_INPUT` or `BLOCKED`; do not bypass the daemon with direct Firecrawl, browser, or native fetch calls. Use `source.add` to persist; mark `used=false` because outline + draft skills choose which sources actually show up in the article.
+   For each source the skill captures a structured ledger entry: `url`, `title`, `domain`, `snippet`, `source_type`, `quality_tier`, `primary_or_secondary`, `claim_roles[]`, `relevance`, `credibility_notes`, `recency_requirement`, `conflict_notes`, `required`, `confidence`, and `accessed_at`. Start with any prior `serp-analyzer` output and existing `research_sources`; when that set is thin, call `dataforseo.serp` for the topic keyword, call `dataforseo.keywordVolume` when volume/competition is needed for prioritisation, then scrape selected URLs with `firecrawl.scrape` and fall back to `jina.read` when Firecrawl fails. When the SERP/source set is still too thin or stale, stop with `NEEDS_INPUT` or `BLOCKED`; do not bypass the daemon with direct Firecrawl, browser, or native fetch calls. Use `source.add` to persist; mark `used=false` because outline + draft skills choose which sources actually show up in the article.
 7. **Outline hint.** A markdown skeleton with H1 + 4–8 H2 candidates and a one-line description per H2. Persist as `brief_json.outline_hint_md`. The outline skill (#6) refines this; the brief simply seeds it so the outline skill doesn't start from a blank page. Each H2 maps to a section that satisfies one of the brief's load-bearing claims.
 8. **Compliance jurisdictions.** Filter `compliance.list` results by the project's active locale set; the brief carries the resulting jurisdiction list in `brief_json.compliance_jurisdictions[]`. The conclusion skill renders footers per the rules at `position='footer'` for each jurisdiction.
 9. **Schema hint.** Suggest only JSON-LD types this article can support with visible, accurate page content. Default to Article or BlogPosting for editorial pages. Product, Review, and AggregateRating require real product/review facts and first-party evidence in the brief. Do not seed FAQPage for Google rich-result targeting; as of 2026-05-07 FAQ rich results no longer appear in Google Search, and support/reporting is being removed. Do not seed HowTo for Google rich-result targeting. Capture the final roster under `brief_json.schema_types[]` and put skipped/deprecated candidates under `brief_json.schema_skipped[]` with a reason.

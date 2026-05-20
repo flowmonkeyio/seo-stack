@@ -17,7 +17,7 @@ triggers:
 
 prerequisites:
   - "topics WHERE status='approved' AND project_id=:project_id non-empty (or matching --topic-ids)"
-  - "all procedure 4 prerequisites met (voice, EEAT seed, primary publish target, integration creds)"
+  - "all procedure 4 prerequisites met (voice, EEAT seed, integration creds; publish target optional)"
   - "operator passes --budget-cap-usd; estimate-cost aborts before child runs open if estimated cost > cap (audit M-25)"
 
 produces:

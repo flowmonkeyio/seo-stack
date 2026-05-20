@@ -27,7 +27,7 @@ describe('GscView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders title + tab bar with three tabs', async () => {
+  it('renders title and the GSC sections', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       if (url.includes('/redirects')) {
@@ -52,8 +52,8 @@ describe('GscView', () => {
     const w = mount(GscView, { global: { plugins: [router] } })
     await new Promise((r) => setTimeout(r, 0))
     expect(w.text()).toContain('GSC Metrics')
-    expect(w.text()).toContain('Raw')
-    expect(w.text()).toContain('Daily Rollup')
+    expect(w.text()).toContain('Search Console rows')
+    expect(w.text()).toContain('Daily rollup')
     expect(w.text()).toContain('Redirects')
   })
 })

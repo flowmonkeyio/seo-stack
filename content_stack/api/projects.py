@@ -13,7 +13,9 @@ HTTP shape ↔ ``ProjectRepository`` etc. method calls.
 
 from __future__ import annotations
 
-from datetime import datetime
+import os
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -21,7 +23,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import Session
 
-from content_stack.api.deps import get_session
+from content_stack.api.deps import get_session, get_settings
 from content_stack.api.envelopes import WriteResponse, write_response
 from content_stack.api.pagination import (
     PageResponse,
@@ -29,6 +31,7 @@ from content_stack.api.pagination import (
     page_response,
     pagination_params,
 )
+from content_stack.config import Settings
 from content_stack.db.models import (
     CompliancePosition,
     ComplianceRuleKind,
@@ -209,6 +212,20 @@ class IntegrationUpdateRequest(BaseModel):
     plaintext_payload: str | None = None
     config_json: dict[str, Any] | None = None
     expires_at: datetime | None = None
+
+
+class IntegrationTestResponse(BaseModel):
+    """Normalized response for ``POST /projects/{id}/integrations/{cid}/test``."""
+
+    ok: bool
+    vendor: str
+    status: str
+    summary: str
+    details: str | None = None
+    checked_at: str
+    retryable: bool = False
+    next_action: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScheduleUpsertRequest(BaseModel):
@@ -570,11 +587,13 @@ async def create_publish_target(
     session: Session = Depends(get_session),
 ) -> WriteResponse[PublishTargetOut]:
     """Add a publish target; ``is_primary=true`` clears any other primary."""
+    config_json = normalize_publish_target_config(body.kind, body.config_json)
+    validate_publish_target_config(body.kind, config_json)
     return write_response(
         PublishTargetRepository(session).add(
             project_id=project_id,
             kind=body.kind,
-            config_json=body.config_json,
+            config_json=config_json,
             is_primary=body.is_primary,
             is_active=body.is_active,
         )
@@ -592,9 +611,23 @@ async def update_publish_target(
     session: Session = Depends(get_session),
 ) -> WriteResponse[PublishTargetOut]:
     """Patch a publish target."""
-    _ = project_id
+    repo = PublishTargetRepository(session)
     patch = body.model_dump(exclude_unset=True)
-    return write_response(PublishTargetRepository(session).update(target_id, **patch))
+    if "config_json" in patch or "kind" in patch:
+        current = next((target for target in repo.list(project_id) if target.id == target_id), None)
+        effective_kind = body.kind
+        if effective_kind is None and current is not None:
+            effective_kind = current.kind
+        effective_config = body.config_json
+        if effective_config is None and current is not None:
+            effective_config = current.config_json
+        if effective_kind is not None:
+            effective_config = normalize_publish_target_config(effective_kind, effective_config)
+        if "config_json" in patch:
+            patch["config_json"] = effective_config
+        if effective_kind is not None:
+            validate_publish_target_config(effective_kind, effective_config)
+    return write_response(repo.update(target_id, **patch))
 
 
 @router.delete(
@@ -623,6 +656,153 @@ async def set_primary_publish_target(
     """Make ``target_id`` the project's primary; clear every other primary."""
     _ = project_id
     return write_response(PublishTargetRepository(session).set_primary(target_id))
+
+
+_TARGET_SECRET_KEY_PARTS = (
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "admin_api_key",
+    "authorization",
+)
+
+
+def normalize_publish_target_config(
+    kind: PublishTargetKind | str,
+    config_json: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Store file-target config with the keys consumed by publish skills."""
+    if config_json is None:
+        return None
+    kind_value = kind.value if isinstance(kind, PublishTargetKind) else str(kind)
+    config = dict(config_json)
+    if kind_value in {"nuxt-content", "hugo", "astro"}:
+        if "content_subdir" not in config and "content_dir" in config:
+            config["content_subdir"] = config["content_dir"]
+        if "public_subdir" not in config and "assets_dir" in config:
+            config["public_subdir"] = config["assets_dir"]
+        config.pop("content_dir", None)
+        config.pop("assets_dir", None)
+    return config
+
+
+def validate_publish_target_config(
+    kind: PublishTargetKind | str,
+    config_json: dict[str, Any] | None,
+) -> None:
+    """Validate provider config and reject obvious secrets in target config."""
+    kind_value = kind.value if isinstance(kind, PublishTargetKind) else str(kind)
+    config = normalize_publish_target_config(kind_value, config_json) or {}
+    secret_key = _find_secret_config_key(config)
+    if secret_key is not None:
+        _raise_target_config_error(
+            "publish target config must not contain secrets",
+            kind_value,
+            secret_key=secret_key,
+            hint=(
+                "Store WordPress/Ghost/API secrets as integration credentials; "
+                "target config should contain only routing metadata."
+            ),
+        )
+
+    if kind_value in {"nuxt-content", "hugo", "astro"}:
+        _require_config_string(config, kind_value, "repo_path")
+        _require_config_string(config, kind_value, "content_subdir")
+        return
+    if kind_value == "wordpress":
+        _require_config_string(config, kind_value, "wp_url")
+        _validate_optional_number(config, kind_value, "category_id")
+        _validate_optional_number_list(config, kind_value, "tag_ids")
+        return
+    if kind_value == "ghost":
+        _require_config_string(config, kind_value, "ghost_url")
+        _validate_optional_string_list(config, kind_value, "tags")
+        _validate_optional_string_list(config, kind_value, "authors")
+        return
+    if kind_value == "custom-webhook":
+        _require_config_string(config, kind_value, "webhook_url")
+        method = config.get("method")
+        if method is not None and method not in {"POST", "PUT", "PATCH"}:
+            _raise_target_config_error("method must be POST, PUT, or PATCH", kind_value)
+        headers = config.get("headers")
+        if headers is not None and (
+            not isinstance(headers, dict) or _find_secret_config_key(headers) is not None
+        ):
+            _raise_target_config_error(
+                "headers must be an object without secrets",
+                kind_value,
+                hint="Use an integration credential for authenticated webhook calls.",
+            )
+
+
+def _find_secret_config_key(config: Mapping[str, Any]) -> str | None:
+    for key, value in config.items():
+        key_lower = str(key).lower()
+        if any(part in key_lower for part in _TARGET_SECRET_KEY_PARTS):
+            return str(key)
+        if isinstance(value, dict):
+            nested = _find_secret_config_key(value)
+            if nested is not None:
+                return f"{key}.{nested}"
+    return None
+
+
+def _require_config_string(config: Mapping[str, Any], kind: str, key: str) -> None:
+    value = config.get(key)
+    if not isinstance(value, str) or not value.strip():
+        _raise_target_config_error(f"{key} is required", kind, field=key)
+
+
+def _validate_optional_number(config: Mapping[str, Any], kind: str, key: str) -> None:
+    value = config.get(key)
+    if value is not None and not _is_json_number(value):
+        _raise_target_config_error(f"{key} must be a number", kind, field=key)
+
+
+def _validate_optional_number_list(config: Mapping[str, Any], kind: str, key: str) -> None:
+    value = config.get(key)
+    if value is None:
+        return
+    if not isinstance(value, list) or any(not _is_json_number(item) for item in value):
+        _raise_target_config_error(f"{key} must be a list of numbers", kind, field=key)
+
+
+def _validate_optional_string_list(config: Mapping[str, Any], kind: str, key: str) -> None:
+    value = config.get(key)
+    if value is None:
+        return
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        _raise_target_config_error(f"{key} must be a list of strings", kind, field=key)
+
+
+def _is_json_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int | float)
+
+
+def _raise_target_config_error(
+    detail: str,
+    kind: str,
+    *,
+    field: str | None = None,
+    secret_key: str | None = None,
+    hint: str | None = None,
+) -> None:
+    data: dict[str, Any] = {"kind": kind}
+    if field is not None:
+        data["field"] = field
+    if secret_key is not None:
+        data["secret_key"] = secret_key
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "detail": detail,
+            "code": -32602,
+            "retryable": False,
+            "data": data,
+            "hint": hint,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -735,12 +915,15 @@ async def delete_integration(
     return write_response(IntegrationCredentialRepository(session).remove(credential_id))
 
 
-@router.post("/{project_id}/integrations/{credential_id}/test")
+@router.post(
+    "/{project_id}/integrations/{credential_id}/test",
+    response_model=IntegrationTestResponse,
+)
 async def test_integration(
     project_id: int,
     credential_id: int,
     session: Session = Depends(get_session),
-) -> dict[str, Any]:
+) -> IntegrationTestResponse:
     """Probe vendor health by dispatching to the per-kind wrapper.
 
     Resolves the credential row, looks up the integration class via
@@ -769,7 +952,10 @@ async def test_integration(
                     "it may be a runtime LLM key (no health probe)"
                 ),
                 "code": -32602,
-                "hint": "Only DataForSEO/Firecrawl/GSC/OpenAI/Reddit/Jina/Ahrefs/PAA expose tests.",
+                "hint": (
+                    "Only DataForSEO/Firecrawl/GSC/OpenAI/Reddit/Jina/Ahrefs/PAA/"
+                    "WordPress/Ghost expose tests."
+                ),
             },
         )
     plaintext = repo.get_decrypted(credential_id)
@@ -787,6 +973,32 @@ async def test_integration(
                 },
             )
         extra["login"] = login
+    elif row.kind == "wordpress":
+        config = row.config_json or {}
+        site_url = config.get("wp_url") or config.get("site_url") or config.get("base_url")
+        if not site_url:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "detail": "wordpress credential missing config_json.wp_url",
+                    "code": -32602,
+                },
+            )
+        extra["site_url"] = str(site_url)
+    elif row.kind == "ghost":
+        config = row.config_json or {}
+        site_url = config.get("ghost_url") or config.get("site_url") or config.get("base_url")
+        if not site_url:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "detail": "ghost credential missing config_json.ghost_url",
+                    "code": -32602,
+                },
+            )
+        extra["site_url"] = str(site_url)
+        if config.get("api_version"):
+            extra["api_version"] = str(config["api_version"])
     async with httpx.AsyncClient(timeout=30.0) as client:
         integration = integration_cls(
             payload=plaintext,
@@ -794,7 +1006,56 @@ async def test_integration(
             http=client,
             **extra,
         )
-        return await integration.test_credentials()
+        raw_result = await integration.test_credentials()
+        return _normalize_integration_test_result(row.kind, raw_result)
+
+
+def _normalize_integration_test_result(
+    kind: str,
+    raw: Mapping[str, Any],
+) -> IntegrationTestResponse:
+    vendor = str(raw.get("vendor") or kind)
+    ok = bool(raw.get("ok", raw.get("status") == "ok"))
+    status_value = raw.get("status")
+    status_text = str(status_value) if status_value else ("ok" if ok else "failed")
+    summary_value = raw.get("summary") or raw.get("detail") or raw.get("message")
+    summary = (
+        str(summary_value)
+        if summary_value
+        else (f"{vendor} credentials are reachable" if ok else f"{vendor} credential test failed")
+    )
+    details = raw.get("details")
+    retryable = raw.get("retryable")
+    next_action = raw.get("next_action")
+    passthrough_keys = {
+        "ok",
+        "vendor",
+        "status",
+        "summary",
+        "detail",
+        "message",
+        "details",
+        "checked_at",
+        "retryable",
+        "next_action",
+        "metadata",
+    }
+    metadata = {key: value for key, value in raw.items() if key not in passthrough_keys}
+    metadata_value = raw.get("metadata")
+    if isinstance(metadata_value, dict):
+        metadata.update(metadata_value)
+    checked_at = raw.get("checked_at")
+    return IntegrationTestResponse(
+        ok=ok,
+        vendor=vendor,
+        status=status_text,
+        summary=summary,
+        details=str(details) if details else None,
+        checked_at=str(checked_at) if checked_at else datetime.now(tz=UTC).isoformat(),
+        retryable=bool(retryable) if isinstance(retryable, bool) else False,
+        next_action=str(next_action) if next_action else None,
+        metadata=metadata,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -908,6 +1169,7 @@ async def fetch_project_sitemap(
 # routes to a separate router then re-export through the same module.
 
 oauth_router = APIRouter(prefix="/api/v1/integrations/gsc", tags=["integrations"])
+_GSC_OAUTH_ENV_VARS = ("GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET")
 
 
 class GscAuthorizeRequest(BaseModel):
@@ -916,17 +1178,49 @@ class GscAuthorizeRequest(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"project_id": 1}})
 
     project_id: int
-    redirect_uri: str = Field(
-        default="http://localhost:5180/api/v1/integrations/gsc/oauth/callback",
+    redirect_uri: str | None = Field(
+        default=None,
         description="Must match the redirect URI registered in Google Cloud Console.",
     )
 
 
-@oauth_router.post("/oauth/authorize")
+class GscOAuthInfoResponse(BaseModel):
+    """Local setup details for the GSC OAuth flow."""
+
+    redirect_uri: str
+    configured: bool
+    missing: list[str] = Field(default_factory=list)
+    hint: str | None = None
+
+
+class GscAuthorizeResponse(BaseModel):
+    """Consent URL plus the callback URI used to build it."""
+
+    authorization_url: str
+    state: str
+    redirect_uri: str
+
+
+@oauth_router.get("/oauth/info", response_model=GscOAuthInfoResponse)
+async def gsc_oauth_info(
+    settings: Settings = Depends(get_settings),
+) -> GscOAuthInfoResponse:
+    """Return local GSC OAuth setup details without creating an OAuth state."""
+    missing = _missing_gsc_oauth_env_vars()
+    return GscOAuthInfoResponse(
+        redirect_uri=_default_gsc_redirect_uri(settings),
+        configured=len(missing) == 0,
+        missing=missing,
+        hint=_gsc_oauth_setup_hint() if missing else None,
+    )
+
+
+@oauth_router.post("/oauth/authorize", response_model=GscAuthorizeResponse)
 async def gsc_oauth_authorize(
     body: GscAuthorizeRequest,
+    settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
-) -> dict[str, Any]:
+) -> GscAuthorizeResponse:
     """Return the Google OAuth consent URL the operator opens in their browser.
 
     Stores the random ``state`` nonce in
@@ -936,14 +1230,34 @@ async def gsc_oauth_authorize(
     import secrets
 
     from content_stack.integrations.gsc import build_authorize_url
+    from content_stack.mcp.errors import IntegrationDownError
 
     state = secrets.token_urlsafe(32)
+    redirect_uri = body.redirect_uri or _default_gsc_redirect_uri(settings)
+    try:
+        url = build_authorize_url(state=state, redirect_uri=redirect_uri)
+    except IntegrationDownError as exc:
+        missing = exc.data.get("missing", [])
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "detail": exc.detail,
+                "code": -32602,
+                "retryable": False,
+                "data": {
+                    "vendor": "gsc",
+                    "missing": missing,
+                },
+                "hint": (_gsc_oauth_setup_hint()),
+            },
+        ) from exc
+
     # Persist the nonce on a placeholder row so the callback can find
     # the project + state pair by state value alone.
     repo = IntegrationCredentialRepository(session)
     config = {
         "oauth_state": state,
-        "redirect_uri": body.redirect_uri,
+        "redirect_uri": redirect_uri,
     }
     # Empty plaintext is fine — the row is a placeholder until the
     # callback fills it in. AAD is bound to ``(project_id, kind)`` so
@@ -954,14 +1268,30 @@ async def gsc_oauth_authorize(
         plaintext_payload=b"{}",
         config_json=config,
     )
-    url = build_authorize_url(state=state, redirect_uri=body.redirect_uri)
-    return {"authorization_url": url, "state": state}
+    return GscAuthorizeResponse(
+        authorization_url=url,
+        state=state,
+        redirect_uri=redirect_uri,
+    )
+
+
+def _default_gsc_redirect_uri(settings: Settings) -> str:
+    return f"http://{settings.host}:{settings.port}/api/v1/integrations/gsc/oauth/callback"
+
+
+def _missing_gsc_oauth_env_vars() -> list[str]:
+    return [name for name in _GSC_OAUTH_ENV_VARS if not os.environ.get(name)]
+
+
+def _gsc_oauth_setup_hint() -> str:
+    return "Set GSC_OAUTH_CLIENT_ID and GSC_OAUTH_CLIENT_SECRET, then restart the daemon."
 
 
 @oauth_router.get("/oauth/callback", response_class=HTMLResponse)
 async def gsc_oauth_callback(
     code: str,
     state: str,
+    settings: Settings = Depends(get_settings),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
     """Exchange the OAuth code for tokens and store them encrypted.
@@ -997,7 +1327,7 @@ async def gsc_oauth_callback(
         )
     redirect_uri = (matched.config_json or {}).get(
         "redirect_uri",
-        "http://localhost:5180/api/v1/integrations/gsc/oauth/callback",
+        _default_gsc_redirect_uri(settings),
     )
     tokens = await exchange_code(code=code, redirect_uri=redirect_uri)
     payload_bytes = json.dumps(tokens).encode("utf-8")
@@ -1111,6 +1441,18 @@ def _canonical_budget_kind(kind: str) -> str:
     if kind == "paa":
         return "google-paa"
     return kind
+
+
+@router.get(
+    "/{project_id}/budgets",
+    response_model=list[IntegrationBudgetOut],
+)
+async def list_budgets(
+    project_id: int,
+    session: Session = Depends(get_session),
+) -> list[IntegrationBudgetOut]:
+    """List configured budget rows for a project."""
+    return IntegrationBudgetRepository(session).list(project_id)
 
 
 @router.get(

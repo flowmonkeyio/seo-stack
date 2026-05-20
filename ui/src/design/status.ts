@@ -221,13 +221,14 @@ export const statusRegistry = {
 } as const;
 
 export type StatusDomain = keyof typeof statusRegistry;
+type StatusMap = { [Status in string]: StatusDef };
 
 /**
  * Resolve a status string within a domain. Returns a synthesized neutral
  * fallback rather than throwing — UI should never crash on an unknown status.
  */
 export function resolveStatus(domain: StatusDomain, key: string): StatusDef {
-  const map = statusRegistry[domain] as Record<string, StatusDef>;
+  const map = statusRegistry[domain] as StatusMap;
   return map[key] ?? {
     label: key.replace(/[_-]/g, ' '),
     tone: 'neutral',

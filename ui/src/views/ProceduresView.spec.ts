@@ -33,7 +33,7 @@ describe('ProceduresView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders heading + tab bar with Available / Recent Runs', async () => {
+  it('renders heading with available and recent run sections', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       if (url.endsWith('/api/v1/procedures')) {
@@ -59,13 +59,13 @@ describe('ProceduresView', () => {
     const w = mount(ProceduresView, { global: { plugins: [router] } })
     await new Promise((r) => setTimeout(r, 10))
     expect(w.text()).toContain('Procedures')
-    expect(w.text()).toContain('Available')
-    expect(w.text()).toContain('Recent Runs')
+    expect(w.text()).toContain('Available procedures')
+    expect(w.text()).toContain('Recent procedure runs')
     // procedure list table has the slug
     expect(w.text()).toContain('bootstrap')
   })
 
-  it('submits procedure runs with project_id and args', async () => {
+  it('renders procedures without browser-side run actions', async () => {
     const bodies: unknown[] = []
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
@@ -108,14 +108,9 @@ describe('ProceduresView', () => {
     const w = mount(ProceduresView, { global: { plugins: [router] } })
     await flushPromises()
 
-    await w.find('button[aria-label="Run procedure 04-topic-to-published"]').trigger('click')
-    expect(w.text()).not.toContain('M7')
-    await w.find('textarea').setValue('{"topic_id":42}')
-    const submit = w.findAll('button').find((button) => button.text() === 'Run procedure')
-    expect(submit).toBeTruthy()
-    await submit!.trigger('click')
-    await flushPromises()
-
-    expect(bodies).toEqual([{ project_id: 7, args: { topic_id: 42 } }])
+    expect(w.text()).toContain('Agent-owned')
+    expect(w.find('button[aria-label="Run procedure 04-topic-to-published"]').exists()).toBe(false)
+    expect(w.findAll('button').some((button) => button.text() === 'Run procedure')).toBe(false)
+    expect(bodies).toEqual([])
   })
 })

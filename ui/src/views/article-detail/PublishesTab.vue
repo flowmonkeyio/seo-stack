@@ -5,7 +5,7 @@ import { onMounted, ref, watch } from 'vue'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { apiFetch, apiWrite } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import { useArticlesStore } from '@/stores/articles'
 import type { components } from '@/api'
@@ -40,23 +40,9 @@ async function load(): Promise<void> {
   try {
     rows.value = await apiFetch<Publish[]>(`/api/v1/articles/${props.articleId}/publishes`)
   } catch (err) {
-    toasts.error('Failed to load publishes', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load publishes', formatApiError(err))
   } finally {
     loading.value = false
-  }
-}
-
-async function setCanonical(row: Publish): Promise<void> {
-  try {
-    await apiWrite(`/api/v1/articles/${props.articleId}/publishes/canonical`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target_id: row.target_id }),
-    })
-    toasts.success('Canonical set', `target ${row.target_id}`)
-    await articlesStore.get(props.articleId)
-  } catch (err) {
-    toasts.error('Set canonical failed', err instanceof Error ? err.message : undefined)
   }
 }
 
@@ -98,13 +84,12 @@ watch(() => props.articleId, load)
         />
       </template>
       <template #cell:target_id="{ row }">
-        <button
-          type="button"
-          class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          @click="setCanonical(row as Publish)"
+        <span
+          class="font-mono text-xs"
+          :class="(row as Publish).target_id === articlesStore.currentDetail?.canonical_target_id ? 'text-accent-fg' : 'text-fg-default'"
         >
-          set canonical (target {{ (row as Publish).target_id }})
-        </button>
+          target {{ (row as Publish).target_id }}
+        </span>
       </template>
     </DataTable>
   </section>

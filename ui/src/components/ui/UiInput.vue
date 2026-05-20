@@ -3,26 +3,27 @@
   Supports size, prefix/suffix slots, invalid/disabled/readonly states.
 -->
 <script setup lang="ts">
-import { computed, useAttrs } from 'vue';
+import { computed, inject, useAttrs } from 'vue'
+import type { ComputedRef } from 'vue'
 
-defineOptions({ inheritAttrs: false });
+defineOptions({ inheritAttrs: false })
 
 export interface UiInputProps {
-  modelValue?: string | number | null;
-  type?: 'text' | 'email' | 'url' | 'tel' | 'search' | 'number' | 'password';
-  size?: 'sm' | 'md' | 'lg';
-  placeholder?: string;
-  disabled?: boolean;
-  readonly?: boolean;
-  invalid?: boolean;
-  required?: boolean;
+  modelValue?: string | number | null
+  type?: 'text' | 'email' | 'url' | 'tel' | 'search' | 'number' | 'password' | 'date'
+  size?: 'sm' | 'md' | 'lg'
+  placeholder?: string
+  disabled?: boolean
+  readonly?: boolean
+  invalid?: boolean
+  required?: boolean
   /** When true, shows a clear button when there's a value. */
-  clearable?: boolean;
+  clearable?: boolean
   /** Stretch to fill parent. */
-  block?: boolean;
-  id?: string;
+  block?: boolean
+  id?: string
   /** ARIA — wired automatically by UiFormField. */
-  ariaDescribedby?: string;
+  ariaDescribedby?: string
 }
 
 const props = withDefaults(defineProps<UiInputProps>(), {
@@ -33,48 +34,67 @@ const props = withDefaults(defineProps<UiInputProps>(), {
   block: true,
   id: undefined,
   ariaDescribedby: undefined,
-});
+})
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: string | number | null): void;
-  (e: 'change', value: string | number | null): void;
-  (e: 'blur', ev: FocusEvent): void;
-  (e: 'focus', ev: FocusEvent): void;
-  (e: 'clear'): void;
-}>();
+  (e: 'update:modelValue', value: string | number | null): void
+  (e: 'change', value: string | number | null): void
+  (e: 'blur', ev: FocusEvent): void
+  (e: 'focus', ev: FocusEvent): void
+  (e: 'clear'): void
+}>()
 
-const attrs = useAttrs();
+const attrs = useAttrs()
+const field = inject<{
+  id: ComputedRef<string>
+  describedBy: ComputedRef<string | undefined>
+  invalid: ComputedRef<boolean>
+  required: ComputedRef<boolean>
+} | null>('uiFormField', null)
 
-const sizeClass = computed(() => ({
-  sm: 'h-7 text-sm px-2',
-  md: 'h-8 text-sm px-2.5',
-  lg: 'h-10 text-base px-3',
-}[props.size]));
+const controlId = computed(() => props.id ?? field?.id.value)
+const controlDescribedBy = computed(() => props.ariaDescribedby ?? field?.describedBy.value)
+const controlInvalid = computed(() => props.invalid || field?.invalid.value)
+const controlRequired = computed(() => props.required || field?.required.value)
+
+const sizeClass = computed(
+  () =>
+    ({
+      sm: 'h-7 text-sm px-2',
+      md: 'h-8 text-sm px-2.5',
+      lg: 'h-10 text-base px-3',
+    })[props.size],
+)
 
 function onInput(ev: Event) {
-  const target = ev.target as HTMLInputElement;
-  const value = props.type === 'number' ? (target.value === '' ? null : Number(target.value)) : target.value;
-  emit('update:modelValue', value);
+  const target = ev.target as HTMLInputElement
+  const value =
+    props.type === 'number' ? (target.value === '' ? null : Number(target.value)) : target.value
+  emit('update:modelValue', value)
 }
 
 function onChange(ev: Event) {
-  const target = ev.target as HTMLInputElement;
-  const value = props.type === 'number' ? (target.value === '' ? null : Number(target.value)) : target.value;
-  emit('change', value);
+  const target = ev.target as HTMLInputElement
+  const value =
+    props.type === 'number' ? (target.value === '' ? null : Number(target.value)) : target.value
+  emit('change', value)
 }
 
 function clear() {
-  emit('update:modelValue', '');
-  emit('clear');
+  emit('update:modelValue', '')
+  emit('clear')
 }
 </script>
 
 <template>
   <div
     :class="[
-      'ui-input focus-within:outline focus-within:outline-2 focus-within:outline-focus focus-within:outline-offset-2 inline-flex items-center rounded-sm border bg-bg-surface transition-colors duration-fast',
-      invalid ? 'border-danger' : 'border-default hover:border-strong',
-      disabled && 'bg-bg-sunken cursor-not-allowed opacity-60',
+      'ui-input focus-within:outline focus-within:outline-2 focus-within:outline-focus focus-within:outline-offset-2 inline-flex items-center rounded-sm border bg-bg-surface shadow-xs transition-colors duration-fast',
+      invalid
+        ? 'border-danger'
+        : 'border-default hover:border-strong hover:bg-bg-surface-alt focus-within:border-accent focus-within:bg-bg-surface',
+      disabled &&
+        'bg-bg-sunken text-fg-disabled cursor-not-allowed opacity-70 hover:border-default hover:bg-bg-sunken',
       readonly && 'bg-bg-surface-alt',
       block && 'w-full',
       sizeClass,
@@ -88,16 +108,16 @@ function clear() {
     </span>
     <input
       v-bind="attrs"
-      :id="id"
+      :id="controlId"
       :type="type"
       :value="modelValue ?? ''"
       :placeholder="placeholder"
       :disabled="disabled"
       :readonly="readonly"
-      :required="required"
-      :aria-invalid="invalid || undefined"
-      :aria-describedby="ariaDescribedby"
-      class="ui-input__field flex-1 min-w-0 bg-transparent border-0 outline-none text-fg-default placeholder:text-fg-disabled disabled:cursor-not-allowed"
+      :required="controlRequired"
+      :aria-invalid="controlInvalid || undefined"
+      :aria-describedby="controlDescribedBy"
+      class="ui-input__field h-full flex-1 min-w-0 border-0 bg-transparent text-fg-default outline-none placeholder:text-fg-disabled disabled:cursor-not-allowed disabled:text-fg-disabled"
       @input="onInput"
       @change="onChange"
       @blur="$emit('blur', $event)"
@@ -117,7 +137,9 @@ function clear() {
         fill="none"
         stroke="currentColor"
         stroke-width="2.5"
-      ><path d="M18 6 6 18M6 6l12 12" /></svg>
+      >
+        <path d="M18 6 6 18M6 6l12 12" />
+      </svg>
     </button>
     <span
       v-if="$slots.suffix"

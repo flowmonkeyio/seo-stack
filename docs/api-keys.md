@@ -75,19 +75,17 @@ published operator guide for a specific console version.
 2. Create a new project (or pick an existing one).
 3. Navigate to **APIs & Services → Library** and enable
    **Google Search Console API**.
-4. Enable **Web Search Indexing API**.
-5. Enable **PageSpeed Insights API**.
-6. Go to **OAuth consent screen** → choose "External" if you have a
+4. Enable **PageSpeed Insights API**.
+5. Go to **OAuth consent screen** → choose "External" if you have a
    personal Google account, "Internal" if you have a Google Workspace
    organisation.
-7. Add scopes: ``https://www.googleapis.com/auth/webmasters.readonly``
-   and ``https://www.googleapis.com/auth/indexing``.
-8. Add yourself as a test user (External flows only).
-9. Go to **Credentials → Create Credentials → OAuth client ID**.
-10. App type: **Web application**.
-11. Authorized redirect URI:
+6. Add scope: ``https://www.googleapis.com/auth/webmasters.readonly``.
+7. Add yourself as a test user (External flows only).
+8. Go to **Credentials → Create Credentials → OAuth client ID**.
+9. App type: **Web application**.
+10. Authorized redirect URI:
     ``http://localhost:5180/api/v1/integrations/gsc/oauth/callback``.
-12. Save the **client_id** + **client_secret** and set them as env
+11. Save the **client_id** + **client_secret** and set them as env
     vars:
 
     ```
@@ -105,7 +103,7 @@ Then in the content-stack UI:
   scheduled in M8) refreshes access tokens before they expire.
 
 A 401 from the search-analytics endpoint surfaces "re-auth needed";
-re-running step 12 (the Connect button) picks up where we left off.
+clicking **Connect GSC** again picks up where we left off.
 
 ---
 
@@ -134,14 +132,66 @@ Used by: ``image-generator``.
 This row is **separate** from the LLM key used by your external agent
 (PLAN.md L1057-L1063), so you can budget images independently from prose.
 
-Cost: ~$0.04 per ``1024x1024 standard`` image; ~$0.08 for ``1024x1024
-hd`` and the wide / tall variants.
+Default path: the image-generator skill uses the current GPT Image API
+(``gpt-image-1.5`` by default). GPT Image responses return base64 image
+data, so the daemon wrapper persists the bytes under
+``CONTENT_STACK_DATA_DIR/generated-assets`` and returns local
+``/generated-assets/...`` URLs for ``article_assets.url``. Do not use
+DALL-E as the default path; OpenAI's docs now mark the DALL-E image
+models as deprecated.
+
+Cost: treat the wrapper's image estimates as a budget guardrail, not final
+billing. The wrapper records the vendor response and the operator should
+reconcile against OpenAI's current pricing page.
 
 Env var equivalent:
 
 ```
 OPENAI_API_KEY=sk-...
 ```
+
+---
+
+## WordPress
+
+Used by: WordPress credential probes and the deferred ``wordpress-publish``
+publisher spec. Procedure 4 does not currently publish to WordPress; internal-site
+publishing does not require this.
+
+1. In WordPress, open **Users → Profile → Application Passwords**.
+2. Create a dedicated application password for a least-privileged
+   publishing user. Prefer ``editor`` or ``author``; do not use an
+   administrator account for automation.
+3. In Integrations → WordPress, store the payload as either JSON
+   ``{"username":"...", "application_password":"..."}`` or compact
+   ``username:application-password``.
+4. Set ``config_json.wp_url`` to the site root, e.g.
+   ``https://example.com``.
+
+The wrapper probes ``GET /wp-json/wp/v2/users/me?context=edit`` using
+Basic Auth with the application password, then post creation/update uses
+the documented ``/wp-json/wp/v2/posts`` endpoints.
+
+---
+
+## Ghost
+
+Used by: Ghost credential probes and the deferred ``ghost-publish`` publisher
+spec. Procedure 4 does not currently publish to Ghost; internal-site publishing
+does not require this.
+
+1. In Ghost Admin, create a **Custom Integration**.
+2. Copy the Admin API key in ``id:secret`` form.
+3. In Integrations → Ghost, store the key as either raw ``id:secret`` or
+   JSON ``{"admin_api_key":"id:secret"}``.
+4. Set ``config_json.ghost_url`` to the Ghost Admin domain root, e.g.
+   ``https://example.com``.
+5. Optionally set ``config_json.api_version``; default is ``v5.0``.
+
+The wrapper signs a short-lived HS256 JWT with ``aud="/admin/"`` and
+sends it as ``Authorization: Ghost <token>`` with ``Accept-Version``.
+The probe hits ``GET /ghost/api/admin/users/?limit=1&include=roles``;
+post creation uses ``POST /ghost/api/admin/posts/?source=html``.
 
 ---
 
@@ -197,22 +247,23 @@ JINA_API_KEY=...
 
 ---
 
-## Ahrefs (Enterprise plan only)
+## Ahrefs
 
 Used by: ``keyword-discovery``, ``one-site-shortcut`` — both have
 DataForSEO fallbacks.
 
-Ahrefs only issues API tokens to Enterprise plan customers
-(~$15k/year minimum at 2025 pricing). For solo/SMB operators
-DataForSEO covers the same surface area.
+Ahrefs API v3 is optional for our first internal tests. Ahrefs' current
+docs describe API v3 access and API-unit limits by paid plan, with higher
+limits and additional-unit purchases on Enterprise. For solo/SMB
+operators, DataForSEO covers the same keyword/SERP surface area we need
+first.
 
-If you have an Enterprise plan:
+If you have a paid Ahrefs plan with API v3 access:
 
 1. Go to <https://ahrefs.com/api>.
 2. Generate a new token.
 3. Paste into Integrations → Ahrefs.
 
 If you don't have a plan: skip this integration. ``test_credentials``
-returns ``IntegrationDownError`` with a hint pointing back to this
-section, and the keyword-discovery skill falls back to DataForSEO
-automatically.
+returns ``IntegrationDownError`` with a hint pointing back to this section,
+and the keyword-discovery skill falls back to DataForSEO automatically.

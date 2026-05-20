@@ -3,7 +3,7 @@
 // Wires:
 //   - global setup that spawns the daemon on port 5181 and waits for /health
 //   - global teardown that kills the daemon
-//   - default 1280x800 viewport (responsive.spec.ts overrides per-test)
+//   - default 1280x800 desktop viewport
 //   - list + HTML reporters for local debugging
 
 import { defineConfig, devices } from '@playwright/test'

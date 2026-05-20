@@ -47,7 +47,7 @@ function display(value: unknown): string {
       <dt class="font-medium text-fg-muted">
         {{ item.label }}
       </dt>
-      <dd class="text-fg-default">
+      <dd class="min-w-0 break-words text-fg-default">
         <slot
           :name="`item:${item.key}`"
           :value="item.value"

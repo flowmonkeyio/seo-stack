@@ -41,6 +41,7 @@ from sqlalchemy import (
     Index,
     LargeBinary,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.types import JSON
@@ -892,9 +893,11 @@ class ArticleAsset(SQLModel, table=True):
 class ArticlePublish(SQLModel, table=True):
     """Per-target publish records (PLAN.md L357).
 
-    PK is composite ``(article_id, target_id, version_published)``. ``id`` is
-    a synthetic surrogate for FastAPI / repository ergonomics — the unique
-    constraint guarantees no per-version dup.
+    Target-backed publishes are unique on
+    ``(article_id, target_id, version_published)``. Targetless rows are the
+    operator-agent/manual publish escape hatch and are unique on
+    ``(article_id, version_published)`` where ``target_id IS NULL``.
+    ``id`` is a synthetic surrogate for FastAPI / repository ergonomics.
     """
 
     __tablename__ = "article_publishes"
@@ -904,6 +907,13 @@ class ArticlePublish(SQLModel, table=True):
             "target_id",
             "version_published",
             name="uq_article_publishes_pk",
+        ),
+        Index(
+            "uq_article_publishes_external",
+            "article_id",
+            "version_published",
+            unique=True,
+            sqlite_where=text("target_id IS NULL"),
         ),
         Index("ix_article_publishes_article", "article_id"),
     )
@@ -915,11 +925,12 @@ class ArticlePublish(SQLModel, table=True):
             nullable=False,
         )
     )
-    target_id: int = Field(
+    target_id: int | None = Field(
+        default=None,
         sa_column=Column(
             ForeignKey("publish_targets.id", ondelete="CASCADE"),
-            nullable=False,
-        )
+            nullable=True,
+        ),
     )
     version_published: int = Field(nullable=False)
     published_url: str | None = Field(default=None, max_length=2048)

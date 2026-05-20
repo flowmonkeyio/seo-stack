@@ -16,22 +16,50 @@
 // the auth-error route. We deliberately DO NOT auto-retry on 401 to
 // avoid masking a real auth failure.
 //
-// 412 (If-Match precondition failed) is left for the caller — the
-// MarkdownEditor handles it specially by prompting the user to reload
-// or overwrite the remote change.
+// 412 (If-Match precondition failed) is left for the caller.
 
 import type { AuthStoreLike } from '@/stores/auth-store-shape'
 
 export type ApiInit = RequestInit & { token?: string }
 
+export interface ApiErrorEnvelope {
+  detail: string
+  code?: number
+  retryable?: boolean
+  data?: unknown
+  retry_after?: number | null
+  hint?: string | null
+}
+
+interface JsonObject {
+  [key: string]: unknown
+}
+
 export class ApiError extends Error {
-  status: number
-  body: unknown
-  constructor(message: string, status: number, body: unknown) {
-    super(message)
+  readonly status: number
+  readonly body: unknown
+  readonly detail: string
+  readonly code?: number
+  readonly retryable?: boolean
+  readonly data?: unknown
+  readonly retryAfter?: number | null
+  readonly hint?: string | null
+  readonly requestId?: string | null
+
+  constructor(message: string, status: number, body: unknown, requestId?: string | null) {
+    const envelope = parseApiErrorEnvelope(body)
+    const detail = envelope?.detail ?? message
+    super(detail)
     this.name = 'ApiError'
     this.status = status
     this.body = body
+    this.detail = detail
+    this.code = envelope?.code
+    this.retryable = envelope?.retryable
+    this.data = envelope?.data
+    this.retryAfter = envelope?.retry_after
+    this.hint = envelope?.hint
+    this.requestId = requestId
   }
 }
 
@@ -61,15 +89,13 @@ function buildUrl(path: string): string {
 
 export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
   const { token: explicitToken, headers, ...rest } = init
-  const finalHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    ...(headers as Record<string, string> | undefined),
-  }
+  const finalHeaders = new Headers(headers)
+  if (!finalHeaders.has('Accept')) finalHeaders.set('Accept', 'application/json')
   // Explicit token wins (used by tests + the bootstrap probe itself).
   // Otherwise pull from the auth store if it's been wired up.
   const token = explicitToken ?? _authStore?.token ?? null
   if (token) {
-    finalHeaders.Authorization = `Bearer ${token}`
+    finalHeaders.set('Authorization', `Bearer ${token}`)
   }
 
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders })
@@ -78,17 +104,108 @@ export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): P
   const body = isJson ? await res.json().catch(() => null) : await res.text()
 
   if (!res.ok) {
-    throw new ApiError(`Request to ${path} failed with ${res.status}`, res.status, body)
+    throw new ApiError(
+      `Request to ${path} failed with ${res.status}`,
+      res.status,
+      body,
+      res.headers.get('x-request-id'),
+    )
   }
   return body as T
 }
 
-/**
- * Convenience wrapper for endpoints that return the standard `WriteResponse<T>`
- * envelope (`{ data, etag, updated_at }`). Returns the inner data so call
- * sites can ignore the envelope when they don't need it.
- */
-export async function apiWrite<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
-  const env = await apiFetch<{ data: T; etag?: string; updated_at?: string }>(path, init)
-  return env.data
+export function formatApiError(err: unknown, fallback = 'Request failed'): string {
+  if (err instanceof ApiError) {
+    const parts = [err.detail || err.message || fallback]
+    const dataSummary = summarizeErrorData(err.data)
+    if (dataSummary) parts.push(dataSummary)
+    if (err.hint) parts.push(err.hint)
+    if (err.retryable === true && err.retryAfter) {
+      parts.push(`Retry after ${err.retryAfter}s.`)
+    }
+    if (err.requestId) parts.push(`Request id: ${err.requestId}.`)
+    return parts.join(' ')
+  }
+  if (err instanceof Error && err.message) return err.message
+  return fallback
+}
+
+function parseApiErrorEnvelope(body: unknown): ApiErrorEnvelope | null {
+  if (isJsonObject(body) && isJsonObject(body.detail)) {
+    const nested = envelopeFromObject(body.detail)
+    if (nested) return nested
+  }
+  if (isJsonObject(body)) {
+    const direct = envelopeFromObject(body)
+    if (direct) return direct
+  }
+  if (typeof body === 'string' && body.trim().length > 0) {
+    return { detail: body.trim() }
+  }
+  return null
+}
+
+function envelopeFromObject(raw: JsonObject): ApiErrorEnvelope | null {
+  const detail = raw.detail
+  if (typeof detail === 'string') {
+    return {
+      detail,
+      code: typeof raw.code === 'number' ? raw.code : undefined,
+      retryable: typeof raw.retryable === 'boolean' ? raw.retryable : undefined,
+      data: 'data' in raw ? raw.data : undefined,
+      retry_after: typeof raw.retry_after === 'number' || raw.retry_after === null
+        ? raw.retry_after
+        : undefined,
+      hint: typeof raw.hint === 'string' || raw.hint === null ? raw.hint : undefined,
+    }
+  }
+  if (Array.isArray(detail)) {
+    return {
+      detail: 'request validation failed',
+      data: { errors: detail },
+    }
+  }
+  return null
+}
+
+function summarizeErrorData(data: unknown): string | null {
+  if (!isJsonObject(data)) return null
+
+  const budget = summarizeBudgetData(data)
+  if (budget) return budget
+
+  const errors = data.errors
+  if (Array.isArray(errors) && errors.length > 0) {
+    const messages = errors
+      .map((item) => {
+        if (!isJsonObject(item)) return null
+        const loc = Array.isArray(item.loc) ? item.loc.join('.') : null
+        const msg = typeof item.msg === 'string' ? item.msg : null
+        if (!msg) return null
+        return loc ? `${loc}: ${msg}` : msg
+      })
+      .filter((item): item is string => item !== null)
+      .slice(0, 2)
+    if (messages.length > 0) return messages.join(' ')
+  }
+
+  return null
+}
+
+function summarizeBudgetData(data: JsonObject): string | null {
+  const cap = data.monthly_budget_usd
+  const current = data.current_month_spend
+  const attempted = data.attempted_cost_usd
+  if (typeof cap !== 'number' || typeof current !== 'number') return null
+
+  const attemptedPart = typeof attempted === 'number' ? ` + ${formatUsd(attempted)} attempted` : ''
+  return `Budget: ${formatUsd(current)} spent${attemptedPart} of ${formatUsd(cap)} cap.`
+}
+
+function formatUsd(value: number): string {
+  return `$${value.toFixed(2)}`
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

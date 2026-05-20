@@ -14,6 +14,14 @@ allowed_tools:
   - integration.test
   - integration.testGsc
   - cost.queryProject
+  - dataforseo.serp
+  - dataforseo.keywordVolume
+  - dataforseo.keywordsForSite
+  - dataforseo.domainIntersection
+  - dataforseo.paa
+  - reddit.searchSubreddit
+  - reddit.topQuestions
+  - googlePaa.extract
   - run.start
   - run.heartbeat
   - run.finish
@@ -79,17 +87,16 @@ The seed keywords arrive as a JSON list on the procedure step argument (e.g., `[
    - **Intent overlay.** Layer commercial intent modifiers (review, alternative, pricing, comparison) and informational intent modifiers (guide, tutorial, learn).
    - **Related-search lift.** Use only the content-stack integration path exposed to this run. If related-search/PAA data is not available through the daemon, skip this strategy and record the gap instead of using a native browser or search tool.
    Normalise variants to lower case, strip leading articles (a/an/the), and remove duplicates inside the seed's batch and against the project's existing `topics`.
-3. **DataForSEO sweep.** For each de-duplicated variant batch:
-   - Hit the SERP endpoint to capture the top organic results — the URL list will be reused by skills #2 (`serp-analyzer`) and #3 (`topical-cluster`).
-   - Hit the keyword-volume endpoint to attach a monthly search-volume estimate.
-   - Hit the keyword-difficulty endpoint to attach a difficulty score.
-   - Hit the keyword-intent endpoint to attach an intent classification (informational, commercial, transactional, navigational).
-   - Hit the trends endpoint when the operator wants to flag rising terms.
-   - Hit the "keywords for site" endpoint with the project's own `domain` to surface keywords the site already ranks for; tag those rows so the procedure runner can prioritise low-effort wins.
-   - Hit the "intersection" endpoint over a competitor list (when supplied) to find shared targets.
+3. **DataForSEO sweep.** Use `toolbox.describe` for the granted `dataforseo.*` tools, then call them through `toolbox.call`. For each de-duplicated variant batch:
+   - Call `dataforseo.serp` to capture the top organic results; the URL list will be reused by skills #2 (`serp-analyzer`) and #3 (`topical-cluster`).
+   - Call `dataforseo.keywordVolume` to attach monthly search-volume, CPC, and competition data.
+   - Call `dataforseo.keywordsForSite` with the project's own `domain` to surface keywords the site already ranks for; tag those rows so the procedure runner can prioritise low-effort wins.
+   - Call `dataforseo.domainIntersection` over a competitor pair when supplied to find shared targets.
+   - Call `dataforseo.paa` when SERP-native PAA data is enough for the run. Use `googlePaa.extract` only when the DataForSEO response does not include usable questions.
+   Do not reference ungranted DataForSEO endpoints from the prompt. If difficulty, intent, or trend fields are absent from the returned payload, infer intent from the keyword surface and record the missing fields in the run summary.
    Each call is preceded by a budget pre-emption check: the daemon's `integrations/dataforseo.py` wrapper consults `integration_budgets` and refuses if `current_month_spend + estimated_cost > monthly_budget_usd`. The daemon raises `BudgetExceededError` (-32012); the skill catches it, emits a heartbeat with the partial state, and surfaces a structured failure message that the procedure runner stores on the step row.
-4. **Reddit mining (optional).** When the project's `integration_credentials` carries a Reddit row, expand the seed pool with community-sourced long-tails. For each seed, pick 1–3 niche-relevant subreddits (the project bootstrap procedure should have captured them; if not, prompt the operator). Issue `search_subreddit` and `top_questions` calls and extract candidate keywords from titles, especially titles ending in `?` (those are PAA-class questions). Tag rows `source='reddit'` so the cluster step weights them appropriately.
-5. **People-Also-Ask harvest (optional).** Call the daemon's `google-paa` integration on each seed. The wrapper delegates to Firecrawl under the hood; cost is reckoned against the Firecrawl budget, not a separate PAA line. Each return shape is `{questions: [str, ...]}`. Convert each question into a topic candidate; tag rows `source='paa'`.
+4. **Reddit mining (optional).** When the project's `integration_credentials` carries a Reddit row, expand the seed pool with community-sourced long-tails. For each seed, pick 1–3 niche-relevant subreddits (the project bootstrap procedure should have captured them; if not, prompt the operator). Call `reddit.searchSubreddit` and `reddit.topQuestions` through `toolbox.call` and extract candidate keywords from titles, especially titles ending in `?` (those are PAA-class questions). Tag rows `source='reddit'` so the cluster step weights them appropriately.
+5. **People-Also-Ask harvest (optional).** Call `googlePaa.extract` through `toolbox.call` on each seed when DataForSEO PAA is unavailable. The wrapper delegates to Firecrawl under the hood; cost is reckoned against the Firecrawl budget, not a separate PAA line. Each return shape is `{questions: [str, ...]}`. Convert each question into a topic candidate; tag rows `source='paa'`.
 6. **Intent classification.** For every candidate keyword (DataForSEO + Reddit + PAA), assign one of five intents: informational, commercial, transactional, navigational, mixed. Where DataForSEO returned an explicit intent, trust it. For Reddit/PAA rows, infer from the keyword surface form: `how`/`what`/`why`/`guide`/`tutorial` patterns lean informational; `best`/`top`/`vs`/`review`/`alternative` lean commercial; `buy`/`price`/`coupon`/`sign up` lean transactional; brand/product names lean navigational. Drop pure-navigational rows from the queue — they are not topic candidates.
 7. **Unique-value gate.** Before persistence, capture queue-review metadata under `runs.metadata_json.keyword_discovery.value_gate[primary_kw]`: `unique_reader_value`, `original_evidence_plan`, `audience_fit`, `existing_expertise`, and `thin_content_risk`. Reject or downgrade topics whose only rationale is "competitors rank for it" or whose unique value cannot be explained in one sentence.
 8. **Dedupe and persist.** Build the final candidate set: every row carries `title`, `primary_kw`, optional `secondary_kws[]`, `intent`, `source`, optional `priority`, and an optional `cluster_id` (left null at this stage; skill #3 fills it). Run a final dedupe pass against the project's existing topics by `(project_id, primary_kw)` so collisions are caught before the database's unique index rejects the batch. Persist via `topic.bulkCreate(project_id, items=[...])`. The streaming progress emitter fires every 50 inserts when N>50 so the procedure runner can render a progress bar.

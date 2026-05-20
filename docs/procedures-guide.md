@@ -241,7 +241,6 @@ prerequisites:
   - "topic.status = 'approved'"
   - "project has voice_profiles with is_default=true"
   - "project has eeat_criteria with tier='core' for all 3 vetoes (T04 / C01 / R10)"
-  - "project has at least one publish_targets row with is_active=true (and a primary)"
 inputs:
   topic_id: "The approved topic to draft + publish (int; required)."
 steps:
@@ -287,7 +286,7 @@ steps:
     skill: 04-publishing/interlinker
     on_failure: skip
   - id: publish
-    skill: 04-publishing/nuxt-content-publish
+    skill: 04-publishing/agent-publish
     on_failure: abort
 concurrency_limit: 4
 resumable: true
@@ -310,7 +309,7 @@ resumable: true
 | 10| `alt-text-auditor`  | `03-assets/alt-text-auditor`  | Audit + complete alt text on any assets.                          | `asset.list`, `asset.update`                       | (unchanged)              |
 | 11| `schema-emitter`    | `04-publishing/schema-emitter`| Build JSON-LD payload (Article + Author + Image refs).           | `article.get`, `schema.list`, `schema.set`, `schema.validate` | (unchanged)              |
 | 12| `interlinker`       | `04-publishing/interlinker`   | Suggest internal links from existing articles.                    | `interlink.suggest`, `interlink.list`              | (unchanged)              |
-| 13| `publish`           | `04-publishing/nuxt-content-publish` (or wordpress / ghost) | Push to primary publish target. | `article.get`, `schema.get`, `target.list`, `publish.preview`, `article.markPublished`, `publish.recordPublish` | `published` |
+| 13| `publish`           | `04-publishing/agent-publish` | Publish through the main agent's available external repo/API/DB/tooling, then record a targetless publish. The runner swaps to `nuxt-content-publish` only when a primary active Nuxt target exists. | `article.get`, `asset.list`, `source.list`, `schema.list`, `publish.recordExternal` | `published` |
 
 ### 3.2 EEAT three-verdict logic (step 8)
 
@@ -467,7 +466,7 @@ If a step with `on_failure: abort` is recorded as `failed`, the run is
 marked `failed` and no current step is returned.
 
 Use for structural failures that retrying will not fix: missing voice,
-missing primary publish target, invalid schema output.
+no available external publish path, invalid schema output.
 
 ### 5.2 `retry`
 
@@ -579,8 +578,8 @@ the current month's spend by integration.
 ## 9. Worked example: a custom procedure
 
 Suppose you want a "promotional-bonus-page" procedure for a gambling
-project: pull the latest bonus terms, draft a comparison page,
-publish via the WordPress target.
+project: pull the latest bonus terms, draft a comparison page, publish via
+the fully wired Nuxt Content target.
 
 ### 9.1 Scaffold
 
@@ -598,14 +597,13 @@ slug: 09-promotional-bonus-page
 version: 0.1.0
 description: |
   Pull current bonus terms via Firecrawl, draft a comparison page,
-  publish to the WordPress primary target. Cron-triggerable weekly
+  publish to the Nuxt Content primary target. Cron-triggerable weekly
   or operator-driven.
 triggers:
   - "Manual: operator runs via UI / `/procedure 09-promotional-bonus-page <project_id>`"
   - "Cron weekly when schedule:.cron is set"
 prerequisites:
   - "project has voice_profiles with is_default=true"
-  - "project has at least one publish_targets row with kind='wordpress' and is_active=true"
   - "project has integration_credentials with kind='firecrawl'"
 produces:
   - articles
@@ -649,7 +647,7 @@ steps:
     skill: 04-publishing/schema-emitter
     on_failure: abort
   - id: publish
-    skill: 04-publishing/wordpress-publish
+    skill: 04-publishing/agent-publish
     on_failure: abort
 concurrency_limit: 1
 resumable: true

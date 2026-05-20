@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from content_stack.config import Settings
+
 
 def test_health_returns_m0_shape(client: TestClient) -> None:
     """GET /api/v1/health returns 200 + the M0 keys with sensible types."""
@@ -72,14 +74,32 @@ def test_static_root_is_public(client: TestClient) -> None:
     assert resp.status_code == 200
 
 
+def test_generated_assets_are_public(client: TestClient, settings: Settings) -> None:
+    """Generated image URLs are public local assets, not bearer-protected API paths."""
+    asset_dir = settings.generated_assets_dir / "openai-images"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "sample.webp").write_bytes(b"webp")
+
+    resp = client.get("/generated-assets/openai-images/sample.webp")
+    assert resp.status_code == 200
+    assert resp.content == b"webp"
+
+
 def test_openapi_json_is_public(client: TestClient) -> None:
     """OpenAPI schema is local-dev ergonomics; exposing it grants no access."""
     resp = client.get("/api/openapi.json")
     assert resp.status_code == 200
 
 
-def test_openapi_path_count_matches_documented_census(client: TestClient) -> None:
-    """The README/architecture census says the REST surface has 87 paths."""
+def test_openapi_exposes_ui_critical_contract_paths(client: TestClient) -> None:
+    """OpenAPI advertises UI-critical routes that have drifted before."""
     resp = client.get("/api/openapi.json")
     assert resp.status_code == 200
-    assert len(resp.json()["paths"]) == 87
+    paths = resp.json()["paths"]
+
+    assert {"get", "post"} <= set(paths["/api/v1/projects/{project_id}/budgets"])
+    assert "post" in paths["/api/v1/articles/{article_id}/publishes/external"]
+    assert "get" in paths["/api/v1/procedures/runs/{run_id}/current-step"]
+    assert "post" in paths["/api/v1/procedures/runs/{run_id}/claim-step"]
+    assert "post" in paths["/api/v1/procedures/runs/{run_id}/record-step"]
+    assert "post" in paths["/api/v1/procedures/runs/{run_id}/execute-programmatic-step"]

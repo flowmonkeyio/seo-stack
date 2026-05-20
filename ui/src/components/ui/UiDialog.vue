@@ -8,6 +8,13 @@
 
   For yes/no confirmations, use UiConfirmDialog.
 -->
+<script lang="ts">
+let dialogIdSeed = 0;
+let dialogStackSeed = 0;
+const openDialogStack: number[] = [];
+const DIALOG_Z_INDEX_BASE = 1000;
+</script>
+
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, nextTick } from 'vue';
 import UiIconButton from './UiIconButton.vue';
@@ -38,18 +45,34 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
+const dialogId = ++dialogIdSeed;
 const dialogRef = ref<HTMLDivElement | null>(null);
 const previousFocus = ref<HTMLElement | null>(null);
+const stackIndex = ref<number | null>(null);
 
 function close() {
+  removeFromStack();
   emit('update:modelValue', false);
   emit('close');
 }
 
+function removeFromStack() {
+  if (stackIndex.value === null) return;
+  const idx = openDialogStack.indexOf(stackIndex.value);
+  if (idx >= 0) openDialogStack.splice(idx, 1);
+  stackIndex.value = null;
+  if (openDialogStack.length === 0) {
+    document.body.style.overflow = '';
+  }
+}
+
 function onKey(ev: KeyboardEvent) {
   if (!props.modelValue) return;
+  if (!isTopDialog.value) return;
   if (ev.key === 'Escape' && !props.noEscape) {
+    ev.preventDefault();
     close();
+    ev.stopImmediatePropagation();
     ev.stopPropagation();
   } else if (ev.key === 'Tab') {
     trapFocus(ev);
@@ -79,6 +102,8 @@ watch(
   async (open) => {
     if (open) {
       previousFocus.value = document.activeElement as HTMLElement;
+      stackIndex.value = ++dialogStackSeed;
+      openDialogStack.push(stackIndex.value);
       document.body.style.overflow = 'hidden';
       window.addEventListener('keydown', onKey);
       await nextTick();
@@ -86,7 +111,7 @@ watch(
         ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
       target?.focus();
     } else {
-      document.body.style.overflow = '';
+      removeFromStack();
       window.removeEventListener('keydown', onKey);
       previousFocus.value?.focus?.();
     }
@@ -95,7 +120,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
-  document.body.style.overflow = '';
+  removeFromStack();
   window.removeEventListener('keydown', onKey);
 });
 
@@ -105,6 +130,20 @@ const sizeClass = computed(() => ({
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
 }[props.size]));
+
+const titleId = computed(() => (props.title ? `ui-dialog-title-${dialogId}` : undefined));
+const descriptionId = computed(() =>
+  props.description ? `ui-dialog-desc-${dialogId}` : undefined
+);
+const isTopDialog = computed(
+  () => stackIndex.value !== null && openDialogStack.at(-1) === stackIndex.value
+);
+const overlayZIndex = computed(() =>
+  stackIndex.value === null ? undefined : DIALOG_Z_INDEX_BASE + stackIndex.value * 2
+);
+const dialogZIndex = computed(() =>
+  stackIndex.value === null ? undefined : DIALOG_Z_INDEX_BASE + stackIndex.value * 2 + 1
+);
 </script>
 
 <template>
@@ -117,6 +156,7 @@ const sizeClass = computed(() => ({
     <div
       v-if="modelValue"
       class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay flex items-center justify-center p-4"
+      :style="{ zIndex: overlayZIndex }"
       @click.self="!staticBackdrop && close()"
     >
       <transition
@@ -130,8 +170,9 @@ const sizeClass = computed(() => ({
           ref="dialogRef"
           role="dialog"
           aria-modal="true"
-          :aria-labelledby="title ? 'ui-dialog-title' : undefined"
-          :aria-describedby="description ? 'ui-dialog-desc' : undefined"
+          :aria-labelledby="titleId"
+          :aria-describedby="descriptionId"
+          :style="{ zIndex: dialogZIndex }"
           :class="[
             'ui-dialog z-modal w-full rounded-lg bg-bg-surface shadow-lg border border-default flex flex-col max-h-[calc(100vh-2rem)]',
             sizeClass,
@@ -145,14 +186,14 @@ const sizeClass = computed(() => ({
               <slot name="header">
                 <h2
                   v-if="title"
-                  id="ui-dialog-title"
+                  :id="titleId"
                   class="t-h1 text-fg-strong"
                 >
                   {{ title }}
                 </h2>
                 <p
                   v-if="description"
-                  id="ui-dialog-desc"
+                  :id="descriptionId"
                   class="text-sm text-fg-muted mt-1"
                 >
                   {{ description }}

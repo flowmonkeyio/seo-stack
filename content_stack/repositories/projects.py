@@ -992,6 +992,15 @@ class IntegrationBudgetRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def list(self, project_id: int) -> list[IntegrationBudgetOut]:
+        """List configured budget rows for a project."""
+        rows = self._s.exec(
+            select(IntegrationBudget)
+            .where(IntegrationBudget.project_id == project_id)
+            .order_by(IntegrationBudget.kind)
+        ).all()
+        return [IntegrationBudgetOut.model_validate(row) for row in rows]
+
     def get(self, project_id: int, kind: str) -> IntegrationBudgetOut:
         """Look up a budget row by ``(project_id, kind)``."""
         row = self._s.exec(

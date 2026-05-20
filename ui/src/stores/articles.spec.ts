@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { useArticlesStore, ArticleEtagError } from './articles'
+import { useArticlesStore } from './articles'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -57,64 +57,13 @@ describe('articles store', () => {
     expect(store.items[0].title).toBe('How to evaluate a sportsbook')
   })
 
-  it('setBrief() POSTs and updates the local cache with fresh etag', async () => {
-    let capturedBody: string | null = null
-    const advanced = { ...ARTICLE_BRIEFING, status: 'outlined' as const, step_etag: 'etag-2' }
-    globalThis.fetch = vi.fn(async (_url, init) => {
-      capturedBody = String(init?.body)
-      return new Response(JSON.stringify({ data: advanced, project_id: 1 }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
+  it('does not expose article mutation methods to the UI store', () => {
     const store = useArticlesStore()
-    store.items = [ARTICLE_BRIEFING] as never
-    const row = await store.setBrief(1, { expected_etag: 'etag-1', brief_json: { foo: 'bar' } })
-    expect(row.status).toBe('outlined')
-    expect(row.step_etag).toBe('etag-2')
-    expect(capturedBody).toContain('"expected_etag":"etag-1"')
-    // Local cache picks up the fresh row.
-    expect(store.items[0].status).toBe('outlined')
-    expect(store.currentDetail?.step_etag).toBe('etag-2')
-  })
-
-  it('setDraft() with append=true puts ?append=true in the URL', async () => {
-    let capturedUrl = ''
-    globalThis.fetch = vi.fn(async (url) => {
-      capturedUrl = String(url)
-      return new Response(JSON.stringify({ data: ARTICLE_BRIEFING, project_id: 1 }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
-    const store = useArticlesStore()
-    await store.setDraft(1, { expected_etag: 'etag-1', draft_md: 'hello' }, true)
-    expect(capturedUrl).toContain('/draft?append=true')
-  })
-
-  it('mutations surface ArticleEtagError on 409 with structured payload', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          detail: {
-            data: { current_etag: 'fresh-etag', current_updated_at: '2026-05-02T00:00:00Z' },
-          },
-        }),
-        { status: 409, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useArticlesStore()
-    let caught: unknown = null
-    try {
-      await store.setOutline(1, { expected_etag: 'stale', outline_md: '# hi' })
-    } catch (err) {
-      caught = err
-    }
-    expect(caught).toBeInstanceOf(ArticleEtagError)
-    if (caught instanceof ArticleEtagError) {
-      expect(caught.current_etag).toBe('fresh-etag')
-      expect(caught.current_updated_at).toBe('2026-05-02T00:00:00Z')
-    }
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.setBrief).toBeUndefined()
+    expect(exposed.setDraft).toBeUndefined()
+    expect(exposed.setOutline).toBeUndefined()
+    expect(exposed.markPublished).toBeUndefined()
   })
 
   it('listVersions() unwraps the page envelope', async () => {

@@ -23,7 +23,70 @@ def test_authorize_returns_url_and_state(api: TestClient, project_id: int) -> No
     body = resp.json()
     assert body["authorization_url"].startswith("https://accounts.google.com/o/oauth2/v2/auth")
     assert body["state"]
+    assert body["redirect_uri"] == "http://127.0.0.1:5180/api/v1/integrations/gsc/oauth/callback"
     assert "client_id=client-id-fake" in body["authorization_url"]
+
+
+def test_oauth_info_returns_callback_and_setup_state(api: TestClient) -> None:
+    """``GET /oauth/info`` lets the UI show the registered callback before consent."""
+    resp = api.get("/api/v1/integrations/gsc/oauth/info")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["redirect_uri"] == "http://127.0.0.1:5180/api/v1/integrations/gsc/oauth/callback"
+    assert body["configured"] is True
+    assert body["missing"] == []
+    assert body["hint"] is None
+
+
+def test_oauth_info_reports_missing_config(
+    api: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Info endpoint reports local env var gaps without creating a credential row."""
+    monkeypatch.delenv("GSC_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GSC_OAUTH_CLIENT_SECRET", raising=False)
+
+    resp = api.get("/api/v1/integrations/gsc/oauth/info")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["configured"] is False
+    assert set(body["missing"]) == {
+        "GSC_OAUTH_CLIENT_ID",
+        "GSC_OAUTH_CLIENT_SECRET",
+    }
+    assert "restart the daemon" in body["hint"]
+
+
+def test_authorize_reports_missing_oauth_config(
+    api: TestClient,
+    project_id: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing local GSC OAuth env vars is setup-required, not vendor down."""
+    # The module autouse fixture sets fake OAuth env vars for the happy paths.
+    # Remove them only for this test to exercise the missing-config branch.
+    monkeypatch.delenv("GSC_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GSC_OAUTH_CLIENT_SECRET", raising=False)
+
+    resp = api.post(
+        "/api/v1/integrations/gsc/oauth/authorize",
+        json={"project_id": project_id},
+    )
+
+    assert resp.status_code == 422
+    body = resp.json()["detail"]
+    assert body["code"] == -32602
+    assert body["retryable"] is False
+    assert set(body["data"]["missing"]) == {
+        "GSC_OAUTH_CLIENT_ID",
+        "GSC_OAUTH_CLIENT_SECRET",
+    }
+    assert "restart the daemon" in body["hint"]
+
+    creds = api.get(f"/api/v1/projects/{project_id}/integrations").json()
+    assert [c for c in creds if c["kind"] == "gsc"] == []
 
 
 def test_callback_exchanges_code_and_persists_tokens(
@@ -46,7 +109,7 @@ def test_callback_exchanges_code_and_persists_tokens(
             "access_token": "ya29.live",
             "refresh_token": "1//rt-live",
             "expires_in": 3600,
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         },
     )
@@ -85,7 +148,7 @@ def test_callback_accepts_browser_redirect_without_bearer_header(
             "access_token": "ya29.browser",
             "refresh_token": "1//rt-browser",
             "expires_in": 3600,
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         },
     )

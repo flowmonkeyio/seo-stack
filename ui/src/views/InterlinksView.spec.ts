@@ -29,7 +29,7 @@ describe('InterlinksView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders heading + status pills + suggest button', async () => {
+  it('renders heading + status filters without mutation actions', async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(
         JSON.stringify({ items: [], next_cursor: null, total_estimate: 0 }),
@@ -41,11 +41,11 @@ describe('InterlinksView', () => {
     const w = mount(InterlinksView, { global: { plugins: [router] } })
     await new Promise((r) => setTimeout(r, 0))
     expect(w.text()).toContain('Interlinks')
-    expect(w.text()).toContain('Suggest')
     expect(w.text()).toContain('Suggested')
     expect(w.text()).toContain('Applied')
     expect(w.text()).toContain('Dismissed')
     expect(w.text()).toContain('Broken')
+    expect(w.findAll('button').some((button) => button.text() === 'Suggest interlinks')).toBe(false)
   })
 
   it('shows empty state when no rows', async () => {

@@ -18,7 +18,7 @@ def _payload() -> bytes:
             "access_token": "ya29.fake",
             "refresh_token": "1//rt-fake",
             "expires_at": "2099-01-01T00:00:00",
-            "scope": "webmasters.readonly indexing",
+            "scope": "webmasters.readonly",
             "token_type": "Bearer",
         }
     ).encode("utf-8")

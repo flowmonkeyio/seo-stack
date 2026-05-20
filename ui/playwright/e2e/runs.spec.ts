@@ -19,7 +19,7 @@ test.describe('runs view — list + filters + sub-route navigation', () => {
     await expect(page.getByRole('heading', { name: /^Runs/ })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Running' })).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Success' })).toBeVisible()
-    await expect(page.getByLabel('Filter kind')).toBeVisible()
+    await expect(page.getByLabel('Kind')).toBeVisible()
     await expect(page.getByLabel('Parent run id')).toBeVisible()
 
     errors.assertNone()
@@ -36,7 +36,7 @@ test.describe('runs view — list + filters + sub-route navigation', () => {
     await page.goto(`/projects/${project.id}/runs`)
     await expect(page.getByRole('heading', { name: /^Runs/ })).toBeVisible()
     // The DataTable surfaces its empty-message slot.
-    await expect(page.getByText('No runs match the filters.')).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'No runs match the filters.' })).toBeVisible()
 
     errors.assertNone()
   })

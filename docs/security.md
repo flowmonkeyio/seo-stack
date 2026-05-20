@@ -30,7 +30,7 @@ the bearer-token check. Currently:
 | Path | Why it is whitelisted | Residual exposure |
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
-| `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk token file from the browser, so it fetches the bearer token at app boot via this endpoint. | **See below.** |
+| `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived read-only bearer token at app boot via this endpoint. | **See below.** |
 | `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser back to the daemon and cannot attach the SPA's bearer header. | The route accepts only a callback with a matching stored OAuth `state` nonce, then removes that nonce from persisted config. |
 
 ## Token-bootstrap trade-off (M5.A)
@@ -38,24 +38,28 @@ the bearer-token check. Currently:
 Adding `/api/v1/auth/ui-token` accepts a small reduction in defence depth.
 
 **What's gained.** The browser-based UI works without prompting the user
-to paste a token by hand. The token never leaves the daemon machine and
-never lands in a localStorage / sessionStorage where a hostile script
-could read it (the SPA holds the token in a Pinia-store ref only).
+to paste a token by hand. The disk-backed daemon token never leaves the
+daemon machine and never lands in a localStorage / sessionStorage where
+a hostile script could read it (the SPA holds only the derived UI token
+in a Pinia-store ref).
 
 **What's lost.** Any other process on the same machine that can connect
-to `127.0.0.1:5180` can fetch the token by sending `GET
-/api/v1/auth/ui-token` with no credentials. Previously, only a process
-that could read `auth.token` (mode 0600, owned by the daemon's user)
-could obtain it; now any process running as *any* local user that can
-open a TCP connection to loopback also can. On a single-user macOS or
-Linux box that's a near-zero delta (other users can't loopback-connect
-across sessions in practice, and same-user processes already had file
-access). On a multi-user / shared-tenant box the regression is real.
+to `127.0.0.1:5180` can fetch the UI token by sending `GET
+/api/v1/auth/ui-token` with no credentials. That token is accepted only
+for safe REST reads under `/api/v1/*`; it cannot mutate data and cannot
+access `/mcp`. Previously, only a process that could read `auth.token`
+(mode 0600, owned by the daemon's user) could obtain any bearer token.
+On a single-user macOS or Linux box that's a near-zero delta (same-user
+processes already had file access). On a multi-user / shared-tenant box,
+the residual exposure is read access to the local operator console data.
 
 **Mitigations already in place.**
 
 - The endpoint never logs the token. Server logs and structured-logging
   output redact it as part of normal practice.
+- The returned token is derived from, but not equal to, the disk-backed
+  daemon token. `BearerTokenMiddleware` accepts it only for `GET`,
+  `HEAD`, and `OPTIONS` requests under `/api/v1/*`.
 - The `HostHeaderMiddleware` rejects requests with a forged `Host:`
   header, so a remote attacker who has somehow proxied to the loopback
   port (e.g. through a compromised tunnel) is rebuffed.
@@ -67,13 +71,13 @@ access). On a multi-user / shared-tenant box the regression is real.
   middleware runs.
 
 **When to reach for stricter posture.** Operators who run multi-user
-machines and want the file-mode-0600 isolation back can:
+machines and want even read-only browser bootstrap removed can:
 
 1. **Run the UI in a separate browser profile** that has no other tabs.
    This eliminates same-origin script attacks against the SPA itself.
-2. **Disable the bootstrap and paste the token by hand.** A future
+2. **Disable the bootstrap and paste a UI token by hand.** A future
    hardening flag (out of scope for M5) will let operators turn the
-   bootstrap off; the SPA will then prompt for the token at first load
+   bootstrap off; the SPA will then prompt for a token at first load
    and store it in `sessionStorage` for the tab's lifetime. Operators
    who need this today can `chmod 0400` the token file and short-circuit
    the bootstrap by editing `content_stack/auth.py`'s

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Vue 3 management UI for content-stack daemon (M5 build).",
+  "description": "Vue 3 operator UI for the content-stack daemon.",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "gen-types": "openapi-typescript http://127.0.0.1:5180/api/openapi.json -o src/api.ts --enum --root-types"
+    "gen-types": "bash ../scripts/gen-types.sh"
   },
   "dependencies": {
     "dompurify": "^3.1.6",

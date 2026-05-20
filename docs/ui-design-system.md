@@ -2,18 +2,18 @@
 
 The canonical reference. Tokens live in code; rules live here. If you find yourself making a one-off button, you're wrong — extend the primitive instead.
 
-Implementation showcase: `/__design-system` in the UI app renders the shipped
-tokens, status mappings, primitives, and domain components with content-stack
-examples.
+There is no exposed design-system route in the shipped app. The operator UI is
+the reference surface; keep demos and action prototypes out of production
+routes.
 
 ## 1. Product UI principles
 
 1. **Operational, not promotional.** This is admin tooling. Calm > exciting.
 2. **Density is a feature.** Operators scan many rows. 13/18 body, 32px controls.
-3. **Keyboard-first.** Every action reachable with `Tab` + `Enter`/`Space`. Focus rings always visible.
-4. **Predictability over delight.** Same shape, same place, same shortcut, every screen.
-5. **State is information.** Loading, dirty, saved, error, disabled — all explicit, all consistent.
-6. **No surprises.** Destructive actions confirm. Navigation does not. Auto-save is communicated.
+3. **Observer-first.** Product mutations belong to the agent/MCP path. The UI shows state, history, readiness, and artifacts.
+4. **Keyboard-readable.** Every control reachable with `Tab` + `Enter`/`Space`. Focus rings always visible.
+5. **Predictability over delight.** Same shape, same place, same shortcut, every screen.
+6. **State is information.** Loading, empty, stale, error, disabled — all explicit, all consistent.
 
 ## 2. Visual language
 
@@ -46,17 +46,18 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 ## 4. Layout rules
 
-- Sidebar: 240px, collapsible to 56px.
+- Sidebar: 256px desktop rail.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
-- Page header: title, slug, description, action cluster (right). Breadcrumbs optional, above title.
+- Page header: title, slug, description, and read-only utility controls (right). Breadcrumbs optional, above title.
 - Tab bar separates the page header from page body. 32px tab height, 2px active underline in `accent.primary`.
 - List pages: filter bar (sticky), table, pagination/footer. Bulk action bar appears on selection, takes filter bar's slot.
 - Detail pages: page header, tab bar, tab content. No nested cards.
+- Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances.
 
 ## 5. Component usage rules
 
-**UiButton.** Default `secondary`. `primary` only for the page's single dominant action. `danger` only on destructive verbs. Never two `primary`s in one cluster.
+**UiButton.** Default `secondary`. `primary` only for navigation to another observer view or non-mutating local utility. `danger` is not used in product views.
 
 **UiCard.** For real things — projects, articles, runs, integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
@@ -86,13 +87,12 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Tables use `<th scope>`. Sort buttons inside `<th>` with `aria-sort`.
 - Forms: every input has a `<label for>`. Errors linked via `aria-describedby`.
 
-## 7. Responsive behavior
+## 7. Desktop scope
 
-- ≥1280px: full layout, sidebar visible, tables full-width.
-- 1024–1280px: sidebar collapses to 56px icon rail.
-- 768–1024px: sidebar becomes a drawer (`UiSidePanel` from left). Filter bar wraps.
-- <768px: page header stacks (title above actions). Tables go horizontally scrollable in a wrapper. Dialogs go full-screen with safe-area insets.
-- Forms: never inline labels at <768px. Always above-the-input.
+This is a local desktop operator console. Design, QA, and screenshots target the
+desktop viewport used by Playwright (`1280x800`) plus wide desktop inspection
+when a dense table or article artifact needs it. Mobile-specific drawers,
+full-screen dialogs, and breakpoint tours are intentionally out of scope.
 
 ## 8. Dark mode
 

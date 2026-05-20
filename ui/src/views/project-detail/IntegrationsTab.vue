@@ -1,25 +1,17 @@
 <script setup lang="ts">
-// IntegrationsTab — guided vendor setup. The database still stores a
-// `kind`, but the UI presents vendors, use cases, and required fields.
+// IntegrationsTab — read-only vendor readiness console.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import {
-  UiBadge,
-  UiButton,
-  UiCallout,
-  UiDialog,
-  UiFormField,
-  UiInput,
-  UiPanel,
-  UiSectionHeader,
-} from '@/components/ui'
-import { apiFetch, apiWrite, ApiError } from '@/lib/client'
+import { UiBadge, UiButton, UiCallout, UiSectionHeader } from '@/components/ui'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import type { components } from '@/api'
 
 type Cred = components['schemas']['IntegrationCredentialOut']
+type GscOAuthInfo = components['schemas']['GscOAuthInfoResponse']
+
 type VendorKind =
   | 'dataforseo'
   | 'firecrawl'
@@ -29,35 +21,28 @@ type VendorKind =
   | 'jina'
   | 'ahrefs'
   | 'google-paa'
-
-interface FieldSpec {
-  key: string
-  label: string
-  type?: 'text' | 'password'
-  placeholder?: string
-  help?: string
-  required?: boolean
-}
+  | 'wordpress'
+  | 'ghost'
+type VendorWorkflow = 'research' | 'monitoring' | 'assets' | 'publishing' | 'optional'
 
 interface VendorSpec {
   kind: VendorKind
   name: string
+  workflow: VendorWorkflow
   category: string
   summary: string
   usedBy: string
   setup: 'manual' | 'oauth' | 'none'
-  fields?: FieldSpec[]
   dependsOn?: VendorKind[]
   optional?: boolean
   docsHref?: string
 }
 
-interface TestResult {
-  ok?: boolean
-  status?: string
-  detail?: string
-  message?: string
-  [key: string]: unknown
+interface IntegrationSection {
+  key: VendorWorkflow
+  title: string
+  description: string
+  vendors: VendorSpec[]
 }
 
 const route = useRoute()
@@ -69,43 +54,27 @@ const vendors: VendorSpec[] = [
   {
     kind: 'dataforseo',
     name: 'DataForSEO',
+    workflow: 'research',
     category: 'Keyword and SERP data',
     summary: 'Search volume, SERP results, PAA data, and competitor keyword discovery.',
     usedBy: 'keyword-discovery, serp-analyzer, competitor research',
     setup: 'manual',
     docsHref: 'https://app.dataforseo.com',
-    fields: [
-      { key: 'login', label: 'API login', placeholder: 'your DataForSEO login', required: true },
-      {
-        key: 'password',
-        label: 'API password',
-        type: 'password',
-        placeholder: 'your DataForSEO password',
-        required: true,
-      },
-    ],
   },
   {
     kind: 'firecrawl',
     name: 'Firecrawl',
+    workflow: 'research',
     category: 'Crawling and extraction',
     summary: 'Scrape source pages, competitor pages, SERPs, and drift snapshots.',
     usedBy: 'serp-analyzer, content-brief, drift-watch, Google PAA',
     setup: 'manual',
     docsHref: 'https://firecrawl.dev',
-    fields: [
-      {
-        key: 'api_key',
-        label: 'API key',
-        type: 'password',
-        placeholder: 'fc-...',
-        required: true,
-      },
-    ],
   },
   {
     kind: 'gsc',
     name: 'Google Search Console',
+    workflow: 'monitoring',
     category: 'Performance and indexing',
     summary: 'Search analytics, indexing inspection, crawl errors, and opportunity mining.',
     usedBy: 'weekly-gsc-review, gsc-opportunity-finder, crawl-error-watch',
@@ -115,377 +84,228 @@ const vendors: VendorSpec[] = [
   {
     kind: 'openai-images',
     name: 'OpenAI Images',
+    workflow: 'assets',
     category: 'Article images',
     summary: 'Hero, inline, and social image generation through the daemon image wrapper.',
     usedBy: 'image-generator',
     setup: 'manual',
     docsHref: 'https://platform.openai.com/api-keys',
-    fields: [
-      {
-        key: 'api_key',
-        label: 'Image API key',
-        type: 'password',
-        placeholder: 'sk-...',
-        required: true,
-      },
-    ],
+  },
+  {
+    kind: 'wordpress',
+    name: 'WordPress',
+    workflow: 'publishing',
+    category: 'Publishing destination',
+    summary: 'Publish edited articles and media through the WordPress REST API.',
+    usedBy: 'wordpress-publish',
+    setup: 'manual',
+    docsHref: 'https://wordpress.org/documentation/article/application-passwords/',
+  },
+  {
+    kind: 'ghost',
+    name: 'Ghost',
+    workflow: 'publishing',
+    category: 'Publishing destination',
+    summary: 'Publish edited articles, authors, tags, and images through the Ghost Admin API.',
+    usedBy: 'ghost-publish',
+    setup: 'manual',
+    docsHref: 'https://ghost.org/docs/admin-api/',
   },
   {
     kind: 'reddit',
     name: 'Reddit',
+    workflow: 'optional',
     category: 'Audience research',
-    summary: 'Application-only Reddit search for questions and pain points.',
+    summary: 'Subreddit searches and recurring question discovery.',
     usedBy: 'keyword-discovery',
     setup: 'manual',
+    optional: true,
     docsHref: 'https://www.reddit.com/prefs/apps',
-    fields: [
-      { key: 'client_id', label: 'Client ID', placeholder: 'app client id', required: true },
-      {
-        key: 'client_secret',
-        label: 'Client secret',
-        type: 'password',
-        placeholder: 'app client secret',
-        required: true,
-      },
-      {
-        key: 'user_agent',
-        label: 'User agent',
-        placeholder: 'content-stack/0.1 by your-username',
-        required: true,
-      },
-    ],
   },
   {
     kind: 'jina',
     name: 'Jina Reader',
-    category: 'Markdown fallback',
-    summary: 'Optional reader API key for higher limits when extracting pages as markdown.',
-    usedBy: 'serp-analyzer markdown fallback',
+    workflow: 'optional',
+    category: 'Readable source extraction',
+    summary: 'Markdown extraction fallback for pages where standard scraping is noisy.',
+    usedBy: 'serp-analyzer, content-brief',
     setup: 'manual',
     optional: true,
-    docsHref: 'https://jina.ai/reader',
-    fields: [
-      {
-        key: 'api_key',
-        label: 'API key',
-        type: 'password',
-        placeholder: 'optional Jina key',
-        required: true,
-      },
-    ],
+    docsHref: 'https://jina.ai/reader/',
   },
   {
     kind: 'ahrefs',
     name: 'Ahrefs',
-    category: 'Enterprise competitor data',
-    summary: 'Optional enterprise API for keyword inventory and backlink research.',
-    usedBy: 'keyword-discovery, one-site-shortcut',
+    workflow: 'optional',
+    category: 'Competitor research',
+    summary: 'Competitor keyword inventory and backlink discovery.',
+    usedBy: 'competitor-sitemap-shortcut',
     setup: 'manual',
     optional: true,
-    docsHref: 'https://ahrefs.com/api',
-    fields: [
-      {
-        key: 'api_key',
-        label: 'API token',
-        type: 'password',
-        placeholder: 'Ahrefs enterprise token',
-        required: true,
-      },
-    ],
+    docsHref: 'https://app.ahrefs.com/user/api',
   },
   {
     kind: 'google-paa',
-    name: 'Google People Also Ask',
-    category: 'Question mining',
-    summary: 'No direct key. Uses Firecrawl to fetch SERP pages and extract questions.',
+    name: 'Google PAA',
+    workflow: 'optional',
+    category: 'SERP question extraction',
+    summary: 'People Also Ask extraction through the Firecrawl-backed helper.',
     usedBy: 'keyword-discovery',
     setup: 'none',
     dependsOn: ['firecrawl'],
+    optional: true,
   },
 ]
 
-const vendorByKind = new Map(vendors.map((vendor) => [vendor.kind, vendor]))
+const sectionOrder: VendorWorkflow[] = ['research', 'monitoring', 'assets', 'publishing', 'optional']
+const sectionMeta: Record<VendorWorkflow, { title: string; description: string }> = {
+  research: {
+    title: 'Research',
+    description: 'Data sources for keyword discovery, SERP analysis, briefs, and competitor mapping.',
+  },
+  monitoring: {
+    title: 'Monitoring',
+    description: 'Search Console and indexing signals used by ongoing agent reviews.',
+  },
+  assets: {
+    title: 'Assets',
+    description: 'Image generation and asset creation support.',
+  },
+  publishing: {
+    title: 'Publishing',
+    description: 'CMS destinations used by publish skills after quality gates pass.',
+  },
+  optional: {
+    title: 'Optional accelerators',
+    description: 'Useful add-ons that improve research breadth but are not required for the core path.',
+  },
+}
 
 const allCreds = ref<Cred[]>([])
+const gscOAuthInfo = ref<GscOAuthInfo | null>(null)
 const loading = ref(false)
-const activeKind = ref<VendorKind | null>(null)
-const formFields = ref<Record<string, string>>({})
-const saving = ref(false)
-const testingIds = ref<Set<number>>(new Set())
-const connectingGsc = ref(false)
-
-const projectCreds = computed(() => allCreds.value.filter((c) => c.project_id === projectId.value))
-const globalCreds = computed(() => allCreds.value.filter((c) => c.project_id === null))
 
 const projectCredByKind = computed(() => {
   const map = new Map<string, Cred>()
-  for (const cred of projectCreds.value) map.set(cred.kind, cred)
+  for (const cred of allCreds.value) {
+    if (cred.project_id === projectId.value) map.set(cred.kind, cred)
+  }
   return map
 })
 
 const globalCredByKind = computed(() => {
   const map = new Map<string, Cred>()
-  for (const cred of globalCreds.value) map.set(cred.kind, cred)
+  for (const cred of allCreds.value) {
+    if (cred.project_id === null) map.set(cred.kind, cred)
+  }
   return map
 })
 
 const requiredKinds = computed<VendorKind[]>(() => {
-  const raw = route.query.required
-  const joined = Array.isArray(raw) ? raw.join(',') : raw ?? ''
-  const kinds = joined
+  const raw = typeof route.query.required === 'string' ? route.query.required : ''
+  return raw
     .split(',')
-    .map((item) => normalizeKind(item.trim()))
-    .filter((item): item is VendorKind => item !== null)
-  return [...new Set(kinds)]
+    .map((kind) => kind.trim())
+    .filter((kind): kind is VendorKind => vendors.some((vendor) => vendor.kind === kind))
 })
 
-const requiredVendors = computed(() => requiredKinds.value.map((kind) => vendorByKind.get(kind)!))
-
-const setupLink = computed(() => {
-  const origin = window.location.origin
-  const suffix =
-    requiredKinds.value.length > 0 ? `?required=${requiredKinds.value.join(',')}` : ''
-  return `${origin}/projects/${projectId.value}/integrations${suffix}`
-})
-
-const activeVendor = computed(() => (activeKind.value ? vendorByKind.get(activeKind.value) : null))
-const activeCredential = computed(() =>
-  activeKind.value ? projectCredByKind.value.get(activeKind.value) : undefined,
+const requiredVendors = computed(() =>
+  vendors.filter((vendor) => requiredKinds.value.includes(vendor.kind)),
 )
 
-function normalizeKind(kind: string): VendorKind | null {
-  const normalized = kind.toLowerCase().replace(/_/g, '-')
-  if (normalized === 'paa') return 'google-paa'
-  if (normalized === 'openai') return 'openai-images'
-  return vendorByKind.has(normalized as VendorKind) ? (normalized as VendorKind) : null
+const missingRequiredVendors = computed(() =>
+  requiredVendors.value.filter((vendor) => !isConnected(vendor.kind)),
+)
+
+const integrationSections = computed<IntegrationSection[]>(() =>
+  sectionOrder.map((key) => ({
+    key,
+    ...sectionMeta[key],
+    vendors: vendors.filter((vendor) => vendor.workflow === key),
+  })),
+)
+
+const setupLink = computed(
+  () => `content-stack integrations setup --project ${projectId.value}`,
+)
+
+const gscMissingSummary = computed(() =>
+  gscOAuthInfo.value?.missing?.length ? gscOAuthInfo.value.missing.join(', ') : '',
+)
+
+function credentialFor(kind: VendorKind): Cred | null {
+  return projectCredByKind.value.get(kind) ?? globalCredByKind.value.get(kind) ?? null
 }
 
-function credentialFor(kind: VendorKind): Cred | undefined {
-  return projectCredByKind.value.get(kind) ?? globalCredByKind.value.get(kind)
+function isConnected(kind: VendorKind): boolean {
+  if (kind === 'google-paa') return isConnected('firecrawl')
+  return credentialFor(kind) !== null
 }
 
 function isProjectCredential(kind: VendorKind): boolean {
   return projectCredByKind.value.has(kind)
 }
 
-function isConnected(kind: VendorKind): boolean {
-  if (kind === 'google-paa') return isConnected('firecrawl')
-  return credentialFor(kind) !== undefined
-}
-
 function statusLabel(kind: VendorKind): string {
-  if (kind === 'google-paa') return isConnected('firecrawl') ? 'Ready' : 'Needs Firecrawl'
-  if (isProjectCredential(kind)) return 'Connected'
-  if (globalCredByKind.value.has(kind)) return 'Using global'
+  if (kind === 'gsc' && gscOAuthInfo.value && !gscOAuthInfo.value.configured) return 'Needs env'
+  if (isProjectCredential(kind)) return 'Project credential'
+  if (globalCredByKind.value.has(kind)) return 'Global fallback'
+  if (kind === 'google-paa' && isConnected('firecrawl')) return 'Via Firecrawl'
   return 'Not connected'
 }
 
 function statusTone(kind: VendorKind): 'success' | 'warning' | 'neutral' {
-  if (isConnected(kind)) {
-    return 'success'
-  }
-  if (requiredKinds.value.includes(kind)) {
-    return 'warning'
-  }
-  return 'neutral'
+  if (isConnected(kind)) return 'success'
+  return kind === 'google-paa' ? 'neutral' : 'warning'
 }
 
-function initialFields(vendor: VendorSpec, cred?: Cred): Record<string, string> {
-  const config = (cred?.config_json ?? {}) as Record<string, unknown>
-  const initial: Record<string, string> = {}
-  for (const field of vendor.fields ?? []) {
-    const configValue = config[field.key]
-    initial[field.key] = typeof configValue === 'string' ? configValue : ''
+function statusSummary(kind: VendorKind): string {
+  const cred = credentialFor(kind)
+  if (kind === 'google-paa') {
+    return isConnected('firecrawl') ? 'Available through Firecrawl' : 'Waiting on Firecrawl'
   }
-  if (vendor.kind === 'reddit') {
-    initial.user_agent ||= 'content-stack/0.1 by your-username'
-  }
-  return initial
+  if (!cred) return 'Setup needed'
+  const refreshed = cred.last_refreshed_at
+    ? `Last tested ${new Date(cred.last_refreshed_at).toLocaleString()}`
+    : 'Not tested yet'
+  return `${isProjectCredential(kind) ? 'Project credential' : 'Global fallback'} / ${refreshed}`
 }
 
-function openSetup(kind: VendorKind): void {
-  const vendor = vendorByKind.get(kind)
-  if (!vendor || vendor.setup !== 'manual') return
-  activeKind.value = kind
-  formFields.value = initialFields(vendor, projectCredByKind.value.get(kind))
+function dependencyLabel(vendor: VendorSpec): string {
+  return (vendor.dependsOn ?? [])
+    .map((kind) => vendors.find((entry) => entry.kind === kind)?.name ?? kind)
+    .join(', ')
 }
 
-function closeSetup(): void {
-  if (saving.value) return
-  activeKind.value = null
-  formFields.value = {}
-}
-
-function payloadFor(vendor: VendorSpec): string {
-  const fields = formFields.value
-  if (vendor.kind === 'dataforseo') return fields.password?.trim() ?? ''
-  if (vendor.kind === 'reddit') {
-    return JSON.stringify({
-      client_id: fields.client_id?.trim() ?? '',
-      client_secret: fields.client_secret?.trim() ?? '',
-      user_agent: fields.user_agent?.trim() ?? '',
-    })
-  }
-  return fields.api_key?.trim() ?? ''
-}
-
-function configFor(vendor: VendorSpec): Record<string, unknown> {
-  const fields = formFields.value
-  if (vendor.kind === 'dataforseo') return { login: fields.login?.trim() ?? '' }
-  if (vendor.kind === 'reddit') {
-    return {
-      client_id: fields.client_id?.trim() ?? '',
-      user_agent: fields.user_agent?.trim() ?? '',
-    }
-  }
-  return {}
-}
-
-function validateFields(vendor: VendorSpec): boolean {
-  for (const field of vendor.fields ?? []) {
-    if (field.required && !formFields.value[field.key]?.trim()) {
-      toasts.error(`${field.label} is required`)
-      return false
-    }
-  }
-  return true
+function cardToneClass(kind: VendorKind): string {
+  if (isConnected(kind)) return 'border-success-border bg-success-subtle/30'
+  if (requiredKinds.value.includes(kind)) return 'border-warning-border bg-warning-subtle/40'
+  return 'border-default bg-bg-surface'
 }
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   loading.value = true
   try {
-    const res = await apiFetch<Cred[]>(`/api/v1/projects/${projectId.value}/integrations`)
+    const [res, oauthInfo] = await Promise.all([
+      apiFetch<Cred[]>(`/api/v1/projects/${projectId.value}/integrations`),
+      apiFetch<GscOAuthInfo>('/api/v1/integrations/gsc/oauth/info'),
+    ])
     allCreds.value = Array.isArray(res) ? res : []
+    gscOAuthInfo.value = oauthInfo
   } catch (err) {
-    toasts.error('Failed to load integrations', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load integrations', formatApiError(err))
   } finally {
     loading.value = false
-  }
-}
-
-async function saveManual(): Promise<void> {
-  const vendor = activeVendor.value
-  if (!vendor || vendor.setup !== 'manual') return
-  if (!validateFields(vendor)) return
-  const payload = payloadFor(vendor)
-  if (!payload) {
-    toasts.error('Credential value is required')
-    return
-  }
-  saving.value = true
-  try {
-    const body = {
-      kind: vendor.kind,
-      plaintext_payload: payload,
-      config_json: configFor(vendor),
-    }
-    const existing = activeCredential.value
-    if (existing) {
-      await apiWrite<Cred>(`/api/v1/projects/${projectId.value}/integrations/${existing.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      toasts.success(`${vendor.name} updated`)
-    } else {
-      await apiWrite<Cred>(`/api/v1/projects/${projectId.value}/integrations`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      toasts.success(`${vendor.name} connected`)
-    }
-    closeSetup()
-    await load()
-  } catch (err) {
-    toasts.error(`Failed to save ${vendor.name}`, err instanceof Error ? err.message : undefined)
-  } finally {
-    saving.value = false
-  }
-}
-
-async function remove(cred: Cred, vendor: VendorSpec): Promise<void> {
-  try {
-    await apiWrite<Cred>(`/api/v1/projects/${projectId.value}/integrations/${cred.id}`, {
-      method: 'DELETE',
-    })
-    toasts.success(`${vendor.name} removed`)
-    if (activeKind.value === vendor.kind) closeSetup()
-    await load()
-  } catch (err) {
-    toasts.error(`Failed to remove ${vendor.name}`, err instanceof Error ? err.message : undefined)
-  }
-}
-
-function setTesting(id: number, on: boolean): void {
-  const next = new Set(testingIds.value)
-  if (on) next.add(id)
-  else next.delete(id)
-  testingIds.value = next
-}
-
-async function testCredential(cred: Cred, vendor: VendorSpec): Promise<void> {
-  setTesting(cred.id, true)
-  try {
-    const res = await apiFetch<TestResult>(
-      `/api/v1/projects/${projectId.value}/integrations/${cred.id}/test`,
-      { method: 'POST' },
-    )
-    const ok = res.ok ?? res.status === 'ok'
-    if (ok) {
-      toasts.success(`${vendor.name} test passed`, res.detail ?? res.message)
-    } else {
-      toasts.error(`${vendor.name} test failed`, res.detail ?? res.message)
-    }
-  } catch (err) {
-    if (err instanceof ApiError) {
-      toasts.error(`${vendor.name} test failed`, `HTTP ${err.status}`)
-    } else {
-      toasts.error(`${vendor.name} test failed`, err instanceof Error ? err.message : undefined)
-    }
-  } finally {
-    setTesting(cred.id, false)
-  }
-}
-
-async function connectGsc(): Promise<void> {
-  connectingGsc.value = true
-  const popup = window.open('about:blank', '_blank')
-  try {
-    const res = await apiFetch<{ authorization_url: string }>(
-      '/api/v1/integrations/gsc/oauth/authorize',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId.value }),
-      },
-    )
-    if (popup) {
-      popup.opener = null
-      popup.location.href = res.authorization_url
-    } else {
-      window.location.assign(res.authorization_url)
-    }
-    toasts.info('Google authorization opened', 'Return here and refresh after consent.')
-    await load()
-  } catch (err) {
-    popup?.close()
-    toasts.error(
-      'Failed to start Google authorization',
-      err instanceof Error ? err.message : undefined,
-    )
-  } finally {
-    connectingGsc.value = false
   }
 }
 
 async function copySetupLink(): Promise<void> {
   try {
     await navigator.clipboard.writeText(setupLink.value)
-    toasts.success('Integration link copied')
+    toasts.success('Integration handoff copied')
   } catch {
-    toasts.error('Could not copy link', setupLink.value)
+    toasts.error('Could not copy handoff', setupLink.value)
   }
 }
 
@@ -494,10 +314,10 @@ watch(projectId, load)
 </script>
 
 <template>
-  <section class="space-y-4">
+  <section class="space-y-6">
     <UiSectionHeader
       title="Vendor connections"
-      description="Connect the services this project needs. Secrets are encrypted in the local daemon and never written to the website repository."
+      description="Readiness for the services this project uses. Credential changes are agent-owned through MCP."
     >
       <template #actions>
         <UiButton
@@ -520,191 +340,155 @@ watch(projectId, load)
 
     <UiCallout
       v-if="requiredVendors.length > 0"
-      tone="warning"
+      :tone="missingRequiredVendors.length > 0 ? 'warning' : 'success'"
       title="Needed for the current agent flow"
     >
-      <ul class="mt-2 flex flex-wrap gap-2 text-sm">
+      <p class="mt-1 text-sm">
+        {{
+          missingRequiredVendors.length > 0
+            ? 'Some required vendors still need agent setup.'
+            : 'All required vendors are ready for this flow.'
+        }}
+      </p>
+      <ul class="mt-3 flex flex-wrap gap-2 text-sm">
         <li
           v-for="vendor in requiredVendors"
           :key="vendor.kind"
         >
           <UiBadge
-            tone="warning"
+            :tone="isConnected(vendor.kind) ? 'success' : 'warning'"
             variant="outline"
           >
-            {{ vendor.name }} · {{ statusLabel(vendor.kind) }}
+            {{ vendor.name }} / {{ statusLabel(vendor.kind) }}
           </UiBadge>
         </li>
       </ul>
     </UiCallout>
 
-    <div class="grid gap-4 xl:grid-cols-2">
-      <UiPanel
-        v-for="vendor in vendors"
-        :key="vendor.kind"
-        class="p-4"
-        :class="requiredKinds.includes(vendor.kind) && !isConnected(vendor.kind) ? 'ring-2 ring-warning-border' : ''"
-      >
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div class="flex flex-wrap items-center gap-2">
-              <h3 class="text-base font-semibold text-fg-strong">
-                {{ vendor.name }}
-              </h3>
-              <UiBadge
-                :tone="statusTone(vendor.kind)"
-              >
-                {{ statusLabel(vendor.kind) }}
-              </UiBadge>
-              <UiBadge
-                v-if="vendor.optional"
-                tone="neutral"
-              >
-                Optional
-              </UiBadge>
-            </div>
-            <p class="mt-1 text-sm text-fg-muted">
-              {{ vendor.summary }}
-            </p>
-          </div>
-        </div>
-
-        <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt class="text-xs uppercase text-fg-muted">
-              Used by
-            </dt>
-            <dd class="mt-0.5 text-fg-default">
-              {{ vendor.usedBy }}
-            </dd>
-          </div>
-          <div>
-            <dt class="text-xs uppercase text-fg-muted">
-              Agent tool key
-            </dt>
-            <dd class="mt-0.5 font-mono text-xs text-fg-muted">
-              {{ vendor.kind }}
-            </dd>
-          </div>
-        </dl>
-
-        <p
-          v-if="vendor.dependsOn?.length"
-          class="mt-3 text-sm text-fg-muted"
-        >
-          Uses {{ vendor.dependsOn.map((kind) => vendorByKind.get(kind)?.name ?? kind).join(', ') }}.
-        </p>
-
-        <div class="mt-4 flex flex-wrap gap-2">
-          <UiButton
-            v-if="vendor.setup === 'manual'"
-            variant="primary"
-            size="sm"
-            @click="openSetup(vendor.kind)"
-          >
-            {{ isProjectCredential(vendor.kind) ? 'Update connection' : 'Connect' }}
-          </UiButton>
-          <UiButton
-            v-else-if="vendor.setup === 'oauth'"
-            variant="primary"
-            size="sm"
-            :disabled="connectingGsc"
-            @click="connectGsc"
-          >
-            {{ connectingGsc ? 'Opening…' : isConnected(vendor.kind) ? 'Reconnect Google' : 'Connect Google' }}
-          </UiButton>
-          <UiButton
-            v-if="vendor.docsHref"
-            :href="vendor.docsHref"
-            variant="secondary"
-            size="sm"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Get credentials
-          </UiButton>
-          <UiButton
-            v-if="credentialFor(vendor.kind) && vendor.setup !== 'none'"
-            variant="secondary"
-            size="sm"
-            :disabled="testingIds.has(credentialFor(vendor.kind)!.id)"
-            @click="testCredential(credentialFor(vendor.kind)!, vendor)"
-          >
-            {{ testingIds.has(credentialFor(vendor.kind)!.id) ? 'Testing…' : 'Test' }}
-          </UiButton>
-          <UiButton
-            v-if="isProjectCredential(vendor.kind)"
-            variant="danger"
-            size="sm"
-            @click="remove(projectCredByKind.get(vendor.kind)!, vendor)"
-          >
-            Remove
-          </UiButton>
-        </div>
-
-        <p
-          v-if="globalCredByKind.has(vendor.kind) && !projectCredByKind.has(vendor.kind)"
-          class="mt-3 text-xs text-fg-muted"
-        >
-          This project is using a global credential. Connect here to override it for this project.
-        </p>
-      </UiPanel>
-    </div>
-
-    <UiDialog
-      :model-value="activeVendor !== null"
-      :title="activeVendor ? activeCredential ? `Update ${activeVendor.name}` : `Connect ${activeVendor.name}` : ''"
-      description="Paste the credential here. The daemon encrypts it before storing it."
-      size="lg"
-      @update:model-value="(open: boolean) => open ? undefined : closeSetup()"
+    <section
+      v-for="section in integrationSections"
+      :key="section.key"
+      class="space-y-3"
+      :aria-labelledby="`cs-${section.key}-integrations`"
     >
-      <UiCallout
-        tone="info"
-        density="compact"
-      >
-        Existing secret values cannot be displayed, so updates require pasting the secret again.
-      </UiCallout>
-
-      <div class="mt-4 space-y-3">
-        <template v-if="activeVendor">
-          <UiFormField
-            v-for="field in activeVendor.fields"
-            :key="field.key"
-            v-slot="{ id, describedBy, invalid, required }"
-            :label="field.label"
-            :required="field.required"
-            :help="field.help"
-          >
-            <UiInput
-              :id="id"
-              v-model="formFields[field.key]"
-              :type="field.type ?? 'text'"
-              :placeholder="field.placeholder"
-              :aria-describedby="describedBy"
-              :invalid="invalid"
-              :required="required"
-              :autocomplete="field.type === 'password' ? 'new-password' : 'off'"
-            />
-          </UiFormField>
-        </template>
+      <div>
+        <h2
+          :id="`cs-${section.key}-integrations`"
+          class="text-base font-semibold text-fg-strong"
+        >
+          {{ section.title }}
+        </h2>
+        <p class="mt-0.5 text-sm text-fg-muted">
+          {{ section.description }}
+        </p>
       </div>
 
-      <template #footer>
-        <UiButton
-          variant="secondary"
-          :disabled="saving"
-          @click="closeSetup"
+      <div class="grid gap-3">
+        <article
+          v-for="vendor in section.vendors"
+          :key="vendor.kind"
+          class="overflow-hidden rounded-md border shadow-xs transition-colors duration-fast"
+          :class="cardToneClass(vendor.kind)"
         >
-          Cancel
-        </UiButton>
-        <UiButton
-          variant="primary"
-          :loading="saving"
-          @click="saveManual"
-        >
-          {{ activeCredential ? 'Save connection' : 'Connect vendor' }}
-        </UiButton>
-      </template>
-    </UiDialog>
+          <div class="space-y-4 p-4">
+            <header class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0 space-y-1.5">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-sm font-semibold text-fg-strong">
+                    {{ vendor.name }}
+                  </h3>
+                  <UiBadge :tone="statusTone(vendor.kind)">
+                    {{ statusLabel(vendor.kind) }}
+                  </UiBadge>
+                  <UiBadge
+                    v-if="vendor.optional"
+                    tone="neutral"
+                  >
+                    Optional
+                  </UiBadge>
+                  <UiBadge
+                    v-if="requiredKinds.includes(vendor.kind)"
+                    :tone="isConnected(vendor.kind) ? 'success' : 'warning'"
+                  >
+                    Required
+                  </UiBadge>
+                </div>
+                <p class="text-sm text-fg-muted">
+                  {{ vendor.summary }}
+                </p>
+              </div>
+              <div class="text-right text-xs text-fg-muted">
+                <div class="font-mono">
+                  {{ vendor.kind }}
+                </div>
+                <div>{{ vendor.category }}</div>
+                <a
+                  v-if="vendor.docsHref"
+                  :href="vendor.docsHref"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="mt-1 inline-block text-fg-link hover:underline"
+                >
+                  Credential docs
+                </a>
+              </div>
+            </header>
+
+            <dl class="grid gap-3 text-sm sm:grid-cols-[1fr_1.5fr]">
+              <div>
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                  State
+                </dt>
+                <dd class="mt-1 text-fg-default">
+                  {{ statusSummary(vendor.kind) }}
+                </dd>
+              </div>
+              <div>
+                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                  Used by
+                </dt>
+                <dd class="mt-1 text-fg-default">
+                  {{ vendor.usedBy }}
+                </dd>
+              </div>
+            </dl>
+
+            <div
+              v-if="vendor.dependsOn?.length"
+              class="rounded-md border border-subtle bg-bg-surface-alt px-3 py-2 text-sm text-fg-muted"
+            >
+              Depends on {{ dependencyLabel(vendor) }}.
+            </div>
+
+            <div
+              v-if="vendor.kind === 'gsc' && gscOAuthInfo"
+              class="rounded-md border border-subtle bg-bg-surface-alt px-3 py-2 text-sm"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                  OAuth callback
+                </span>
+                <UiBadge :tone="gscOAuthInfo.configured ? 'success' : 'warning'">
+                  {{ gscOAuthInfo.configured ? 'Configured' : 'Needs env' }}
+                </UiBadge>
+              </div>
+              <div class="mt-1 break-all font-mono text-xs text-fg-default">
+                {{ gscOAuthInfo.redirect_uri }}
+              </div>
+              <p
+                v-if="!gscOAuthInfo.configured"
+                class="mt-2 text-xs text-warning-fg"
+              >
+                Missing {{ gscMissingSummary }}
+              </p>
+            </div>
+
+            <div class="border-t border-subtle pt-3 text-xs font-medium text-fg-muted">
+              {{ isConnected(vendor.kind) ? 'Ready to use' : 'Agent setup needed' }}
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
   </section>
 </template>

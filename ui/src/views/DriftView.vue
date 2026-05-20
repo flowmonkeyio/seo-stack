@@ -1,13 +1,5 @@
 <script setup lang="ts">
-// DriftView — drift baselines across all published articles in a project.
-//
-// The wire shape is per-article (`GET /api/v1/articles/{id}/drift`); the
-// project-level view fans out across published articles and aggregates
-// rows in the store. The diff/score job ships in M6 — `current_score`
-// may be null for every row at M5.C; the view displays the baseline rows
-// regardless so users can audit what's being tracked.
-//
-// Per audit P-I6.
+// DriftView — read-only drift baselines across articles in a project.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
@@ -19,25 +11,23 @@ import {
   UiButton,
   UiCallout,
   UiDialog,
-  UiEmptyState,
+  UiFormField,
   UiPageShell,
+  UiPanel,
+  UiRange,
 } from '@/components/ui'
-import { useDriftStore, type DriftRow } from '@/stores/drift'
 import { useArticlesStore } from '@/stores/articles'
-import { useToastsStore } from '@/stores/toasts'
+import { useDriftStore, type DriftRow } from '@/stores/drift'
 import type { DataTableColumn } from '@/components/types'
 
 const route = useRoute()
 const router = useRouter()
 const driftStore = useDriftStore()
 const articlesStore = useArticlesStore()
-const toasts = useToastsStore()
 
 const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
 
 const { filteredItems, loading, error, thresholdScore } = storeToRefs(driftStore)
-
-const snapshotPending = ref(false)
 const diffOpen = ref<DriftRow | null>(null)
 
 const columns: DataTableColumn<DriftRow>[] = [
@@ -50,7 +40,7 @@ const columns: DataTableColumn<DriftRow>[] = [
   {
     key: 'current_score',
     label: 'Current score',
-    format: (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(3)),
+    format: (v) => (v === null || v === undefined ? '-' : Number(v).toFixed(3)),
     widthClass: 'w-32',
   },
   { key: 'baseline_md', label: 'Body length', format: (v) => `${String(v).length} chars` },
@@ -72,50 +62,7 @@ function closeDiff(): void {
   diffOpen.value = null
 }
 
-async function snapshotAll(): Promise<void> {
-  snapshotPending.value = true
-  try {
-    let success = 0
-    let failed = 0
-    for (const a of articlesStore.items) {
-      if (a.status !== 'published') continue
-      const body = (a.edited_md ?? '').trim()
-      if (!body) continue
-      try {
-        await driftStore.snapshot(a.id, { baseline_md: body })
-        success++
-      } catch {
-        failed++
-      }
-    }
-    if (failed > 0) {
-      toasts.error('Snapshot complete', `${success} ok, ${failed} failed`)
-    } else {
-      toasts.success('Snapshot complete', `${success} baselines recorded`)
-    }
-    await refresh()
-  } finally {
-    snapshotPending.value = false
-  }
-}
-
-async function snapshotRow(row: DriftRow): Promise<void> {
-  const article = articlesStore.getById(row.parent_article_id)
-  const body = (article?.edited_md ?? '').trim()
-  if (!body) {
-    toasts.error('No body to snapshot', 'Article has no edited_md.')
-    return
-  }
-  try {
-    await driftStore.snapshot(row.parent_article_id, { baseline_md: body })
-    toasts.success('Baseline recorded')
-  } catch (err) {
-    toasts.error('Snapshot failed', err instanceof Error ? err.message : undefined)
-  }
-}
-
 async function refresh(): Promise<void> {
-  // The drift list is per-article. Walk every article and aggregate.
   const articleIds = articlesStore.items.map((a) => a.id)
   if (articleIds.length === 0) return
   await driftStore.refreshAcrossArticles(articleIds)
@@ -141,28 +88,9 @@ watch(projectId, load)
     <ProjectPageHeader
       :project-id="projectId"
       title="Drift Watch"
-      description="Snapshot published content baselines and inspect drift scores as the comparison engine updates them."
+      description="Inspect content drift baselines and scores captured by agent drift runs."
       :breadcrumbs="[{ label: 'Drift Watch' }]"
-    >
-      <template #actions>
-        <UiButton
-          variant="primary"
-          :loading="snapshotPending"
-          :disabled="snapshotPending"
-          @click="snapshotAll"
-        >
-          Snapshot all published articles
-        </UiButton>
-      </template>
-    </ProjectPageHeader>
-
-    <UiCallout
-      tone="info"
-    >
-      The drift comparison engine ships in M6. M5.C records baselines via the
-      <code>drift.snapshot</code> endpoint; <code>current_score</code> is
-      populated by the M6 watcher.
-    </UiCallout>
+    />
 
     <UiCallout
       v-if="error"
@@ -171,42 +99,41 @@ watch(projectId, load)
       {{ error }}
     </UiCallout>
 
-    <div class="flex items-center gap-3 text-sm">
-      <label class="flex items-center gap-2">
-        <span class="text-fg-muted">Threshold</span>
-        <input
-          :value="thresholdScore"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          class="w-40"
-          aria-label="Drift threshold"
-          @input="driftStore.setThreshold(Number.parseFloat(($event.target as HTMLInputElement).value))"
-        >
-        <span class="w-8 text-right text-xs text-fg-muted">{{ thresholdScore.toFixed(2) }}</span>
-      </label>
-      <span class="text-xs text-fg-muted">
-        Hide rows whose <code>current_score</code> is below the slider.
-      </span>
-    </div>
+    <UiPanel class="p-4">
+      <div class="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-end">
+        <div>
+          <h2 class="text-sm font-semibold text-fg-strong">
+            Baseline snapshots
+          </h2>
+          <p class="mt-1 text-sm text-fg-muted">
+            Saved article-body snapshots appear here after agent drift-watch runs. Scores appear once later content is compared against a baseline.
+          </p>
+        </div>
+        <UiFormField label="Threshold">
+          <UiRange
+            :model-value="thresholdScore"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            :format="(value) => value.toFixed(2)"
+            aria-label="Drift threshold"
+            @update:model-value="driftStore.setThreshold"
+          />
+        </UiFormField>
+      </div>
+    </UiPanel>
 
-    <UiEmptyState
+    <div
       v-if="empty"
-      title="No drift baselines yet"
-      description="Snapshot a published article, or all published articles, to start tracking content drift."
-      size="lg"
+      class="rounded-md border border-dashed border-subtle bg-bg-surface px-6 py-10 text-center"
     >
-      <template #actions>
-        <UiButton
-          variant="primary"
-          :loading="snapshotPending"
-          @click="snapshotAll"
-        >
-          Snapshot all published articles
-        </UiButton>
-      </template>
-    </UiEmptyState>
+      <h2 class="text-sm font-semibold text-fg-strong">
+        No drift baselines yet
+      </h2>
+      <p class="mt-1 text-sm text-fg-muted">
+        Agent drift-watch baselines will appear here with article, captured time, score, and body length.
+      </p>
+    </div>
 
     <DataTable
       v-if="!empty"
@@ -220,7 +147,7 @@ watch(projectId, load)
       <template #cell:parent_article_id="{ row }">
         <button
           type="button"
-          class="text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-300"
+          class="focus-ring rounded-xs text-fg-link hover:underline"
           @click.stop="gotoArticle(row as DriftRow)"
         >
           {{ articleTitle((row as DriftRow).parent_article_id) }}
@@ -228,22 +155,14 @@ watch(projectId, load)
       </template>
       <template #cell:current_score="{ row }">
         <div class="flex items-center gap-2">
-          <span>{{ (row as DriftRow).current_score === null ? '—' : Number((row as DriftRow).current_score).toFixed(3) }}</span>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            :aria-label="`Snapshot baseline for ${articleTitle((row as DriftRow).parent_article_id)}`"
-            @click.stop="snapshotRow(row as DriftRow)"
-          >
-            Snapshot
-          </UiButton>
+          <span>{{ (row as DriftRow).current_score === null ? '-' : Number((row as DriftRow).current_score).toFixed(3) }}</span>
           <UiButton
             size="sm"
             variant="secondary"
             :aria-label="`View diff for ${articleTitle((row as DriftRow).parent_article_id)}`"
             @click.stop="openDiff(row as DriftRow)"
           >
-            View Diff
+            View baseline
           </UiButton>
         </div>
       </template>
@@ -251,18 +170,11 @@ watch(projectId, load)
 
     <UiDialog
       :model-value="diffOpen !== null"
-      :title="diffOpen ? `Drift baseline — ${articleTitle(diffOpen.parent_article_id)}` : 'Drift baseline'"
+      :title="diffOpen ? `Drift baseline - ${articleTitle(diffOpen.parent_article_id)}` : 'Drift baseline'"
       size="xl"
       scroll-body
       @update:model-value="(open: boolean) => open ? undefined : closeDiff()"
     >
-      <UiCallout
-        tone="info"
-        density="compact"
-        class="mb-3"
-      >
-        Drift comparison engine coming in M6. Baseline body shown below.
-      </UiCallout>
       <pre
         v-if="diffOpen"
         class="max-h-[60vh] overflow-y-auto rounded-md border border-subtle bg-bg-sunken p-3 font-mono text-xs text-fg-default"

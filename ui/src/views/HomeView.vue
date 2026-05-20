@@ -144,12 +144,6 @@ const schedulerLabel = computed<string>(() => {
             scheduler: {{ schedulerLabel }}
           </UiBadge>
           <UiBadge
-            v-if="state.data.milestone"
-            tone="neutral"
-          >
-            milestone: {{ state.data.milestone }}
-          </UiBadge>
-          <UiBadge
             v-if="state.data.version"
             tone="neutral"
           >
@@ -173,7 +167,7 @@ const schedulerLabel = computed<string>(() => {
     </UiPanel>
 
     <footer class="text-xs text-fg-muted">
-      M0 scaffold. Full views land in M6. See <code>PLAN.md</code> for sequencing.
+      Use Projects to pick a workspace and continue operating the content pipeline.
     </footer>
   </UiPageShell>
 </template>

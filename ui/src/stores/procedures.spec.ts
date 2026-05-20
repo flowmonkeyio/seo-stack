@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { ProcedureNotImplementedError, useProceduresStore } from './procedures'
+import { useProceduresStore } from './procedures'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -34,40 +34,9 @@ describe('procedures store', () => {
     expect(store.items[0].slug).toBe('bootstrap')
   })
 
-  it('runProcedure() raises ProcedureNotImplementedError on 501', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(JSON.stringify({ detail: 'M7' }), {
-        status: 501,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
+  it('does not expose a procedure run action to the UI store', () => {
     const store = useProceduresStore()
-    await expect(store.runProcedure('bootstrap', 1, {})).rejects.toBeInstanceOf(
-      ProcedureNotImplementedError,
-    )
-  })
-
-  it('runProcedure() posts the backend run request shape', async () => {
-    const bodies: unknown[] = []
-    globalThis.fetch = vi.fn(async (_input, init) => {
-      bodies.push(JSON.parse(String(init?.body)))
-      return new Response(
-        JSON.stringify({
-          run_id: 9,
-          run_token: 'token',
-          status_url: '/api/v1/procedures/runs/9',
-          slug: '04-topic-to-published',
-          project_id: 7,
-          started: true,
-          parent_run_id: null,
-        }),
-        { status: 202, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useProceduresStore()
-    const result = await store.runProcedure('04-topic-to-published', 7, { topic_id: 42 })
-    expect(bodies).toEqual([{ project_id: 7, args: { topic_id: 42 } }])
-    expect(result.run_id).toBe(9)
+    expect((store as unknown as Record<string, unknown>).runProcedure).toBeUndefined()
   })
 
   it('getRun() caches the response', async () => {

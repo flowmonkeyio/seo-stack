@@ -1,58 +1,13 @@
 <script setup lang="ts">
-// EditedTab — `articles.edited_md` markdown editor.
+// EditedTab — read-only edited markdown.
 
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
-import { useArticlesStore, ArticleEtagError } from '@/stores/articles'
-import { useToastsStore } from '@/stores/toasts'
-
-const props = defineProps<{
-  articleId: number
-}>()
+import MarkdownView from '@/components/MarkdownView.vue'
+import { useArticlesStore } from '@/stores/articles'
 
 const articlesStore = useArticlesStore()
-const toasts = useToastsStore()
-
 const article = computed(() => articlesStore.currentDetail)
-
-const value = ref<string>('')
-const saving = ref(false)
-
-watch(
-  () => article.value?.edited_md,
-  (next) => {
-    value.value = next ?? ''
-  },
-  { immediate: true },
-)
-
-async function onSave(body: string): Promise<{ updated_at?: string }> {
-  if (!article.value) return {}
-  const etag = article.value.step_etag
-  if (!etag) {
-    toasts.error('Article has no step_etag', 'Reload the article and try again.')
-    return {}
-  }
-  saving.value = true
-  try {
-    const row = await articlesStore.setEdited(props.articleId, {
-      expected_etag: etag,
-      edited_md: body,
-    })
-    toasts.success('Edited body saved')
-    return { updated_at: row.updated_at }
-  } catch (err) {
-    if (err instanceof ArticleEtagError) {
-      toasts.error('Stale article version', 'Reload the article and retry.')
-    } else {
-      toasts.error('Save failed', err instanceof Error ? err.message : undefined)
-    }
-    throw err
-  } finally {
-    saving.value = false
-  }
-}
 </script>
 
 <template>
@@ -60,24 +15,38 @@ async function onSave(body: string): Promise<{ updated_at?: string }> {
     class="space-y-4"
     aria-labelledby="cs-edited-tab-title"
   >
-    <h2
-      id="cs-edited-tab-title"
-      class="text-base font-semibold"
+    <div>
+      <h2
+        id="cs-edited-tab-title"
+        class="text-base font-semibold text-fg-strong"
+      >
+        Edited body
+      </h2>
+      <p class="mt-1 text-sm text-fg-muted">
+        Final editing and humanizing are agent-owned. This view shows the artifact scored by EEAT
+        and used by publish skills.
+      </p>
+    </div>
+
+    <div
+      v-if="!article?.edited_md?.trim()"
+      class="rounded-md border border-dashed border-subtle bg-bg-surface px-5 py-8 text-center"
     >
-      Edited body
-    </h2>
-    <p class="text-sm text-gray-600 dark:text-gray-400">
-      The edited body is what the EEAT gate scores and the publish skill
-      pushes. Keep edits clean — saving rotates the step_etag.
-    </p>
-    <MarkdownEditor
-      :value="value"
-      :updated-at="article?.updated_at ?? null"
-      :saving="saving"
-      :on-save="onSave"
-      aria-label="Article edited markdown editor"
-      :placeholder="'# Edited body\n\nPolished, EEAT-ready prose…'"
-      @update:value="(v: string) => value = v"
-    />
+      <h3 class="text-sm font-semibold text-fg-strong">
+        No edited body yet
+      </h3>
+      <p class="mt-1 text-sm text-fg-muted">
+        The edited artifact will appear here after the agent completes editing and humanizing.
+      </p>
+    </div>
+
+    <div
+      v-else
+      class="rounded-md border border-default bg-bg-surface p-4 shadow-xs"
+    >
+      <MarkdownView
+        :source="article?.edited_md ?? ''"
+      />
+    </div>
   </section>
 </template>

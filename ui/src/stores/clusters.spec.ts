@@ -75,18 +75,9 @@ describe('clusters store', () => {
     expect(ids).toEqual([1, 3])
   })
 
-  it('create() POSTs and prepends the row', async () => {
-    const created = { ...PILLAR, id: 5, name: 'New pillar' }
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(JSON.stringify({ data: created, project_id: 1 }), {
-        status: 201,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
+  it('does not expose cluster mutation methods to the UI store', () => {
     const store = useClustersStore()
-    const row = await store.create(1, { name: 'New pillar', type: 'pillar' } as never)
-    expect(row.name).toBe('New pillar')
-    expect(store.items.find((c) => c.id === 5)).toBeTruthy()
+    expect((store as unknown as Record<string, unknown>).create).toBeUndefined()
   })
 
   it('records error state when refresh fails', async () => {

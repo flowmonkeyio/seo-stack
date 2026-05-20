@@ -5,19 +5,19 @@ tool call resolves to a skill name (via the ``run_token`` ↔
 ``runs.client_session_id`` lookup), then this module checks the tool
 against the skill's allow-list.
 
-At M3 the matrix is intentionally narrow:
+The matrix keeps two different agent pathways explicit:
 
-- ``__system__`` — a small bootstrap grant for direct MCP setup calls
-  before a run token exists.
+- ``__system__`` — the agent-owned setup and product-operation grant used
+  before a run token exists. The browser UI is read-only, so these calls
+  must remain available to the operator agent through MCP.
 - ``__test__`` — a reserved full-grant sentinel for tests that bind it
   explicitly. Unmatched tokens never resolve to it.
 - ``_test_*`` skills (e.g. ``_test_keyword_discovery``,
   ``_test_editor``) — narrow grants used by the verification tests in
   ``tests/integration/test_mcp/test_mcp_tool_grants.py``.
 
-M7 will populate per-real-skill grants when the 24 SKILL.md files are
-authored. For now the matrix exists to lock in the seam; tests prove
-that an unprivileged caller cannot reach a forbidden tool.
+Real skill grants stay narrower and continue to own vendor calls,
+high-cost research, and procedure-scoped work.
 """
 
 from __future__ import annotations
@@ -48,25 +48,69 @@ INVALID_SKILL = "__invalid__"
 # prefix so production skill names cannot accidentally collide.
 _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
-        # Bootstrapping: callers need to create/select a project, configure
-        # project-level operating defaults, and open a procedure before they
-        # have a run_token. Article/content writes still require a step grant.
-        "meta.enums",
-        "project.create",
-        "project.get",
-        "project.getActive",
-        "project.list",
-        "project.setActive",
-        "project.update",
+        # Bootstrapping and operator-owned actions. The browser UI is an
+        # observer; product-state operations that are not vendor research calls
+        # must be available to the agent through the MCP toolbox before a
+        # procedure run exists. Costly/vendor calls remain per-skill grants.
+        "article.bulkCreate",
+        "article.create",
+        "article.createVersion",
+        "article.get",
+        "article.list",
+        "article.listDueForRefresh",
+        "article.listPublishes",
+        "article.listVersions",
+        "article.markAbortedPublish",
+        "article.markDrafted",
+        "article.markEeatPassed",
+        "article.markPublished",
+        "article.markRefreshDue",
+        "article.refreshDue",
+        "article.setBrief",
+        "article.setDraft",
+        "article.setEdited",
+        "article.setOutline",
+        "asset.create",
+        "asset.list",
+        "asset.remove",
+        "asset.update",
+        "author.create",
+        "author.delete",
+        "author.get",
+        "author.list",
+        "author.update",
+        "budget.list",
+        "budget.queryProject",
+        "budget.set",
+        "budget.update",
+        "cluster.create",
+        "cluster.get",
+        "cluster.list",
         "compliance.add",
         "compliance.list",
         "compliance.remove",
         "compliance.update",
+        "cost.queryAll",
+        "cost.queryProject",
+        "drift.diff",
+        "drift.get",
+        "drift.list",
+        "drift.snapshot",
+        "eeat.bulkRecord",
         "eeat.bulkSet",
+        "eeat.getReport",
         "eeat.list",
+        "eeat.listEvaluations",
+        "eeat.record",
+        "eeat.score",
         "eeat.toggle",
         "gsc.bulkIngest",
+        "gsc.listDaily",
+        "gsc.queryArticle",
+        "gsc.queryProject",
         "gsc.rollup",
+        "gscOauth.get",
+        "gscOauth.start",
         "integration.list",
         "integration.remove",
         "integration.set",
@@ -78,6 +122,19 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "interlink.list",
         "interlink.repair",
         "interlink.suggest",
+        "meta.enums",
+        "project.create",
+        "project.activate",
+        "project.delete",
+        "project.get",
+        "project.getActive",
+        "project.list",
+        "project.setActive",
+        "project.update",
+        "publish.preview",
+        "publish.recordExternal",
+        "publish.recordPublish",
+        "publish.setCanonical",
         "procedure.claimStep",
         "procedure.currentStep",
         "procedure.executeProgrammaticStep",
@@ -87,10 +144,15 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "procedure.resume",
         "procedure.run",
         "procedure.status",
-        "run.get",
+        "redirect.create",
+        "redirect.list",
+        "redirect.lookup",
         "run.abort",
+        "run.children",
+        "run.cost",
         "run.finish",
         "run.fork",
+        "run.get",
         "run.heartbeat",
         "run.insertStep",
         "run.list",
@@ -99,11 +161,18 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.recordStepCall",
         "run.resume",
         "run.start",
-        "sitemap.fetch",
-        "source.update",
         "schedule.list",
+        "schedule.remove",
         "schedule.set",
         "schedule.toggle",
+        "schema.get",
+        "schema.list",
+        "schema.set",
+        "schema.validate",
+        "sitemap.fetch",
+        "source.add",
+        "source.list",
+        "source.update",
         "target.add",
         "target.list",
         "target.remove",
@@ -211,6 +280,14 @@ _SKILL_KEYWORD_DISCOVERY: frozenset[str] = _RUN_LIFECYCLE | {
     "integration.test",
     "integration.testGsc",
     "cost.queryProject",
+    "dataforseo.serp",
+    "dataforseo.keywordVolume",
+    "dataforseo.keywordsForSite",
+    "dataforseo.domainIntersection",
+    "dataforseo.paa",
+    "reddit.searchSubreddit",
+    "reddit.topQuestions",
+    "googlePaa.extract",
 }
 
 
@@ -221,6 +298,9 @@ _SKILL_SERP_ANALYZER: frozenset[str] = _RUN_LIFECYCLE | {
     "source.add",
     "source.list",
     "integration.test",
+    "dataforseo.serp",
+    "firecrawl.scrape",
+    "jina.read",
 }
 
 
@@ -249,6 +329,10 @@ _SKILL_CONTENT_BRIEF: frozenset[str] = _RUN_LIFECYCLE | {
     "source.add",
     "source.list",
     "integration.test",
+    "dataforseo.serp",
+    "dataforseo.keywordVolume",
+    "firecrawl.scrape",
+    "jina.read",
 }
 
 
@@ -261,6 +345,7 @@ _SKILL_COMPETITOR_SITEMAP: frozenset[str] = _RUN_LIFECYCLE | {
     "topic.list",
     "integration.test",
     "sitemap.fetch",
+    "ahrefs.keywordsForSite",
 }
 
 
@@ -365,14 +450,13 @@ _SKILL_HUMANIZER: frozenset[str] = _RUN_LIFECYCLE | {
 # M6.C real skill grants (assets + publishing phase).
 # ---------------------------------------------------------------------------
 #
-# Per PLAN.md L855-L861 the seven assets-and-publishing skills (#13-#19)
-# turn the EEAT-passed article into published artifacts. The image
-# generator (#13) is the only skill that calls into the OpenAI Images
-# integration (the wrapper handles cost recording — the skill consults
-# cost.queryProject pre-emptively); the publish skills (#17-#19) are the
-# only skills that may call publish.recordPublish, publish.setCanonical,
-# and article.markPublished. The interlinker (#15) carries the unique
-# interlink.suggest grant so the suggest-then-apply pattern stays gated.
+# The assets-and-publishing skills turn the EEAT-passed article into
+# published artifacts. The image generator is the only skill that calls
+# into the OpenAI Images integration (the wrapper handles cost recording
+# and generated-asset persistence; the skill consults cost.queryProject
+# pre-emptively). Procedure 4 authors agent-publish as the default
+# targetless handoff and only swaps to a concrete target publisher when the
+# primary target kind is wired.
 
 
 _SKILL_IMAGE_GENERATOR: frozenset[str] = _RUN_LIFECYCLE | {
@@ -386,6 +470,7 @@ _SKILL_IMAGE_GENERATOR: frozenset[str] = _RUN_LIFECYCLE | {
     "asset.update",
     "cost.queryProject",
     "integration.test",
+    "openaiImages.generate",
 }
 
 
@@ -425,13 +510,24 @@ _SKILL_SCHEMA_EMITTER: frozenset[str] = _RUN_LIFECYCLE | {
 }
 
 
-# All three publish skills share the same grant set: they consume the
+_SKILL_AGENT_PUBLISH: frozenset[str] = _RUN_LIFECYCLE | {
+    "meta.enums",
+    "project.get",
+    "article.get",
+    "asset.list",
+    "source.list",
+    "schema.get",
+    "schema.list",
+    "publish.recordExternal",
+}
+
+
+# Publish skills share the same state-write grant set: they consume the
 # same artefacts (article + assets + sources + schema_emits), call the
-# same three publish.* writes, and are the only skills (alongside each
-# other) that may call article.markPublished. We factor the grant into
-# a shared module-level frozenset so a future addition (e.g. hugo /
-# astro / custom-webhook publishers per PLAN.md L398) inherits the
-# same shape without drift.
+# target-backed publish writes, and may call article.markPublished. The
+# runner maps only concrete target kinds with production-grade tool support.
+# Deferred specs such as WordPress/Ghost must add real hidden media/post
+# toolkit operations before the runner maps targets to them.
 _SKILL_PUBLISH_BASE: frozenset[str] = _RUN_LIFECYCLE | {
     "meta.enums",
     "project.get",
@@ -502,6 +598,8 @@ _SKILL_DRIFT_WATCH: frozenset[str] = _RUN_LIFECYCLE | {
     "drift.get",
     "drift.diff",
     "integration.test",
+    "firecrawl.scrape",
+    "gsc.pagespeed",
 }
 
 
@@ -511,7 +609,7 @@ _SKILL_CRAWL_ERROR_WATCH: frozenset[str] = _RUN_LIFECYCLE | {
     "article.list",
     "topic.list",
     "topic.bulkCreate",
-    "gsc.queryArticle",
+    "gsc.inspectUrl",
     "integration.test",
     "integration.testGsc",
 }
@@ -587,8 +685,9 @@ _PROGRAMMATIC_CONTROL: frozenset[str] = frozenset(
 )
 
 
-# The matrix proper. ``__system__`` is deliberately small: it is only for
-# bootstrapping enough state to obtain a real run token.
+# The matrix proper. ``__system__`` is broad enough for agent-owned
+# product-state operation, but it is still explicit and excludes vendor
+# research tools that must remain bound to concrete skills.
 SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     SYSTEM_SKILL: _SYSTEM_TOOLS,
     TEST_SKILL: frozenset(),  # full grant; sentinel-checked in check_grant
@@ -643,6 +742,7 @@ SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "03-assets/alt-text-auditor": _SKILL_ALT_TEXT_AUDITOR,
     "04-publishing/interlinker": _SKILL_INTERLINKER,
     "04-publishing/schema-emitter": _SKILL_SCHEMA_EMITTER,
+    "04-publishing/agent-publish": _SKILL_AGENT_PUBLISH,
     "04-publishing/nuxt-content-publish": _SKILL_NUXT_CONTENT_PUBLISH,
     "04-publishing/wordpress-publish": _SKILL_WORDPRESS_PUBLISH,
     "04-publishing/ghost-publish": _SKILL_GHOST_PUBLISH,
@@ -664,7 +764,7 @@ def is_full_grant(skill_name: str) -> bool:
     """Return ``True`` iff ``skill_name`` carries an unrestricted grant.
 
     Only the explicit test sentinel bypasses the whitelist. System MCP
-    calls use the narrow bootstrap grant in ``SKILL_TOOL_GRANTS``.
+    calls use their explicit product-operation grant in ``SKILL_TOOL_GRANTS``.
     """
     return skill_name == TEST_SKILL
 
@@ -677,9 +777,8 @@ def resolve_run_token(
 
     Lookup contract:
 
-    - ``token=None`` → ``(None, "__system__")``. Direct MCP bootstrap
-      calls don't carry a run_token and can only call the narrow system
-      allow-list.
+    - ``token=None`` → ``(None, "__system__")``. Direct MCP calls without
+      a run token use the explicit agent setup/product-operation allow-list.
     - ``token`` matches a row's ``runs.client_session_id`` →
       ``(run, skill_name)`` where ``skill_name`` comes from
       ``runs.metadata_json.skill_name`` if set, else falls back to the

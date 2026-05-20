@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// PlaceholderView — generic shell used by views that land in M5.B / M5.C.
-// Displays a heading + milestone tag so the route is browseable while
-// the real implementation is incoming.
+// PlaceholderView — generic shell for routes that are wired before the
+// operator-facing screen is ready.
 
 import {
   UiBadge,
@@ -25,20 +24,20 @@ withDefaults(defineProps<Props>(), {
   <UiPageShell>
     <UiPageHeader
       :title="title"
-      :description="description || `This view is part of milestone ${milestone}. The route is wired; the real content lands when ${milestone} ships.`"
+      :description="description || 'This route is wired, but the operator workflow is not available yet.'"
     >
       <template #titleMeta>
         <UiBadge
           tone="warning"
           variant="subtle"
         >
-          coming in {{ milestone }}
+          unavailable
         </UiBadge>
       </template>
     </UiPageHeader>
     <UiEmptyState
-      title="Not implemented yet"
-      :description="description || `Milestone ${milestone} owns this screen.`"
+      title="Workflow unavailable"
+      :description="description || 'Use the surrounding project navigation to continue the current workflow.'"
       size="md"
     />
   </UiPageShell>

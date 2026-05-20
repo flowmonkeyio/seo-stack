@@ -171,7 +171,7 @@ class ArticlePublishOut(BaseModel):
 
     id: int
     article_id: int
-    target_id: int
+    target_id: int | None
     version_published: int
     published_url: str | None
     frontmatter_json: dict[str, Any] | None
@@ -749,6 +749,13 @@ class ArticleRepository:
         return Envelope(data=ArticleOut.model_validate(row), project_id=row.project_id)
 
 
+def _publish_target_clause(target_id: int | None) -> Any:
+    """Build the upsert key predicate for target-backed vs targetless publishes."""
+    if target_id is None:
+        return ArticlePublish.target_id.is_(None)  # type: ignore[union-attr,attr-defined]
+    return ArticlePublish.target_id == target_id
+
+
 # ---------------------------------------------------------------------------
 # ArticleAssetRepository.
 # ---------------------------------------------------------------------------
@@ -830,11 +837,12 @@ class ArticleAssetRepository:
 
 
 class ArticlePublishRepository:
-    """Per-target publish records.
+    """Publish records for target-backed and external/manual publishes.
 
-    The PK-equivalent is ``(article_id, target_id, version_published)``.
-    ``record_publish`` upserts on that key so re-runs (idempotency
-    replays, retries) don't duplicate rows.
+    Target-backed rows upsert on ``(article_id, target_id,
+    version_published)``. Targetless rows are the operator-agent/manual
+    publish escape hatch and upsert on ``(article_id, version_published)``
+    where ``target_id IS NULL``.
     """
 
     def __init__(self, session: Session) -> None:
@@ -844,7 +852,7 @@ class ArticlePublishRepository:
         self,
         *,
         article_id: int,
-        target_id: int,
+        target_id: int | None,
         version_published: int,
         published_url: str | None = None,
         frontmatter_json: dict[str, Any] | None = None,
@@ -852,11 +860,11 @@ class ArticlePublishRepository:
         error: str | None = None,
         published_at: datetime | None = None,
     ) -> Envelope[ArticlePublishOut]:
-        """Upsert a publish record on ``(article_id, target_id, version_published)``."""
+        """Upsert a publish record on the target-backed or targetless key."""
         existing = self._s.exec(
             select(ArticlePublish).where(
                 ArticlePublish.article_id == article_id,
-                ArticlePublish.target_id == target_id,
+                _publish_target_clause(target_id),
                 ArticlePublish.version_published == version_published,
             )
         ).first()
@@ -882,6 +890,67 @@ class ArticlePublishRepository:
         self._s.commit()
         self._s.refresh(row)
         return Envelope(data=ArticlePublishOut.model_validate(row))
+
+    def record_external(
+        self,
+        *,
+        article_id: int,
+        version_published: int,
+        published_url: str,
+        frontmatter_json: dict[str, Any] | None = None,
+        external_ref: str | None = None,
+        status: ArticlePublishStatus = ArticlePublishStatus.PUBLISHED,
+        error: str | None = None,
+        expected_etag: str | None = None,
+        run_id: int | None = None,
+        mark_article_published: bool = True,
+        published_at: datetime | None = None,
+    ) -> Envelope[ArticlePublishOut]:
+        """Record a targetless publish and optionally advance the article.
+
+        This is the durable handoff for the default ``agent-publish`` skill:
+        Codex may publish through a website repo, DB MCP, or another external
+        tool, then records the result without requiring a ``publish_targets``
+        row for the project.
+        """
+        article = self._s.get(Article, article_id)
+        if article is None:
+            raise NotFoundError(f"article {article_id} not found")
+        should_mark_published = (
+            mark_article_published
+            and status == ArticlePublishStatus.PUBLISHED
+            and article.status != ArticleStatus.PUBLISHED
+        )
+        if should_mark_published and article.status != ArticleStatus.EEAT_PASSED:
+            raise ValidationError(
+                "mark_article_published requires article status 'eeat_passed'",
+                data={"article_id": article_id, "current_status": article.status.value},
+            )
+        if should_mark_published and (expected_etag is None or run_id is None):
+            raise ValidationError("expected_etag and run_id are required to mark article published")
+        metadata = dict(frontmatter_json or {})
+        metadata.setdefault("publisher", "agent")
+        if external_ref is not None:
+            metadata["external_ref"] = external_ref
+        env = self.record_publish(
+            article_id=article_id,
+            target_id=None,
+            version_published=version_published,
+            published_url=published_url,
+            frontmatter_json=metadata,
+            status=status,
+            error=error,
+            published_at=published_at,
+        )
+        if should_mark_published:
+            assert expected_etag is not None
+            assert run_id is not None
+            ArticleRepository(self._s).mark_published(
+                article_id,
+                expected_etag=expected_etag,
+                run_id=run_id,
+            )
+        return Envelope(data=env.data, project_id=article.project_id)
 
     def list_for_article(self, article_id: int) -> list[ArticlePublishOut]:
         """All publish rows for an article in id order."""
@@ -947,7 +1016,7 @@ class ResearchSourceRepository:
         """All sources for an article, optionally filtered by citation use."""
         stmt = select(ResearchSource).where(ResearchSource.article_id == article_id)
         if used is not None:
-            stmt = stmt.where(ResearchSource.used.is_(used))  # type: ignore[union-attr]
+            stmt = stmt.where(ResearchSource.used == used)
         rows = self._s.exec(
             stmt.order_by(ResearchSource.id.asc())  # type: ignore[union-attr,attr-defined]
         ).all()

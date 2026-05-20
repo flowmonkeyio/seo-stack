@@ -1,4 +1,4 @@
-"""Ahrefs wrapper tests — Enterprise-only with graceful degrade."""
+"""Ahrefs wrapper tests — optional API key with graceful degrade."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_top_backlinks_uses_v3_all_backlinks_endpoint(
 
 
 def test_test_credentials_without_key_raises_with_hint(project_id: int) -> None:
-    """Empty payload → graceful Enterprise-only error pointing at docs."""
+    """Empty payload → graceful optional-integration error pointing at docs."""
 
     async def go() -> Any:
         async with httpx.AsyncClient() as client:
@@ -66,5 +66,5 @@ def test_test_credentials_without_key_raises_with_hint(project_id: int) -> None:
 
     with pytest.raises(IntegrationDownError) as exc_info:
         asyncio.run(go())
-    assert "Enterprise" in exc_info.value.detail
+    assert "Ahrefs API key is not configured" in exc_info.value.detail
     assert "docs/api-keys.md" in exc_info.value.data["hint"]

@@ -49,20 +49,11 @@ describe('runs store', () => {
     expect(captured).toContain('status=running')
   })
 
-  it('abort() updates the local row', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: { ...RUN_RUNNING, status: 'aborted', ended_at: '2026-05-05T01:00:00Z' },
-          project_id: 1,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose run mutation methods to the UI store', () => {
     const store = useRunsStore()
-    store.items = [RUN_RUNNING] as never
-    await store.abort(1, true)
-    expect(store.items[0].status).toBe('aborted')
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.abort).toBeUndefined()
+    expect(exposed.heartbeat).toBeUndefined()
   })
 
   it('children() caches by parent run id', async () => {

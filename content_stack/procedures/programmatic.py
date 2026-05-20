@@ -308,7 +308,10 @@ async def _publish_target_prompt(ctx: StepContext) -> StepResult:
     _ = ctx
     raise HumanReviewPause(
         "publish-target setup requires operator input",
-        hint="Configure your Nuxt-content / WordPress / Ghost publisher in Settings.",
+        hint=(
+            "Configure a Nuxt-content publisher in Settings. WordPress and Ghost "
+            "credentials can be probed, but they are not procedure publishers yet."
+        ),
     )
 
 

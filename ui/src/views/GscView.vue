@@ -1,77 +1,49 @@
 <script setup lang="ts">
-// GscView — raw GSC table + daily rollup + redirects.
-//
-// Wires to:
-// - `GET /api/v1/projects/{id}/gsc?since=&until=` (raw rows)
-// - `POST /api/v1/projects/{id}/gsc/rollup?day=YYYY-MM-DD` (operator)
-// - `GET / POST /api/v1/projects/{id}/redirects`
-//
-// Daily rollup is computed client-side because the daemon doesn't expose a
-// dedicated `GET /gsc/daily` route at M5.C — flagged in the milestone
-// report. The "Run rollup now" button still hits the POST endpoint to
-// populate `gsc_metrics_daily` for downstream M9 consumers.
+// GscView — read-only GSC rows, daily rollups, and redirects.
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import TabBar from '@/components/TabBar.vue'
-import {
-  UiButton,
-  UiCallout,
-  UiDialog,
-  UiPageShell,
-} from '@/components/ui'
-import { useGscStore, type GscMetric, type Redirect } from '@/stores/gsc'
+import { UiCallout, UiFormField, UiInput, UiPageShell, UiPanel } from '@/components/ui'
 import { useArticlesStore } from '@/stores/articles'
-import { useToastsStore } from '@/stores/toasts'
-import { RedirectKind as RedirectKindEnum } from '@/api'
+import { useGscStore, type GscMetric, type Redirect } from '@/stores/gsc'
 import type { DataTableColumn } from '@/components/types'
 
 const route = useRoute()
 const gscStore = useGscStore()
 const articlesStore = useArticlesStore()
-const toasts = useToastsStore()
 
 const projectId = computed<number>(() => Number.parseInt(route.params.id as string, 10))
 
 const { rawRows, redirects, loading, redirectsLoading, error, filters, dailyRollup } =
   storeToRefs(gscStore)
 
-const activeTab = ref<'raw' | 'daily' | 'redirects'>('raw')
-const showCreateRedirect = ref(false)
-const submittingRedirect = ref(false)
-const showRollup = ref(false)
-const rollupDay = ref<string>(new Date().toISOString().slice(0, 10))
-const rollupPending = ref(false)
-
-const newRedirect = ref({
-  from_url: '',
-  to_article_id: null as number | null,
-  kind: '301' as `${RedirectKindEnum}`,
-})
-
-const tabs = [
-  { key: 'raw', label: 'Raw' },
-  { key: 'daily', label: 'Daily Rollup' },
-  { key: 'redirects', label: 'Redirects' },
-]
-
 const rawColumns: DataTableColumn<GscMetric>[] = [
-  { key: 'query', label: 'Query', format: (v) => (v as string) ?? '—' },
-  { key: 'page', label: 'Page', format: (v) => (v as string) ?? '—' },
-  { key: 'country', label: 'Country', format: (v) => (v as string) ?? '—', widthClass: 'w-20' },
-  { key: 'device', label: 'Device', format: (v) => (v as string) ?? '—', widthClass: 'w-24' },
+  { key: 'query', label: 'Query', format: (value) => (value as string) ?? '-' },
+  { key: 'page', label: 'Page', format: (value) => (value as string) ?? '-' },
+  { key: 'country', label: 'Country', format: (value) => (value as string) ?? '-', widthClass: 'w-20' },
+  { key: 'device', label: 'Device', format: (value) => (value as string) ?? '-', widthClass: 'w-24' },
   { key: 'impressions', label: 'Impressions', widthClass: 'w-28' },
   { key: 'clicks', label: 'Clicks', widthClass: 'w-20' },
-  { key: 'ctr', label: 'CTR', format: (v) => `${(Number(v) * 100).toFixed(2)}%`, widthClass: 'w-20' },
-  { key: 'avg_position', label: 'Avg pos', format: (v) => Number(v).toFixed(2), widthClass: 'w-20' },
+  {
+    key: 'ctr',
+    label: 'CTR',
+    format: (value) => `${(Number(value) * 100).toFixed(2)}%`,
+    widthClass: 'w-20',
+  },
+  {
+    key: 'avg_position',
+    label: 'Avg pos',
+    format: (value) => Number(value).toFixed(2),
+    widthClass: 'w-20',
+  },
   {
     key: 'captured_at',
     label: 'Captured',
-    format: (v) => (v ? new Date(String(v)).toLocaleString() : ''),
+    format: (value) => (value ? new Date(String(value)).toLocaleString() : ''),
   },
 ]
 
@@ -88,8 +60,8 @@ const dailyColumns: DataTableColumn<DailyRow>[] = [
   { key: 'day', label: 'Day' },
   { key: 'impressions', label: 'Impressions' },
   { key: 'clicks', label: 'Clicks' },
-  { key: 'ctr', label: 'CTR', format: (v) => `${(Number(v) * 100).toFixed(2)}%` },
-  { key: 'avg_position', label: 'Avg pos', format: (v) => Number(v).toFixed(2) },
+  { key: 'ctr', label: 'CTR', format: (value) => `${(Number(value) * 100).toFixed(2)}%` },
+  { key: 'avg_position', label: 'Avg pos', format: (value) => Number(value).toFixed(2) },
 ]
 
 const redirectColumns: DataTableColumn<Redirect>[] = [
@@ -99,22 +71,27 @@ const redirectColumns: DataTableColumn<Redirect>[] = [
   {
     key: 'created_at',
     label: 'Created',
-    format: (v) => (v ? new Date(String(v)).toLocaleString() : ''),
+    format: (value) => (value ? new Date(String(value)).toLocaleString() : ''),
   },
 ]
 
+const rawEmpty = computed<boolean>(() => !loading.value && rawRows.value.length === 0)
+const dailyEmpty = computed<boolean>(() => !loading.value && dailyRollup.value.length === 0)
+const redirectsEmpty = computed<boolean>(() => !redirectsLoading.value && redirects.value.length === 0)
+
 function articleTitle(id: number | null): string {
-  if (id === null) return '—'
+  if (id === null) return '-'
   return articlesStore.getById(id)?.title ?? `#${id}`
 }
 
 function setSince(value: string): void {
-  // value comes from <input type="date"> as YYYY-MM-DD
+  if (!value) return
   gscStore.setFilter('since', `${value}T00:00:00Z`)
   void gscStore.refresh(projectId.value)
 }
 
 function setUntil(value: string): void {
+  if (!value) return
   gscStore.setFilter('until', `${value}T00:00:00Z`)
   void gscStore.refresh(projectId.value)
 }
@@ -129,45 +106,8 @@ async function load(): Promise<void> {
   await Promise.all([
     gscStore.refresh(projectId.value),
     gscStore.refreshRedirects(projectId.value),
-    articlesStore.items.length === 0
-      ? articlesStore.refresh(projectId.value)
-      : Promise.resolve(),
+    articlesStore.items.length === 0 ? articlesStore.refresh(projectId.value) : Promise.resolve(),
   ])
-}
-
-async function submitRollup(): Promise<void> {
-  rollupPending.value = true
-  try {
-    await gscStore.rollupDay(projectId.value, rollupDay.value)
-    toasts.success('Rollup complete', `gsc_metrics_daily updated for ${rollupDay.value}`)
-    showRollup.value = false
-  } catch (err) {
-    toasts.error('Rollup failed', err instanceof Error ? err.message : undefined)
-  } finally {
-    rollupPending.value = false
-  }
-}
-
-async function submitRedirect(): Promise<void> {
-  if (!newRedirect.value.from_url.trim()) {
-    toasts.error('From URL required')
-    return
-  }
-  submittingRedirect.value = true
-  try {
-    await gscStore.createRedirect(projectId.value, {
-      from_url: newRedirect.value.from_url.trim(),
-      to_article_id: newRedirect.value.to_article_id,
-      kind: newRedirect.value.kind as RedirectKindEnum,
-    })
-    toasts.success('Redirect added')
-    showCreateRedirect.value = false
-    newRedirect.value = { from_url: '', to_article_id: null, kind: '301' }
-  } catch (err) {
-    toasts.error('Failed to add redirect', err instanceof Error ? err.message : undefined)
-  } finally {
-    submittingRedirect.value = false
-  }
 }
 
 onMounted(load)
@@ -181,47 +121,7 @@ watch(projectId, load)
       title="GSC Metrics"
       description="Inspect Search Console rows, daily rollups, and redirect coverage for the project."
       :breadcrumbs="[{ label: 'GSC Metrics' }]"
-    >
-      <template #actions>
-        <div class="flex flex-wrap items-center justify-end gap-2 text-sm">
-          <label class="flex items-center gap-1">
-            <span class="text-fg-muted">Since</span>
-            <input
-              type="date"
-              :value="dateOnly(filters.since)"
-              class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-              aria-label="Since date"
-              @change="setSince(($event.target as HTMLInputElement).value)"
-            >
-          </label>
-          <label class="flex items-center gap-1">
-            <span class="text-fg-muted">Until</span>
-            <input
-              type="date"
-              :value="dateOnly(filters.until)"
-              class="h-8 rounded-sm border border-default bg-bg-surface px-2 text-sm text-fg-default focus-ring"
-              aria-label="Until date"
-              @change="setUntil(($event.target as HTMLInputElement).value)"
-            >
-          </label>
-          <UiButton
-            variant="secondary"
-            size="sm"
-            @click="showRollup = true"
-          >
-            Run rollup now
-          </UiButton>
-        </div>
-      </template>
-      <template #tabs>
-        <TabBar
-          :tabs="tabs"
-          :active-key="activeTab"
-          aria-label="GSC sections"
-          @change="(key: string) => activeTab = key as 'raw' | 'daily' | 'redirects'"
-        />
-      </template>
-    </ProjectPageHeader>
+    />
 
     <UiCallout
       v-if="error"
@@ -230,157 +130,153 @@ watch(projectId, load)
       {{ error }}
     </UiCallout>
 
-    <div
-      :id="`cs-tabpanel-${activeTab}`"
-      role="tabpanel"
-      :aria-labelledby="`cs-tab-${activeTab}`"
-      class="mt-4"
+    <UiPanel
+      aria-label="Search Console filters"
+      class="p-4"
     >
-      <DataTable
-        v-if="activeTab === 'raw'"
-        :items="rawRows"
-        :columns="rawColumns"
-        :loading="loading"
-        aria-label="Raw GSC rows"
-        empty-message="No GSC rows in this window."
-      />
+      <div class="grid gap-3 md:grid-cols-[180px_180px_1fr]">
+        <UiFormField label="Since">
+          <UiInput
+            type="date"
+            :model-value="dateOnly(filters.since)"
+            aria-label="Since date"
+            @change="(value) => setSince(String(value ?? ''))"
+          />
+        </UiFormField>
+        <UiFormField label="Until">
+          <UiInput
+            type="date"
+            :model-value="dateOnly(filters.until)"
+            aria-label="Until date"
+            @change="(value) => setUntil(String(value ?? ''))"
+          />
+        </UiFormField>
+        <p class="self-end pb-2 text-sm text-fg-muted">
+          Date filters reload the read-only Search Console snapshot for this project.
+        </p>
+      </div>
+    </UiPanel>
 
-      <DataTable
-        v-if="activeTab === 'daily'"
-        :items="dailyRollup"
-        :columns="dailyColumns"
-        :loading="loading"
-        aria-label="Daily GSC rollup"
-        empty-message="No GSC rows to roll up."
-      />
-
-      <div v-if="activeTab === 'redirects'">
-        <div class="mb-3 flex justify-end">
-          <UiButton
-            variant="primary"
-            @click="showCreateRedirect = true"
+    <div class="grid gap-6">
+      <section
+        class="rounded-md border border-default bg-bg-surface shadow-xs"
+        aria-labelledby="cs-gsc-raw"
+      >
+        <div class="border-b border-subtle px-4 py-3">
+          <h2
+            id="cs-gsc-raw"
+            class="text-sm font-semibold text-fg-strong"
           >
-            New Redirect
-          </UiButton>
+            Search Console rows
+          </h2>
+          <p class="mt-0.5 text-sm text-fg-muted">
+            Query, page, country, and device performance in the selected date window.
+          </p>
         </div>
-        <DataTable
-          :items="redirects"
-          :columns="redirectColumns"
-          :loading="redirectsLoading"
-          aria-label="Redirects"
-          empty-message="No redirects defined."
+        <div class="p-3">
+          <DataTable
+            v-if="!rawEmpty"
+            :items="rawRows"
+            :columns="rawColumns"
+            :loading="loading"
+            aria-label="Raw GSC rows"
+            empty-message="No GSC rows in this window."
+          />
+          <div
+            v-else
+            class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-5 py-8 text-center"
+          >
+            <h3 class="text-sm font-semibold text-fg-strong">
+              No Search Console rows
+            </h3>
+            <p class="mx-auto mt-1 max-w-lg text-sm text-fg-muted">
+              Rows appear here after the agent imports query and page performance for the selected date window.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid gap-6 xl:grid-cols-2">
+        <section
+          class="rounded-md border border-default bg-bg-surface shadow-xs"
+          aria-labelledby="cs-gsc-rollup"
         >
-          <template #cell:to_article_id="{ row }">
-            {{ articleTitle((row as Redirect).to_article_id) }}
-          </template>
-        </DataTable>
+          <div class="border-b border-subtle px-4 py-3">
+            <h2
+              id="cs-gsc-rollup"
+              class="text-sm font-semibold text-fg-strong"
+            >
+              Daily rollup
+            </h2>
+            <p class="mt-0.5 text-sm text-fg-muted">
+              Day-level totals from imported Search Console rows.
+            </p>
+          </div>
+          <div class="p-3">
+            <DataTable
+              v-if="!dailyEmpty"
+              :items="dailyRollup"
+              :columns="dailyColumns"
+              :loading="loading"
+              aria-label="Daily GSC rollup"
+              empty-message="No GSC rows to roll up."
+            />
+            <div
+              v-else
+              class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-5 py-8 text-center"
+            >
+              <h3 class="text-sm font-semibold text-fg-strong">
+                No daily rollup yet
+              </h3>
+              <p class="mt-1 text-sm text-fg-muted">
+                Daily totals appear after agent-owned Search Console processing.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="rounded-md border border-default bg-bg-surface shadow-xs"
+          aria-labelledby="cs-gsc-redirects"
+        >
+          <div class="border-b border-subtle px-4 py-3">
+            <h2
+              id="cs-gsc-redirects"
+              class="text-sm font-semibold text-fg-strong"
+            >
+              Redirects
+            </h2>
+            <p class="mt-0.5 text-sm text-fg-muted">
+              Old paths mapped to tracked article destinations.
+            </p>
+          </div>
+          <div class="p-3">
+            <DataTable
+              v-if="!redirectsEmpty"
+              :items="redirects"
+              :columns="redirectColumns"
+              :loading="redirectsLoading"
+              aria-label="Redirects"
+              empty-message="No redirects defined."
+            >
+              <template #cell:to_article_id="{ row }">
+                {{ articleTitle((row as Redirect).to_article_id) }}
+              </template>
+            </DataTable>
+            <div
+              v-else
+              class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-5 py-8 text-center"
+            >
+              <h3 class="text-sm font-semibold text-fg-strong">
+                No redirects
+              </h3>
+              <p class="mt-1 text-sm text-fg-muted">
+                Agent-created redirects will appear here with source URL and destination article.
+              </p>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
-
-    <UiDialog
-      :model-value="showRollup"
-      title="Run GSC rollup"
-      description="Aggregate gsc_metrics for one day into gsc_metrics_daily."
-      size="md"
-      @update:model-value="(open: boolean) => showRollup = open"
-    >
-      <UiCallout
-        tone="info"
-        density="compact"
-        class="mb-3"
-      >
-        M9 schedules this nightly; this is the operator escape hatch.
-      </UiCallout>
-      <label class="mb-3 block text-sm">
-        <span class="font-medium">Day</span>
-        <input
-          v-model="rollupDay"
-          type="date"
-          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-800"
-        >
-      </label>
-      <template #footer>
-        <UiButton
-          variant="secondary"
-          :disabled="rollupPending"
-          @click="showRollup = false"
-        >
-          Cancel
-        </UiButton>
-        <UiButton
-          variant="primary"
-          :loading="rollupPending"
-          @click="submitRollup"
-        >
-          Run rollup
-        </UiButton>
-      </template>
-    </UiDialog>
-
-    <UiDialog
-      :model-value="showCreateRedirect"
-      title="New redirect"
-      description="Create a redirect from an old URL to a tracked article."
-      size="md"
-      @update:model-value="(open: boolean) => showCreateRedirect = open"
-    >
-      <label class="mb-3 block text-sm">
-        <span class="font-medium">From URL</span>
-        <input
-          v-model="newRedirect.from_url"
-          type="text"
-          placeholder="/old-path"
-          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 font-mono text-sm dark:border-gray-700 dark:bg-gray-800"
-        >
-      </label>
-      <label class="mb-3 block text-sm">
-        <span class="font-medium">To article</span>
-        <select
-          v-model="newRedirect.to_article_id"
-          class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-        >
-          <option :value="null">
-            — none —
-          </option>
-          <option
-            v-for="a in articlesStore.items"
-            :key="a.id"
-            :value="a.id"
-          >
-            {{ a.title }}
-          </option>
-        </select>
-      </label>
-      <label class="mb-3 block text-sm">
-        <span class="font-medium">Kind</span>
-        <select
-          v-model="newRedirect.kind"
-          class="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-        >
-          <option value="301">
-            301
-          </option>
-          <option value="302">
-            302
-          </option>
-        </select>
-      </label>
-      <template #footer>
-        <UiButton
-          variant="secondary"
-          :disabled="submittingRedirect"
-          @click="showCreateRedirect = false"
-        >
-          Cancel
-        </UiButton>
-        <UiButton
-          variant="primary"
-          :loading="submittingRedirect"
-          @click="submitRedirect"
-        >
-          Add redirect
-        </UiButton>
-      </template>
-    </UiDialog>
   </UiPageShell>
 </template>

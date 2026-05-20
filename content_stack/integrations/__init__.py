@@ -19,11 +19,13 @@ from content_stack.integrations._base import BaseIntegration, IntegrationCallRes
 from content_stack.integrations.ahrefs import AhrefsIntegration
 from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
+from content_stack.integrations.ghost import GhostIntegration
 from content_stack.integrations.google_paa import GooglePaaIntegration
 from content_stack.integrations.gsc import GscIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.openai_images import OpenAIImagesIntegration
 from content_stack.integrations.reddit import RedditIntegration
+from content_stack.integrations.wordpress import WordPressIntegration
 
 if TYPE_CHECKING:
     pass
@@ -38,6 +40,8 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "google-paa": GooglePaaIntegration,
     "jina": JinaReaderIntegration,
     "ahrefs": AhrefsIntegration,
+    "wordpress": WordPressIntegration,
+    "ghost": GhostIntegration,
 }
 
 
@@ -58,11 +62,13 @@ __all__ = [
     "BaseIntegration",
     "DataForSeoIntegration",
     "FirecrawlIntegration",
+    "GhostIntegration",
     "GooglePaaIntegration",
     "GscIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
     "RedditIntegration",
+    "WordPressIntegration",
     "integration_class_for",
 ]

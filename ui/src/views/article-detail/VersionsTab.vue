@@ -10,6 +10,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import DataTable from '@/components/DataTable.vue'
 import { useArticlesStore, type ArticleVersion } from '@/stores/articles'
 import { useToastsStore } from '@/stores/toasts'
+import { formatApiError } from '@/lib/client'
 import type { DataTableColumn } from '@/components/types'
 
 const props = defineProps<{
@@ -38,19 +39,9 @@ async function load(): Promise<void> {
   try {
     versions.value = await articlesStore.listVersions(props.articleId)
   } catch (err) {
-    toasts.error('Failed to load versions', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load versions', formatApiError(err))
   } finally {
     loading.value = false
-  }
-}
-
-async function snapshotNow(): Promise<void> {
-  try {
-    await articlesStore.createVersion(props.articleId)
-    toasts.success('Version snapshot created')
-    await load()
-  } catch (err) {
-    toasts.error('Snapshot failed', err instanceof Error ? err.message : undefined)
   }
 }
 
@@ -119,20 +110,13 @@ watch(() => props.articleId, load)
     class="space-y-4"
     aria-labelledby="cs-versions-tab-title"
   >
-    <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <div>
       <h2
         id="cs-versions-tab-title"
         class="text-base font-semibold"
       >
         Versions
       </h2>
-      <button
-        type="button"
-        class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-        @click="snapshotNow"
-      >
-        Snapshot now
-      </button>
     </div>
 
     <DataTable

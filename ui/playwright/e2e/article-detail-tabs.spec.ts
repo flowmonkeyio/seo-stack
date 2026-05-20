@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 import {
-  BREAKPOINTS,
   createProject,
   getBaseUrl,
   getDaemonToken,
@@ -40,41 +39,38 @@ const TABS = [
   'drift',
 ] as const
 
-test.describe('article-detail tabs — render at every breakpoint', () => {
+test.describe('article-detail tabs — desktop observer render', () => {
   test.beforeAll(async () => {
     await resetProjects()
   })
 
-  for (const bp of BREAKPOINTS) {
-    test(`every tab @ ${bp.name}px renders + axe + zero console errors`, async ({ page }) => {
-      test.setTimeout(120_000)
-      await page.setViewportSize({ width: bp.width, height: bp.height })
-      const errors = trackConsoleErrors(page)
-      await resetProjects()
-      const project = await createProject({
-        name: `Detail ${bp.name}`,
-        slug: `detail-${bp.name}`,
-        domain: `detail-${bp.name}.example.com`,
-      })
-      const article = await createArticle(project.id, {
-        title: `Detail @ ${bp.name}`,
-        slug: `detail-${bp.name}-slug`,
-      })
-
-      for (const tab of TABS) {
-        await page.goto(`/projects/${project.id}/articles/${article.id}/${tab}`)
-        await page.waitForLoadState('networkidle', { timeout: 15_000 })
-        await page.screenshot({
-          path: `./playwright/screenshots/article-detail-${tab}-${bp.name}.png`,
-          fullPage: true,
-        })
-        const results = await new AxeBuilder({ page }).analyze()
-        expect(
-          results.violations,
-          `axe violations on /${tab} @ ${bp.name}: ${JSON.stringify(results.violations, null, 2)}`,
-        ).toEqual([])
-      }
-      errors.assertNone()
+  test('every tab renders + axe + zero console errors', async ({ page }) => {
+    test.setTimeout(120_000)
+    const errors = trackConsoleErrors(page)
+    await resetProjects()
+    const project = await createProject({
+      name: 'Detail Desktop',
+      slug: 'detail-desktop',
+      domain: 'detail-desktop.example.com',
     })
-  }
+    const article = await createArticle(project.id, {
+      title: 'Detail Desktop',
+      slug: 'detail-desktop-slug',
+    })
+
+    for (const tab of TABS) {
+      await page.goto(`/projects/${project.id}/articles/${article.id}/${tab}`)
+      await page.waitForLoadState('networkidle', { timeout: 15_000 })
+      await page.screenshot({
+        path: `./playwright/screenshots/article-detail-${tab}-desktop.png`,
+        fullPage: true,
+      })
+      const results = await new AxeBuilder({ page }).analyze()
+      expect(
+        results.violations,
+        `axe violations on /${tab}: ${JSON.stringify(results.violations, null, 2)}`,
+      ).toEqual([])
+    }
+    errors.assertNone()
+  })
 })

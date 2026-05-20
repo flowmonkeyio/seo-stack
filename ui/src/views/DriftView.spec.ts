@@ -27,7 +27,7 @@ describe('DriftView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders title + threshold slider + M6 deferral notice', async () => {
+  it('renders title + threshold slider + baseline notice', async () => {
     globalThis.fetch = vi.fn(async () => {
       return new Response(
         JSON.stringify({ items: [], next_cursor: null, total_estimate: 0 }),
@@ -40,7 +40,7 @@ describe('DriftView', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(w.text()).toContain('Drift Watch')
     expect(w.text()).toContain('Threshold')
-    expect(w.text()).toContain('M6')
+    expect(w.text()).toContain('Saved article-body snapshots')
   })
 
   it('shows empty state when no baselines', async () => {

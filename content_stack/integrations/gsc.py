@@ -1,4 +1,4 @@
-"""Google Search Console + Indexing API + PageSpeed Insights wrapper.
+"""Google Search Console + URL Inspection + PageSpeed Insights wrapper.
 
 Authentication: OAuth 2.0 with the ``access_token`` + ``refresh_token``
 pair persisted in the ``gsc`` credential row's ``encrypted_payload``
@@ -23,9 +23,8 @@ Operations:
 - ``search_analytics(site, start, end, dimensions)`` — clicks /
   impressions / CTR / position rollup.
 - ``inspect_url(site, url)`` — single-URL Inspection API.
-- ``bulk_inspect(site, urls)`` — fan-out N inspect_url calls (Indexing
-  API has no bulk endpoint).
-- ``submit_indexing(url, type)`` — Indexing API ``URL_UPDATED`` ping.
+- ``bulk_inspect(site, urls)`` — fan-out N inspect_url calls (URL
+  Inspection has no bulk endpoint).
 - ``pagespeed(url, strategy)`` — PageSpeed Insights LCP/INP/CLS.
 
 OAuth helpers (used by the API router + ``oauth_refresh`` job):
@@ -54,13 +53,11 @@ AUTHORIZE_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 SEARCH_CONSOLE_BASE = "https://searchconsole.googleapis.com/webmasters/v3"
 SEARCH_CONSOLE_INSPECT = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
-INDEXING_API_BASE = "https://indexing.googleapis.com/v3/urlNotifications:publish"
 PAGESPEED_BASE = "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed"
 
-# Scopes required by every supported op.
+# Scope required by Search Analytics, URL Inspection, and site listing.
 GSC_SCOPES = [
     "https://www.googleapis.com/auth/webmasters.readonly",
-    "https://www.googleapis.com/auth/indexing",
 ]
 
 
@@ -303,22 +300,6 @@ class GscIntegration(BaseIntegration):
         for u in urls:
             results.append(await self.inspect_url(site_url=site_url, inspection_url=u))
         return results
-
-    async def submit_indexing(
-        self,
-        *,
-        url: str,
-        kind: str = "URL_UPDATED",
-    ) -> IntegrationCallResult:
-        """Indexing API ping — ``URL_UPDATED`` or ``URL_DELETED``."""
-        body = {"url": url, "type": kind}
-        return await self.call(
-            op="submit_indexing",
-            method="POST",
-            url=INDEXING_API_BASE,
-            json_body=body,
-            headers=self._bearer_headers(),
-        )
 
     async def pagespeed(
         self,

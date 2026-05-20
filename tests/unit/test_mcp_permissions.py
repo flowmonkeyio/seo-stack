@@ -20,7 +20,7 @@ from content_stack.mcp.permissions import (
 
 
 def test_system_skill_is_not_full_grant() -> None:
-    """``__system__`` is a narrow bootstrap grant, not an escape hatch."""
+    """``__system__`` is explicit, not an unrestricted escape hatch."""
     assert not is_full_grant(SYSTEM_SKILL)
 
 
@@ -40,12 +40,14 @@ def test_real_skill_is_not_full_grant() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_grant_for_system_skill_is_bootstrap_only() -> None:
-    """System calls can bootstrap a run, but cannot bypass skill grants."""
+def test_check_grant_for_system_skill_covers_agent_owned_operations() -> None:
+    """System calls can operate product state because the browser UI is observer-only."""
     check_grant("run.start", SYSTEM_SKILL)
     check_grant("project.create", SYSTEM_SKILL)
+    check_grant("article.markPublished", SYSTEM_SKILL)
+    check_grant("gscOauth.start", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
-        check_grant("article.markPublished", SYSTEM_SKILL)
+        check_grant("dataforseo.serp", SYSTEM_SKILL)
 
 
 def test_check_grant_passes_for_test_skill() -> None:

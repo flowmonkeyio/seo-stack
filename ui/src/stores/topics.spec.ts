@@ -20,8 +20,6 @@ const TOPIC_QUEUED = {
   updated_at: '2026-05-01T00:00:00Z',
 }
 
-const TOPIC_APPROVED = { ...TOPIC_QUEUED, id: 2, status: 'approved' as const, title: 'Other' }
-
 describe('topics store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -49,37 +47,13 @@ describe('topics store', () => {
     expect(captured).toContain('sort=-priority')
   })
 
-  it('approve() replaces the existing row in items', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: { ...TOPIC_QUEUED, status: 'approved' }, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose topic mutation methods to the UI store', () => {
     const store = useTopicsStore()
-    store.items = [TOPIC_QUEUED] as never
-    await store.approve(1)
-    expect(store.items[0].status).toBe('approved')
-  })
-
-  it('bulkUpdateStatus() merges all returned rows into the local list', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: [
-            { ...TOPIC_QUEUED, status: 'approved' },
-            { ...TOPIC_APPROVED, status: 'rejected' },
-          ],
-          project_id: 1,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useTopicsStore()
-    store.items = [TOPIC_QUEUED, TOPIC_APPROVED] as never
-    await store.bulkUpdateStatus(1, { ids: [1, 2], status: 'approved' as never })
-    expect(store.items.find((t) => t.id === 1)?.status).toBe('approved')
-    expect(store.items.find((t) => t.id === 2)?.status).toBe('rejected')
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.create).toBeUndefined()
+    expect(exposed.approve).toBeUndefined()
+    expect(exposed.reject).toBeUndefined()
+    expect(exposed.bulkUpdateStatus).toBeUndefined()
   })
 
   it('filteredItems narrows by intent client-side', () => {

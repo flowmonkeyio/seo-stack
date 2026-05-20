@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from content_stack.db.models import AgentSession, Project, WorkspaceBinding
 from content_stack.repositories.base import Envelope, NotFoundError, ValidationError
@@ -136,7 +136,7 @@ class WorkspaceRepository:
             row = self._s.exec(
                 select(WorkspaceBinding)
                 .where(WorkspaceBinding.git_remote_url == git_remote_url)
-                .order_by(WorkspaceBinding.updated_at.desc())  # type: ignore[union-attr]
+                .order_by(col(WorkspaceBinding.updated_at).desc())
             ).first()
         if row is None:
             return WorkspaceResolutionOut(binding=None, project_id=None, needs_connect=True)

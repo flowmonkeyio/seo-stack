@@ -3,15 +3,15 @@
   (e.g. enable/disable a feature). Otherwise prefer UiCheckbox.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed } from 'vue'
 
 export interface UiSwitchProps {
-  modelValue?: boolean;
-  disabled?: boolean;
-  size?: 'sm' | 'md';
-  id?: string;
-  ariaLabel?: string;
-  ariaLabelledby?: string;
+  modelValue?: boolean
+  disabled?: boolean
+  size?: 'sm' | 'md'
+  id?: string
+  ariaLabel?: string
+  ariaLabelledby?: string
 }
 
 const props = withDefaults(defineProps<UiSwitchProps>(), {
@@ -19,23 +19,23 @@ const props = withDefaults(defineProps<UiSwitchProps>(), {
   id: undefined,
   ariaLabel: undefined,
   ariaLabelledby: undefined,
-});
+})
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: boolean): void;
-  (e: 'change', value: boolean): void;
-}>();
+  (e: 'update:modelValue', value: boolean): void
+  (e: 'change', value: boolean): void
+}>()
 
 const dims = computed(() =>
   props.size === 'sm'
-    ? { track: 'w-7 h-4', thumb: 'w-3 h-3', translate: 'translate-x-3' }
-    : { track: 'w-9 h-5', thumb: 'w-4 h-4', translate: 'translate-x-4' }
-);
+    ? { track: 'w-8 h-4', thumb: 'w-3 h-3', translate: 'translate-x-4' }
+    : { track: 'w-10 h-5', thumb: 'w-4 h-4', translate: 'translate-x-5' },
+)
 
 function toggle() {
-  if (props.disabled) return;
-  emit('update:modelValue', !props.modelValue);
-  emit('change', !props.modelValue);
+  if (props.disabled) return
+  emit('update:modelValue', !props.modelValue)
+  emit('change', !props.modelValue)
 }
 </script>
 
@@ -49,9 +49,9 @@ function toggle() {
     :aria-labelledby="ariaLabelledby"
     :disabled="disabled"
     :class="[
-      'ui-switch focus-ring inline-flex items-center rounded-full border transition-colors duration-fast',
+      'ui-switch focus-ring inline-flex items-center rounded-full border shadow-xs transition-colors duration-fast',
       dims.track,
-      modelValue ? 'bg-accent border-accent' : 'bg-bg-sunken border-default',
+      modelValue ? 'bg-accent border-accent' : 'bg-bg-sunken border-strong hover:border-default',
       disabled && 'opacity-60 cursor-not-allowed',
     ]"
     @click="toggle"

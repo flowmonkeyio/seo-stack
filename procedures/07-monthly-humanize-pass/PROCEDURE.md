@@ -7,7 +7,8 @@ description: |
   articles flagged ``refresh_due`` (entry points per audit P-I6),
   for each one snapshot the live row into ``article_versions``, run
   the humanizer + editor + EEAT gate on the new version, then
-  republish via the project's primary publish target. Per audit
+  republish through procedure 4's targetless/default publish path, or through
+  the project's primary publish target when a fully wired target exists. Per audit
   P-I1 the humanizer runs **once per article version** — never twice
   on the same version row — so the candidate selection step
   guarantees a freshly-bumped version before the humanizer fires.
@@ -19,7 +20,7 @@ triggers:
 prerequisites:
   - "projects has at least one articles row with status='published' (otherwise no candidates to refresh)"
   - "voice_profiles WHERE project_id=:project_id AND is_default=true has humanizer.allowed=true (default true; projects can opt out via voice_profile.config)"
-  - "primary publish target is_active=true (procedure 4's publish step is the republish path)"
+  - "procedure 4's publish step is available; primary publish target is optional"
 
 produces:
   - article_versions

@@ -67,6 +67,9 @@ def _emit_partial_indexes(engine: object) -> None:
         "ON idempotency_keys(project_id, tool_name, idempotency_key)",
         # Article slug uniqueness (PLAN.md L484)
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_article_slug ON articles(project_id, slug)",
+        # Targetless external publishes (agent-publish fallback)
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_article_publishes_external "
+        "ON article_publishes(article_id, version_published) WHERE target_id IS NULL",
     ]
     with engine.begin() as conn:  # type: ignore[attr-defined]
         for s in statements:

@@ -17,11 +17,10 @@
 
 import { computed, onMounted, ref, watch } from 'vue'
 
-import DataTable from '@/components/DataTable.vue'
-import { apiFetch } from '@/lib/client'
+import { UiBadge } from '@/components/ui'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import type { components } from '@/api'
-import type { DataTableColumn } from '@/components/types'
 
 type EeatReport = components['schemas']['EeatReportResponse']
 type Evaluation = components['schemas']['EeatEvaluationOut']
@@ -38,11 +37,70 @@ const report = ref<EeatReport | null>(null)
 const criteriaIndex = ref<Record<number, Criterion>>({})
 const loading = ref(false)
 
-const columns: DataTableColumn<Evaluation>[] = [
-  { key: 'criterion_id', label: 'Criterion' },
-  { key: 'verdict', label: 'Verdict' },
-  { key: 'notes', label: 'Notes' },
-]
+type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger'
+
+interface CategoryMeta {
+  title: string
+  description: string
+}
+
+interface EvaluationRow {
+  evaluation: Evaluation
+  criterion: Criterion | null
+  code: string
+  category: string
+  isCore: boolean
+  required: boolean
+}
+
+interface EvaluationGroup {
+  category: string
+  title: string
+  description: string
+  rows: EvaluationRow[]
+  pass: number
+  partial: number
+  fail: number
+  core: number
+  required: number
+}
+
+const CATEGORY_ORDER = ['C', 'O', 'R', 'E', 'Exp', 'Ept', 'A', 'T']
+
+const CATEGORY_META: Record<string, CategoryMeta> = {
+  C: {
+    title: 'Content',
+    description: 'Editorial completeness, scope, structure, and source fit.',
+  },
+  O: {
+    title: 'Optimization',
+    description: 'Search formatting, schema fit, and on-page presentation.',
+  },
+  R: {
+    title: 'Reliability',
+    description: 'Accuracy, citations, local evidence, and repeatability.',
+  },
+  E: {
+    title: 'Experience',
+    description: 'Original perspective and first-hand process evidence.',
+  },
+  Exp: {
+    title: 'Expertise',
+    description: 'Method, terminology, and operator competence.',
+  },
+  Ept: {
+    title: 'Expertise',
+    description: 'Method, terminology, and operator competence.',
+  },
+  A: {
+    title: 'Authority',
+    description: 'Authority signals, references, and credible boundaries.',
+  },
+  T: {
+    title: 'Trust',
+    description: 'Transparency, disclosure, policy, and safety checks.',
+  },
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -56,7 +114,7 @@ async function load(): Promise<void> {
     for (const c of criteria) idx[c.id] = c
     criteriaIndex.value = idx
   } catch (err) {
-    toasts.error('Failed to load EEAT report', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load EEAT report', formatApiError(err))
   } finally {
     loading.value = false
   }
@@ -70,6 +128,58 @@ const systemScores = computed<Array<[string, number]>>(() => {
 })
 
 const vetoesFailed = computed<string[]>(() => report.value?.score.vetoes_failed ?? [])
+
+const evaluationRows = computed<EvaluationRow[]>(() =>
+  (report.value?.evaluations ?? []).map((evaluation) => {
+    const criterion = criteriaIndex.value[evaluation.criterion_id] ?? null
+    const code = criterion?.code ?? `#${evaluation.criterion_id}`
+    return {
+      evaluation,
+      criterion,
+      code,
+      category: criterion?.category ?? code.replace(/\d.*$/, ''),
+      isCore: criterion?.tier === 'core',
+      required: criterion?.required === true,
+    }
+  }),
+)
+
+const evaluationGroups = computed<EvaluationGroup[]>(() => {
+  const byCategory = new Map<string, EvaluationRow[]>()
+  for (const row of evaluationRows.value) {
+    const rows = byCategory.get(row.category) ?? []
+    rows.push(row)
+    byCategory.set(row.category, rows)
+  }
+
+  return [...byCategory.entries()]
+    .map(([category, rows]) => {
+      const meta = CATEGORY_META[category] ?? {
+        title: category,
+        description: 'Article-level rubric checks.',
+      }
+      const sortedRows = [...rows].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+      return {
+        category,
+        title: meta.title,
+        description: meta.description,
+        rows: sortedRows,
+        pass: rows.filter((row) => row.evaluation.verdict === 'pass').length,
+        partial: rows.filter((row) => row.evaluation.verdict === 'partial').length,
+        fail: rows.filter((row) => row.evaluation.verdict === 'fail').length,
+        core: rows.filter((row) => row.isCore).length,
+        required: rows.filter((row) => row.required).length,
+      }
+    })
+    .sort((a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a.category)
+      const bi = CATEGORY_ORDER.indexOf(b.category)
+      if (ai === -1 && bi === -1) return a.category.localeCompare(b.category)
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
+    })
+})
 
 const verdictAggregate = computed<'SHIP' | 'FIX' | 'BLOCK' | 'unscored'>(() => {
   const r = report.value
@@ -85,52 +195,28 @@ const verdictAggregate = computed<'SHIP' | 'FIX' | 'BLOCK' | 'unscored'>(() => {
   return 'SHIP'
 })
 
-const verdictBadge = computed<{ label: string; classes: string }>(() => {
+const verdictBadge = computed<{ label: string; tone: BadgeTone }>(() => {
   switch (verdictAggregate.value) {
     case 'SHIP':
-      return {
-        label: 'SHIP',
-        classes:
-          'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-      }
+      return { label: 'SHIP', tone: 'success' }
     case 'FIX':
-      return {
-        label: 'FIX',
-        classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-      }
+      return { label: 'FIX', tone: 'warning' }
     case 'BLOCK':
-      return {
-        label: 'BLOCK',
-        classes: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-      }
+      return { label: 'BLOCK', tone: 'danger' }
     default:
-      return {
-        label: 'unscored',
-        classes: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-      }
+      return { label: 'unscored', tone: 'neutral' }
   }
 })
 
-function verdictPill(verdict: string): string {
-  if (verdict === 'pass')
-    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-  if (verdict === 'partial')
-    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-  return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+function verdictTone(verdict: string): BadgeTone {
+  if (verdict === 'pass') return 'success'
+  if (verdict === 'partial') return 'warning'
+  if (verdict === 'fail') return 'danger'
+  return 'neutral'
 }
 
-function rowBg(ev: Evaluation): string {
-  if (ev.verdict === 'fail') return 'bg-red-50 dark:bg-red-900/20'
-  if (ev.verdict === 'partial') return 'bg-amber-50 dark:bg-amber-900/20'
-  return ''
-}
-
-function criterionLabel(id: number): string {
-  return criteriaIndex.value[id]?.code ?? `#${id}`
-}
-
-function isCore(id: number): boolean {
-  return criteriaIndex.value[id]?.tier === 'core'
+function groupOpen(group: EvaluationGroup): boolean {
+  return group.fail > 0 || group.partial > 0
 }
 
 onMounted(load)
@@ -149,22 +235,23 @@ watch(() => props.articleId, load)
       >
         EEAT report
       </h2>
-      <span
-        :class="['rounded px-2.5 py-1 text-sm font-semibold', verdictBadge.classes]"
+      <UiBadge
+        :tone="verdictBadge.tone"
+        size="md"
         data-testid="cs-eeat-verdict"
       >
         verdict: {{ verdictBadge.label }}
-      </span>
+      </UiBadge>
     </div>
 
     <div
       v-if="vetoesFailed.length > 0"
-      class="rounded border border-red-300 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/40"
+      class="rounded-md border border-danger-border bg-danger-subtle p-3 text-danger-fg"
       role="alert"
       data-testid="cs-eeat-veto-banner"
     >
-      <strong class="text-red-800 dark:text-red-200">Cannot ship — veto item failed.</strong>
-      <p class="mt-1 text-sm text-red-700 dark:text-red-200">
+      <strong>Cannot ship — veto item failed.</strong>
+      <p class="mt-1 text-sm">
         Failed core criteria:
         <span class="font-mono">{{ vetoesFailed.join(', ') }}</span>
       </p>
@@ -177,23 +264,23 @@ watch(() => props.articleId, load)
       <div
         v-for="dim in dimensions"
         :key="dim"
-        class="rounded border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
       >
-        <div class="text-xs uppercase text-gray-500 dark:text-gray-400">
+        <div class="text-xs uppercase text-fg-muted">
           {{ dim }}
         </div>
         <div class="mt-1 text-2xl font-semibold">
           {{ Math.round(report.score.dimension_scores[dim]) }}
         </div>
-        <div class="mt-2 h-2 w-full overflow-hidden rounded bg-gray-200 dark:bg-gray-700">
+        <div class="mt-2 h-2 w-full overflow-hidden rounded bg-bg-sunken">
           <div
             class="h-full"
             :class="
               report.score.dimension_scores[dim] >= 70
-                ? 'bg-emerald-500'
+                ? 'bg-success'
                 : report.score.dimension_scores[dim] >= 50
-                  ? 'bg-amber-500'
-                  : 'bg-red-500'
+                  ? 'bg-warning'
+                  : 'bg-danger'
             "
             :style="{ width: `${Math.min(100, Math.max(0, report.score.dimension_scores[dim]))}%` }"
           />
@@ -208,48 +295,118 @@ watch(() => props.articleId, load)
       <div
         v-for="[name, score] in systemScores"
         :key="name"
-        class="rounded border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900"
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
       >
         <div class="flex items-baseline justify-between">
-          <span class="text-sm font-medium text-gray-600 dark:text-gray-400">{{ name }}</span>
+          <span class="text-sm font-medium text-fg-muted">{{ name }}</span>
           <span class="text-2xl font-semibold">{{ Math.round(score) }}</span>
         </div>
       </div>
     </div>
 
-    <DataTable
-      v-if="report"
-      :items="report.evaluations"
-      :columns="columns"
-      :loading="loading"
-      aria-label="EEAT evaluations"
-      empty-message="No evaluations yet — run the EEAT gate to populate."
+    <div
+      v-if="report && evaluationGroups.length > 0"
+      class="space-y-2"
+      aria-label="EEAT evaluation groups"
     >
-      <template #cell:criterion_id="{ row }">
-        <span class="inline-flex items-center gap-1">
-          <span class="font-mono text-xs">{{ criterionLabel((row as Evaluation).criterion_id) }}</span>
-          <span
-            v-if="isCore((row as Evaluation).criterion_id)"
-            class="rounded bg-red-100 px-1 py-0.5 text-[10px] font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300"
-            data-testid="cs-eeat-core-badge"
+      <details
+        v-for="group in evaluationGroups"
+        :key="group.category"
+        class="rounded-md border border-default bg-bg-surface shadow-xs"
+        :open="groupOpen(group)"
+      >
+        <summary class="cursor-pointer px-4 py-3 marker:text-fg-subtle">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-fg-strong">
+                {{ group.category }} · {{ group.title }}
+              </h3>
+              <p class="mt-0.5 text-xs text-fg-muted">
+                {{ group.description }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <UiBadge tone="neutral">
+                {{ group.rows.length }} checks
+              </UiBadge>
+              <UiBadge
+                v-if="group.core > 0"
+                tone="danger"
+              >
+                {{ group.core }} core
+              </UiBadge>
+              <UiBadge
+                v-if="group.required > 0"
+                tone="warning"
+              >
+                {{ group.required }} required
+              </UiBadge>
+              <UiBadge
+                v-if="group.fail > 0"
+                tone="danger"
+              >
+                {{ group.fail }} fail
+              </UiBadge>
+              <UiBadge
+                v-else-if="group.partial > 0"
+                tone="warning"
+              >
+                {{ group.partial }} partial
+              </UiBadge>
+              <UiBadge
+                v-else
+                tone="success"
+              >
+                all pass
+              </UiBadge>
+            </div>
+          </div>
+        </summary>
+        <div class="border-t border-subtle">
+          <div class="grid grid-cols-[120px_120px_1fr] border-b border-subtle px-4 py-2 text-xs font-semibold uppercase text-fg-muted">
+            <div>Criterion</div>
+            <div>Verdict</div>
+            <div>Notes</div>
+          </div>
+          <div
+            v-for="row in group.rows"
+            :key="row.evaluation.id"
+            class="grid grid-cols-[120px_120px_1fr] gap-3 border-b border-subtle px-4 py-2 text-sm last:border-b-0"
           >
-            core
-          </span>
-        </span>
-      </template>
-      <template #cell:verdict="{ row }">
-        <span :class="['rounded-full px-2 py-0.5 text-xs font-medium', verdictPill((row as Evaluation).verdict), rowBg(row as Evaluation)]">
-          {{ (row as Evaluation).verdict }}
-        </span>
-      </template>
-    </DataTable>
+            <div class="flex flex-wrap items-center gap-1">
+              <span class="font-mono text-xs text-fg-strong">{{ row.code }}</span>
+              <UiBadge
+                v-if="row.isCore"
+                tone="danger"
+                data-testid="cs-eeat-core-badge"
+              >
+                core
+              </UiBadge>
+              <UiBadge
+                v-else-if="row.required"
+                tone="warning"
+              >
+                required
+              </UiBadge>
+            </div>
+            <div>
+              <UiBadge :tone="verdictTone(row.evaluation.verdict)">
+                {{ row.evaluation.verdict }}
+              </UiBadge>
+            </div>
+            <p class="text-fg-muted">
+              {{ row.evaluation.notes ?? '—' }}
+            </p>
+          </div>
+        </div>
+      </details>
+    </div>
 
     <p
       v-if="!loading && report && report.evaluations.length === 0"
-      class="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+      class="rounded-md border border-dashed border-subtle bg-bg-surface px-5 py-8 text-center text-sm text-fg-muted"
     >
-      No EEAT evaluations recorded yet for this article. The EEAT gate will
-      populate them on the next procedure-4 run.
+      No EEAT evaluations recorded yet for this article. Agent EEAT gate output will appear here after the quality step runs.
     </p>
   </section>
 </template>

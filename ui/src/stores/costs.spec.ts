@@ -46,47 +46,55 @@ describe('costs store', () => {
     expect(store.hasNoSpendYet).toBe(true)
   })
 
-  it('refreshBudgets() collects per-kind rows ignoring 404s', async () => {
-    let calls = 0
+  it('refreshBudgets() loads configured budget rows without probing missing kinds', async () => {
     globalThis.fetch = vi.fn(async (input) => {
-      calls += 1
       const url = String(input)
-      if (url.includes('dataforseo')) {
-        return new Response(JSON.stringify(BUDGET), {
+      if (url.endsWith('/api/v1/projects/1/budgets')) {
+        return new Response(JSON.stringify([BUDGET]), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         })
       }
-      return new Response(JSON.stringify({ detail: 'not found' }), {
-        status: 404,
+      return new Response(JSON.stringify({ detail: 'unexpected request' }), {
+        status: 500,
         headers: { 'content-type': 'application/json' },
       })
     }) as typeof fetch
     const store = useCostsStore()
     await store.refreshBudgets(1)
     expect(store.budgets.length).toBe(1)
-    expect(calls).toBeGreaterThan(1)
-    expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) =>
-      String(url).includes('/api/v1/projects/1/budgets/google-paa'),
-    )).toBe(true)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('upsertBudget() inserts at top when new', async () => {
+  it('refreshBudgets() treats an empty list as no configured budget rows', async () => {
     globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: BUDGET, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
     }) as typeof fetch
     const store = useCostsStore()
-    store.budgets = [] as never
-    await store.upsertBudget(1, {
-      kind: 'dataforseo',
-      monthly_budget_usd: 50,
-      alert_threshold_pct: 80,
-      qps: 1,
-    })
-    expect(store.budgets.length).toBe(1)
+    await store.refreshBudgets(1)
+    expect(store.budgets).toEqual([])
+    expect(store.error).toBeNull()
+  })
+
+  it('refreshBudgets() surfaces route failures instead of hiding them as empty state', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ detail: 'Not Found' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+    const store = useCostsStore()
+    await store.refreshBudgets(1)
+    expect(store.budgets).toEqual([])
+    expect(store.error).toContain('Not Found')
+  })
+
+  it('does not expose budget mutation methods to the UI store', () => {
+    const store = useCostsStore()
+    expect((store as unknown as Record<string, unknown>).upsertBudget).toBeUndefined()
   })
 
   it('refreshHistory() pulls 12 months in parallel', async () => {

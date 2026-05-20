@@ -21,7 +21,7 @@ import { RouterLink } from 'vue-router'
 import KvList from '@/components/KvList.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
-  UiButton,
+  UiAdvancedJsonPanel,
   UiCallout,
   UiEmptyState,
   UiJsonBlock,
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui'
 import { useRunsStore, type Run } from '@/stores/runs'
 import { useToastsStore } from '@/stores/toasts'
+import { formatApiError } from '@/lib/client'
 import type { ProcedureRunStep } from '@/stores/procedures'
 
 const props = defineProps<{
@@ -57,7 +58,7 @@ async function load(): Promise<void> {
     children.value = kids
     procedureSteps.value = proc?.steps ?? []
   } catch (err) {
-    toasts.error('Failed to load run', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load run', formatApiError(err))
   } finally {
     loading.value = false
   }
@@ -93,10 +94,9 @@ const summary = computed<KvItem[]>(() => {
   ]
 })
 
-const metadataKv = computed<KvItem[]>(() => {
-  if (!run.value?.metadata_json) return []
-  const meta = run.value.metadata_json as Record<string, unknown>
-  return Object.entries(meta).map(([k, v]) => ({ key: k, label: k, value: v }))
+const hasMetadata = computed<boolean>(() => {
+  const meta = run.value?.metadata_json
+  return !!meta && typeof meta === 'object' && Object.keys(meta).length > 0
 })
 
 function durationOf(r: Run): string {
@@ -104,26 +104,6 @@ function durationOf(r: Run): string {
   const ms = new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.round(s / 60)}m`
-}
-
-async function abort(cascade = true): Promise<void> {
-  try {
-    const updated = await runsStore.abort(props.runId, cascade)
-    run.value = updated
-    toasts.success('Run aborted', cascade ? 'cascaded to children' : '')
-  } catch (err) {
-    toasts.error('Abort failed', err instanceof Error ? err.message : undefined)
-  }
-}
-
-async function heartbeat(): Promise<void> {
-  try {
-    const updated = await runsStore.heartbeat(props.runId)
-    if (updated) run.value = updated
-    toasts.success('Heartbeat sent')
-  } catch (err) {
-    toasts.error('Heartbeat failed', err instanceof Error ? err.message : undefined)
-  }
 }
 
 function toggleStep(idx: number): void {
@@ -160,22 +140,6 @@ watch(() => props.runId, load)
         title="Summary"
       >
         <template #actions>
-          <UiButton
-            v-if="run.status === 'running'"
-            size="sm"
-            variant="secondary"
-            @click="heartbeat"
-          >
-            Heartbeat
-          </UiButton>
-          <UiButton
-            v-if="run.status === 'running'"
-            size="sm"
-            variant="danger"
-            @click="abort(true)"
-          >
-            Abort (cascade)
-          </UiButton>
           <StatusBadge
             :status="run.status"
             kind="run"
@@ -189,18 +153,6 @@ watch(() => props.runId, load)
     </UiPanel>
 
     <UiPanel
-      v-if="metadataKv.length > 0"
-      aria-labelledby="cs-run-metadata-title"
-      class="p-4"
-    >
-      <UiSectionHeader
-        id="cs-run-metadata-title"
-        title="Metadata"
-      />
-      <KvList :items="metadataKv" />
-    </UiPanel>
-
-    <UiPanel
       aria-labelledby="cs-run-steps-title"
       class="p-4"
     >
@@ -208,16 +160,12 @@ watch(() => props.runId, load)
         id="cs-run-steps-title"
         title="Steps timeline"
       />
-      <UiCallout
+      <div
         v-if="procedureSteps.length === 0"
-        tone="info"
-        density="compact"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
       >
-        Per-step grain (run_steps + run_step_calls) is exposed via
-        <code>/api/v1/procedures/runs/{id}</code> for procedure-kind runs. Skill-run
-        steps surface in M7 once the procedure runner records them. Use the
-        children panel below to drill into nested runs.
-      </UiCallout>
+        Step details appear for procedure runs. For other run kinds, inspect child runs and advanced metadata.
+      </div>
       <ol
         v-else
         class="space-y-2"
@@ -246,7 +194,7 @@ watch(() => props.runId, load)
               />
             </span>
             <span class="text-xs text-fg-muted">
-              {{ step.started_at ? new Date(step.started_at).toLocaleTimeString() : 'pending' }}
+              {{ step.started_at ? new Date(step.started_at).toLocaleTimeString() : 'Not started' }}
               {{ step.ended_at ? '→ ' + new Date(step.ended_at).toLocaleTimeString() : '' }}
               <span aria-hidden="true">{{ expandedStep === idx ? '▴' : '▾' }}</span>
             </span>
@@ -285,6 +233,13 @@ watch(() => props.runId, load)
       </ol>
     </UiPanel>
 
+    <UiAdvancedJsonPanel
+      v-if="hasMetadata"
+      title="Advanced metadata"
+      summary="Raw run context"
+      :data="run.metadata_json"
+    />
+
     <UiPanel
       aria-labelledby="cs-run-children-title"
       class="p-4"
@@ -295,7 +250,7 @@ watch(() => props.runId, load)
       />
       <p
         v-if="children.length === 0"
-        class="text-sm text-fg-muted"
+        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
       >
         No child runs.
       </p>

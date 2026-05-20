@@ -20,6 +20,7 @@ from sqlmodel import Session, select
 
 from content_stack.config import Settings
 from content_stack.db.models import (
+    ProcedureRunStep,
     ProcedureRunStepStatus,
     PublishTarget,
     PublishTargetKind,
@@ -60,8 +61,6 @@ _PUBLISH_PREFIX = "04-publishing/"
 
 _PUBLISH_KIND_TO_SKILL: dict[PublishTargetKind, str] = {
     PublishTargetKind.NUXT_CONTENT: "04-publishing/nuxt-content-publish",
-    PublishTargetKind.WORDPRESS: "04-publishing/wordpress-publish",
-    PublishTargetKind.GHOST: "04-publishing/ghost-publish",
 }
 
 _log = logging.getLogger(__name__)
@@ -359,6 +358,7 @@ class ProcedureRunner:
                     f"step {step_id!r} not found on run {run_id}",
                     data={"run_id": run_id, "step_id": step_id},
                 )
+            step_spec = spec.steps[target.step_index]
             if target.status == ProcedureRunStepStatus.PENDING:
                 step_repo.advance_step(
                     target.id,  # type: ignore[arg-type]
@@ -390,19 +390,118 @@ class ProcedureRunner:
             run_row.last_step_at = _utcnow()
             run_row.heartbeat_at = _utcnow()
 
-            failure_policy = spec.steps[target.step_index].on_failure
-            if status == ProcedureRunStepStatus.FAILED and failure_policy == "abort":
+            failure_policy = step_spec.on_failure
+            if status == ProcedureRunStepStatus.FAILED and failure_policy == "retry":
+                retries = dict(metadata.get("step_retries") or {})
+                attempt = int(retries.get(step_id, 0)) + 1
+                retries[step_id] = attempt
+                metadata["step_retries"] = retries
+                if attempt <= step_spec.max_retries:
+                    _reset_procedure_steps(
+                        s,
+                        run_id=run_id,
+                        start_index=target.step_index,
+                        end_index=target.step_index,
+                    )
+                    metadata["agent_control"] = {
+                        "state": "retry-scheduled",
+                        "step_id": step_id,
+                        "attempt": attempt,
+                        "max_retries": step_spec.max_retries,
+                    }
+                else:
+                    run_row.status = RunStatus.FAILED
+                    run_row.error = error or (
+                        f"procedure step {step_id!r} failed after {step_spec.max_retries} retries"
+                    )
+                    run_row.ended_at = _utcnow()
+            elif status == ProcedureRunStepStatus.FAILED and failure_policy == "skip":
+                step_repo.advance_step(
+                    target.id,  # type: ignore[arg-type]
+                    status=ProcedureRunStepStatus.SKIPPED,
+                    output_json=output_json,
+                    error=error,
+                )
+                metadata["agent_control"] = {
+                    "state": "step-skipped-after-failure",
+                    "step_id": step_id,
+                    "error": error,
+                }
+            elif (
+                failure_policy == "loop_back"
+                and status in {ProcedureRunStepStatus.SUCCESS, ProcedureRunStepStatus.FAILED}
+                and _loop_back_requested(output_json, status)
+            ):
+                verdict = _normalised_verdict(output_json)
+                if verdict == "BLOCK":
+                    run_row.status = RunStatus.ABORTED
+                    run_row.error = error or f"procedure step {step_id!r} returned BLOCK"
+                    run_row.ended_at = _utcnow()
+                    metadata["agent_control"] = {
+                        "state": "loop-blocked",
+                        "step_id": step_id,
+                        "verdict": verdict,
+                    }
+                else:
+                    loop_to = step_spec.loop_back_to
+                    loop_target = next((row for row in steps if row.step_id == loop_to), None)
+                    if loop_target is None:
+                        run_row.status = RunStatus.FAILED
+                        run_row.error = f"loop_back target {loop_to!r} not found"
+                        run_row.ended_at = _utcnow()
+                    else:
+                        loops = dict(metadata.get("step_loop_counts") or {})
+                        loop_key = f"{loop_to}->{step_id}"
+                        attempt = int(loops.get(loop_key, 0)) + 1
+                        loops[loop_key] = attempt
+                        metadata["step_loop_counts"] = loops
+                        max_loops = self._settings.procedure_runner_max_loop_iterations
+                        if attempt > max_loops:
+                            run_row.status = RunStatus.FAILED
+                            run_row.error = (
+                                f"loop cap exceeded for {loop_key}: {attempt} > {max_loops}"
+                            )
+                            run_row.ended_at = _utcnow()
+                        else:
+                            _reset_procedure_steps(
+                                s,
+                                run_id=run_id,
+                                start_index=loop_target.step_index,
+                                end_index=target.step_index,
+                            )
+                            step_outputs = dict(metadata.get("step_outputs") or {})
+                            for row in steps:
+                                if loop_target.step_index <= row.step_index <= target.step_index:
+                                    step_outputs.pop(row.step_id, None)
+                            metadata["step_outputs"] = step_outputs
+                            metadata["agent_control"] = {
+                                "state": "loop-back-scheduled",
+                                "step_id": step_id,
+                                "loop_back_to": loop_to,
+                                "attempt": attempt,
+                                "max_loops": max_loops,
+                                "verdict": verdict or "FIX",
+                            }
+            elif status == ProcedureRunStepStatus.FAILED and failure_policy == "human_review":
+                metadata["agent_control"] = {
+                    "state": "human-review-required",
+                    "step_id": step_id,
+                    "error": error,
+                }
+            elif status == ProcedureRunStepStatus.FAILED and failure_policy == "abort":
                 run_row.status = RunStatus.FAILED
                 run_row.error = error or f"procedure step {step_id!r} failed"
                 run_row.ended_at = _utcnow()
-            elif _all_steps_successful(steps):
+            steps = step_repo.list_steps(run_id)
+            if run_row.status == RunStatus.RUNNING and _all_steps_successful(steps):
                 run_row.status = RunStatus.SUCCESS
                 run_row.ended_at = _utcnow()
                 metadata["procedure_complete"] = True
-                run_row.metadata_json = metadata
+            run_row.metadata_json = metadata
             s.add(run_row)
             s.commit()
             s.refresh(run_row)
+            steps = step_repo.list_steps(run_id)
             return self._agent_step_payload(
                 run_row=run_row,
                 spec=spec,
@@ -612,12 +711,13 @@ class ProcedureRunner:
             merged_args.setdefault(key, value)
         if article_id is not None:
             merged_args.setdefault("article_id", article_id)
-        target_id = self._primary_target_id(
-            project_id=run_row.project_id or 0,
-            step=step_spec,
-        )
-        if target_id is not None:
-            merged_args.setdefault("target_id", target_id)
+        if _is_target_publish_step(step_spec) and skill != step_spec.skill:
+            target_id = self._primary_target_id(
+                project_id=run_row.project_id or 0,
+                step=step_spec,
+            )
+            if target_id is not None:
+                merged_args.setdefault("target_id", target_id)
         allowed_tools = sorted(SKILL_TOOL_GRANTS.get(skill, frozenset()))
         is_programmatic = skill.startswith(_PROGRAMMATIC_PREFIX)
         payload["current_step"] = {
@@ -663,7 +763,10 @@ class ProcedureRunner:
             ).first()
         if row is None:
             return step.skill
-        return _PUBLISH_KIND_TO_SKILL.get(row.kind, step.skill)
+        resolved = _PUBLISH_KIND_TO_SKILL.get(row.kind)
+        if resolved is None:
+            return step.skill
+        return resolved
 
     def _primary_target_id(self, *, project_id: int, step: Any) -> int | None:
         if not _is_target_publish_step(step):
@@ -702,13 +805,57 @@ def _current_step_index(steps: list[Any]) -> int | None:
     return None
 
 
+def _reset_procedure_steps(
+    session: Session,
+    *,
+    run_id: int,
+    start_index: int,
+    end_index: int,
+) -> None:
+    rows = session.exec(
+        select(ProcedureRunStep)
+        .where(ProcedureRunStep.run_id == run_id)
+        .where(ProcedureRunStep.step_index >= start_index)
+        .where(ProcedureRunStep.step_index <= end_index)
+    ).all()
+    for row in rows:
+        row.status = ProcedureRunStepStatus.PENDING
+        row.started_at = None
+        row.ended_at = None
+        row.output_json = None
+        row.error = None
+        session.add(row)
+    session.commit()
+
+
+def _normalised_verdict(output_json: dict[str, Any] | None) -> str | None:
+    if not isinstance(output_json, dict):
+        return None
+    raw = output_json.get("verdict")
+    if raw is None:
+        raw = output_json.get("decision")
+    if raw is None:
+        return None
+    return str(raw).upper()
+
+
+def _loop_back_requested(
+    output_json: dict[str, Any] | None,
+    status: ProcedureRunStepStatus,
+) -> bool:
+    verdict = _normalised_verdict(output_json)
+    if verdict in {"FIX", "BLOCK"}:
+        return True
+    return status == ProcedureRunStepStatus.FAILED
+
+
 def _is_target_publish_step(step: Any) -> bool:
-    """Return true only for the final target-specific publish step.
+    """Return true only for the final publish step.
 
     Procedure 4 also contains publishing-phase skills such as
     ``schema-emitter`` and ``interlinker``. Those must keep their authored
-    skill bodies and grants; only the terminal ``publish`` step is swapped to
-    the primary target's concrete publisher.
+    skill bodies and grants; only the terminal ``publish`` step may be swapped
+    from the authored agent-publish fallback to a concrete target publisher.
     """
     return getattr(step, "id", None) == _PUBLISH_STEP_ID and str(step.skill).startswith(
         _PUBLISH_PREFIX

@@ -7,32 +7,19 @@
 //   3. Status timeline: stepper through briefing → outlined → drafted →
 //      edited → eeat_passed → published. Current = ring; completed = check;
 //      future = muted.
-//   4. Action bar: typed-verb buttons appropriate to current status. Each
-//      button passes `expected_etag` from the article's current step_etag
-//      and shows loading + ETag-mismatch handling.
-//   5. TabBar: 12 tabs (brief/outline/draft/edited/assets/sources/schema/
-//      publishes/eeat/versions/interlinks/drift). Each tab is a child route.
+//   4. Workflow navigation: plan/write/quality/delivery sections. Each item is
+//      a child route.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
-import {
-  UiBreadcrumbs,
-  UiButton,
-  UiPageHeader,
-  UiPageShell,
-} from '@/components/ui'
-import {
-  useArticlesStore,
-  ArticleEtagError,
-  type Article,
-  type ArticleStatus,
-} from '@/stores/articles'
+import { UiBreadcrumbs, UiPageHeader, UiPageShell } from '@/components/ui'
+import { useArticlesStore, type Article, type ArticleStatus } from '@/stores/articles'
 import { useProjectsStore } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
-import { apiFetch } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { ArticleStatus as ArticleStatusEnum, type components } from '@/api'
 
 type Author = components['schemas']['AuthorOut']
@@ -54,18 +41,18 @@ const reviewer = ref<Author | null>(null)
 const loadingArticle = ref(false)
 
 const tabs = computed(() => [
-  { key: 'brief', label: 'Brief' },
-  { key: 'outline', label: 'Outline' },
-  { key: 'draft', label: 'Draft' },
-  { key: 'edited', label: 'Edited' },
-  { key: 'assets', label: 'Assets' },
-  { key: 'sources', label: 'Sources' },
-  { key: 'schema', label: 'Schema' },
-  { key: 'publishes', label: 'Publishes' },
-  { key: 'eeat', label: 'EEAT' },
-  { key: 'versions', label: 'Versions' },
-  { key: 'interlinks', label: 'Interlinks' },
-  { key: 'drift', label: 'Drift' },
+  { key: 'brief', label: 'Brief', group: 'Plan' },
+  { key: 'sources', label: 'Sources', group: 'Plan' },
+  { key: 'outline', label: 'Outline', group: 'Plan' },
+  { key: 'draft', label: 'Draft', group: 'Write' },
+  { key: 'edited', label: 'Edited', group: 'Write' },
+  { key: 'assets', label: 'Assets', group: 'Write' },
+  { key: 'eeat', label: 'EEAT', group: 'Quality' },
+  { key: 'schema', label: 'Schema', group: 'Quality' },
+  { key: 'interlinks', label: 'Interlinks', group: 'Quality' },
+  { key: 'drift', label: 'Drift', group: 'Quality' },
+  { key: 'publishes', label: 'Log', group: 'Delivery' },
+  { key: 'versions', label: 'Versions', group: 'Delivery' },
 ])
 
 const activeKey = computed<string>(() => {
@@ -97,82 +84,13 @@ const currentStepIndex = computed<number>(() => {
 })
 
 function stepClasses(idx: number, current: number): string {
-  if (idx < current)
-    return 'bg-success text-fg-on-accent border-success'
-  if (idx === current)
-    return 'bg-accent text-fg-on-accent border-accent ring-2 ring-focus'
+  if (idx < current) return 'bg-success text-fg-on-accent border-success'
+  if (idx === current) return 'bg-accent text-fg-on-accent border-accent ring-2 ring-focus'
   return 'bg-bg-surface text-fg-muted border-default'
 }
 
 function lineClasses(idx: number, current: number): string {
   return idx < current ? 'bg-success' : 'bg-border-default'
-}
-
-const actionBusy = ref<string | null>(null)
-
-async function reloadArticle(): Promise<void> {
-  await articlesStore.get(articleId.value)
-}
-
-async function runVerb(name: string, fn: () => Promise<unknown>): Promise<void> {
-  actionBusy.value = name
-  try {
-    await fn()
-  } catch (err) {
-    if (err instanceof ArticleEtagError) {
-      toasts.error('Stale article version', 'Reloading the article…')
-      await reloadArticle()
-    } else {
-      toasts.error(`${name} failed`, err instanceof Error ? err.message : undefined)
-    }
-  } finally {
-    actionBusy.value = null
-  }
-}
-
-async function actionMarkDrafted(): Promise<void> {
-  if (!article.value?.step_etag) return
-  await runVerb('mark drafted', () =>
-    articlesStore.markDrafted(articleId.value, { expected_etag: article.value!.step_etag! }),
-  )
-}
-
-async function actionMarkEeatPassed(): Promise<void> {
-  if (!article.value?.step_etag) return
-  await runVerb('mark EEAT passed', () =>
-    articlesStore.markEeatPassed(articleId.value, {
-      expected_etag: article.value!.step_etag!,
-      eeat_criteria_version: article.value!.eeat_criteria_version_used ?? 1,
-    }),
-  )
-}
-
-async function actionMarkPublished(): Promise<void> {
-  if (!article.value?.step_etag) return
-  await runVerb('publish', () =>
-    articlesStore.markPublished(articleId.value, {
-      expected_etag: article.value!.step_etag!,
-    }),
-  )
-}
-
-async function actionMarkRefreshDue(): Promise<void> {
-  if (!article.value) return
-  await runVerb('mark refresh due', () =>
-    articlesStore.markRefreshDue(articleId.value, { reason: 'manual-refresh-from-ui' }),
-  )
-}
-
-async function actionCreateVersion(): Promise<void> {
-  if (!article.value) return
-  await runVerb('create version', async () => {
-    await articlesStore.createVersion(articleId.value)
-    toasts.success('Version snapshot created')
-  })
-}
-
-function gotoTab(key: string): void {
-  void router.push(`/projects/${projectId.value}/articles/${articleId.value}/${key}`)
 }
 
 async function loadAuthors(): Promise<void> {
@@ -187,10 +105,11 @@ async function loadAuthors(): Promise<void> {
       `/api/v1/projects/${projectId.value}/authors?${params.toString()}`,
     )
     const idx = new Map(page.items.map((a) => [a.id, a]))
-    author.value = article.value.author_id !== null ? idx.get(article.value.author_id) ?? null : null
+    author.value =
+      article.value.author_id !== null ? (idx.get(article.value.author_id) ?? null) : null
     reviewer.value =
       article.value.reviewer_author_id !== null
-        ? idx.get(article.value.reviewer_author_id) ?? null
+        ? (idx.get(article.value.reviewer_author_id) ?? null)
         : null
   } catch {
     author.value = null
@@ -206,7 +125,7 @@ async function loadAll(): Promise<void> {
     if (projectsStore.items.length === 0) await projectsStore.refresh()
     await loadAuthors()
   } catch (err) {
-    toasts.error('Failed to load article', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load article', formatApiError(err))
   } finally {
     loadingArticle.value = false
   }
@@ -228,9 +147,7 @@ onMounted(async () => {
   await loadAll()
   // If the URL is /projects/:id/articles/:aid (no tab), redirect to brief.
   if (route.name === 'project-article-detail') {
-    void router.replace(
-      `/projects/${projectId.value}/articles/${articleId.value}/brief`,
-    )
+    void router.replace(`/projects/${projectId.value}/articles/${articleId.value}/brief`)
   }
 })
 
@@ -298,87 +215,6 @@ watch(articleId, loadAll)
       </template>
     </ol>
 
-    <div
-      v-if="article"
-      class="flex flex-wrap items-center gap-2"
-    >
-      <UiButton
-        v-if="article.status === 'briefing'"
-        size="sm"
-        variant="primary"
-        @click="gotoTab('brief')"
-      >
-        Edit brief
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'outlined'"
-        size="sm"
-        variant="primary"
-        @click="gotoTab('draft')"
-      >
-        Continue to draft
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'outlined'"
-        size="sm"
-        variant="secondary"
-        :disabled="actionBusy !== null"
-        @click="actionMarkDrafted"
-      >
-        {{ actionBusy === 'mark drafted' ? 'Marking…' : 'Mark drafted' }}
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'drafted'"
-        size="sm"
-        variant="primary"
-        @click="gotoTab('edited')"
-      >
-        Continue to editor
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'edited'"
-        size="sm"
-        variant="secondary"
-        :disabled="actionBusy !== null"
-        @click="actionMarkEeatPassed"
-      >
-        {{ actionBusy === 'mark EEAT passed' ? 'Marking…' : 'Mark EEAT passed (manual)' }}
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'eeat_passed'"
-        size="sm"
-        variant="primary"
-        :disabled="actionBusy !== null"
-        @click="actionMarkPublished"
-      >
-        {{ actionBusy === 'publish' ? 'Publishing…' : 'Publish' }}
-      </UiButton>
-
-      <UiButton
-        v-if="article.status === 'published'"
-        size="sm"
-        variant="secondary"
-        :disabled="actionBusy !== null"
-        @click="actionMarkRefreshDue"
-      >
-        Mark refresh due
-      </UiButton>
-
-      <UiButton
-        size="sm"
-        variant="secondary"
-        :disabled="actionBusy !== null"
-        @click="actionCreateVersion"
-      >
-        New version
-      </UiButton>
-    </div>
-
     <p
       v-if="!article && !loadingArticle"
       class="rounded-md border border-dashed border-default p-4 text-sm text-fg-muted"
@@ -418,8 +254,7 @@ watch(articleId, loadAll)
       v-if="isUnscored"
       class="text-xs text-fg-muted"
     >
-      Article is in <code>briefing</code>. Save the brief to advance the
-      timeline.
+      Article is in <code>briefing</code>. The next state change is owned by the agent run.
     </p>
   </UiPageShell>
 </template>

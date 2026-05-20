@@ -2,7 +2,8 @@
   UiRange — numeric range slider with optional value display.
 -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, inject } from 'vue';
+import type { ComputedRef } from 'vue';
 
 export interface UiRangeProps {
   modelValue?: number;
@@ -30,6 +31,14 @@ const props = withDefaults(defineProps<UiRangeProps>(), {
 
 defineEmits<{ (e: 'update:modelValue', value: number): void }>();
 
+const field = inject<{
+  id: ComputedRef<string>
+  describedBy: ComputedRef<string | undefined>
+} | null>('uiFormField', null);
+
+const controlId = computed(() => props.id ?? field?.id.value);
+const controlDescribedBy = computed(() => field?.describedBy.value);
+
 const percent = computed(() => {
   const range = props.max - props.min;
   if (range <= 0) return 0;
@@ -44,7 +53,7 @@ const display = computed(() =>
 <template>
   <div class="ui-range flex items-center gap-3">
     <input
-      :id="id"
+      :id="controlId"
       type="range"
       :value="modelValue"
       :min="min"
@@ -52,6 +61,7 @@ const display = computed(() =>
       :step="step"
       :disabled="disabled"
       :aria-label="ariaLabel"
+      :aria-describedby="controlDescribedBy"
       :class="[
         'ui-range__input flex-1 appearance-none bg-transparent focus-ring',
         disabled && 'opacity-60 cursor-not-allowed',

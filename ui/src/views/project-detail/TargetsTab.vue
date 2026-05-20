@@ -1,18 +1,25 @@
 <script setup lang="ts">
-// TargetsTab — list, add, edit, delete publish targets.
-// Repository enforces "exactly one primary per project" (audit B-08).
+// TargetsTab — read-only publish target readiness.
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import DataTable from '@/components/DataTable.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import { apiFetch, apiWrite } from '@/lib/client'
+import { UiBadge, UiButton, UiCallout, UiEmptyState, UiSectionHeader } from '@/components/ui'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import { PublishTargetKind, type components } from '@/api'
-import type { DataTableColumn } from '@/components/types'
 
 type Target = components['schemas']['PublishTargetOut']
+type TargetKind = `${PublishTargetKind}`
+type ReadinessTone = 'success' | 'neutral' | 'warning'
+
+interface TargetKindSpec {
+  kind: TargetKind
+  label: string
+  description: string
+  usage: string
+  hint: string
+}
 
 const route = useRoute()
 const toasts = useToastsStore()
@@ -21,24 +28,57 @@ const projectId = computed<number>(() => Number.parseInt(route.params.id as stri
 
 const targets = ref<Target[]>([])
 const loading = ref(false)
-const editing = ref<Target | null>(null)
-const formOpen = ref(false)
-const draft = ref({
-  kind: 'nuxt-content' as `${PublishTargetKind}`,
-  config_json: '{}',
-  is_primary: false,
-  is_active: true,
-})
-const saving = ref(false)
 
-const kindOptions = Object.values(PublishTargetKind)
-
-const columns: DataTableColumn<Target>[] = [
-  { key: 'kind', label: 'Kind' },
-  { key: 'is_primary', label: 'Primary', format: (v) => (v ? 'yes' : 'no') },
-  { key: 'is_active', label: 'Active', format: (v) => (v ? 'yes' : 'no') },
-  { key: 'id', label: 'ID', format: (v) => `#${v}` },
+const targetKindSpecs: TargetKindSpec[] = [
+  {
+    kind: 'nuxt-content',
+    label: 'Nuxt Content',
+    description: 'Writes markdown and assets into a Nuxt Content repository.',
+    usage: 'nuxt-content-publish',
+    hint: 'Common keys: repo_path, content_subdir, public_subdir, branch.',
+  },
+  {
+    kind: 'wordpress',
+    label: 'WordPress',
+    description: 'Publishes edited HTML through the WordPress REST API.',
+    usage: 'wordpress-publish',
+    hint: 'Common keys: wp_url, category_id, status.',
+  },
+  {
+    kind: 'ghost',
+    label: 'Ghost',
+    description: 'Publishes edited HTML and images through the Ghost Admin API.',
+    usage: 'ghost-publish',
+    hint: 'Common keys: ghost_url, api_version, tags.',
+  },
+  {
+    kind: 'hugo',
+    label: 'Hugo',
+    description: 'Writes markdown into a Hugo content repository.',
+    usage: 'publish fallback',
+    hint: 'Common keys: repo_path, content_subdir, branch.',
+  },
+  {
+    kind: 'astro',
+    label: 'Astro',
+    description: 'Writes markdown into an Astro content collection.',
+    usage: 'publish fallback',
+    hint: 'Common keys: repo_path, content_subdir, collection, branch.',
+  },
+  {
+    kind: 'custom-webhook',
+    label: 'Custom webhook',
+    description: 'Sends a publish payload to a project-owned endpoint.',
+    usage: 'custom publish handoff',
+    hint: 'Common keys: webhook_url, method, headers.',
+  },
 ]
+
+const procedureSupportedTargetKinds = new Set<TargetKind>(['nuxt-content'])
+
+const activeTargets = computed(() => targets.value.filter((target) => target.is_active))
+const primaryTarget = computed(() => targets.value.find((target) => target.is_primary))
+const inactiveTargets = computed(() => targets.value.filter((target) => !target.is_active))
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
@@ -47,112 +87,64 @@ async function load(): Promise<void> {
     const res = await apiFetch<Target[]>(`/api/v1/projects/${projectId.value}/publish-targets`)
     targets.value = Array.isArray(res) ? res : []
   } catch (err) {
-    toasts.error('Failed to load publish targets', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load publish targets', formatApiError(err))
   } finally {
     loading.value = false
   }
 }
 
-function startNew(): void {
-  editing.value = null
-  formOpen.value = true
-  draft.value = {
-    kind: 'nuxt-content',
-    config_json: '{}',
-    is_primary: targets.value.length === 0,
-    is_active: true,
-  }
+function specFor(kind: TargetKind): TargetKindSpec {
+  return targetKindSpecs.find((spec) => spec.kind === kind) ?? targetKindSpecs[0]
 }
 
-function edit(t: Target): void {
-  editing.value = t
-  formOpen.value = true
-  draft.value = {
-    kind: t.kind,
-    config_json: JSON.stringify(t.config_json ?? {}, null, 2),
-    is_primary: t.is_primary,
-    is_active: t.is_active,
+function configValue(target: Target, keys: string[]): string | null {
+  const config = target.config_json
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return null
+  for (const key of keys) {
+    const value = config[key]
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number') return String(value)
   }
+  return null
 }
 
-function cancel(): void {
-  editing.value = null
-  formOpen.value = false
+function configSummary(target: Target): string {
+  const kind = target.kind as TargetKind
+  if (kind === 'wordpress')
+    return configValue(target, ['wp_url', 'site_url', 'base_url']) ?? 'WordPress URL not set'
+  if (kind === 'ghost')
+    return configValue(target, ['ghost_url', 'site_url', 'base_url']) ?? 'Ghost URL not set'
+  if (kind === 'custom-webhook')
+    return configValue(target, ['webhook_url', 'url']) ?? 'Webhook URL not set'
+  return (
+    configValue(target, ['repo_path', 'content_subdir', 'content_dir', 'collection']) ??
+    'Repository path not set'
+  )
 }
 
-function parseConfig(): Record<string, unknown> | null {
-  try {
-    return JSON.parse(draft.value.config_json) as Record<string, unknown>
-  } catch (err) {
-    toasts.error('Config JSON is not valid', err instanceof Error ? err.message : undefined)
-    return null
-  }
+function statusLabel(target: Target): string {
+  if (target.is_primary && target.is_active) return 'Primary active'
+  if (target.is_primary) return 'Primary inactive'
+  return target.is_active ? 'Active' : 'Inactive'
 }
 
-async function save(): Promise<void> {
-  const config = parseConfig()
-  if (config === null) return
-  saving.value = true
-  try {
-    const body = {
-      kind: draft.value.kind,
-      config_json: config,
-      is_primary: draft.value.is_primary,
-      is_active: draft.value.is_active,
-    }
-    if (editing.value) {
-      await apiWrite<Target>(
-        `/api/v1/projects/${projectId.value}/publish-targets/${editing.value.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-      )
-      toasts.success('Target updated')
-    } else {
-      await apiWrite<Target>(`/api/v1/projects/${projectId.value}/publish-targets`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      toasts.success('Target added')
-    }
-    editing.value = null
-    formOpen.value = false
-    await load()
-  } catch (err) {
-    toasts.error('Failed to save target', err instanceof Error ? err.message : undefined)
-  } finally {
-    saving.value = false
-  }
+function statusTone(target: Target): 'success' | 'warning' | 'neutral' {
+  if (target.is_primary && target.is_active) return 'success'
+  if (target.is_primary && !target.is_active) return 'warning'
+  return target.is_active ? 'neutral' : 'warning'
 }
 
-async function setPrimary(t: Target): Promise<void> {
-  try {
-    await apiWrite<Target>(
-      `/api/v1/projects/${projectId.value}/publish-targets/${t.id}/set-primary`,
-      { method: 'POST' },
-    )
-    toasts.success('Primary target updated')
-    await load()
-  } catch (err) {
-    toasts.error('Failed to set primary', err instanceof Error ? err.message : undefined)
-  }
+function readinessLabel(target: Target): string {
+  if (!target.is_active) return 'Inactive'
+  if (!procedureSupportedTargetKinds.has(target.kind as TargetKind)) return 'Unsupported by procedure'
+  if (!target.is_primary) return 'Available'
+  return 'Procedure ready'
 }
 
-async function remove(t: Target): Promise<void> {
-  try {
-    await apiWrite<Target>(
-      `/api/v1/projects/${projectId.value}/publish-targets/${t.id}`,
-      { method: 'DELETE' },
-    )
-    toasts.success('Target removed')
-    if (editing.value?.id === t.id) editing.value = null
-    await load()
-  } catch (err) {
-    toasts.error('Failed to remove target', err instanceof Error ? err.message : undefined)
-  }
+function readinessTone(target: Target): ReadinessTone {
+  if (!target.is_active) return 'neutral'
+  if (!procedureSupportedTargetKinds.has(target.kind as TargetKind)) return 'warning'
+  return target.is_primary ? 'success' : 'neutral'
 }
 
 onMounted(load)
@@ -160,130 +152,152 @@ watch(projectId, load)
 </script>
 
 <template>
-  <section class="space-y-4">
-    <div class="flex flex-wrap items-baseline justify-between gap-3">
-      <h2 class="text-base font-semibold">
-        Publish targets
-      </h2>
-      <button
-        type="button"
-        class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-        @click="startNew"
-      >
-        New target
-      </button>
+  <section class="space-y-6">
+    <UiSectionHeader
+      title="Publish targets"
+      description="Readiness for destinations that agent publish skills can use."
+    >
+      <template #actions>
+        <UiButton
+          size="sm"
+          variant="secondary"
+          :disabled="loading"
+          @click="load"
+        >
+          {{ loading ? 'Refreshing…' : 'Refresh' }}
+        </UiButton>
+      </template>
+    </UiSectionHeader>
+
+    <UiCallout
+      v-if="targets.length > 0 && !primaryTarget"
+      tone="warning"
+      title="No primary target"
+    >
+      The agent needs one active primary target before publish procedures can resolve a destination.
+    </UiCallout>
+
+    <div class="grid gap-3 md:grid-cols-3">
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          Primary target
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ primaryTarget ? specFor(primaryTarget.kind as TargetKind).label : 'Not selected' }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          {{
+            primaryTarget
+              ? configSummary(primaryTarget)
+              : 'Publishing procedures need one primary destination.'
+          }}
+        </p>
+      </div>
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          Active targets
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ activeTargets.length }} / {{ targets.length }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          Active destinations can receive publish handoffs.
+        </p>
+      </div>
+      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+          Disabled targets
+        </p>
+        <p class="mt-2 text-sm font-semibold text-fg-strong">
+          {{ inactiveTargets.length }}
+        </p>
+        <p class="mt-1 text-xs text-fg-muted">
+          Old destinations remain visible for audit.
+        </p>
+      </div>
     </div>
 
-    <DataTable
-      :items="targets"
-      :columns="columns"
-      :loading="loading"
-      empty-message="No publish targets yet."
-      aria-label="Publish targets"
-      @row-click="edit"
-    >
-      <template #cell:is_primary="{ row }">
-        <StatusBadge
-          v-if="(row as Target).is_primary"
-          status="primary"
-          kind="project"
-        >
-          primary
-        </StatusBadge>
-        <button
-          v-else
-          type="button"
-          class="rounded border border-gray-300 px-2 py-0.5 text-xs hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          @click.stop="setPrimary(row as Target)"
-        >
-          Make primary
-        </button>
-      </template>
-      <template #cell:is_active="{ row }">
-        <StatusBadge
-          :status="(row as Target).is_active ? 'active' : 'inactive'"
-          kind="project"
-        />
-      </template>
-    </DataTable>
+    <UiEmptyState
+      v-if="!loading && targets.length === 0"
+      title="No publish targets"
+      description="Publish targets appear here after agent setup."
+      size="sm"
+    />
 
     <div
-      v-if="formOpen"
-      class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900"
+      v-else
+      class="grid gap-3"
     >
-      <h3 class="mb-3 text-base font-semibold">
-        {{ editing ? `Edit target #${editing.id}` : 'New publish target' }}
-      </h3>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="block text-sm">
-          <span class="font-medium">Kind</span>
-          <select
-            v-model="draft.kind"
-            class="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-800"
-          >
-            <option
-              v-for="k in kindOptions"
-              :key="k"
-              :value="k"
-            >{{ k }}</option>
-          </select>
-        </label>
-        <div class="flex flex-col gap-2 text-sm">
-          <label class="inline-flex items-center gap-2">
-            <input
-              v-model="draft.is_primary"
-              type="checkbox"
-              class="h-4 w-4"
-            >
-            <span>Primary (clears other primaries on save)</span>
-          </label>
-          <label class="inline-flex items-center gap-2">
-            <input
-              v-model="draft.is_active"
-              type="checkbox"
-              class="h-4 w-4"
-            >
-            <span>Active</span>
-          </label>
+      <article
+        v-for="target in targets"
+        :key="target.id"
+        class="overflow-hidden rounded-md border bg-bg-surface shadow-xs"
+        :class="target.is_primary && target.is_active ? 'border-success-border' : 'border-default'"
+      >
+        <div class="space-y-4 p-4">
+          <header class="space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-sm font-semibold text-fg-strong">
+                {{ specFor(target.kind as TargetKind).label }}
+              </h3>
+              <UiBadge :tone="statusTone(target)">
+                {{ statusLabel(target) }}
+              </UiBadge>
+              <UiBadge
+                v-if="target.is_primary"
+                tone="success"
+                variant="outline"
+              >
+                Primary
+              </UiBadge>
+              <UiBadge
+                :tone="readinessTone(target)"
+                variant="outline"
+              >
+                {{ readinessLabel(target) }}
+              </UiBadge>
+            </div>
+            <p class="text-sm text-fg-muted">
+              {{ specFor(target.kind as TargetKind).description }}
+            </p>
+          </header>
+
+          <dl class="grid gap-3 border-t border-subtle pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                Destination
+              </dt>
+              <dd class="mt-1 text-fg-default">
+                {{ configSummary(target) }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                Skill
+              </dt>
+              <dd class="mt-1 text-fg-default">
+                {{ specFor(target.kind as TargetKind).usage }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                Target id
+              </dt>
+              <dd class="mt-1 text-fg-default">
+                #{{ target.id }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                Config keys
+              </dt>
+              <dd class="mt-1 text-fg-muted">
+                {{ specFor(target.kind as TargetKind).hint.replace('Common keys: ', '') }}
+              </dd>
+            </div>
+          </dl>
         </div>
-      </div>
-      <label class="mt-3 block text-sm">
-        <span class="mb-1 block font-medium">Config JSON</span>
-        <textarea
-          v-model="draft.config_json"
-          rows="6"
-          class="w-full rounded border border-gray-300 px-2 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-800"
-        />
-      </label>
-      <div class="mt-3 flex justify-between">
-        <button
-          v-if="editing"
-          type="button"
-          class="rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/30"
-          @click="remove(editing)"
-        >
-          Delete target
-        </button>
-        <span v-else />
-        <div class="flex gap-2">
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="saving"
-            @click="cancel"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="saving"
-            @click="save"
-          >
-            {{ saving ? 'Saving…' : editing ? 'Save changes' : 'Create target' }}
-          </button>
-        </div>
-      </div>
+      </article>
     </div>
   </section>
 </template>

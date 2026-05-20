@@ -8,6 +8,9 @@ token resolved (e.g., when diagnosing token-related failures).
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import os
 import secrets
 import stat
@@ -34,8 +37,8 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 # - ``/api/v1/health``: ``doctor`` probes liveness *before* it has resolved
 #   the token (e.g., when diagnosing token-related failures themselves).
 # - ``/api/v1/auth/ui-token``: the same-origin Vue UI cannot read the token
-#   file from the browser, so it fetches the token at boot via this
-#   endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
+#   file from the browser, so it fetches a derived read-only token at boot via
+#   this endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``content_stack/api/auth.py``.
 # - ``/api/v1/integrations/gsc/oauth/callback``: Google redirects the
@@ -50,6 +53,8 @@ WHITELIST_PREFIXES: tuple[str, ...] = (
 
 _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600
+_UI_TOKEN_MESSAGE = b"content-stack-ui-read-only-v1"
+_UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class TokenFileError(RuntimeError):
@@ -102,6 +107,18 @@ def ensure_token(token_path: Path) -> str:
     return token
 
 
+def derive_ui_token(token: str) -> str:
+    """Derive the browser's read-only bearer token from the daemon token.
+
+    The daemon token remains the write-capable agent/MCP token stored on disk.
+    The derived UI token is what ``/api/v1/auth/ui-token`` returns; middleware
+    accepts it only for safe REST reads.
+    """
+    digest = hmac.new(token.encode("utf-8"), _UI_TOKEN_MESSAGE, hashlib.sha256).digest()
+    encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return f"ui_ro_{encoded}"
+
+
 def requires_auth(path: str) -> bool:
     """Return True if `path` must carry a valid bearer token.
 
@@ -123,17 +140,27 @@ def is_whitelisted(path: str) -> bool:
     return not requires_auth(path)
 
 
-class BearerTokenMiddleware(BaseHTTPMiddleware):
-    """Reject requests whose `Authorization: Bearer <token>` does not match.
+def _allows_ui_read(path: str, method: str) -> bool:
+    """Return True when a UI token may read this request."""
+    if method.upper() not in _UI_SAFE_METHODS:
+        return False
+    return path == "/api/v1" or path.startswith("/api/v1/")
 
-    The token is supplied at construction time so middleware setup never
-    re-reads the file at request time. Token rotation requires a daemon
-    restart, which matches the spec (rotation runs via `make install`).
+
+class BearerTokenMiddleware(BaseHTTPMiddleware):
+    """Reject requests whose bearer token does not match an allowed scope.
+
+    The daemon token is write-capable and intended for agent/MCP clients. The
+    UI token is read-only, REST-only, and accepted only for safe methods. Token
+    values are supplied at construction time so middleware setup never re-reads
+    the file at request time. Token rotation requires a daemon restart, which
+    matches the spec (rotation runs via `make install`).
     """
 
-    def __init__(self, app: object, *, token: str) -> None:
+    def __init__(self, app: object, *, token: str, ui_token: str | None = None) -> None:
         super().__init__(app)  # type: ignore[arg-type]
         self._token = token
+        self._ui_token = ui_token or derive_ui_token(token)
 
     async def dispatch(
         self,
@@ -152,10 +179,21 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                 status_code=401,
                 headers={"www-authenticate": 'Bearer realm="content-stack"'},
             )
-        if not secrets.compare_digest(value, self._token):
-            return JSONResponse(
-                {"detail": "invalid bearer token"},
-                status_code=401,
-                headers={"www-authenticate": 'Bearer realm="content-stack"'},
-            )
-        return await call_next(request)
+        if secrets.compare_digest(value, self._token):
+            request.state.auth_scope = "agent"
+            return await call_next(request)
+
+        if secrets.compare_digest(value, self._ui_token):
+            if not _allows_ui_read(request.url.path, request.method):
+                return JSONResponse(
+                    {"detail": "UI token is read-only; use the agent token for mutations"},
+                    status_code=403,
+                )
+            request.state.auth_scope = "ui-read-only"
+            return await call_next(request)
+
+        return JSONResponse(
+            {"detail": "invalid bearer token"},
+            status_code=401,
+            headers={"www-authenticate": 'Bearer realm="content-stack"'},
+        )

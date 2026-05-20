@@ -23,11 +23,12 @@ test.describe('projects view — empty state', () => {
     await resetProjects()
   })
 
-  test('shows the Projects heading + new-project CTA', async ({ page }) => {
+  test('shows the Projects heading without creation controls', async ({ page }) => {
     const errors = trackConsoleErrors(page)
     await page.goto('/projects')
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'New project' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New project' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Create project' })).toHaveCount(0)
 
     // Either: the daemon's project list is genuinely empty (M5.A clean
     // install) AND the empty-state CTA appears, OR the daemon has rows

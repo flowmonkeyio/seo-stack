@@ -37,33 +37,11 @@ describe('schedules store', () => {
     expect(store.items.length).toBe(1)
   })
 
-  it('toggle() flips enabled and replaces locally', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: { ...JOB, enabled: false }, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose schedule mutation methods to the UI store', () => {
     const store = useSchedulesStore()
-    store.items = [JOB] as never
-    await store.toggle(1, 1, false)
-    expect(store.items[0].enabled).toBe(false)
-  })
-
-  it('set() upserts by kind', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          data: { ...JOB, kind: 'drift-check', cron_expr: '0 3 * * 0' },
-          project_id: 1,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useSchedulesStore()
-    store.items = [JOB] as never
-    await store.set(1, { kind: 'drift-check', cron_expr: '0 3 * * 0', enabled: true })
-    expect(store.items.find((s) => s.kind === 'drift-check')).toBeDefined()
-    expect(store.items.find((s) => s.kind === 'gsc-pull')).toBeDefined()
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.set).toBeUndefined()
+    expect(exposed.toggle).toBeUndefined()
+    expect(exposed.disable).toBeUndefined()
   })
 })

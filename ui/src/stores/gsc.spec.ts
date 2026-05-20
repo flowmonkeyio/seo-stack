@@ -32,15 +32,6 @@ const ROW_B = {
   avg_position: 4.2,
 }
 
-const REDIRECT = {
-  id: 1,
-  project_id: 1,
-  from_url: '/old-url',
-  to_article_id: null,
-  kind: '301' as const,
-  created_at: '2026-05-01T00:00:00Z',
-}
-
 describe('gsc store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -81,30 +72,10 @@ describe('gsc store', () => {
     expect(store.dailyRollup[0].impressions).toBe(300)
   })
 
-  it('createRedirect inserts at the top of items', async () => {
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ data: REDIRECT, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
+  it('does not expose GSC write helpers to the UI store', () => {
     const store = useGscStore()
-    store.redirects = [] as never
-    await store.createRedirect(1, { from_url: '/old', kind: '301' as never })
-    expect(store.redirects.length).toBe(1)
-  })
-
-  it('rollupDay sends the day query param', async () => {
-    let captured = ''
-    globalThis.fetch = vi.fn(async (input) => {
-      captured = String(input)
-      return new Response(
-        JSON.stringify({ data: { ingested: 0, deduped: 0 }, project_id: 1 }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      )
-    }) as typeof fetch
-    const store = useGscStore()
-    await store.rollupDay(1, '2026-05-05')
-    expect(captured).toContain('day=2026-05-05')
+    const exposed = store as unknown as Record<string, unknown>
+    expect(exposed.createRedirect).toBeUndefined()
+    expect(exposed.rollupDay).toBeUndefined()
   })
 })

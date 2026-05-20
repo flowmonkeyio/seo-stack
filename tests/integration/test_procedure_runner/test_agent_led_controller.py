@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from content_stack.db.models import ProcedureRunStepStatus, Run, RunStatus
+from content_stack.db.models import (
+    ProcedureRunStepStatus,
+    PublishTarget,
+    PublishTargetKind,
+    Run,
+    RunStatus,
+)
 from content_stack.procedures.runner import ProcedureRunner
 from content_stack.repositories.runs import ProcedureRunStepRepository
+
+
+def _record_successes_until(runner: ProcedureRunner, run_id: int, stop_before: str) -> None:
+    for step_id in (
+        "brief",
+        "outline",
+        "draft-intro",
+        "draft-body",
+        "draft-conclusion",
+        "editor",
+        "humanizer",
+        "eeat-gate",
+        "image-generator",
+        "alt-text-auditor",
+        "schema-emitter",
+        "interlinker",
+        "publish",
+    ):
+        if step_id == stop_before:
+            return
+        runner.record_step(
+            run_id=run_id,
+            step_id=step_id,
+            status=ProcedureRunStepStatus.SUCCESS,
+            output_json={"step_id": step_id, "article_id": 42},
+        )
 
 
 async def test_start_opens_skeleton_without_executing_steps(
@@ -134,6 +166,75 @@ async def test_only_final_publish_step_is_target_resolved(
     assert current["args"]["target_id"] > 0
 
 
+async def test_publish_step_without_primary_target_uses_agent_publish(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    """Procedure 4 can publish without binding a target to the project."""
+    with Session(engine) as session:
+        targets = session.exec(
+            select(PublishTarget).where(PublishTarget.project_id == scenario["project_id"])
+        ).all()
+        for target in targets:
+            target.is_active = False
+            session.add(target)
+        session.commit()
+
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "publish")
+
+    current = runner.current_step(run_id=run_id)["current_step"]
+    assert current["step_id"] == "publish"
+    assert current["skill"] == "04-publishing/agent-publish"
+    assert "publish.recordExternal" in current["allowed_tools"]
+    assert "publish.recordPublish" not in current["allowed_tools"]
+    assert "target_id" not in current["args"]
+
+
+async def test_unsupported_primary_publish_target_falls_back_to_agent_publish(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    """Unsupported target kinds stay targetless instead of pretending to be Nuxt."""
+    with Session(engine) as session:
+        target = session.exec(
+            select(PublishTarget).where(
+                PublishTarget.project_id == scenario["project_id"],
+                PublishTarget.is_primary.is_(True),  # type: ignore[union-attr,attr-defined]
+            )
+        ).one()
+        target.kind = PublishTargetKind.HUGO
+        session.add(target)
+        session.commit()
+
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "interlinker")
+
+    after = runner.record_step(
+        run_id=run_id,
+        step_id="interlinker",
+        status=ProcedureRunStepStatus.SUCCESS,
+        output_json={"step_id": "interlinker", "article_id": 42},
+    )
+    current = after["current_step"]
+    assert current["step_id"] == "publish"
+    assert current["skill"] == "04-publishing/agent-publish"
+    assert "publish.recordExternal" in current["allowed_tools"]
+    assert "target_id" not in current["args"]
+
+
 async def test_recording_all_steps_success_marks_run_success(
     runner: ProcedureRunner,
     scenario: dict[str, int],
@@ -255,3 +356,122 @@ async def test_execute_programmatic_step_records_output(
     after = await runner.execute_programmatic_step(run_id=run_id, step_id="estimate-cost")
     assert after["previous_outputs"]["estimate-cost"]["n_topics"] == 1
     assert after["current_step"]["step_id"] == "spawn-procedure-4-batch"
+
+
+async def test_retry_failure_policy_requeues_then_fails_after_cap(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "draft-intro")
+
+    retry = runner.record_step(
+        run_id=run_id,
+        step_id="draft-intro",
+        status=ProcedureRunStepStatus.FAILED,
+        error="malformed draft",
+    )
+    assert retry["current_step"]["step_id"] == "draft-intro"
+    assert retry["current_step"]["status"] == ProcedureRunStepStatus.PENDING
+    assert retry["run"].status == RunStatus.RUNNING
+
+    failed = runner.record_step(
+        run_id=run_id,
+        step_id="draft-intro",
+        status=ProcedureRunStepStatus.FAILED,
+        error="still malformed",
+    )
+    assert failed["next_action"] == "run_failed"
+    assert failed["current_step"] is None
+    with Session(engine) as session:
+        row = session.get(Run, run_id)
+        assert row is not None
+        assert row.status == RunStatus.FAILED
+
+
+async def test_skip_failure_policy_advances_to_next_step(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "image-generator")
+
+    out = runner.record_step(
+        run_id=run_id,
+        step_id="image-generator",
+        status=ProcedureRunStepStatus.FAILED,
+        error="image vendor unavailable",
+    )
+    assert out["current_step"]["step_id"] == "alt-text-auditor"
+    assert out["run"].status == RunStatus.RUNNING
+    with Session(engine) as session:
+        steps = ProcedureRunStepRepository(session).list_steps(run_id)
+    image_step = next(step for step in steps if step.step_id == "image-generator")
+    assert image_step.status == ProcedureRunStepStatus.SKIPPED
+
+
+async def test_loop_back_policy_resets_prior_steps_on_fix(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "eeat-gate")
+
+    out = runner.record_step(
+        run_id=run_id,
+        step_id="eeat-gate",
+        status=ProcedureRunStepStatus.SUCCESS,
+        output_json={"article_id": 42, "verdict": "FIX", "fix_required": ["add source"]},
+    )
+    assert out["current_step"]["step_id"] == "editor"
+    with Session(engine) as session:
+        steps = ProcedureRunStepRepository(session).list_steps(run_id)
+    reset = {step.step_id: step.status for step in steps}
+    assert reset["editor"] == ProcedureRunStepStatus.PENDING
+    assert reset["humanizer"] == ProcedureRunStepStatus.PENDING
+    assert reset["eeat-gate"] == ProcedureRunStepStatus.PENDING
+
+
+async def test_loop_back_policy_aborts_on_block(
+    runner: ProcedureRunner,
+    scenario: dict[str, int],
+    engine: object,
+) -> None:
+    envelope = await runner.start(
+        slug="04-topic-to-published",
+        args={"topic_id": scenario["topic_id"]},
+        project_id=scenario["project_id"],
+    )
+    run_id = envelope["run_id"]
+    _record_successes_until(runner, run_id, "eeat-gate")
+
+    out = runner.record_step(
+        run_id=run_id,
+        step_id="eeat-gate",
+        status=ProcedureRunStepStatus.SUCCESS,
+        output_json={"article_id": 42, "verdict": "BLOCK"},
+    )
+    assert out["next_action"] == "run_aborted"
+    assert out["current_step"] is None
+    with Session(engine) as session:
+        row = session.get(Run, run_id)
+        assert row is not None
+        assert row.status == RunStatus.ABORTED

@@ -18,8 +18,8 @@ from sqlalchemy import text
 from sqlmodel import SQLModel
 from typer.testing import CliRunner
 
-import content_stack.db.models  # noqa: F401  (populate SQLModel metadata)
 import content_stack.cli as cli_module
+import content_stack.db.models  # noqa: F401  (populate SQLModel metadata)
 from content_stack import install as installer
 from content_stack.cli import app
 from content_stack.config import Settings
@@ -54,7 +54,7 @@ def test_copy_skills_clone_mode(sandbox: Path) -> None:
     target, count = installer.copy_skills("codex", home=sandbox)
     assert target == sandbox / ".codex" / "skills" / "content-stack"
     assert target.is_dir()
-    assert count == 24
+    assert count == 25
     # Sanity check: a file we know exists in the source landed in the target.
     assert (target / "01-research" / "keyword-discovery" / "SKILL.md").is_file()
 
@@ -87,7 +87,9 @@ def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
 
 
 def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
-    cache = sandbox / ".codex" / "plugins" / "cache" / "local-content-stack" / "content-stack" / "0.1.0"
+    cache = (
+        sandbox / ".codex" / "plugins" / "cache" / "local-content-stack" / "content-stack" / "0.1.0"
+    )
     (cache / ".codex-plugin").mkdir(parents=True)
     (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
     (cache / ".mcp.json").write_text(
@@ -340,7 +342,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
             ).scalar_one()
     finally:
         engine.dispose()
-    assert version == "0004_workspace_bindings"
+    assert version == "0005_targetless_article_publishes"
     assert templates >= 5
 
 
@@ -354,7 +356,7 @@ def test_upgrade_to_head_works_outside_repo_cwd(
     result = upgrade_to_head(settings)
 
     assert result.stamped_existing_schema is False
-    assert current_alembic_version(settings) == "0004_workspace_bindings"
+    assert current_alembic_version(settings) == "0005_targetless_article_publishes"
 
 
 def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:

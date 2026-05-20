@@ -7,7 +7,13 @@ import { useArticlesStore } from '@/stores/articles'
 
 const ORIG_FETCH = globalThis.fetch
 
-function articleWithBrief(brief: Record<string, unknown> | null) {
+interface BriefFixture {
+  voice_id?: number
+  primary_kw?: string
+  target_word_count?: number
+}
+
+function articleWithBrief(brief: BriefFixture | null) {
   return {
     id: 1,
     project_id: 1,
@@ -55,7 +61,7 @@ describe('BriefTab', () => {
     expect(w.text()).toContain('Brief not yet written')
   })
 
-  it('renders the keys when brief is populated', () => {
+  it('renders human labels when brief is populated', () => {
     const store = useArticlesStore()
     store.currentDetail = articleWithBrief({
       voice_id: 1,
@@ -63,17 +69,16 @@ describe('BriefTab', () => {
       target_word_count: 1800,
     }) as never
     const w = mount(BriefTab, { props: { articleId: 1 } })
-    expect(w.text()).toContain('voice_id')
-    expect(w.text()).toContain('primary_kw')
+    expect(w.text()).toContain('Voice profile')
+    expect(w.text()).toContain('Primary keyword')
     expect(w.text()).toContain('sportsbook')
   })
 
-  it('switches to JSON edit mode on Edit click', async () => {
+  it('does not expose browser-side edit controls', () => {
     const store = useArticlesStore()
     store.currentDetail = articleWithBrief({}) as never
     const w = mount(BriefTab, { props: { articleId: 1 } })
-    await w.findAll('button').find((b) => b.text() === 'Edit')!.trigger('click')
-    expect(w.text()).toContain('Brief JSON')
-    expect(w.find('textarea').exists()).toBe(true)
+    expect(w.findAll('button').some((b) => b.text() === 'Edit')).toBe(false)
+    expect(w.find('textarea').exists()).toBe(false)
   })
 })

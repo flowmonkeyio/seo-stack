@@ -3,16 +3,12 @@
 //
 // Wires:
 // - `GET /api/v1/articles/{id}/interlinks` → `{incoming, outgoing}`
-//
-// "Suggest interlinks" button: navigates to the project-level InterlinksView
-// (M5.C placeholder) so the user can review the suggestions there.
 
 import { onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { apiFetch } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import { useToastsStore } from '@/stores/toasts'
 import type { components } from '@/api'
 import type { DataTableColumn } from '@/components/types'
@@ -25,7 +21,6 @@ const props = defineProps<{
   projectId: number
 }>()
 
-const router = useRouter()
 const toasts = useToastsStore()
 
 const report = ref<InterlinksReport | null>(null)
@@ -52,14 +47,10 @@ async function load(): Promise<void> {
       `/api/v1/articles/${props.articleId}/interlinks`,
     )
   } catch (err) {
-    toasts.error('Failed to load interlinks', err instanceof Error ? err.message : undefined)
+    toasts.error('Failed to load interlinks', formatApiError(err))
   } finally {
     loading.value = false
   }
-}
-
-function gotoProjectInterlinks(): void {
-  void router.push(`/projects/${props.projectId}/interlinks`)
 }
 
 onMounted(load)
@@ -71,27 +62,31 @@ watch(() => props.articleId, load)
     class="space-y-4"
     aria-labelledby="cs-interlinks-tab-title"
   >
-    <div class="flex flex-wrap items-baseline justify-between gap-2">
+    <div>
       <h2
         id="cs-interlinks-tab-title"
         class="text-base font-semibold"
       >
         Interlinks
       </h2>
-      <button
-        type="button"
-        class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-        @click="gotoProjectInterlinks"
-      >
-        Suggest interlinks (M5.C)
-      </button>
+      <p class="mt-1 text-sm text-fg-muted">
+        Incoming and outgoing suggestions for this article, recorded by agent interlinker runs.
+      </p>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-2">
-      <div>
-        <h3 class="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-gray-300">
-          Incoming
-        </h3>
+      <section
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
+        aria-label="Incoming interlinks"
+      >
+        <div class="mb-3">
+          <h3 class="text-sm font-semibold text-fg-strong">
+            Incoming
+          </h3>
+          <p class="mt-0.5 text-xs text-fg-muted">
+            Other articles linking into this article.
+          </p>
+        </div>
         <DataTable
           :items="report?.incoming ?? []"
           :columns="inboundColumns"
@@ -106,11 +101,19 @@ watch(() => props.articleId, load)
             />
           </template>
         </DataTable>
-      </div>
-      <div>
-        <h3 class="mb-2 text-sm font-semibold uppercase text-gray-700 dark:text-gray-300">
-          Outgoing
-        </h3>
+      </section>
+      <section
+        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
+        aria-label="Outgoing interlinks"
+      >
+        <div class="mb-3">
+          <h3 class="text-sm font-semibold text-fg-strong">
+            Outgoing
+          </h3>
+          <p class="mt-0.5 text-xs text-fg-muted">
+            Links from this article to other tracked articles.
+          </p>
+        </div>
         <DataTable
           :items="report?.outgoing ?? []"
           :columns="outboundColumns"
@@ -125,7 +128,7 @@ watch(() => props.articleId, load)
             />
           </template>
         </DataTable>
-      </div>
+      </section>
     </div>
   </section>
 </template>

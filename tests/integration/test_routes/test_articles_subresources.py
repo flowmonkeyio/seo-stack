@@ -104,7 +104,11 @@ def test_publishes_record_and_set_canonical(
     """Record a publish + flip ``canonical_target_id``."""
     target = api.post(
         f"/api/v1/projects/{project_id}/publish-targets",
-        json={"kind": "hugo", "is_primary": True},
+        json={
+            "kind": "hugo",
+            "config_json": {"repo_path": "/tmp/hugo-site", "content_subdir": "content"},
+            "is_primary": True,
+        },
     ).json()["data"]
     pub = api.post(
         f"/api/v1/articles/{article_id}/publishes",
@@ -121,6 +125,28 @@ def test_publishes_record_and_set_canonical(
     )
     assert canonical.status_code == 200
     assert canonical.json()["data"]["canonical_target_id"] == target["id"]
+
+
+def test_external_publish_record(api: TestClient, article_id: int) -> None:
+    """Targetless external publish rows do not require a publish target."""
+    pub = api.post(
+        f"/api/v1/articles/{article_id}/publishes/external",
+        json={
+            "version_published": 1,
+            "published_url": "https://a.com/external",
+            "external_ref": "post-123",
+            "frontmatter_json": {"external_path": "db-direct"},
+        },
+    )
+    assert pub.status_code == 201
+    body = pub.json()["data"]
+    assert body["target_id"] is None
+    assert body["published_url"] == "https://a.com/external"
+    assert body["frontmatter_json"] == {
+        "publisher": "agent",
+        "external_path": "db-direct",
+        "external_ref": "post-123",
+    }
 
 
 def test_article_interlinks_report(api: TestClient, project_id: int, article_id: int) -> None:

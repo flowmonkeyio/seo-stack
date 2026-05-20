@@ -2,15 +2,6 @@
 
 import { expect, type Page } from '@playwright/test'
 
-export const BREAKPOINTS = [
-  { name: '360', width: 360, height: 800 },
-  { name: '640', width: 640, height: 800 },
-  { name: '768', width: 768, height: 800 },
-  { name: '1024', width: 1024, height: 800 },
-  { name: '1280', width: 1280, height: 800 },
-  { name: '1440', width: 1440, height: 900 },
-] as const
-
 export function getDaemonToken(): string {
   const t = process.env.CS_E2E_TOKEN
   if (!t) throw new Error('CS_E2E_TOKEN not set; global-setup must have failed')

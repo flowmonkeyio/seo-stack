@@ -1,32 +1,14 @@
-// Costs store — query monthly cost per project + budget upsert.
-//
-// Wires to:
-// - `GET    /api/v1/projects/{id}/cost?month=YYYY-MM`
-// - `GET    /api/v1/projects/{id}/budgets/{kind}`     — per-kind budget
-// - `POST   /api/v1/projects/{id}/budgets`            — upsert
-// - `PATCH  /api/v1/projects/{id}/budgets/{kind}`     — partial update
-//
-// At M5.C the cost endpoint may legitimately return zeros across the board
-// because the M4 integrations layer isn't recording cost rows yet (per the
-// CostResponse docstring). The store + view treat that as a valid "no spend
-// recorded yet" state rather than an error.
+// Costs store — read-only monthly cost and budget data.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, apiWrite } from '@/lib/client'
+import { apiFetch, formatApiError } from '@/lib/client'
 import type { components } from '@/api'
 
 export type CostResponse = components['schemas']['CostResponse']
 export type IntegrationBudget = components['schemas']['IntegrationBudgetOut']
-type BudgetUpsertRequest = components['schemas']['BudgetUpsertRequest']
 
-/**
- * Standard list of integration kinds that the UI iterates when refreshing
- * budgets. Mirrors the IntegrationKind values in `meta/enums` —
- * intentionally hard-coded here so the budgets section can render before
- * meta is fetched. Stays in sync with PLAN.md's integrations list.
- */
 export const INTEGRATION_KINDS = [
   'dataforseo',
   'firecrawl',
@@ -66,7 +48,7 @@ export const useCostsStore = defineStore('costs', () => {
         `/api/v1/projects/${projectId}/cost?${params.toString()}`,
       )
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load cost'
+      error.value = formatApiError(err, 'failed to load cost')
     } finally {
       loading.value = false
     }
@@ -76,20 +58,9 @@ export const useCostsStore = defineStore('costs', () => {
     loading.value = true
     error.value = null
     try {
-      const results = await Promise.allSettled(
-        INTEGRATION_KINDS.map(async (k) => {
-          return apiFetch<IntegrationBudget>(
-            `/api/v1/projects/${projectId}/budgets/${k}`,
-          )
-        }),
-      )
-      const next: IntegrationBudget[] = []
-      for (const r of results) {
-        if (r.status === 'fulfilled') next.push(r.value)
-      }
-      budgets.value = next
+      budgets.value = await apiFetch<IntegrationBudget[]>(`/api/v1/projects/${projectId}/budgets`)
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load budgets'
+      error.value = formatApiError(err, 'failed to load budgets')
     } finally {
       loading.value = false
     }
@@ -112,38 +83,16 @@ export const useCostsStore = defineStore('costs', () => {
       }),
     )
     const next: CostResponse[] = []
-    for (const r of results) {
-      if (r.status === 'fulfilled') next.push(r.value)
+    for (const result of results) {
+      if (result.status === 'fulfilled') next.push(result.value)
     }
     next.sort((a, b) => (a.period_start < b.period_start ? -1 : 1))
     history.value = next
   }
 
-  async function upsertBudget(
-    projectId: number,
-    body: BudgetUpsertRequest,
-  ): Promise<IntegrationBudget> {
-    // Use POST per the wire — server upserts on `(project_id, kind)`.
-    const row = await apiWrite<IntegrationBudget>(`/api/v1/projects/${projectId}/budgets`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const idx = budgets.value.findIndex((b) => b.kind === row.kind)
-    if (idx >= 0) budgets.value.splice(idx, 1, row)
-    else budgets.value = [row, ...budgets.value]
-    return row
-  }
-
-  /**
-   * Helper for the Cost & Budget tab — true when this milestone's cost row
-   * is all-zero so the view can render the "No spend recorded yet" badge
-   * instead of the empty chart.
-   */
   const hasNoSpendYet = computed<boolean>(() => {
     if (!cost.value) return false
-    if (cost.value.total_usd > 0) return false
-    return true
+    return cost.value.total_usd <= 0
   })
 
   function reset(): void {
@@ -167,7 +116,6 @@ export const useCostsStore = defineStore('costs', () => {
     refreshCost,
     refreshBudgets,
     refreshHistory,
-    upsertBudget,
     reset,
   }
 })

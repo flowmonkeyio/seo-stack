@@ -56,6 +56,16 @@ def test_project_set_active_writes_envelope(mcp_client: MCPClient, seeded_projec
     assert env["data"]["is_active"] is True
 
 
+def test_project_activate_alias_writes_envelope(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    """project.activate remains callable for agents that use REST wording."""
+    pid = seeded_project["data"]["id"]
+    env = mcp_client.call_tool_structured("project.activate", {"project_id": pid})
+    assert env["project_id"] == pid
+    assert env["data"]["is_active"] is True
+
+
 def test_eeat_seed_present_after_project_create(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:
@@ -96,6 +106,34 @@ def test_voice_set_and_set_active(mcp_client: MCPClient, seeded_project: dict) -
     voice_id = env["data"]["id"]
     activated = mcp_client.call_tool_structured("voice.setActive", {"voice_id": voice_id})
     assert activated["data"]["is_default"] is True
+
+
+def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:
+    """schedule.remove mirrors REST DELETE by disabling the scheduled job."""
+    pid = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "schedule.set",
+        {
+            "project_id": pid,
+            "kind": "gsc-pull",
+            "cron_expr": "15 3 * * *",
+            "enabled": True,
+        },
+    )
+    job_id = created["data"]["id"]
+
+    disabled = mcp_client.call_tool_structured(
+        "schedule.toggle", {"job_id": job_id, "enabled": False}
+    )
+    assert disabled["data"]["enabled"] is False
+
+    reenabled = mcp_client.call_tool_structured(
+        "schedule.toggle", {"job_id": job_id, "enabled": True}
+    )
+    assert reenabled["data"]["enabled"] is True
+
+    removed = mcp_client.call_tool_structured("schedule.remove", {"job_id": job_id})
+    assert removed["data"]["enabled"] is False
 
 
 def test_project_create_duplicate_slug_returns_conflict(

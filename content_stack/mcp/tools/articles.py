@@ -755,6 +755,33 @@ class PublishRecordInput(MCPInput):
     error: str | None = None
 
 
+class PublishRecordExternalInput(MCPInput):
+    """Record a targetless publish performed by the operator agent."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "article_id": 1,
+                "version_published": 1,
+                "published_url": "https://example.com/posts/slug",
+                "expected_etag": "uuid",
+            }
+        },
+    )
+
+    article_id: int
+    version_published: int
+    published_url: str
+    external_ref: str | None = None
+    frontmatter_json: dict[str, Any] | None = None
+    status: ArticlePublishStatus = ArticlePublishStatus.PUBLISHED
+    error: str | None = None
+    expected_etag: str | None = None
+    run_id: int | None = None
+    mark_article_published: bool = True
+
+
 class PublishSetCanonicalInput(MCPInput):
     """Set articles.canonical_target_id."""
 
@@ -809,6 +836,26 @@ async def _publish_record(
         frontmatter_json=inp.frontmatter_json,
         status=inp.status,
         error=inp.error,
+    )
+    return WriteEnvelope[ArticlePublishOut](
+        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
+
+
+async def _publish_record_external(
+    inp: PublishRecordExternalInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ArticlePublishOut]:
+    env = ArticlePublishRepository(ctx.session).record_external(
+        article_id=inp.article_id,
+        version_published=inp.version_published,
+        published_url=inp.published_url,
+        external_ref=inp.external_ref,
+        frontmatter_json=inp.frontmatter_json,
+        status=inp.status,
+        error=inp.error,
+        expected_etag=inp.expected_etag,
+        run_id=inp.run_id if inp.run_id is not None else ctx.run_id,
+        mark_article_published=inp.mark_article_published,
     )
     return WriteEnvelope[ArticlePublishOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
@@ -1222,6 +1269,15 @@ def register(registry: ToolRegistry) -> None:
             PublishRecordInput,
             WriteEnvelope[ArticlePublishOut],
             _publish_record,
+        )
+    )
+    registry.register(
+        ToolSpec(
+            "publish.recordExternal",
+            "Record a targetless external publish after the operator agent publishes.",
+            PublishRecordExternalInput,
+            WriteEnvelope[ArticlePublishOut],
+            _publish_record_external,
         )
     )
     registry.register(

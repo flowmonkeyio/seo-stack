@@ -1,101 +1,125 @@
 <script setup lang="ts">
-// BriefTab — render `articles.brief_json` as structured KvList + JSON editor.
-//
-// Per PLAN.md L408-L424 the brief carries voice_id, primary_kw, secondary_kws,
-// target_word_count, intent, audience, outline_hint_md, research_summary,
-// compliance_jurisdictions, schema_types — all flat keys.
-//
-// "Edit" mode swaps to a JSON editor textarea; saving calls
-// `articlesStore.setBrief({expected_etag, brief_json})`.
+// BriefTab — render `articles.brief_json` as an operator-readable editorial brief.
 
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import KvList from '@/components/KvList.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
-import { useArticlesStore, ArticleEtagError } from '@/stores/articles'
-import { useToastsStore } from '@/stores/toasts'
+import { UiAdvancedJsonPanel } from '@/components/ui'
+import { useArticlesStore } from '@/stores/articles'
 
-const props = defineProps<{
+defineProps<{
   articleId: number
 }>()
 
 const articlesStore = useArticlesStore()
-const toasts = useToastsStore()
+
+type BriefJsonValue = string | number | boolean | null | BriefJsonValue[] | BriefJsonObject
+
+interface BriefJsonObject {
+  [key: string]: BriefJsonValue
+}
 
 const article = computed(() => articlesStore.currentDetail)
-const briefJson = computed<Record<string, unknown>>(() => {
+const briefJson = computed<BriefJsonObject>(() => {
   const j = article.value?.brief_json
-  if (j && typeof j === 'object') return j as Record<string, unknown>
+  if (isBriefJsonObject(j)) return j
   return {}
 })
 
-const editing = ref(false)
-const draftText = ref('')
-const saving = ref(false)
-const parseError = ref<string | null>(null)
-
-function startEdit(): void {
-  draftText.value = JSON.stringify(briefJson.value, null, 2)
-  parseError.value = null
-  editing.value = true
-}
-
-function cancelEdit(): void {
-  if (saving.value) return
-  editing.value = false
-  parseError.value = null
-}
-
-async function saveEdit(): Promise<void> {
-  if (saving.value || !article.value) return
-  let parsed: Record<string, unknown>
-  try {
-    parsed = JSON.parse(draftText.value || '{}') as Record<string, unknown>
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new SyntaxError('expected an object')
-    }
-  } catch (err) {
-    parseError.value = err instanceof Error ? err.message : 'invalid JSON'
-    return
-  }
-  const etag = article.value.step_etag
-  if (!etag) {
-    toasts.error('Article has no step_etag', 'Reload the article and try again.')
-    return
-  }
-  saving.value = true
-  try {
-    await articlesStore.setBrief(props.articleId, {
-      expected_etag: etag,
-      brief_json: parsed,
-    })
-    toasts.success('Brief saved')
-    editing.value = false
-  } catch (err) {
-    if (err instanceof ArticleEtagError) {
-      toasts.error('Stale article version', 'Reload the article and retry.')
-    } else {
-      toasts.error('Save failed', err instanceof Error ? err.message : undefined)
-    }
-  } finally {
-    saving.value = false
-  }
-}
-
-// Resync the draft text whenever the article changes underneath us.
-watch(
-  () => article.value?.brief_json,
-  () => {
-    if (editing.value) return
-    draftText.value = JSON.stringify(briefJson.value, null, 2)
-  },
-  { immediate: true },
-)
-
 const items = computed(() => {
   const j = briefJson.value
-  return Object.keys(j).map((k) => ({ key: k, label: k, value: j[k] }))
+  return Object.keys(j)
+    .sort((a, b) => sortKey(a) - sortKey(b))
+    .map((k) => ({ key: k, label: labelFor(k), value: j[k] }))
 })
+
+const BRIEF_ORDER = [
+  'title',
+  'thesis',
+  'audience',
+  'intent',
+  'primary_kw',
+  'secondary_kws',
+  'target_word_count',
+  'depth',
+  'research_summary',
+  'source_quality_summary',
+  'outline_hint_md',
+  'schema_types',
+  'schema_skipped',
+  'eeat_plan',
+  'image_directives',
+  'compliance_jurisdictions',
+]
+
+function sortKey(key: string): number {
+  const idx = BRIEF_ORDER.indexOf(key)
+  return idx >= 0 ? idx : BRIEF_ORDER.length + key.localeCompare('zzzz')
+}
+
+function labelFor(key: string): string {
+  switch (key) {
+    case 'title':
+      return 'Title'
+    case 'thesis':
+      return 'Thesis'
+    case 'audience':
+      return 'Audience'
+    case 'intent':
+      return 'Search intent'
+    case 'primary_kw':
+      return 'Primary keyword'
+    case 'secondary_kws':
+      return 'Secondary keywords'
+    case 'target_word_count':
+      return 'Target word count'
+    case 'voice_id':
+      return 'Voice profile'
+    case 'depth':
+      return 'Editorial depth'
+    case 'research_summary':
+      return 'Research summary'
+    case 'source_quality_summary':
+      return 'Source quality'
+    case 'outline_hint_md':
+      return 'Outline guidance'
+    case 'schema_types':
+      return 'Schema types'
+    case 'schema_skipped':
+      return 'Schema notes'
+    case 'eeat_plan':
+      return 'EEAT plan'
+    case 'image_directives':
+      return 'Image direction'
+    case 'compliance_jurisdictions':
+      return 'Compliance jurisdictions'
+    case 'simulation':
+      return 'Simulation mode'
+    default:
+      return key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+}
+
+function isBriefJsonObject(value: unknown): value is BriefJsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isObjectArray(value: unknown): value is BriefJsonObject[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isBriefJsonObject)
+}
+
+function valueSummary(value: unknown): string {
+  if (!isBriefJsonObject(value)) return String(value)
+  const preferred = ['title', 'name', 'url', 'kind', 'type', 'label']
+  for (const key of preferred) {
+    const found = value[key]
+    if (typeof found === 'string' && found.trim()) return found
+  }
+  return `${Object.keys(value).length} fields`
+}
 </script>
 
 <template>
@@ -110,42 +134,14 @@ const items = computed(() => {
       >
         Brief
       </h2>
-      <div class="flex gap-2">
-        <button
-          v-if="!editing"
-          type="button"
-          class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-          @click="startEdit"
-        >
-          Edit
-        </button>
-        <template v-else>
-          <button
-            type="button"
-            class="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-            :disabled="saving"
-            @click="cancelEdit"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            :disabled="saving"
-            @click="saveEdit"
-          >
-            {{ saving ? 'Saving…' : 'Save brief' }}
-          </button>
-        </template>
-      </div>
     </div>
 
-    <div v-if="!editing">
+    <div>
       <p
         v-if="items.length === 0"
-        class="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300"
+        class="rounded-md border border-dashed border-default bg-bg-surface p-4 text-sm text-fg-muted"
       >
-        Brief not yet written. Click <strong>Edit</strong> to compose one.
+        Brief not yet written.
       </p>
       <KvList
         v-else
@@ -158,48 +154,66 @@ const items = computed(() => {
         >
           <span
             v-if="value === null || value === undefined"
-            class="text-gray-500"
+            class="text-fg-muted"
           >—</span>
+          <div
+            v-else-if="isObjectArray(value)"
+            class="space-y-2"
+          >
+            <UiAdvancedJsonPanel
+              v-for="(entry, idx) in value"
+              :key="idx"
+              :title="`${labelFor(key)} ${idx + 1}`"
+              :summary="valueSummary(entry)"
+              :data="entry"
+            />
+          </div>
           <span
             v-else-if="Array.isArray(value)"
             class="font-mono text-xs"
           >
-            {{ (value as unknown[]).map((v) => String(v)).join(', ') }}
+            {{ (value as unknown[]).map((v) => valueSummary(v)).join(', ') }}
           </span>
-          <MarkdownView
+          <div
             v-else-if="typeof value === 'string' && (key.endsWith('_md') || key === 'research_summary' || key === 'outline_hint_md')"
-            :source="value as string"
-          />
+            class="cs-brief-markdown"
+          >
+            <MarkdownView :source="value as string" />
+          </div>
           <span v-else-if="typeof value === 'string'">{{ value }}</span>
           <span v-else-if="typeof value === 'number' || typeof value === 'boolean'">{{ String(value) }}</span>
+          <UiAdvancedJsonPanel
+            v-else-if="isBriefJsonObject(value)"
+            :title="labelFor(key)"
+            :summary="valueSummary(value)"
+            :data="value"
+          />
           <pre
             v-else
-            class="overflow-x-auto rounded bg-gray-50 p-2 font-mono text-xs dark:bg-gray-800"
+            class="overflow-x-auto rounded-sm bg-bg-surface p-2 font-mono text-xs text-fg-default"
           >{{ JSON.stringify(value, null, 2) }}</pre>
         </template>
       </KvList>
     </div>
-
-    <div v-else>
-      <label
-        class="block text-sm"
-      >
-        <span class="font-medium">Brief JSON</span>
-        <textarea
-          v-model="draftText"
-          rows="20"
-          spellcheck="false"
-          class="mt-1 w-full rounded border border-gray-300 bg-white p-3 font-mono text-xs leading-snug text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-          aria-label="Brief JSON editor"
-        />
-      </label>
-      <p
-        v-if="parseError"
-        class="mt-1 rounded bg-red-50 p-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200"
-        role="alert"
-      >
-        Invalid JSON: {{ parseError }}
-      </p>
-    </div>
   </section>
 </template>
+
+<style scoped>
+.cs-brief-markdown :deep(h1) {
+  font-size: 1.15rem;
+  line-height: 1.4;
+  margin: 0.25rem 0 0.35rem;
+}
+
+.cs-brief-markdown :deep(h2) {
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0.6rem 0 0.25rem;
+}
+
+.cs-brief-markdown :deep(h3),
+.cs-brief-markdown :deep(p) {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+</style>

@@ -1,19 +1,19 @@
-"""Ahrefs integration wrapper (PLAN.md L1047 — Enterprise-only).
+"""Ahrefs integration wrapper (PLAN.md L1047).
 
 Authentication: Bearer ``Authorization: Bearer <api_key>``. Ahrefs only
-issues API tokens to Enterprise plan customers (~$15k/year minimum at
-2025 pricing); for solo/SMB operators DataForSEO covers most of the
-same surface area.
+serves this wrapper when the operator has a paid plan/API units that
+allow direct API v3 calls; for solo/SMB operators DataForSEO covers most
+of the same surface area.
 
 Operations:
 
 - ``keywords_for_site(target, country)`` — keyword inventory.
 - ``top_backlinks(target, mode, limit)`` — top inbound links.
 
-Graceful degrade: if no credential payload is present
-``test_credentials`` raises ``IntegrationDownError`` with the
-documented hint. Wrapper construction itself does NOT raise — the skill
-code checks ``test_credentials`` before issuing the first real op.
+Graceful degrade: if no credential payload is present,
+``test_credentials`` raises ``IntegrationDownError`` with a documented
+fallback hint. Wrapper construction itself does NOT raise — the skill code
+checks ``test_credentials`` before issuing the first real op.
 """
 
 from __future__ import annotations
@@ -41,12 +41,11 @@ class AhrefsIntegration(BaseIntegration):
     def _require_key(self) -> str:
         if not self._api_key:
             raise IntegrationDownError(
-                "Ahrefs is Enterprise-only — no API key configured. The "
-                "keyword-discovery skill works without it (DataForSEO covers "
-                "most use cases).",
+                "Ahrefs API key is not configured. The keyword-discovery skill "
+                "works without it because DataForSEO covers most use cases.",
                 data={
                     "vendor": "ahrefs",
-                    "hint": "docs/api-keys.md — Ahrefs section ('Enterprise plan only')",
+                    "hint": "docs/api-keys.md — Ahrefs section",
                 },
             )
         return self._api_key
@@ -111,9 +110,9 @@ class AhrefsIntegration(BaseIntegration):
     async def test_credentials(self) -> dict[str, Any]:
         """Cheap auth probe — call a free ``domain-rating`` query.
 
-        Raises ``IntegrationDownError`` with the Enterprise-only hint
-        when no key is configured (graceful degrade — the keyword-
-        discovery skill picks this up and falls back to DataForSEO).
+        Raises ``IntegrationDownError`` with the Ahrefs setup hint when no
+        key is configured (graceful degrade — the keyword-discovery skill
+        picks this up and falls back to DataForSEO).
         """
         self._require_key()
         result = await self.call(

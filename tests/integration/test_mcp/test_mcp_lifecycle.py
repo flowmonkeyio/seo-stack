@@ -13,6 +13,7 @@ from .conftest import MCPClient
 # Per-namespace expected counts — derived from the registrations in
 # ``content_stack.mcp.tools``. Update intentionally when adding tools.
 EXPECTED_NAMESPACE_COUNTS = {
+    "ahrefs": 2,
     "article": 18,
     "asset": 4,
     "author": 5,
@@ -20,18 +21,25 @@ EXPECTED_NAMESPACE_COUNTS = {
     "cluster": 3,
     "compliance": 4,
     "cost": 2,
+    "dataforseo": 5,
     "drift": 4,
     "eeat": 8,
-    "gsc": 5,
+    "firecrawl": 4,
+    "googlePaa": 1,
+    "gsc": 9,
+    "gscOauth": 2,
     "integration": 5,
     "interlink": 6,
+    "jina": 1,
     "meta": 1,
+    "openaiImages": 1,
     "procedure": 9,
     "project": 8,
-    "publish": 3,
+    "publish": 4,
     "redirect": 3,
+    "reddit": 2,
     "run": 14,
-    "schedule": 3,
+    "schedule": 4,
     "schema": 4,
     "sitemap": 1,
     "source": 3,
@@ -43,7 +51,7 @@ EXPECTED_NAMESPACE_COUNTS = {
 
 # Total = sum of values; locked here to flag accidental drops.
 EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
-# 139 after adding plugin-first workspace binding/session tools.
+# 163 after adding agent-owned schedule.remove parity.
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:

@@ -212,6 +212,19 @@ class PublishCreateRequest(BaseModel):
     published_at: datetime | None = None
 
 
+class PublishExternalCreateRequest(BaseModel):
+    version_published: int
+    published_url: str = Field(max_length=2048)
+    external_ref: str | None = None
+    frontmatter_json: dict[str, Any] | None = None
+    status: ArticlePublishStatus = ArticlePublishStatus.PUBLISHED
+    error: str | None = None
+    expected_etag: str | None = None
+    run_id: int | None = None
+    mark_article_published: bool = False
+    published_at: datetime | None = None
+
+
 class CanonicalSetRequest(BaseModel):
     target_id: int
 
@@ -853,6 +866,34 @@ async def create_publish(
             frontmatter_json=body.frontmatter_json,
             status=body.status,
             error=body.error,
+            published_at=body.published_at,
+        )
+    )
+
+
+@article_router.post(
+    "/{article_id}/publishes/external",
+    response_model=WriteResponse[ArticlePublishOut],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_external_publish(
+    article_id: int,
+    body: PublishExternalCreateRequest,
+    session: Session = Depends(get_session),
+) -> WriteResponse[ArticlePublishOut]:
+    """Upsert a targetless publish record for an externally published article."""
+    return write_response(
+        ArticlePublishRepository(session).record_external(
+            article_id=article_id,
+            version_published=body.version_published,
+            published_url=body.published_url,
+            external_ref=body.external_ref,
+            frontmatter_json=body.frontmatter_json,
+            status=body.status,
+            error=body.error,
+            expected_etag=body.expected_etag,
+            run_id=body.run_id,
+            mark_article_published=body.mark_article_published,
             published_at=body.published_at,
         )
     )

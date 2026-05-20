@@ -1,0 +1,304 @@
+"""Agent-facing bridge E2E tests.
+
+These tests exercise ``AgentBridgeProxy`` against a real in-process daemon MCP
+app. The bridge is what installable plugins use, so this locks the black-box
+agent path: direct tool visibility stays compact while former browser actions
+remain reachable through ``toolbox.call``.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from typing import Any
+
+from pytest_httpx import HTTPXMock
+
+from content_stack.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
+
+from .conftest import MCPClient
+
+
+class _BridgeHttpClient:
+    """httpx-like adapter that posts bridge requests into TestClient."""
+
+    def __init__(self, mcp: MCPClient) -> None:
+        self._mcp = mcp
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> Any:
+        return self._mcp.test_client.post("/mcp", content=content, headers=headers)
+
+
+def _bridge(mcp: MCPClient) -> tuple[AgentBridgeProxy, _BridgeHttpClient]:
+    headers = {
+        "Authorization": f"Bearer {mcp.auth_token}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    return AgentBridgeProxy(url="http://daemon.test/mcp", headers=headers), _BridgeHttpClient(mcp)
+
+
+def _rpc(method: str, params: dict[str, Any] | None = None, request_id: object = 1) -> str:
+    return json.dumps(
+        {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+    )
+
+
+def _send(
+    proxy: AgentBridgeProxy,
+    client: _BridgeHttpClient,
+    *,
+    method: str,
+    params: dict[str, Any] | None = None,
+    request_id: object = 1,
+) -> dict[str, Any]:
+    line = _rpc(method, params, request_id)
+    return json.loads(
+        proxy.handle(client, payload=json.loads(line), line=line, request_id=request_id)
+    )
+
+
+def _initialize(proxy: AgentBridgeProxy, client: _BridgeHttpClient) -> dict[str, Any]:
+    return _send(
+        proxy,
+        client,
+        method="initialize",
+        params={
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "pytest-bridge-client", "version": "0.1"},
+        },
+        request_id="init",
+    )
+
+
+def _tool_call(
+    proxy: AgentBridgeProxy,
+    client: _BridgeHttpClient,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    request_id: object = 1,
+) -> dict[str, Any]:
+    return _send(
+        proxy,
+        client,
+        method="tools/call",
+        params={"name": name, "arguments": arguments or {}},
+        request_id=request_id,
+    )
+
+
+def _structured(envelope: dict[str, Any]) -> dict[str, Any]:
+    return envelope["result"].get("structuredContent") or envelope["result"]
+
+
+def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+
+    envelope = _send(proxy, client, method="tools/list", request_id="tools")
+    names = [tool["name"] for tool in envelope["result"]["tools"]]
+
+    assert names[: len(_AGENT_VISIBLE_TOOL_ORDER)] == list(_AGENT_VISIBLE_TOOL_ORDER)
+    assert "toolbox.describe" in names
+    assert "toolbox.call" in names
+    assert "project.activate" not in names
+    assert "schedule.remove" not in names
+    assert "integration.set" not in names
+    assert "dataforseo.serp" not in names
+
+
+def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPClient) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    envelope = _tool_call(
+        proxy,
+        client,
+        "toolbox.describe",
+        {
+            "tool_names": [
+                "project.activate",
+                "schedule.remove",
+                "integration.set",
+                "dataforseo.serp",
+            ]
+        },
+        request_id="describe",
+    )
+    payload = _structured(envelope)
+
+    assert [tool["name"] for tool in payload["described_tools"]] == [
+        "project.activate",
+        "schedule.remove",
+        "integration.set",
+    ]
+    assert payload["denied_tool_names"] == ["dataforseo.serp"]
+
+
+def test_bridge_toolbox_operates_former_ui_actions(
+    mcp_client: MCPClient,
+    httpx_mock: HTTPXMock,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    created = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "project.create",
+            {
+                "slug": "bridge-agent-path",
+                "name": "Bridge Agent Path",
+                "domain": "bridge-agent-path.example",
+                "locale": "en-US",
+            },
+            request_id="project-create",
+        )
+    )
+    project_id = created["data"]["id"]
+
+    activated = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "project.activate",
+                "arguments": {"project_id": project_id},
+            },
+            request_id="project-activate",
+        )
+    )
+    assert activated["data"]["is_active"] is True
+
+    target = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "target.add",
+                "arguments": {
+                    "project_id": project_id,
+                    "kind": "wordpress",
+                    "config_json": {"wp_url": "https://wp.example"},
+                    "is_primary": True,
+                    "is_active": True,
+                },
+            },
+            request_id="target-add",
+        )
+    )
+    assert target["data"]["kind"] == "wordpress"
+    assert target["data"]["is_primary"] is True
+
+    budget = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "budget.set",
+                "arguments": {
+                    "project_id": project_id,
+                    "kind": "firecrawl",
+                    "monthly_budget_usd": 25.0,
+                },
+            },
+            request_id="budget-set",
+        )
+    )
+    assert budget["data"]["monthly_budget_usd"] == 25.0
+
+    schedule = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "schedule.set",
+                "arguments": {
+                    "project_id": project_id,
+                    "kind": "drift-watch",
+                    "cron_expr": "0 4 * * *",
+                    "enabled": True,
+                },
+            },
+            request_id="schedule-set",
+        )
+    )
+    removed_schedule = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "schedule.remove",
+                "arguments": {"job_id": schedule["data"]["id"]},
+            },
+            request_id="schedule-remove",
+        )
+    )
+    assert removed_schedule["data"]["enabled"] is False
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v2/scrape",
+        json={"data": {"markdown": "# ok"}},
+    )
+    credential = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "integration.set",
+                "arguments": {
+                    "project_id": project_id,
+                    "kind": "firecrawl",
+                    "plaintext_payload_b64": base64.b64encode(b"fc-key").decode("ascii"),
+                },
+            },
+            request_id="integration-set",
+        )
+    )
+    tested = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "tool_name": "integration.test",
+                "arguments": {"credential_id": credential["data"]["id"]},
+            },
+            request_id="integration-test",
+        )
+    )
+    assert tested["data"]["ok"] is True
+    assert tested["data"]["vendor"] == "firecrawl"
+
+
+def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    envelope = _tool_call(
+        proxy,
+        client,
+        "toolbox.call",
+        {
+            "tool_name": "dataforseo.serp",
+            "arguments": {"project_id": 1, "keyword": "sportsbook"},
+        },
+        request_id="denied-vendor",
+    )
+    result = envelope["result"]
+
+    assert result["isError"] is True
+    assert result["structuredContent"]["code"] == -32007
+    assert result["structuredContent"]["data"]["tool"] == "dataforseo.serp"
