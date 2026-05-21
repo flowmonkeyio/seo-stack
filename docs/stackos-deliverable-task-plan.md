@@ -1629,12 +1629,36 @@ Acceptance criteria:
 - SEO appears as enabled plugin.
 - Current SEO flows still run.
 - SEO no longer appears as universal core in UI/catalog.
+- Disabling SEO for a project hides SEO plugin nav and project-scoped catalog
+  entries while legacy SEO routes/data remain available for compatibility.
+
+Execution notes:
+
+- `plugins/seo/plugin.yaml` is now the source of truth for the SEO facade
+  manifest. It owns SEO capabilities, providers, action aliases, resource
+  schemas, and the SEO sidebar contribution.
+- The hard-coded Python built-ins now merge code-owned core/utils manifests
+  with YAML plugin manifests; YAML plugins override code manifests by slug.
+- Plugin manifest loading checks clone-level `plugins/*/plugin.yaml` and
+  bundled wheel assets under `content_stack/_assets/plugins`, so the SEO facade
+  survives pipx/wheel installs.
+- Project-scoped catalog/resource reads filter disabled plugins without
+  deleting catalog rows or legacy SEO state.
+- SEO nav moved out of universal compatibility nav and is rendered from the
+  SEO plugin `ui.nav` contribution.
+- Legacy SEO setup links such as voice, compliance, EEAT, publishing targets,
+  and legacy integrations moved under the SEO plugin nav contribution; generic
+  schedules and budget remain project setup.
+- Compatibility aliases are declarative only in this task: current MCP/REST
+  tool names continue to work unchanged, and physical SEO code movement is
+  deferred to D13.
 
 Verification commands:
 
 ```bash
-TPF_LLM_TOOL=codex tpf pytest tests/integration/test_mcp tests/integration/test_routes tests/integration/test_repositories -q
+TPF_LLM_TOOL=codex tpf uv run pytest tests/unit/test_plugin_manifest.py tests/integration/test_repositories/test_plugins.py tests/integration/test_routes/test_plugins_routes.py tests/integration/test_routes/test_resources_routes.py -q
 TPF_LLM_TOOL=codex tpf pnpm --dir ui test
+TPF_LLM_TOOL=codex tpf uv run ruff check content_stack tests
 ```
 
 Signoff notes:

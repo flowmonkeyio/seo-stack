@@ -12,13 +12,15 @@ encode business strategy such as choosing winners, optimizing campaigns, or
 deciding the next topic.
 
 Executable action details are documented in
-[`action-executor.md`](action-executor.md). In D08, StackOS can describe,
-validate, and internally execute configured actions through daemon connectors,
-but normal agents still see only `action.describe` and `action.validate`.
+[`action-executor.md`](action-executor.md). StackOS can describe, validate, and
+internally execute configured actions through daemon connectors, but normal
+agents still see only the granted action surface. Plugin manifests remain
+metadata; they do not contain secrets or decision logic.
 
 ## Manifest Shape
 
-The catalog manifest is intentionally metadata-only:
+The catalog manifest is intentionally metadata-only. Built-in plugin manifests
+live under `plugins/<plugin>/plugin.yaml` when the plugin owns a domain facade:
 
 ```yaml
 slug: seo
@@ -40,6 +42,7 @@ actions:
   - key: topic.bulk-create
     name: Create Topic Candidates
     description: Create topic records from agent-selected SEO candidates.
+    provider: stackos-seo-compat
     capability: seo-content
     risk_level: write
     input_schema:
@@ -48,6 +51,8 @@ actions:
     output_schema:
       type: object
       additionalProperties: true
+    config:
+      legacy_tool: topic.bulkCreate
 resources:
   - key: article
     name: Article
@@ -58,7 +63,10 @@ resources:
 ```
 
 Required identifiers use lowercase kebab or dotted form, for example
-`seo-content`, `openai-images`, or `catalog.describe`.
+`seo-content`, `openai-images`, or `catalog.describe`. Compatibility aliases to
+older MCP tools are explicit metadata in `config.legacy_tool` or
+`config.legacy_tools`; the old tool names continue to exist until their
+workflow migration is complete.
 
 Workflow templates live beside plugin metadata as files:
 
@@ -82,8 +90,38 @@ The initial StackOS daemon registers three built-ins:
 Built-in resource schemas include:
 
 - `core`: `project-note`, `learning`, `experiment`.
-- `seo`: `topic`, `article`, `research-source`, `article-asset`.
+- `seo`: `cluster`, `topic`, `article`, `research-source`, `article-asset`,
+  `internal-link`, `gsc-metric`, `drift-baseline`, and other compatibility SEO
+  records.
 - `utils`: `generated-image`, `web-document`.
+
+## Project Enablement
+
+Plugins are installed globally but enabled per project. If a plugin has no
+explicit project row, StackOS treats it as available for compatibility. If a
+project disables a plugin, project-scoped catalog reads hide that plugin's
+capabilities, providers, actions, resources, and UI nav contribution.
+
+Disabling a plugin does not delete legacy data and does not remove compatibility
+routes. For example, disabling `seo` hides SEO from the generic StackOS catalog
+and sidebar for that project, while existing SEO routes and old run history
+remain readable.
+
+## SEO Facade
+
+`plugins/seo/plugin.yaml` is the SEO ownership boundary. It maps the current
+SEO implementation into plugin-owned metadata:
+
+- capabilities for research, content, publishing, and Search Console;
+- providers for local SEO compatibility, DataForSEO, Ahrefs, GSC, WordPress,
+  and Ghost;
+- resources for current SEO tables and sidecar records;
+- actions that point at legacy daemon tools through explicit alias metadata;
+- the SEO sidebar contribution.
+
+Utility providers used by SEO, such as OpenAI Images, Firecrawl, Jina, and
+Reddit, remain owned by the `utils` plugin unless a later task makes them
+domain-specific.
 
 ## Agent Exposure
 

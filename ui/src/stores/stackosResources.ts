@@ -27,6 +27,7 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
       const resourceParams = new URLSearchParams()
       const recordParams = new URLSearchParams({ limit: '50' })
       const artifactParams = new URLSearchParams({ limit: '50' })
+      resourceParams.set('project_id', String(projectId))
       if (filters.pluginSlug) {
         resourceParams.set('plugin_slug', filters.pluginSlug)
         recordParams.set('plugin_slug', filters.pluginSlug)

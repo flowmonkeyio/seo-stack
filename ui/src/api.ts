@@ -7786,6 +7786,7 @@ export interface operations {
         parameters: {
             query?: {
                 plugin_slug?: string | null;
+                project_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -8981,6 +8982,7 @@ export interface operations {
         parameters: {
             query?: {
                 plugin_slug?: string | null;
+                project_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -9043,7 +9045,9 @@ export interface operations {
     };
     list_catalog_api_v1_catalog_get: {
         parameters: {
-            query?: never;
+            query?: {
+                project_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9059,11 +9063,22 @@ export interface operations {
                     "application/json": components["schemas"]["CatalogOut"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     describe_catalog_api_v1_catalog__plugin_slug__get: {
         parameters: {
-            query?: never;
+            query?: {
+                project_id?: number | null;
+            };
             header?: never;
             path: {
                 plugin_slug: string;
@@ -12834,6 +12849,7 @@ export interface operations {
         parameters: {
             query?: {
                 plugin_slug?: string | null;
+                project_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -12929,6 +12945,7 @@ export interface operations {
         parameters: {
             query?: {
                 plugin_slug?: string | null;
+                project_id?: number | null;
             };
             header?: never;
             path?: never;

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session
 
@@ -52,28 +52,38 @@ async def get_plugin(
 
 
 @router.get("/catalog", response_model=CatalogOut)
-async def list_catalog(session: Session = Depends(get_session)) -> CatalogOut:
+async def list_catalog(
+    project_id: int | None = Query(default=None),
+    session: Session = Depends(get_session),
+) -> CatalogOut:
     """Return the full installed plugin catalog."""
-    return PluginRepository(session).catalog()
+    return PluginRepository(session).catalog(project_id=project_id)
 
 
 @router.get("/catalog/{plugin_slug}", response_model=PluginCatalogOut)
 async def describe_catalog(
     plugin_slug: str,
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> PluginCatalogOut:
     """Return one plugin's catalog contribution."""
-    catalog = PluginRepository(session).catalog(plugin_slug=plugin_slug)
+    catalog = PluginRepository(session).catalog(plugin_slug=plugin_slug, project_id=project_id)
+    if not catalog.plugins:
+        raise HTTPException(status_code=404, detail=f"plugin {plugin_slug!r} is disabled")
     return catalog.plugins[0]
 
 
 @router.get("/capabilities", response_model=list[CapabilityOut])
 async def list_capabilities(
     plugin_slug: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[CapabilityOut]:
     """List registered capabilities."""
-    return PluginRepository(session).list_capabilities(plugin_slug=plugin_slug)
+    return PluginRepository(session).list_capabilities(
+        plugin_slug=plugin_slug,
+        project_id=project_id,
+    )
 
 
 @router.get("/capabilities/{capability_key}", response_model=CapabilityOut)
@@ -89,10 +99,11 @@ async def describe_capability(
 @router.get("/providers", response_model=list[ProviderOut])
 async def list_providers(
     plugin_slug: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[ProviderOut]:
     """List registered providers."""
-    return PluginRepository(session).list_providers(plugin_slug=plugin_slug)
+    return PluginRepository(session).list_providers(plugin_slug=plugin_slug, project_id=project_id)
 
 
 @router.get("/providers/{provider_key}", response_model=ProviderOut)
@@ -108,10 +119,11 @@ async def describe_provider(
 @router.get("/actions", response_model=list[ActionOut])
 async def list_actions(
     plugin_slug: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[ActionOut]:
     """List registered action schemas."""
-    return PluginRepository(session).list_actions(plugin_slug=plugin_slug)
+    return PluginRepository(session).list_actions(plugin_slug=plugin_slug, project_id=project_id)
 
 
 @router.get("/actions/{action_key}", response_model=ActionOut)

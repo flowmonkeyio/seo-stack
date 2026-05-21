@@ -37,6 +37,17 @@ def test_resource_record_routes(api: TestClient, project_id: int) -> None:
     assert [item["id"] for item in listing.json()["items"]] == [record["id"]]
 
 
+def test_disabled_plugin_filters_resource_catalog(api: TestClient, project_id: int) -> None:
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/seo/enable", json={}).status_code == 200
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/seo/disable").status_code == 200
+
+    resources = api.get("/api/v1/resources", params={"project_id": project_id})
+    assert resources.status_code == 200
+    keys = {row["key"] for row in resources.json()}
+    assert "learning" in keys
+    assert "article" not in keys
+
+
 def test_artifact_routes_redact_metadata(api: TestClient, project_id: int) -> None:
     created = api.post(
         f"/api/v1/projects/{project_id}/artifacts",

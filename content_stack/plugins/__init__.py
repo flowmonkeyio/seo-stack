@@ -6,6 +6,9 @@ from content_stack.plugins.manifest import (
     CapabilityManifest,
     PluginManifest,
     ProviderManifest,
+    ResourceManifest,
+    load_plugin_manifest_file,
+    load_plugin_manifest_files,
 )
 
 __all__ = [
@@ -14,4 +17,7 @@ __all__ = [
     "CapabilityManifest",
     "PluginManifest",
     "ProviderManifest",
+    "ResourceManifest",
+    "load_plugin_manifest_file",
+    "load_plugin_manifest_files",
 ]

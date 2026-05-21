@@ -79,10 +79,14 @@ class ArtifactCreateRequest(BaseModel):
 @router.get("/resources", response_model=list[ResourceOut])
 async def list_resources(
     plugin_slug: str | None = Query(default=None),
+    project_id: int | None = Query(default=None),
     session: Session = Depends(get_session),
 ) -> list[ResourceOut]:
     """List installed plugin resource schemas."""
-    return ResourceRepository(session).list_resources(plugin_slug=plugin_slug)
+    return ResourceRepository(session).list_resources(
+        plugin_slug=plugin_slug,
+        project_id=project_id,
+    )
 
 
 @router.get("/resources/{resource_key}", response_model=ResourceOut)

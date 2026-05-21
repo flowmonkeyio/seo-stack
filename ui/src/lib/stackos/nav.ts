@@ -52,19 +52,11 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
 }
 
 export function compatibilityNavSection(projectId: number): StackOsNavSection {
-  const base = `/projects/${projectId}`
+  void projectId
   return {
     key: 'compatibility',
     label: 'Compatibility',
-    items: [
-      { key: 'clusters', label: 'Clusters', to: `${base}/clusters` },
-      { key: 'topics', label: 'Topics', to: `${base}/topics` },
-      { key: 'articles', label: 'Articles', to: `${base}/articles`, matchPrefix: true },
-      { key: 'procedures', label: 'Procedures', to: `${base}/procedures` },
-      { key: 'interlinks', label: 'Interlinks', to: `${base}/interlinks` },
-      { key: 'search-console', label: 'Search Console', to: `${base}/gsc` },
-      { key: 'drift', label: 'Drift', to: `${base}/drift` },
-    ],
+    items: [],
   }
 }
 
@@ -74,11 +66,6 @@ export function setupNavSection(projectId: number): StackOsNavSection {
     key: 'project-setup',
     label: 'Project Setup',
     items: [
-      { key: 'voice', label: 'Voice', to: `${base}/voice` },
-      { key: 'compliance', label: 'Compliance', to: `${base}/compliance` },
-      { key: 'eeat', label: 'EEAT', to: `${base}/eeat` },
-      { key: 'publishing', label: 'Publishing', to: `${base}/targets` },
-      { key: 'integrations', label: 'Legacy Integrations', to: `${base}/integrations` },
       { key: 'schedules', label: 'Schedules', to: `${base}/schedules` },
       { key: 'cost-budget', label: 'Cost & Budget', to: `${base}/cost-budget` },
     ],
@@ -92,6 +79,7 @@ export function pluginContributionSections(
   const base = `/projects/${projectId}`
   const sections: StackOsNavSection[] = []
   for (const plugin of plugins) {
+    if (plugin.enabled_for_project === false) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
     const nav = isPluginNav(ui?.nav) ? ui.nav : null
     if (!nav) continue

@@ -18,8 +18,7 @@ describe('StackOS nav contributions', () => {
     expect(core.flatMap((section) => section.items.map((item) => item.to))).toContain(
       '/projects/7/resources',
     )
-    expect(compatibility.items.map((item) => item.to)).toContain('/projects/7/articles')
-    expect(compatibility.items.map((item) => item.to)).toContain('/projects/7/procedures')
+    expect(compatibility.items).toEqual([])
   })
 
   it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
@@ -52,5 +51,42 @@ describe('StackOS nav contributions', () => {
       label: 'Campaigns',
       to: '/projects/9/resources',
     })
+  })
+
+  it('loads SEO nav from the plugin manifest contribution only when enabled', () => {
+    const plugin = {
+      id: 2,
+      slug: 'seo',
+      name: 'SEO',
+      version: '0.1.0',
+      description: '',
+      source: 'builtin',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      enabled_for_project: true,
+      manifest_json: {
+        ui: {
+          nav: {
+            section: 'SEO',
+            items: [
+              { key: 'seo.articles', label: 'Articles', to: 'articles', matchPrefix: true },
+              { key: 'seo.procedures', label: 'Legacy Procedures', to: 'procedures' },
+              { key: 'seo.eeat', label: 'EEAT', to: 'eeat' },
+            ],
+          },
+        },
+      },
+    } as SchemaPluginOut
+
+    const sections = pluginContributionSections(7, [plugin])
+    expect(sections[0].label).toBe('SEO')
+    expect(sections[0].items.map((item) => item.to)).toEqual([
+      '/projects/7/articles',
+      '/projects/7/procedures',
+      '/projects/7/eeat',
+    ])
+
+    const disabled = { ...plugin, enabled_for_project: false } as SchemaPluginOut
+    expect(pluginContributionSections(7, [disabled])).toEqual([])
   })
 })

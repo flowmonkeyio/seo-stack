@@ -34,6 +34,21 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert capability.status_code == 200
     assert capability.json()["plugin_slug"] == "seo"
 
+    seo_catalog = api.get("/api/v1/catalog/seo")
+    assert seo_catalog.status_code == 200
+    assert seo_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == "SEO"
+    assert {a["key"] for a in seo_catalog.json()["actions"]} >= {
+        "topic.bulk-create",
+        "publish.record",
+        "gsc.query-project",
+    }
+    assert {r["key"] for r in seo_catalog.json()["resources"]} >= {
+        "cluster",
+        "topic",
+        "article",
+        "internal-link",
+    }
+
 
 def test_project_plugin_enable_disable_routes(api: TestClient, project_id: int) -> None:
     enabled = api.post(f"/api/v1/projects/{project_id}/plugins/utils/enable", json={})
@@ -47,3 +62,30 @@ def test_project_plugin_enable_disable_routes(api: TestClient, project_id: int) 
     disabled = api.post(f"/api/v1/projects/{project_id}/plugins/utils/disable")
     assert disabled.status_code == 200
     assert disabled.json()["data"]["enabled"] is False
+
+
+def test_disabled_seo_plugin_is_filtered_from_project_catalog(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/seo/enable", json={}).status_code == 200
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/seo/disable").status_code == 200
+
+    annotated = api.get("/api/v1/plugins", params={"project_id": project_id}).json()
+    seo = next(p for p in annotated if p["slug"] == "seo")
+    assert seo["enabled_for_project"] is False
+
+    catalog = api.get("/api/v1/catalog", params={"project_id": project_id})
+    assert catalog.status_code == 200
+    assert "seo" not in {p["plugin"]["slug"] for p in catalog.json()["plugins"]}
+
+    seo_catalog = api.get("/api/v1/catalog/seo", params={"project_id": project_id})
+    assert seo_catalog.status_code == 404
+
+    capabilities = api.get("/api/v1/capabilities", params={"project_id": project_id})
+    assert capabilities.status_code == 200
+    assert "seo-content" not in {c["key"] for c in capabilities.json()}
+
+    resources = api.get("/api/v1/resources", params={"project_id": project_id})
+    assert resources.status_code == 200
+    assert "article" not in {r["key"] for r in resources.json()}

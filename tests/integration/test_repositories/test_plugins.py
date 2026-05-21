@@ -16,6 +16,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     seo = repo.get_plugin("seo")
     assert seo.name == "SEO"
     assert seo.enabled_for_project is None
+    assert seo.manifest_json["ui"]["nav"]["section"] == "SEO"
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:
@@ -49,6 +50,21 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert {action.key for action in utils.actions} >= {"image.generate", "web.scrape"}
     assert {resource.key for resource in utils.resources} >= {"generated-image", "web-document"}
 
+    seo = repo.catalog(plugin_slug="seo").plugins[0]
+    assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
+    assert {provider.key for provider in seo.providers} >= {"stackos-seo-compat", "gsc"}
+    assert {action.key for action in seo.actions} >= {
+        "topic.bulk-create",
+        "publish.record",
+        "gsc.query-project",
+    }
+    assert {resource.key for resource in seo.resources} >= {
+        "cluster",
+        "topic",
+        "article",
+        "internal-link",
+    }
+
 
 def test_capability_provider_describe_supports_plugin_filter(session: Session) -> None:
     repo = PluginRepository(session)
@@ -58,3 +74,27 @@ def test_capability_provider_describe_supports_plugin_filter(session: Session) -
 
     assert capability.plugin_slug == "seo"
     assert provider.plugin_slug == "utils"
+
+
+def test_disabled_plugin_is_filtered_from_project_catalog(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = PluginRepository(session)
+
+    repo.enable(project_id=project_id, plugin_slug="seo")
+    repo.disable(project_id=project_id, plugin_slug="seo")
+
+    plugins = repo.list_plugins(project_id=project_id)
+    seo = next(plugin for plugin in plugins if plugin.slug == "seo")
+    assert seo.enabled_for_project is False
+
+    assert "seo" not in {
+        plugin.plugin.slug for plugin in repo.catalog(project_id=project_id).plugins
+    }
+    assert "seo-content" not in {
+        capability.key for capability in repo.list_capabilities(project_id=project_id)
+    }
+    assert "article" not in {
+        resource.key for resource in repo.list_resources(project_id=project_id)
+    }

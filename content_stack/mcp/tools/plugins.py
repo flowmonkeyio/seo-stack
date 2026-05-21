@@ -55,19 +55,29 @@ class PluginDisableInput(MCPInput):
 
 
 class CatalogListInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
+
+    project_id: int | None = None
 
 
 class CatalogDescribeInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"plugin_slug": "seo"}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"plugin_slug": "seo", "project_id": 1}},
+    )
 
     plugin_slug: str
+    project_id: int | None = None
 
 
 class CapabilityListInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"plugin_slug": "seo"}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"plugin_slug": "seo", "project_id": 1}},
+    )
 
     plugin_slug: str | None = None
+    project_id: int | None = None
 
 
 class CapabilityDescribeInput(MCPInput):
@@ -83,10 +93,11 @@ class CapabilityDescribeInput(MCPInput):
 class ProviderListInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"plugin_slug": "utils"}},
+        json_schema_extra={"example": {"plugin_slug": "utils", "project_id": 1}},
     )
 
     plugin_slug: str | None = None
+    project_id: int | None = None
 
 
 class ProviderDescribeInput(MCPInput):
@@ -141,11 +152,11 @@ async def _plugin_disable(
 
 
 async def _catalog_list(
-    _inp: CatalogListInput,
+    inp: CatalogListInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> CatalogOut:
-    return PluginRepository(ctx.session).catalog()
+    return PluginRepository(ctx.session).catalog(project_id=inp.project_id)
 
 
 async def _catalog_describe(
@@ -153,7 +164,10 @@ async def _catalog_describe(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> CatalogOut:
-    return PluginRepository(ctx.session).catalog(plugin_slug=inp.plugin_slug)
+    return PluginRepository(ctx.session).catalog(
+        plugin_slug=inp.plugin_slug,
+        project_id=inp.project_id,
+    )
 
 
 async def _capability_list(
@@ -161,7 +175,10 @@ async def _capability_list(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> list[CapabilityOut]:
-    return PluginRepository(ctx.session).list_capabilities(plugin_slug=inp.plugin_slug)
+    return PluginRepository(ctx.session).list_capabilities(
+        plugin_slug=inp.plugin_slug,
+        project_id=inp.project_id,
+    )
 
 
 async def _capability_describe(
@@ -180,7 +197,10 @@ async def _provider_list(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> list[ProviderOut]:
-    return PluginRepository(ctx.session).list_providers(plugin_slug=inp.plugin_slug)
+    return PluginRepository(ctx.session).list_providers(
+        plugin_slug=inp.plugin_slug,
+        project_id=inp.project_id,
+    )
 
 
 async def _provider_describe(

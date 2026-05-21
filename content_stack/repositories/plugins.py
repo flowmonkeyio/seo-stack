@@ -198,12 +198,18 @@ class PluginRepository:
         self._s.refresh(row)
         return Envelope(data=self._project_plugin_out(row, plugin), project_id=project_id)
 
-    def list_capabilities(self, *, plugin_slug: str | None = None) -> list[CapabilityOut]:
+    def list_capabilities(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[CapabilityOut]:
         self.sync_builtin_plugins()
         stmt = select(Capability, Plugin).join(Plugin, Capability.plugin_id == Plugin.id)
         if plugin_slug is not None:
             stmt = stmt.where(Plugin.slug == plugin_slug)
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Capability.key.asc())).all()
+        rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._capability_out(capability, plugin) for capability, plugin in rows]
 
     def get_capability(self, *, key: str, plugin_slug: str | None = None) -> CapabilityOut:
@@ -217,12 +223,18 @@ class PluginRepository:
             )
         return rows[0]
 
-    def list_providers(self, *, plugin_slug: str | None = None) -> list[ProviderOut]:
+    def list_providers(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[ProviderOut]:
         self.sync_builtin_plugins()
         stmt = select(Provider, Plugin).join(Plugin, Provider.plugin_id == Plugin.id)
         if plugin_slug is not None:
             stmt = stmt.where(Plugin.slug == plugin_slug)
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Provider.key.asc())).all()
+        rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
 
     def get_provider(self, *, key: str, plugin_slug: str | None = None) -> ProviderOut:
@@ -236,7 +248,12 @@ class PluginRepository:
             )
         return rows[0]
 
-    def list_actions(self, *, plugin_slug: str | None = None) -> list[ActionOut]:
+    def list_actions(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[ActionOut]:
         self.sync_builtin_plugins()
         stmt = (
             select(Action, Plugin, Provider)
@@ -246,6 +263,7 @@ class PluginRepository:
         if plugin_slug is not None:
             stmt = stmt.where(Plugin.slug == plugin_slug)
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Action.key.asc())).all()
+        rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._action_out(action, plugin, provider) for action, plugin, provider in rows]
 
     def get_action(self, *, key: str, plugin_slug: str | None = None) -> ActionOut:
@@ -259,24 +277,38 @@ class PluginRepository:
             )
         return rows[0]
 
-    def list_resources(self, *, plugin_slug: str | None = None) -> list[ResourceOut]:
+    def list_resources(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[ResourceOut]:
         self.sync_builtin_plugins()
         stmt = select(Resource, Plugin).join(Plugin, Resource.plugin_id == Plugin.id)
         if plugin_slug is not None:
             stmt = stmt.where(Plugin.slug == plugin_slug)
         rows = self._s.exec(stmt.order_by(Plugin.slug.asc(), Resource.key.asc())).all()
+        rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._resource_out(resource, plugin) for resource, plugin in rows]
 
-    def catalog(self, *, plugin_slug: str | None = None) -> CatalogOut:
+    def catalog(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> CatalogOut:
         self.sync_builtin_plugins()
         plugins = [self.get_plugin(plugin_slug)] if plugin_slug else self.list_plugins()
+        disabled_plugin_ids = self._disabled_plugin_ids(project_id)
+        if disabled_plugin_ids:
+            plugins = [plugin for plugin in plugins if plugin.id not in disabled_plugin_ids]
         catalogs = [
             PluginCatalogOut(
                 plugin=plugin,
-                capabilities=self.list_capabilities(plugin_slug=plugin.slug),
-                providers=self.list_providers(plugin_slug=plugin.slug),
-                actions=self.list_actions(plugin_slug=plugin.slug),
-                resources=self.list_resources(plugin_slug=plugin.slug),
+                capabilities=self.list_capabilities(plugin_slug=plugin.slug, project_id=project_id),
+                providers=self.list_providers(plugin_slug=plugin.slug, project_id=project_id),
+                actions=self.list_actions(plugin_slug=plugin.slug, project_id=project_id),
+                resources=self.list_resources(plugin_slug=plugin.slug, project_id=project_id),
             )
             for plugin in plugins
         ]
@@ -458,6 +490,30 @@ class PluginRepository:
             select(ProjectPlugin).where(ProjectPlugin.project_id == project_id)
         ).all()
         return {row.plugin_id: row.enabled for row in rows}
+
+    def _disabled_plugin_ids(self, project_id: int | None) -> set[int]:
+        if project_id is None:
+            return set()
+        return {
+            row.plugin_id
+            for row in self._s.exec(
+                select(ProjectPlugin).where(
+                    ProjectPlugin.project_id == project_id,
+                    ProjectPlugin.enabled.is_(False),  # type: ignore[union-attr]
+                )
+            ).all()
+        }
+
+    def _filter_project_enabled(
+        self,
+        rows: list[Any],
+        *,
+        project_id: int | None,
+    ) -> list[Any]:
+        disabled_plugin_ids = self._disabled_plugin_ids(project_id)
+        if not disabled_plugin_ids:
+            return rows
+        return [row for row in rows if row[1].id not in disabled_plugin_ids]
 
     def _plugin_out(self, row: Plugin, enabled_for_project: bool | None) -> PluginOut:
         out = PluginOut.model_validate(row)

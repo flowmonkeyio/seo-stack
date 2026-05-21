@@ -37,11 +37,11 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       const [pluginRows, catalogBody, capabilityRows, providerRows, actionRows, resourceRows] =
         await Promise.all([
           apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`),
-          apiFetch<SchemaCatalogOut>('/api/v1/catalog'),
-          apiFetch<SchemaCapabilityOut[]>('/api/v1/capabilities'),
-          apiFetch<SchemaProviderOut[]>('/api/v1/providers'),
-          apiFetch<SchemaActionOut[]>('/api/v1/actions'),
-          apiFetch<SchemaResourceOut[]>('/api/v1/resources'),
+          apiFetch<SchemaCatalogOut>(`/api/v1/catalog${pluginQuery}`),
+          apiFetch<SchemaCapabilityOut[]>(`/api/v1/capabilities${pluginQuery}`),
+          apiFetch<SchemaProviderOut[]>(`/api/v1/providers${pluginQuery}`),
+          apiFetch<SchemaActionOut[]>(`/api/v1/actions${pluginQuery}`),
+          apiFetch<SchemaResourceOut[]>(`/api/v1/resources${pluginQuery}`),
         ])
       plugins.value = pluginRows
       catalog.value = catalogBody

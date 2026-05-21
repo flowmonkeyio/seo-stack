@@ -11,7 +11,14 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
 from content_stack.artifacts import redact_secrets
-from content_stack.db.models import Artifact, Plugin, Project, Resource, ResourceRecord
+from content_stack.db.models import (
+    Artifact,
+    Plugin,
+    Project,
+    ProjectPlugin,
+    Resource,
+    ResourceRecord,
+)
 from content_stack.repositories.base import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
@@ -117,9 +124,15 @@ class ResourceRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def list_resources(self, *, plugin_slug: str | None = None) -> list[ResourceOut]:
+    def list_resources(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[ResourceOut]:
         self._sync_catalog()
         rows = self._resource_rows(plugin_slug=plugin_slug)
+        rows = self._filter_project_enabled(rows, project_id=project_id)
         return [self._resource_out(resource, plugin) for resource, plugin in rows]
 
     def get_resource(self, *, key: str, plugin_slug: str | None = None) -> ResourceOut:
@@ -152,6 +165,9 @@ class ResourceRepository:
         self._sync_catalog()
         n = _normalise_limit(limit)
         filters = [ResourceRecord.project_id == project_id]
+        disabled_plugin_ids = self._disabled_plugin_ids(project_id)
+        if disabled_plugin_ids:
+            filters.append(Plugin.id.not_in(disabled_plugin_ids))  # type: ignore[attr-defined]
         if plugin_slug is not None:
             filters.append(Plugin.slug == plugin_slug)
         if resource_key is not None:
@@ -199,7 +215,7 @@ class ResourceRepository:
         limit: int | None = None,
         after_id: int | None = None,
     ) -> ResourceQueryOut:
-        resources = self.list_resources(plugin_slug=plugin_slug)
+        resources = self.list_resources(plugin_slug=plugin_slug, project_id=project_id)
         if resource_key is not None:
             resources = [resource for resource in resources if resource.key == resource_key]
         if project_id is None:
@@ -368,6 +384,34 @@ class ResourceRepository:
         from content_stack.repositories.plugins import PluginRepository
 
         PluginRepository(self._s).sync_builtin_plugins()
+
+    def _disabled_plugin_ids(self, project_id: int | None) -> set[int]:
+        if project_id is None:
+            return set()
+        return {
+            row.plugin_id
+            for row in self._s.exec(
+                select(ProjectPlugin).where(
+                    ProjectPlugin.project_id == project_id,
+                    ProjectPlugin.enabled.is_(False),  # type: ignore[union-attr]
+                )
+            ).all()
+        }
+
+    def _filter_project_enabled(
+        self,
+        rows: list[tuple[Resource, Plugin]],
+        *,
+        project_id: int | None,
+    ) -> list[tuple[Resource, Plugin]]:
+        disabled_plugin_ids = self._disabled_plugin_ids(project_id)
+        if not disabled_plugin_ids:
+            return rows
+        return [
+            (resource, plugin)
+            for resource, plugin in rows
+            if plugin.id not in disabled_plugin_ids
+        ]
 
 
 class ArtifactRepository:

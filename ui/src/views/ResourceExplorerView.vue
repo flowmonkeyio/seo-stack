@@ -17,7 +17,7 @@ import { useStackOsResourcesStore } from '@/stores/stackosResources'
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
 const resourcesStore = useStackOsResourcesStore()
-const { plugins } = storeToRefs(catalogStore)
+const { enabledPlugins } = storeToRefs(catalogStore)
 const { resources, records, artifacts, loading, error } = storeToRefs(resourcesStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
@@ -26,7 +26,7 @@ const resourceKey = ref('')
 
 const pluginOptions = computed(() => [
   { value: '', label: 'All plugins' },
-  ...plugins.value.map((plugin) => ({ value: plugin.slug, label: plugin.name })),
+  ...enabledPlugins.value.map((plugin) => ({ value: plugin.slug, label: plugin.name })),
 ])
 
 const resourceOptions = computed(() => [

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import re
+from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9]*(?:[-.][a-z0-9]+)*$")
@@ -118,6 +122,53 @@ class PluginManifest(BaseModel):
         return _validate_key(value)
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _plugin_manifest_paths() -> list[Path]:
+    root = _repo_root() / "plugins"
+    if not root.is_dir():
+        return []
+    return sorted(path for path in root.glob("*/plugin.yaml") if path.is_file())
+
+
+def _bundled_plugin_manifest_nodes() -> list[Traversable]:
+    root = resources.files("content_stack").joinpath("_assets").joinpath("plugins")
+    if not root.is_dir():
+        return []
+    return sorted(
+        [
+            plugin_dir.joinpath("plugin.yaml")
+            for plugin_dir in root.iterdir()
+            if plugin_dir.is_dir() and plugin_dir.joinpath("plugin.yaml").is_file()
+        ],
+        key=lambda node: str(node),
+    )
+
+
+def load_plugin_manifest_file(path: Path) -> PluginManifest:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"plugin manifest must be a YAML object: {path}")
+    return PluginManifest.model_validate(raw)
+
+
+def _load_plugin_manifest_node(node: Traversable) -> PluginManifest:
+    raw = yaml.safe_load(node.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"plugin manifest must be a YAML object: {node}")
+    return PluginManifest.model_validate(raw)
+
+
+def load_plugin_manifest_files() -> tuple[PluginManifest, ...]:
+    bundled = [_load_plugin_manifest_node(node) for node in _bundled_plugin_manifest_nodes()]
+    clone = [load_plugin_manifest_file(path) for path in _plugin_manifest_paths()]
+    manifests = {manifest.slug: manifest for manifest in bundled}
+    manifests.update({manifest.slug: manifest for manifest in clone})
+    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+
+
 _OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
 _TEXT_RECORD_SCHEMA = {
     "type": "object",
@@ -139,7 +190,7 @@ _ARTIFACT_RESOURCE_SCHEMA = {
     "required": ["uri"],
 }
 
-BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
+_CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
     PluginManifest(
         slug="core",
         name="StackOS Core",
@@ -204,97 +255,6 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 name="Experiment",
                 description="Experiment definition or result summary owned by the project.",
                 schema=_OBJECT_SCHEMA,
-            ),
-        ],
-    ),
-    PluginManifest(
-        slug="seo",
-        name="SEO",
-        description="Compatibility plugin facade for current SEO content operations.",
-        capabilities=[
-            CapabilityManifest(
-                key="seo-content",
-                name="SEO Content",
-                description="Topics, articles, sources, internal links, schema, and publishing.",
-            ),
-            CapabilityManifest(
-                key="search-console",
-                name="Search Console",
-                description=(
-                    "GSC metrics, opportunity discovery, crawl checks, and refresh signals."
-                ),
-            ),
-        ],
-        providers=[
-            ProviderManifest(
-                key="dataforseo",
-                name="DataForSEO",
-                description="SERP, keyword volume, and competitor data provider.",
-                auth_type="api-key",
-            ),
-            ProviderManifest(
-                key="gsc",
-                name="Google Search Console",
-                description="Search Console OAuth-backed metrics provider.",
-                auth_type="oauth",
-            ),
-            ProviderManifest(
-                key="wordpress",
-                name="WordPress",
-                description="WordPress publishing target.",
-                auth_type="api-key",
-            ),
-            ProviderManifest(
-                key="ghost",
-                name="Ghost",
-                description="Ghost publishing target.",
-                auth_type="api-key",
-            ),
-        ],
-        actions=[
-            ActionManifest(
-                key="topic.bulk-create",
-                name="Create Topic Candidates",
-                description="Create topic records from agent-selected SEO candidates.",
-                capability="seo-content",
-                risk_level="write",
-                input_schema=_OBJECT_SCHEMA,
-                output_schema=_OBJECT_SCHEMA,
-            ),
-            ActionManifest(
-                key="publish.record",
-                name="Record Publish",
-                description="Record an externally completed publish result.",
-                capability="seo-content",
-                risk_level="write",
-                input_schema=_OBJECT_SCHEMA,
-                output_schema=_OBJECT_SCHEMA,
-            ),
-        ],
-        resources=[
-            ResourceManifest(
-                key="topic",
-                name="Topic",
-                description="Compatibility schema for SEO topic candidates.",
-                schema=_OBJECT_SCHEMA,
-            ),
-            ResourceManifest(
-                key="article",
-                name="Article",
-                description="Compatibility schema for SEO article records.",
-                schema=_OBJECT_SCHEMA,
-            ),
-            ResourceManifest(
-                key="research-source",
-                name="Research Source",
-                description="Compatibility schema for article research sources.",
-                schema=_OBJECT_SCHEMA,
-            ),
-            ResourceManifest(
-                key="article-asset",
-                name="Article Asset",
-                description="Compatibility schema for article image/media assets.",
-                schema=_ARTIFACT_RESOURCE_SCHEMA,
             ),
         ],
     ),
@@ -407,6 +367,15 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
     ),
 )
 
+
+def _combined_builtin_plugin_manifests() -> tuple[PluginManifest, ...]:
+    manifests = {manifest.slug: manifest for manifest in _CODE_PLUGIN_MANIFESTS}
+    manifests.update({manifest.slug: manifest for manifest in load_plugin_manifest_files()})
+    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+
+
+BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = _combined_builtin_plugin_manifests()
+
 __all__ = [
     "BUILTIN_PLUGIN_MANIFESTS",
     "ActionManifest",
@@ -414,4 +383,6 @@ __all__ = [
     "PluginManifest",
     "ProviderManifest",
     "ResourceManifest",
+    "load_plugin_manifest_file",
+    "load_plugin_manifest_files",
 ]

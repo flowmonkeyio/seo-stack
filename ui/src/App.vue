@@ -70,7 +70,7 @@ const projectNavSections = computed<StackOsNavSection[]>(() => {
     ...pluginContributionSections(id, enabledPlugins.value),
     setupNavSection(id),
     compatibilityNavSection(id),
-  ]
+  ].filter((section) => section.items.length > 0)
 })
 
 watch(
