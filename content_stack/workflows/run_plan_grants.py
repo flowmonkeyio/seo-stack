@@ -20,6 +20,7 @@ RUN_PLAN_CONTROLLER_TOOL_NAMES: frozenset[str] = frozenset(
 
 RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        "action.execute",
         "artifact.create",
         "context.query",
         "context.snapshot",
@@ -57,6 +58,7 @@ class RunPlanMcpToolGrant:
     tool_name: str
     plugin_slug: str | None = None
     resource_key: str | None = None
+    action_refs: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     fields: tuple[str, ...] = ()
 
@@ -87,8 +89,6 @@ def _optional_string(value: Any, *, label: str) -> str | None:
 def _validate_grant_tool(tool_name: str) -> None:
     if tool_name in RUN_PLAN_ADMIN_ONLY_TOOL_NAMES:
         raise ValueError(f"{tool_name!r} is an admin/setup tool and cannot be run-plan granted")
-    if tool_name == "action.execute":
-        raise ValueError("'action.execute' is not grantable until action execution is exposed")
     if tool_name not in RUN_PLAN_GRANTABLE_TOOL_NAMES:
         raise ValueError(f"{tool_name!r} is not a run-plan grantable tool")
 
@@ -104,6 +104,18 @@ def _require_context_query_filters(
         return
     if not sources or not fields:
         raise ValueError(f"{label} grants for 'context.query' must include sources and fields")
+
+
+def _require_action_execute_refs(
+    *,
+    tool_name: str,
+    action_refs: tuple[str, ...],
+    label: str,
+) -> None:
+    if tool_name != "action.execute":
+        return
+    if not action_refs:
+        raise ValueError(f"{label} grants for 'action.execute' must include action_refs")
 
 
 def _validate_step(step_id: str, *, step_ids: set[str] | None) -> None:
@@ -175,12 +187,23 @@ def parse_run_plan_mcp_tool_grants(
                     label=f"mcp_tool_grants[{index}].fields",
                 )
             )
+            action_refs = tuple(
+                _as_string_list(
+                    item.get("action_refs", item.get("action_ref", [])),
+                    label=f"mcp_tool_grants[{index}].action_refs",
+                )
+            )
             for tool_name in dict.fromkeys(tools):
                 _validate_grant_tool(tool_name)
                 _require_context_query_filters(
                     tool_name=tool_name,
                     sources=sources,
                     fields=fields,
+                    label=f"mcp_tool_grants[{index}]",
+                )
+                _require_action_execute_refs(
+                    tool_name=tool_name,
+                    action_refs=action_refs,
                     label=f"mcp_tool_grants[{index}]",
                 )
                 grants.append(
@@ -195,6 +218,7 @@ def parse_run_plan_mcp_tool_grants(
                             item.get("resource_key"),
                             label=f"mcp_tool_grants[{index}].resource_key",
                         ),
+                        action_refs=action_refs,
                         sources=sources,
                         fields=fields,
                     )
@@ -214,6 +238,11 @@ def parse_run_plan_mcp_tool_grants(
                     tool_name=tool_name,
                     sources=(),
                     fields=(),
+                    label=f"step_tools[{step_id!r}]",
+                )
+                _require_action_execute_refs(
+                    tool_name=tool_name,
+                    action_refs=(),
                     label=f"step_tools[{step_id!r}]",
                 )
                 grants.append(RunPlanMcpToolGrant(step_id=step_id, tool_name=tool_name))

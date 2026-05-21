@@ -1281,8 +1281,9 @@ Implementation status:
 - Direct context reads stay available for safe default fields; fields beyond
   that safe set require an active run-plan step grant with explicit `sources`
   and `fields`.
-- Admin/setup tools and `action.execute` are rejected by run-plan schema/grant
-  validation until their own signed-off delivery exposes them.
+- Admin/setup tools are rejected by run-plan schema/grant validation until
+  their own signed-off delivery exposes them. `action.execute` moved to D10 and
+  requires explicit `action_refs`.
 - No migrations or legacy table cleanup were added.
 
 Verification commands:
@@ -1379,6 +1380,17 @@ Acceptance criteria:
 - Agent can execute the first real action only inside a granted run-plan step.
 - Result contains no secrets.
 - Audit is redacted and source-backed.
+
+Implementation status:
+
+- Delivered `action.execute` as a hidden MCP tool, available only through
+  run-plan-scoped grants.
+- Added `action.execute` grant parsing with required `action_refs`, plus active
+  step `action_refs` enforcement.
+- Registered `utils.image.generate` through the `openai-images` connector,
+  reusing the OpenAI Images wrapper and generated-assets persistence.
+- Kept `openaiImages.generate` compatibility path intact.
+- Added bridge, MCP, repository, schema, contract, and redaction tests.
 
 Verification commands:
 

@@ -15,6 +15,7 @@ from content_stack.actions.manifest import (
     ExecutableActionManifest,
     parse_action_manifest,
 )
+from content_stack.actions.openai_images import OpenAIImagesActionConnector
 from content_stack.actions.repository import (
     ActionCallOut,
     ActionDescribeOut,
@@ -22,6 +23,8 @@ from content_stack.actions.repository import (
     ActionRepository,
     ActionValidationOut,
 )
+
+DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -37,5 +40,6 @@ __all__ = [
     "ActionValidationIssue",
     "ActionValidationOut",
     "ExecutableActionManifest",
+    "OpenAIImagesActionConnector",
     "parse_action_manifest",
 ]

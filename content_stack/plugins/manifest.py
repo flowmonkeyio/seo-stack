@@ -350,8 +350,34 @@ BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 provider="openai-images",
                 capability="image-generation",
                 risk_level="cost",
-                input_schema=_OBJECT_SCHEMA,
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "size": {
+                            "type": "string",
+                            "enum": ["1024x1024", "1536x1024", "1024x1536"],
+                        },
+                        "quality": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high", "standard", "hd"],
+                        },
+                        "n": {"type": "integer"},
+                        "model": {"type": "string"},
+                        "output_format": {"type": "string", "enum": ["webp", "png", "jpeg"]},
+                    },
+                },
                 output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "openai-images",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "openai-images",
+                    "enforce_budget": True,
+                },
             ),
             ActionManifest(
                 key="web.scrape",

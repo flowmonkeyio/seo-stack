@@ -174,6 +174,29 @@ fields:
 }
 ```
 
+Action execution grants must name exact action refs:
+
+```json
+{
+  "grants": {
+    "mcp_tool_grants": [
+      {
+        "step_id": "generate-image",
+        "tool": "action.execute",
+        "action_refs": ["utils.image.generate"]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "generate-image",
+      "title": "Generate image",
+      "action_refs": ["utils.image.generate"]
+    }
+  ]
+}
+```
+
 The daemon enforces all of the following before a granted tool runs:
 
 - the caller token resolves to `stackos/run-plan-controller`
@@ -186,8 +209,8 @@ The daemon enforces all of the following before a granted tool runs:
 
 Admin/setup tools such as `auth.start`, `auth.revoke`, `plugin.enable`,
 `plugin.disable`, template save/fork, and `runPlan.update` cannot be granted by
-a run plan. `action.execute` is still withheld until the D10 action-execution
-surface is exposed.
+a run plan. `action.execute` is grantable only with explicit `action_refs`, and
+the active step must declare the same action ref.
 
 Direct `context.query`, `context.timeline`, `learning.query`,
 `experiment.query`, and `decision.query` remain available for safe default

@@ -1,7 +1,8 @@
 # StackOS Action Executor
 
-D08 adds the internal action execution foundation. It is intentionally a daemon
-substrate, not an agent decision layer.
+D08 added the internal action execution foundation. D10 exposes it through
+run-plan-scoped grants for the first utility action. It is intentionally a
+daemon substrate, not an agent decision layer.
 
 Agents and humans still decide what to do. StackOS only describes action
 contracts, validates explicit payloads, resolves daemon-held credentials, calls
@@ -62,15 +63,25 @@ vendor-operation tables.
 
 ## MCP Surface
 
-D08 exposes only read/discovery tools:
+Direct/read discovery tools:
 
 - `action.describe`
 - `action.validate`
 
-`action.execute` is not registered as an MCP tool after D09. The run-plan grant
-model is now in place for generic mutations, but generic action execution
-remains internal until D10 exposes the first safe real action through the same
-step-scoped path.
+Hidden, run-plan-scoped execution tool:
+
+- `action.execute`
+
+`action.execute` is not direct agent surface. It is callable only through a
+started run plan, exactly one active claimed step, an explicit
+`mcp_tool_grants` entry with `tool: "action.execute"`, and matching
+`action_refs`. The active step must also declare the same action ref in
+`action_refs`.
+
+The first registered connector is `openai-images` for `utils.image.generate`.
+It resolves the opaque credential ref inside the daemon, calls the existing
+OpenAI Images wrapper, persists base64 image bytes under generated assets, and
+returns local artifact URLs with no `b64_json` payload.
 
 ## Boundary
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,6 +39,7 @@ class ActionConnectorRequest:
     input_json: dict[str, Any]
     config_json: Mapping[str, Any]
     credential: ResolvedCredential | None = field(default=None, repr=False)
+    asset_dir: Path | None = None
     dry_run: bool = False
 
 

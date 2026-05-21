@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -264,9 +265,11 @@ class ActionRepository:
         session: Session,
         *,
         connectors: ActionConnectorRegistry | None = None,
+        asset_dir: Path | None = None,
     ) -> None:
         self._s = session
         self._connectors = connectors or DEFAULT_ACTION_CONNECTORS
+        self._asset_dir = asset_dir
 
     def describe(
         self,
@@ -288,7 +291,7 @@ class ActionRepository:
             manifest=manifest,
             connector_registered=registered,
             execution_available=registered,
-            agent_execute_available=False,
+            agent_execute_available=registered,
         )
 
     def validate(
@@ -737,6 +740,7 @@ class ActionRepository:
             input_json=input_json,
             config_json=manifest.config_json,
             credential=credential,
+            asset_dir=self._asset_dir,
             dry_run=dry_run,
         )
 

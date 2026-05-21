@@ -114,6 +114,7 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "decision.record" not in names
     assert "workflowTemplate.save" not in names
     assert "runPlan.claimStep" not in names
+    assert "action.execute" not in names
     assert "dataforseo.serp" not in names
 
 
@@ -531,6 +532,134 @@ def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
     assert before_claim["denied_tool_names"] == ["resource.upsert"]
     assert [tool["name"] for tool in after_claim["described_tools"]] == ["resource.upsert"]
     assert written["data"]["data_json"] == {"body": "bridge injected run token"}
+
+
+def test_bridge_executes_run_plan_granted_action_with_injected_token(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    created_project = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "project.create",
+            {
+                "slug": "bridge-action-grant",
+                "name": "Bridge Action Grant",
+                "domain": "bridge-action-grant.example",
+                "locale": "en-US",
+            },
+            request_id="project-create",
+        )
+    )
+    project_id = created_project["data"]["id"]
+    cred_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={"kind": "openai-images", "plaintext_payload": "sk-openai"},
+        headers=mcp_client._headers(),
+    )
+    cred_resp.raise_for_status()
+    auth_status = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "auth.status",
+            {"project_id": project_id, "provider_key": "openai-images"},
+            request_id="auth-status",
+        )
+    )
+    credential_ref = auth_status["connections"][0]["credential_ref"]
+    created_plan = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.action.run",
+                    "title": "Bridge action",
+                    "grants": {
+                        "mcp_tool_grants": [
+                            {
+                                "step_id": "generate",
+                                "tool": "action.execute",
+                                "action_refs": ["utils.image.generate"],
+                            }
+                        ]
+                    },
+                    "steps": [
+                        {
+                            "id": "generate",
+                            "title": "Generate",
+                            "action_refs": ["utils.image.generate"],
+                        }
+                    ],
+                },
+            },
+            request_id="run-plan-create",
+        )
+    )
+    run_plan_id = created_plan["data"]["id"]
+    started = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": run_plan_id},
+            request_id="run-plan-start",
+        )
+    )
+    run_id = started["data"]["run_id"]
+    _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "runPlan.claimStep",
+                "arguments": {"run_plan_id": run_plan_id, "step_id": "generate"},
+            },
+            request_id="claim-run-plan",
+        )
+    )
+    described = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {"run_id": run_id, "tool_names": ["action.execute"]},
+            request_id="describe-action-execute",
+        )
+    )
+    executed = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "action.execute",
+                "arguments": {
+                    "project_id": project_id,
+                    "action_ref": "utils.image.generate",
+                    "input_json": {"prompt": "editorial hero"},
+                    "credential_ref": credential_ref,
+                    "dry_run": True,
+                },
+            },
+            request_id="action-execute",
+        )
+    )
+
+    assert [tool["name"] for tool in described["described_tools"]] == ["action.execute"]
+    assert executed["data"]["dry_run"] is True
+    assert executed["data"]["credential_ref"] == credential_ref
 
 
 def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:

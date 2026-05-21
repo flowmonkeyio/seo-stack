@@ -83,7 +83,7 @@ def test_run_plan_schema_rejects_admin_tool_grant() -> None:
     assert "admin/setup tool" in result.errors[0].message
 
 
-def test_run_plan_schema_rejects_action_execute_until_exposed() -> None:
+def test_run_plan_schema_requires_action_execute_refs() -> None:
     data = _plan_dict()
     data["grants"] = {
         "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "action.execute"}],
@@ -92,7 +92,25 @@ def test_run_plan_schema_rejects_action_execute_until_exposed() -> None:
     result = validate_run_plan_obj(data)
 
     assert result.valid is False
-    assert "action.execute" in result.errors[0].message
+    assert "action_refs" in result.errors[0].message
+
+
+def test_run_plan_schema_accepts_action_execute_with_refs() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [
+            {
+                "step_id": "create-campaign",
+                "tool": "action.execute",
+                "action_refs": ["utils.image.generate"],
+            }
+        ],
+    }
+    data["steps"][0]["action_refs"] = ["utils.image.generate"]
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is True
 
 
 def test_run_plan_schema_requires_context_query_grant_filters() -> None:

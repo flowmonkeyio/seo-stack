@@ -959,6 +959,15 @@ def _grant_matches_arguments(
     grant: RunPlanMcpToolGrant,
     arguments: dict[str, Any],
 ) -> bool:
+    if grant.action_refs:
+        requested_action_ref = arguments.get("action_ref")
+        if not isinstance(requested_action_ref, str):
+            plugin_slug = arguments.get("plugin_slug")
+            action_key = arguments.get("action_key")
+            if isinstance(plugin_slug, str) and isinstance(action_key, str):
+                requested_action_ref = f"{plugin_slug}.{action_key}"
+        if requested_action_ref not in set(grant.action_refs):
+            return False
     if grant.plugin_slug is not None and arguments.get("plugin_slug") != grant.plugin_slug:
         return False
     if grant.resource_key is not None and arguments.get("resource_key") != grant.resource_key:
@@ -1049,6 +1058,11 @@ def _running_run_plan_step(ctx: Any, tool_name: str) -> tuple[RunPlan, RunPlanSt
     return plan, steps[0]
 
 
+def active_run_plan_step(ctx: Any, tool_name: str) -> tuple[RunPlan, RunPlanStep]:
+    """Return the single running step for a valid run-plan controller token."""
+    return _running_run_plan_step(ctx, tool_name)
+
+
 def _check_run_plan_dynamic_grant(tool_name: str, ctx: Any, parsed_arguments: Any) -> None:
     arguments = _model_to_dict(parsed_arguments)
     plan, step = _running_run_plan_step(ctx, tool_name)
@@ -1098,6 +1112,24 @@ def _check_run_plan_dynamic_grant(tool_name: str, ctx: Any, parsed_arguments: An
             step_id=step.step_id,
             allowed=allowed,
         )
+    if tool_name == "action.execute":
+        requested_action_ref = arguments.get("action_ref")
+        if not isinstance(requested_action_ref, str):
+            plugin_slug = arguments.get("plugin_slug")
+            action_key = arguments.get("action_key")
+            if isinstance(plugin_slug, str) and isinstance(action_key, str):
+                requested_action_ref = f"{plugin_slug}.{action_key}"
+        if not isinstance(requested_action_ref, str) or requested_action_ref not in set(
+            step.action_refs_json or []
+        ):
+            _deny_run_plan_tool(
+                tool_name,
+                reason="action.execute must target an action_ref declared on the active step",
+                run_id=getattr(ctx, "run_id", None),
+                run_plan_id=plan.id,
+                step_id=step.step_id,
+                allowed=allowed,
+            )
     if not any(_grant_matches_arguments(grant, arguments) for grant in grants):
         _deny_run_plan_tool(
             tool_name,
@@ -1144,6 +1176,7 @@ __all__ = [
     "SKILL_TOOL_GRANTS",
     "SYSTEM_SKILL",
     "TEST_SKILL",
+    "active_run_plan_step",
     "check_call_grant",
     "check_grant",
     "is_full_grant",

@@ -314,6 +314,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.claimStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.recordStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
+    assert "action.execute" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
@@ -346,6 +347,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
         "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
+        "action.execute",
         "artifact.create",
         "context.query",
         "context.snapshot",

@@ -135,10 +135,9 @@ claimed step, and an explicit step grant:
 - `experiment.recordDecision`
 - `decision.record`
 
-Generic execution is still withheld until D10 wires it into the same grant
-model:
+Generic execution uses the same grant model:
 
-- `action.execute`
+- `action.execute` with explicit `action_refs`
 
 Credential setup is metadata-driven by plugin providers, but secrets stay
 outside agent context. Provider manifests declare `auth_type`; the daemon maps

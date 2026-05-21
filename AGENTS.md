@@ -107,11 +107,13 @@ Run-plan grants are static configuration in `run_plans.grant_snapshot_json`.
 The bridge may cache and describe the active step's granted tools for agent UX,
 but the daemon-side MCP dispatcher is authoritative. It must require a
 `stackos/run-plan-controller` token, a started plan, exactly one running step,
-matching `project_id`, and an explicit grant before any generic mutation or
-advanced `context.query` runs. Direct context reads are limited to the safe
-field set; fields outside that set require explicit `sources` and `fields` in
-the run-plan grant. Admin/setup tools and `action.execute` are not run-plan
-grantable until their signed-off delivery adds that surface.
+matching `project_id`, and an explicit grant before any generic mutation,
+advanced `context.query`, or `action.execute` runs. Direct context reads are
+limited to the safe field set; fields outside that set require explicit
+`sources` and `fields` in the run-plan grant. `action.execute` grants require
+explicit `action_refs`, and the active step must declare the same action ref.
+Admin/setup tools are not run-plan grantable until their signed-off delivery
+adds that surface.
 
 ## Existing Content-Stack Compatibility
 

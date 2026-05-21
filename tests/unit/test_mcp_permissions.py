@@ -94,6 +94,7 @@ def test_check_grant_passes_for_allowed_tool() -> None:
     check_grant("article.setEdited", "_test_editor")
     check_grant("runPlan.claimStep", "stackos/run-plan-controller")
     check_grant("runPlan.recordStep", "stackos/run-plan-controller")
+    check_grant("action.execute", "stackos/run-plan-controller")
 
 
 def test_check_grant_raises_for_forbidden_tool() -> None:

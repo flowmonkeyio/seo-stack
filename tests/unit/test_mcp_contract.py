@@ -70,6 +70,7 @@ from content_stack.mcp.server import (
         "auth.start",
         "auth.test",
         "auth.revoke",
+        "action.execute",
         "context.snapshot",
         "learning.create",
         "learning.update",

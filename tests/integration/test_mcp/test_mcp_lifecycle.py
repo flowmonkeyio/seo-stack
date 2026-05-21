@@ -13,7 +13,7 @@ from .conftest import MCPClient
 # Per-namespace expected counts — derived from the registrations in
 # ``content_stack.mcp.tools``. Update intentionally when adding tools.
 EXPECTED_NAMESPACE_COUNTS = {
-    "action": 2,
+    "action": 3,
     "ahrefs": 2,
     "article": 18,
     "artifact": 3,
@@ -65,7 +65,7 @@ EXPECTED_NAMESPACE_COUNTS = {
 
 # Total = sum of values; locked here to flag accidental drops.
 EXPECTED_TOTAL = sum(EXPECTED_NAMESPACE_COUNTS.values())
-# 163 after adding agent-owned schedule.remove parity.
+# Total follows EXPECTED_NAMESPACE_COUNTS; update intentionally when adding tools.
 
 
 def test_initialize_handshake_succeeds(mcp_client: MCPClient) -> None:
