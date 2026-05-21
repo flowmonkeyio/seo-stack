@@ -14,6 +14,7 @@ from content_stack.mcp.server import ToolRegistry
 from content_stack.mcp.tools import (
     articles,
     artifacts,
+    auth,
     authors,
     clusters,
     cost,
@@ -33,6 +34,7 @@ from content_stack.mcp.tools import (
 def register_all(registry: ToolRegistry) -> None:
     """Populate ``registry`` with every M3-shipped tool."""
     projects.register(registry)
+    auth.register(registry)
     clusters.register(registry)
     articles.register(registry)
     interlinks.register(registry)

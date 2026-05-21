@@ -561,6 +561,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Auth Providers
+         * @description List provider auth metadata synced from StackOS plugin manifests.
+         */
+        get: operations["list_auth_providers_api_v1_auth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/ui-token": {
         parameters: {
             query?: never;
@@ -1170,6 +1190,86 @@ export interface paths {
          * @description Create an artifact reference through the local/admin REST surface.
          */
         post: operations["create_artifact_api_v1_projects__project_id__artifacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/auth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Revoke
+         * @description Revoke a provider credential through the local-admin REST surface.
+         */
+        post: operations["auth_revoke_api_v1_projects__project_id__auth_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Status
+         * @description Return sanitized auth status and opaque credential references.
+         */
+        get: operations["auth_status_api_v1_projects__project_id__auth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/auth/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Test
+         * @description Run a sanitized provider credential test without returning secrets.
+         */
+        post: operations["auth_test_api_v1_projects__project_id__auth_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/auth/{provider_key}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Start
+         * @description Start a local-human setup flow without accepting or returning secrets.
+         */
+        post: operations["auth_start_api_v1_projects__project_id__auth__provider_key__start_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2681,6 +2781,143 @@ export interface components {
             /** Width */
             width?: number | null;
         };
+        /** AuthProviderOut */
+        AuthProviderOut: {
+            /** Auth Type */
+            auth_type: string;
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Plugin Id */
+            plugin_id: number | null;
+            /** Plugin Slug */
+            plugin_slug: string | null;
+            /** Scopes */
+            scopes: string[];
+        };
+        /** AuthRevokeOut */
+        AuthRevokeOut: {
+            /** Credential Ref */
+            credential_ref: string;
+            /** Project Id */
+            project_id: number | null;
+            /** Provider Key */
+            provider_key: string;
+            /**
+             * Revoked At
+             * Format: date-time
+             */
+            revoked_at: string;
+            /**
+             * Status
+             * @default revoked
+             */
+            status: string;
+        };
+        /**
+         * AuthRevokeRequest
+         * @description Local-admin revoke request using an opaque ref or provider key.
+         * @example {
+         *       "credential_ref": "cred_..."
+         *     }
+         */
+        AuthRevokeRequest: {
+            /** Credential Ref */
+            credential_ref?: string | null;
+            /** Provider Key */
+            provider_key?: string | null;
+        };
+        /** AuthStartOut */
+        AuthStartOut: {
+            /** Auth Type */
+            auth_type: string;
+            /** Authorization Url */
+            authorization_url?: string | null;
+            /** Credential Ref */
+            credential_ref?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Provider Key */
+            provider_key: string;
+            /** Redirect Uri */
+            redirect_uri?: string | null;
+            /** Setup Url */
+            setup_url?: string | null;
+            /** State */
+            state?: string | null;
+            /** Status */
+            status: string;
+        };
+        /**
+         * AuthStartRequest
+         * @description Local-admin setup request. It never carries a secret.
+         * @example {}
+         */
+        AuthStartRequest: {
+            /** Redirect Uri */
+            redirect_uri?: string | null;
+        };
+        /** AuthStatusOut */
+        AuthStatusOut: {
+            /** Connections */
+            connections: components["schemas"]["CredentialConnectionOut"][];
+            /** Project Id */
+            project_id: number | null;
+            /** Provider Key */
+            provider_key: string | null;
+            /** Providers */
+            providers: components["schemas"]["AuthProviderOut"][];
+        };
+        /** AuthTestOut */
+        AuthTestOut: {
+            /** Checked At */
+            checked_at: string;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Next Action */
+            next_action?: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Provider Key */
+            provider_key: string;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string;
+        };
+        /**
+         * AuthTestRequest
+         * @description Sanitized auth test request using an opaque ref or provider key.
+         * @example {
+         *       "provider_key": "firecrawl"
+         *     }
+         */
+        AuthTestRequest: {
+            /** Credential Ref */
+            credential_ref?: string | null;
+            /** Provider Key */
+            provider_key?: string | null;
+        };
         /**
          * AuthorCreateRequest
          * @description Body for ``POST /projects/{id}/authors``.
@@ -3067,6 +3304,36 @@ export interface components {
             kind: components["schemas"]["RedirectKind"];
             /** To Article Id */
             to_article_id?: number | null;
+        };
+        /** CredentialConnectionOut */
+        CredentialConnectionOut: {
+            /** Account */
+            account?: {
+                [key: string]: unknown;
+            } | null;
+            /** Auth Type */
+            auth_type: string;
+            /** Credential Ref */
+            credential_ref: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Tested At */
+            last_tested_at: string | null;
+            /** Project Id */
+            project_id: number | null;
+            /** Provider Key */
+            provider_key: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Scopes */
+            scopes: string[];
+            /**
+             * Setup Required
+             * @default false
+             */
+            setup_required: boolean;
+            /** Status */
+            status: string;
         };
         /** DriftBaselineOut */
         DriftBaselineOut: {
@@ -5036,6 +5303,45 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[AuthRevokeOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AuthRevokeOut_: {
+            data: components["schemas"]["AuthRevokeOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[AuthStartOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AuthStartOut_: {
+            data: components["schemas"]["AuthStartOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[AuthTestOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_AuthTestOut_: {
+            data: components["schemas"]["AuthTestOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[AuthorOut]
          * @example {
          *       "project_id": 1
@@ -5369,6 +5675,14 @@ export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateR
 export type SchemaArtifactOut = components['schemas']['ArtifactOut'];
 export type SchemaAssetCreateRequest = components['schemas']['AssetCreateRequest'];
 export type SchemaAssetUpdateRequest = components['schemas']['AssetUpdateRequest'];
+export type SchemaAuthProviderOut = components['schemas']['AuthProviderOut'];
+export type SchemaAuthRevokeOut = components['schemas']['AuthRevokeOut'];
+export type SchemaAuthRevokeRequest = components['schemas']['AuthRevokeRequest'];
+export type SchemaAuthStartOut = components['schemas']['AuthStartOut'];
+export type SchemaAuthStartRequest = components['schemas']['AuthStartRequest'];
+export type SchemaAuthStatusOut = components['schemas']['AuthStatusOut'];
+export type SchemaAuthTestOut = components['schemas']['AuthTestOut'];
+export type SchemaAuthTestRequest = components['schemas']['AuthTestRequest'];
 export type SchemaAuthorCreateRequest = components['schemas']['AuthorCreateRequest'];
 export type SchemaAuthorOut = components['schemas']['AuthorOut'];
 export type SchemaAuthorUpdateRequest = components['schemas']['AuthorUpdateRequest'];
@@ -5389,6 +5703,7 @@ export type SchemaComplianceUpdateRequest = components['schemas']['ComplianceUpd
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaCreateInterlinkRequest = components['schemas']['CreateInterlinkRequest'];
 export type SchemaCreateRedirectRequest = components['schemas']['CreateRedirectRequest'];
+export type SchemaCredentialConnectionOut = components['schemas']['CredentialConnectionOut'];
 export type SchemaDriftBaselineOut = components['schemas']['DriftBaselineOut'];
 export type SchemaDriftSnapshotRequest = components['schemas']['DriftSnapshotRequest'];
 export type SchemaEeatBulkRecordRequest = components['schemas']['EeatBulkRecordRequest'];
@@ -5488,6 +5803,9 @@ export type SchemaWriteResponseArticleOut = components['schemas']['WriteResponse
 export type SchemaWriteResponseArticlePublishOut = components['schemas']['WriteResponse_ArticlePublishOut_'];
 export type SchemaWriteResponseArticleVersionOut = components['schemas']['WriteResponse_ArticleVersionOut_'];
 export type SchemaWriteResponseArtifactOut = components['schemas']['WriteResponse_ArtifactOut_'];
+export type SchemaWriteResponseAuthRevokeOut = components['schemas']['WriteResponse_AuthRevokeOut_'];
+export type SchemaWriteResponseAuthStartOut = components['schemas']['WriteResponse_AuthStartOut_'];
+export type SchemaWriteResponseAuthTestOut = components['schemas']['WriteResponse_AuthTestOut_'];
 export type SchemaWriteResponseAuthorOut = components['schemas']['WriteResponse_AuthorOut_'];
 export type SchemaWriteResponseBulkIngestResponse = components['schemas']['WriteResponse_BulkIngestResponse_'];
 export type SchemaWriteResponseClusterOut = components['schemas']['WriteResponse_ClusterOut_'];
@@ -6594,6 +6912,37 @@ export interface operations {
             };
         };
     };
+    list_auth_providers_api_v1_auth_providers_get: {
+        parameters: {
+            query?: {
+                provider_key?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_ui_token_api_v1_auth_ui_token_get: {
         parameters: {
             query?: never;
@@ -7628,6 +7977,145 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_ArtifactOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_revoke_api_v1_projects__project_id__auth_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AuthRevokeOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_status_api_v1_projects__project_id__auth_status_get: {
+        parameters: {
+            query?: {
+                provider_key?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_test_api_v1_projects__project_id__auth_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AuthTestOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_start_api_v1_projects__project_id__auth__provider_key__start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AuthStartRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_AuthStartOut_"];
                 };
             };
             /** @description Validation Error */

@@ -1,0 +1,83 @@
+"""MCP tests for the generic StackOS auth-provider boundary."""
+
+from __future__ import annotations
+
+import json
+
+from pytest_httpx import HTTPXMock
+
+from .conftest import MCPClient
+
+
+def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> dict:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={
+            "kind": "firecrawl",
+            "plaintext_payload": "fc-secret",
+            "config_json": {"api_key": "fc-secret"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    return response.json()["data"]
+
+
+def test_auth_status_and_test_return_sanitized_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    _create_firecrawl_credential(mcp_client, project_id)
+
+    status = mcp_client.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "firecrawl"},
+    )
+
+    credential_ref = status["connections"][0]["credential_ref"]
+    assert credential_ref.startswith("cred_")
+    rendered_status = json.dumps(status)
+    assert "fc-secret" not in rendered_status
+    assert "encrypted_payload" not in rendered_status
+    assert "plaintext_payload" not in rendered_status
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.firecrawl.dev/v2/scrape",
+        json={"data": {"markdown": "# ok"}},
+    )
+    tested = mcp_client.call_tool_structured(
+        "auth.test",
+        {"project_id": project_id, "credential_ref": credential_ref},
+    )
+
+    assert tested["data"]["ok"] is True
+    assert tested["data"]["provider_key"] == "firecrawl"
+    assert tested["data"]["credential_ref"] == credential_ref
+    assert "fc-secret" not in json.dumps(tested)
+
+
+def test_local_admin_auth_mutations_are_not_system_granted(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    for tool_name, arguments in [
+        ("auth.start", {"project_id": project_id, "provider_key": "firecrawl"}),
+        ("auth.revoke", {"project_id": project_id, "provider_key": "firecrawl"}),
+        (
+            "integration.set",
+            {
+                "project_id": project_id,
+                "kind": "firecrawl",
+                "plaintext_payload_b64": "ZmMtc2VjcmV0",
+            },
+        ),
+        ("integration.remove", {"credential_id": 1}),
+        ("gscOauth.start", {"project_id": project_id}),
+    ]:
+        err = mcp_client.call_tool_error(tool_name, arguments)
+        assert err["code"] == -32007
+        assert err["message"] == "ToolNotGrantedError"

@@ -129,6 +129,46 @@ def test_callback_exchanges_code_and_persists_tokens(
     config = gsc_rows[0]["config_json"] or {}
     assert "oauth_state" not in config
 
+    auth_status = api.get(f"/api/v1/projects/{project_id}/auth/status?provider_key=gsc")
+    connections = auth_status.json()["connections"]
+    assert connections[0]["credential_ref"].startswith("cred_")
+    assert connections[0]["status"] == "connected"
+
+
+def test_callback_consumes_oauth_state_once(
+    api: TestClient,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    auth = api.post(
+        "/api/v1/integrations/gsc/oauth/authorize",
+        json={"project_id": project_id},
+    )
+    state = auth.json()["state"]
+    httpx_mock.add_response(
+        method="POST",
+        url="https://oauth2.googleapis.com/token",
+        json={
+            "access_token": "ya29.once",
+            "refresh_token": "1//rt-once",
+            "expires_in": 3600,
+            "scope": "webmasters.readonly",
+            "token_type": "Bearer",
+        },
+    )
+
+    first = api.get(
+        "/api/v1/integrations/gsc/oauth/callback",
+        params={"code": "auth-code-once", "state": state},
+    )
+    assert first.status_code == 200
+
+    second = api.get(
+        "/api/v1/integrations/gsc/oauth/callback",
+        params={"code": "auth-code-twice", "state": state},
+    )
+    assert second.status_code == 400
+
 
 def test_callback_accepts_browser_redirect_without_bearer_header(
     api: TestClient,

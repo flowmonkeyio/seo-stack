@@ -45,7 +45,12 @@ def test_check_grant_for_system_skill_covers_agent_owned_operations() -> None:
     check_grant("run.start", SYSTEM_SKILL)
     check_grant("project.create", SYSTEM_SKILL)
     check_grant("article.markPublished", SYSTEM_SKILL)
-    check_grant("gscOauth.start", SYSTEM_SKILL)
+    check_grant("auth.status", SYSTEM_SKILL)
+    check_grant("auth.test", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("gscOauth.start", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("integration.set", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("dataforseo.serp", SYSTEM_SKILL)
 

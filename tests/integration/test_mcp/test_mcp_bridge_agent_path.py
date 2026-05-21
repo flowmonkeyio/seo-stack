@@ -8,7 +8,6 @@ remain reachable through ``toolbox.call``.
 
 from __future__ import annotations
 
-import base64
 import json
 from typing import Any
 
@@ -121,6 +120,7 @@ def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPCli
             "tool_names": [
                 "project.activate",
                 "schedule.remove",
+                "integration.test",
                 "integration.set",
                 "dataforseo.serp",
             ]
@@ -132,9 +132,10 @@ def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPCli
     assert [tool["name"] for tool in payload["described_tools"]] == [
         "project.activate",
         "schedule.remove",
-        "integration.set",
+        "integration.test",
     ]
-    assert payload["denied_tool_names"] == ["dataforseo.serp"]
+    assert payload["denied_tool_names"] == ["integration.set", "dataforseo.serp"]
+    assert "admin_gated_tool_names" not in payload
 
 
 def test_bridge_toolbox_operates_former_ui_actions(
@@ -250,22 +251,13 @@ def test_bridge_toolbox_operates_former_ui_actions(
         url="https://api.firecrawl.dev/v2/scrape",
         json={"data": {"markdown": "# ok"}},
     )
-    credential = _structured(
-        _tool_call(
-            proxy,
-            client,
-            "toolbox.call",
-            {
-                "tool_name": "integration.set",
-                "arguments": {
-                    "project_id": project_id,
-                    "kind": "firecrawl",
-                    "plaintext_payload_b64": base64.b64encode(b"fc-key").decode("ascii"),
-                },
-            },
-            request_id="integration-set",
-        )
+    credential_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={"kind": "firecrawl", "plaintext_payload": "fc-key"},
+        headers=mcp_client._headers(),
     )
+    credential_resp.raise_for_status()
+    credential = credential_resp.json()
     tested = _structured(
         _tool_call(
             proxy,

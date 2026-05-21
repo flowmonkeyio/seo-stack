@@ -31,6 +31,7 @@ from content_stack.api.pagination import (
     page_response,
     pagination_params,
 )
+from content_stack.auth_providers import AuthRepository
 from content_stack.config import Settings
 from content_stack.db.models import (
     CompliancePosition,
@@ -1208,7 +1209,7 @@ async def gsc_oauth_info(
     """Return local GSC OAuth setup details without creating an OAuth state."""
     missing = _missing_gsc_oauth_env_vars()
     return GscOAuthInfoResponse(
-        redirect_uri=_default_gsc_redirect_uri(settings),
+        redirect_uri=AuthRepository.default_gsc_redirect_uri(settings),
         configured=len(missing) == 0,
         missing=missing,
         hint=_gsc_oauth_setup_hint() if missing else None,
@@ -1223,60 +1224,37 @@ async def gsc_oauth_authorize(
 ) -> GscAuthorizeResponse:
     """Return the Google OAuth consent URL the operator opens in their browser.
 
-    Stores the random ``state`` nonce in
-    ``integration_credentials.config_json.oauth_state`` so the callback
-    can validate it.
+    Delegates to the generic auth-provider flow, which stores the state
+    in ``oauth_states`` while preserving the legacy callback URL.
     """
-    import secrets
+    from content_stack.repositories.base import ValidationError
 
-    from content_stack.integrations.gsc import build_authorize_url
-    from content_stack.mcp.errors import IntegrationDownError
-
-    state = secrets.token_urlsafe(32)
-    redirect_uri = body.redirect_uri or _default_gsc_redirect_uri(settings)
     try:
-        url = build_authorize_url(state=state, redirect_uri=redirect_uri)
-    except IntegrationDownError as exc:
-        missing = exc.data.get("missing", [])
+        env = AuthRepository(session).start(
+            project_id=body.project_id,
+            provider_key="gsc",
+            settings=settings,
+            redirect_uri=body.redirect_uri,
+        )
+    except ValidationError as exc:
         raise HTTPException(
             status_code=422,
             detail={
                 "detail": exc.detail,
                 "code": -32602,
                 "retryable": False,
-                "data": {
-                    "vendor": "gsc",
-                    "missing": missing,
-                },
-                "hint": (_gsc_oauth_setup_hint()),
+                "data": exc.data,
+                "hint": exc.data.get("hint") or _gsc_oauth_setup_hint(),
             },
         ) from exc
-
-    # Persist the nonce on a placeholder row so the callback can find
-    # the project + state pair by state value alone.
-    repo = IntegrationCredentialRepository(session)
-    config = {
-        "oauth_state": state,
-        "redirect_uri": redirect_uri,
-    }
-    # Empty plaintext is fine — the row is a placeholder until the
-    # callback fills it in. AAD is bound to ``(project_id, kind)`` so
-    # the row can't be moved between projects.
-    repo.set(
-        project_id=body.project_id,
-        kind="gsc",
-        plaintext_payload=b"{}",
-        config_json=config,
-    )
+    assert env.data.authorization_url is not None
+    assert env.data.state is not None
+    assert env.data.redirect_uri is not None
     return GscAuthorizeResponse(
-        authorization_url=url,
-        state=state,
-        redirect_uri=redirect_uri,
+        authorization_url=env.data.authorization_url,
+        state=env.data.state,
+        redirect_uri=env.data.redirect_uri,
     )
-
-
-def _default_gsc_redirect_uri(settings: Settings) -> str:
-    return f"http://{settings.host}:{settings.port}/api/v1/integrations/gsc/oauth/callback"
 
 
 def _missing_gsc_oauth_env_vars() -> list[str]:
@@ -1306,17 +1284,20 @@ async def gsc_oauth_callback(
     from content_stack.db.models import IntegrationCredential
     from content_stack.integrations.gsc import exchange_code
 
-    # Locate the placeholder row by state. The state nonce lives in
-    # ``config_json.oauth_state``; we filter at the DB level on
-    # ``kind='gsc'`` and post-filter on the JSON column (SQLite's JSON
-    # functions are too version-dependent to rely on at the ORM layer).
-    candidates = session.exec(
-        select(IntegrationCredential).where(IntegrationCredential.kind == "gsc")
-    ).all()
-    matched = next(
-        (r for r in candidates if (r.config_json or {}).get("oauth_state") == state),
-        None,
-    )
+    auth_repo = AuthRepository(session)
+    oauth_state = auth_repo.consume_oauth_state(state=state, provider_key="gsc")
+    matched = None
+    if oauth_state is not None and oauth_state.integration_credential_id is not None:
+        matched = session.get(IntegrationCredential, oauth_state.integration_credential_id)
+    if matched is None:
+        # Compatibility fallback for rows created before generic oauth_states.
+        candidates = session.exec(
+            select(IntegrationCredential).where(IntegrationCredential.kind == "gsc")
+        ).all()
+        matched = next(
+            (r for r in candidates if (r.config_json or {}).get("oauth_state") == state),
+            None,
+        )
     if matched is None:
         raise HTTPException(
             status_code=400,
@@ -1327,7 +1308,7 @@ async def gsc_oauth_callback(
         )
     redirect_uri = (matched.config_json or {}).get(
         "redirect_uri",
-        _default_gsc_redirect_uri(settings),
+        AuthRepository.default_gsc_redirect_uri(settings),
     )
     tokens = await exchange_code(code=code, redirect_uri=redirect_uri)
     payload_bytes = json.dumps(tokens).encode("utf-8")
@@ -1346,6 +1327,15 @@ async def gsc_oauth_callback(
         config_json=config,
         expires_at=expires_at,
     )
+    if matched.id is not None:
+        credential = auth_repo.sync_credential_for_integration(matched.id)
+        auth_repo.record_refresh_event(
+            credential=credential,
+            provider_key="gsc",
+            status="connected",
+            metadata_json={"oauth_callback": True, "token_payload": tokens},
+        )
+        session.commit()
     body = (
         "<!doctype html><html><head><meta charset='utf-8'>"
         "<title>GSC connected</title></head><body>"

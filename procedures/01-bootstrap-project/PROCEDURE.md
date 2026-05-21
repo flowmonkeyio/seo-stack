@@ -125,12 +125,14 @@ operator has supplied the missing artifact.
    ``on_failure=human_review``: the operator can skip this for now
    and come back; procedure 4 will refuse to run until at least one
    ``is_primary`` target exists.
-6. **integration-creds** — Prompt the operator for API keys for
+6. **integration-creds** — Identify required auth providers for
    DataForSEO / Firecrawl / GSC OAuth (12-step setup deferred to
-   ``docs/api-keys.md``) / OpenAI Images / Reddit / Ahrefs / Jina.
-   Optional; persists via ``integration.set`` (encrypted via M4's
-   AES-GCM seam). ``on_failure=human_review``: same pause-and-resume
-   pattern as the publish-target step.
+   ``docs/api-keys.md``) / OpenAI Images / Reddit / Ahrefs / Jina,
+   then ask the operator to complete setup in the local UI/auth route.
+   Agents verify with ``auth.status`` and ``auth.test`` using opaque
+   credential refs; they do not call ``integration.set`` or receive
+   secrets. ``on_failure=human_review``: same pause-and-resume pattern
+   as the publish-target step.
 7. **verify** — Run a ``doctor``-equivalent sweep: project active,
    voice set, EEAT seeded with all 8 dimensions covered, integrations
    decrypt cleanly, primary publish target reachable. Emits a final

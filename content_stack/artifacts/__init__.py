@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from content_stack.artifacts.redaction import redact_secrets
+from content_stack.artifacts.redaction import redact_secret_text, redact_secrets
 
-__all__ = ["redact_secrets"]
+__all__ = ["redact_secret_text", "redact_secrets"]

@@ -17,6 +17,7 @@ from content_stack.api.articles import (
     project_router as articles_project_router,
 )
 from content_stack.api.auth import router as auth_router
+from content_stack.api.auth_providers import router as auth_providers_router
 from content_stack.api.authors import router as authors_router
 from content_stack.api.clusters import (
     cluster_router as clusters_cluster_router,
@@ -73,6 +74,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(health_router)
     # Auth bootstrap (whitelisted; UI fetches its bearer token at boot).
     app.include_router(auth_router)
+    # StackOS auth provider boundary.
+    app.include_router(auth_providers_router)
     # Meta (enums, observability).
     app.include_router(meta_router)
     # StackOS plugin/catalog discovery.

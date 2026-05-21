@@ -17,6 +17,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "article": 18,
     "artifact": 3,
     "asset": 4,
+    "auth": 4,
     "author": 5,
     "budget": 4,
     "catalog": 2,

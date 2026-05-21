@@ -57,7 +57,7 @@ class _FakeClient:
                 {
                     "jsonrpc": "2.0",
                     "id": body["id"],
-                    "result": {"tools": [_tool("article.get"), _tool("integration.set")]},
+                    "result": {"tools": [_tool("article.get"), _tool("integration.test")]},
                 }
             )
         tool_name = body["params"]["name"]
@@ -121,6 +121,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     catalog = {
         name: _tool(name)
         for name in [
+            "integration.test",
             "integration.set",
             "article.get",
             "dataforseo.serp",
@@ -137,6 +138,7 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
             "run_id": 7,
             "tool_names": [
                 "integration.set",
+                "integration.test",
                 "article.get",
                 "dataforseo.serp",
                 "cost.queryProject",
@@ -150,14 +152,15 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     payload = _structured(response)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
-        "integration.set",
+        "integration.test",
         "article.get",
         "dataforseo.serp",
         "cost.queryProject",
     ]
     assert payload["current_step_tool_names"] == ["article.get", "dataforseo.serp"]
-    assert payload["denied_tool_names"] == ["openaiImages.generate"]
+    assert payload["denied_tool_names"] == ["integration.set", "openaiImages.generate"]
     assert payload["unknown_tool_names"] == ["missing"]
+    assert "admin_gated_tool_names" not in payload
 
 
 def test_bridge_caches_run_token_and_step_grants() -> None:
@@ -196,7 +199,10 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "provider.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "resource.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "artifact.get" in _AGENT_VISIBLE_TOOL_NAMES
-    assert "integration.set" in _AGENT_BASE_TOOLBOX_NAMES
+    assert "auth.status" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "auth.test" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
     assert "cost.queryProject" in _AGENT_BASE_TOOLBOX_NAMES
     assert "publish.recordPublish" in _AGENT_BASE_TOOLBOX_NAMES
@@ -204,8 +210,15 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
     assert {
         "artifact.create",
+        "auth.revoke",
+        "auth.start",
+        "gscOauth.start",
+        "integration.remove",
+        "integration.set",
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",
@@ -252,10 +265,7 @@ def test_bridge_setup_surface_covers_observer_ui_mutations() -> None:
         "eeat.toggle",
         "gsc.rollup",
         "gsc.bulkIngest",
-        "gscOauth.start",
-        "integration.set",
         "integration.test",
-        "integration.remove",
         "interlink.apply",
         "interlink.bulkApply",
         "interlink.dismiss",
@@ -368,9 +378,9 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
         "params": {
             "name": "toolbox.call",
             "arguments": {
-                "tool_name": "integration.set",
+                "tool_name": "integration.test",
                 "run_id": 7,
-                "arguments": {"project_id": 1, "kind": "wordpress", "payload": {}},
+                "arguments": {"credential_id": 1},
             },
         },
     }
@@ -378,12 +388,8 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
     response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=101)
     structured = _structured(response)
 
-    assert structured["tool"] == "integration.set"
-    assert structured["arguments"] == {
-        "project_id": 1,
-        "kind": "wordpress",
-        "payload": {},
-    }
+    assert structured["tool"] == "integration.test"
+    assert structured["arguments"] == {"credential_id": 1}
 
 
 def test_bridge_proxy_rejects_hidden_direct_tool_calls() -> None:

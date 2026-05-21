@@ -11,12 +11,18 @@ spec; this doc is the operator-facing how-to.
 Recommended setup flow:
 
 1. Let the agent identify the vendors needed for the current procedure.
-2. Open the project integrations page the agent gives you, for example
+2. Let the agent call `auth.status` to see which provider refs already exist.
+3. Open the project integrations page the agent gives you, for example
    ``http://localhost:5180/projects/1/integrations?required=dataforseo,firecrawl``.
-3. Connect vendors from the named cards. Do not paste secrets into agent
+4. Connect vendors from the named cards. Do not paste secrets into agent
    chat and do not add vendor keys to the website repository.
-4. Return to the agent. The agent should run the relevant
-   ``integration.test`` / ``integration.testGsc`` probe before continuing.
+5. Return to the agent. The agent should run `auth.test` with the opaque
+   `credential_ref` or provider key before continuing.
+
+`integration_credentials` is still the encrypted backing table, but agents use
+the generic auth-provider boundary. `auth.status` and `auth.test` return
+sanitized provider state and credential refs; local UI/REST setup is the only
+place plaintext keys or OAuth secrets are accepted.
 
 ---
 
@@ -98,7 +104,8 @@ Then in the content-stack UI:
 - Open Integrations → Google Search Console → **Connect GSC**.
 - The daemon redirects you to Google's consent screen.
 - Confirm and you're sent back to a "you can close this tab" page.
-- The token bundle is now encrypted in ``integration_credentials``.
+- The token bundle is now encrypted in ``integration_credentials`` and exposed
+  to agents only as an opaque auth credential ref.
   The ``oauth_refresh`` worker (``make oauth-refresh`` for ad-hoc;
   scheduled in M8) refreshes access tokens before they expire.
 

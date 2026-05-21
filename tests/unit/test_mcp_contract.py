@@ -60,6 +60,9 @@ from content_stack.mcp.server import (
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",
+        "auth.start",
+        "auth.test",
+        "auth.revoke",
     ],
 )
 def test_mutating_verb_classification(name: str) -> None:

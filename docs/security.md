@@ -31,7 +31,31 @@ the bearer-token check. Currently:
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
 | `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived read-only bearer token at app boot via this endpoint. | **See below.** |
-| `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser back to the daemon and cannot attach the SPA's bearer header. | The route accepts only a callback with a matching stored OAuth `state` nonce, then removes that nonce from persisted config. |
+| `/api/v1/integrations/gsc/oauth/callback` | Google redirects the operator's browser back to the daemon and cannot attach the SPA's bearer header. | The route accepts only a callback with a matching unconsumed OAuth `state` nonce, consumes that nonce once, then stores the token bundle encrypted. |
+
+## No-secret auth provider boundary
+
+Provider credentials are daemon-owned. Agents may inspect sanitized auth status
+and run daemon-side health probes, but they do not receive raw API keys, OAuth
+tokens, refresh tokens, encrypted payloads, or local setup secrets.
+
+`integration_credentials` remains the encrypted backing store while StackOS
+adds generic auth-provider tables on top: `auth_providers`, `credentials`,
+`credential_scopes`, `credential_accounts`, `oauth_states`,
+`credential_usage_events`, and `credential_refresh_events`.
+
+The agent-facing MCP bridge exposes `auth.status` and `auth.test` only. Local
+human/admin operations such as `auth.start`, `auth.revoke`, `integration.set`,
+`integration.remove`, and `gscOauth.start` are registered in the daemon catalog
+for compatibility or UI use, but they are not granted to the normal system
+agent surface. When a tool needs a credential, the agent passes an opaque
+`credential_ref`; the daemon resolves and decrypts the backing secret inside
+the vendor wrapper process.
+
+Every auth usage/refresh audit payload is passed through the shared redactor
+before persistence. Secret-like keys such as `api_key`, `access_token`,
+`refresh_token`, `authorization`, and nested equivalents are stored as
+`[redacted]`.
 
 ## Token-bootstrap trade-off (M5.A)
 

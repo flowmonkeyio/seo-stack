@@ -82,6 +82,8 @@ reads:
 - `capability.describe`
 - `provider.list`
 - `provider.describe`
+- `auth.status`
+- `auth.test`
 - `resource.get`
 - `resource.query`
 - `artifact.get`
@@ -93,5 +95,14 @@ system/bootstrap agent surface before D09:
 
 - `plugin.enable`
 - `plugin.disable`
+- `auth.start`
+- `auth.revoke`
 - `resource.upsert`
 - `artifact.create`
+
+Credential setup is metadata-driven by plugin providers, but secrets stay
+outside agent context. Provider manifests declare `auth_type`; the daemon maps
+that declaration into auth-provider rows and opaque credential refs. Agents use
+`auth.status` and `auth.test`, while local UI/REST setup handles plaintext or
+OAuth. Compatibility tools such as `integration.set` remain daemon-local and are
+not part of the normal plugin agent surface.

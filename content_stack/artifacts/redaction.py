@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -18,6 +19,13 @@ _SECRET_KEY_PARTS = (
     "secret",
     "token",
 )
+_SECRET_TEXT_RE = re.compile(
+    r"(?i)([\"']?(?:access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
+    r"credential|password|private[_-]?key|refresh[_-]?token|secret|token)[\"']?\s*[:=]\s*"
+    r"[\"']?)(?!bearer\b)([^\"'\s,;}&]+)"
+)
+_AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
+_BEARER_TEXT_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -38,4 +46,11 @@ def redact_secrets(value: Any) -> Any:
     return value
 
 
-__all__ = ["redact_secrets"]
+def redact_secret_text(value: str) -> str:
+    """Redact secret-like assignments inside vendor-controlled text."""
+    redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", value)
+    redacted = _SECRET_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
+    return _BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
+
+
+__all__ = ["redact_secret_text", "redact_secrets"]

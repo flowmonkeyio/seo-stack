@@ -75,14 +75,13 @@ def test_openai_images_generate_persists_to_app_generated_assets_dir(
     mcp_settings: Settings,
 ) -> None:
     project_id = seeded_project["data"]["id"]
-    cred = mcp_client.call_tool_structured(
-        "integration.set",
-        {
-            "project_id": project_id,
-            "kind": "openai-images",
-            "plaintext_payload_b64": base64.b64encode(b"sk-openai").decode("ascii"),
-        },
+    cred_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={"kind": "openai-images", "plaintext_payload": "sk-openai"},
+        headers=mcp_client._headers(),
     )
+    cred_resp.raise_for_status()
+    cred = cred_resp.json()["data"]
     budget_resp = mcp_client.test_client.post(
         f"/api/v1/projects/{project_id}/budgets",
         json={"kind": "openai-images", "monthly_budget_usd": 10.0},
@@ -107,7 +106,7 @@ def test_openai_images_generate_persists_to_app_generated_assets_dir(
 
     assert "data" in out and isinstance(out["data"].get("data"), list), out
     item = out["data"]["data"][0]
-    assert out["credential_id"] == cred["data"]["id"]
+    assert out["credential_id"] == cred["id"]
     assert "b64_json" not in item
     assert item["url"].startswith("/generated-assets/openai-images/openai-")
     path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")

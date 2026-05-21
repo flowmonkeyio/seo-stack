@@ -24,6 +24,8 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "project.update",
     "project.setActive",
     "project.getActive",
+    "auth.status",
+    "auth.test",
     "plugin.list",
     "catalog.list",
     "catalog.describe",
@@ -56,7 +58,17 @@ _TOOLBOX_DESCRIBE_TOOL = "toolbox.describe"
 _TOOLBOX_CALL_TOOL = "toolbox.call"
 _TOOLBOX_TOOL_NAMES = frozenset({_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL})
 _AGENT_ADMIN_GATED_TOOL_NAMES = frozenset(
-    {"artifact.create", "plugin.enable", "plugin.disable", "resource.upsert"}
+    {
+        "artifact.create",
+        "auth.revoke",
+        "auth.start",
+        "gscOauth.start",
+        "integration.remove",
+        "integration.set",
+        "plugin.disable",
+        "plugin.enable",
+        "resource.upsert",
+    }
 )
 
 # Tools that stay out of the advertised MCP list but are still useful during
@@ -99,10 +111,8 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "cluster.get",
         "cluster.list",
         "integration.list",
-        "integration.set",
         "integration.test",
         "integration.testGsc",
-        "integration.remove",
         "compliance.add",
         "compliance.list",
         "compliance.remove",
@@ -127,7 +137,6 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "gsc.queryProject",
         "gsc.rollup",
         "gscOauth.get",
-        "gscOauth.start",
         "interlink.apply",
         "interlink.bulkApply",
         "interlink.dismiss",
@@ -455,7 +464,6 @@ def _bridge_toolbox_describe(
     payload = {
         "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
         "setup_toolbox_tool_names": sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog)),
-        "admin_gated_tool_names": sorted(_AGENT_ADMIN_GATED_TOOL_NAMES & set(catalog)),
         "current_step_tool_names": current_step_tools,
         "available_tool_names": sorted(name for name in allowed if name in catalog),
         "described_tools": described,

@@ -1,13 +1,33 @@
-"""``integration.test`` MCP tool — M4 dispatcher (no longer a deferral)."""
+"""``integration.test`` MCP tool and generic auth boundary."""
 
 from __future__ import annotations
 
-import base64
 from urllib.parse import parse_qs, urlparse
 
 from pytest_httpx import HTTPXMock
 
 from .conftest import MCPClient
+
+
+def _create_integration_credential(
+    mcp: MCPClient,
+    *,
+    project_id: int,
+    kind: str,
+    payload: bytes,
+    config_json: dict | None = None,
+) -> dict:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/integrations",
+        json={
+            "kind": kind,
+            "plaintext_payload": payload.decode("utf-8"),
+            "config_json": config_json,
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def test_integration_test_dispatches_to_firecrawl(
@@ -23,13 +43,11 @@ def test_integration_test_dispatches_to_firecrawl(
     )
 
     project_id = seeded_project["data"]["id"]
-    cred = mcp_client.call_tool_structured(
-        "integration.set",
-        {
-            "project_id": project_id,
-            "kind": "firecrawl",
-            "plaintext_payload_b64": base64.b64encode(b"fc-key").decode("ascii"),
-        },
+    cred = _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="firecrawl",
+        payload=b"fc-key",
     )
     cid = cred["data"]["id"]
 
@@ -48,13 +66,11 @@ def test_integration_test_validates_unknown_kind(
 ) -> None:
     """A credential with an unknown kind surfaces ``ValidationError`` (-32602)."""
     project_id = seeded_project["data"]["id"]
-    cred = mcp_client.call_tool_structured(
-        "integration.set",
-        {
-            "project_id": project_id,
-            "kind": "unknown-vendor",
-            "plaintext_payload_b64": base64.b64encode(b"x").decode("ascii"),
-        },
+    cred = _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="unknown-vendor",
+        payload=b"x",
     )
     cid = cred["data"]["id"]
     err = mcp_client.call_tool_error(
@@ -77,14 +93,12 @@ def test_integration_test_dispatches_to_wordpress(
     )
 
     project_id = seeded_project["data"]["id"]
-    cred = mcp_client.call_tool_structured(
-        "integration.set",
-        {
-            "project_id": project_id,
-            "kind": "wordpress",
-            "plaintext_payload_b64": base64.b64encode(b"editor:app-pass").decode("ascii"),
-            "config_json": {"wp_url": "https://wp.example"},
-        },
+    cred = _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="wordpress",
+        payload=b"editor:app-pass",
+        config_json={"wp_url": "https://wp.example"},
     )
 
     out = mcp_client.call_tool_structured(
@@ -107,16 +121,12 @@ def test_integration_test_dispatches_to_ghost(
     )
 
     project_id = seeded_project["data"]["id"]
-    cred = mcp_client.call_tool_structured(
-        "integration.set",
-        {
-            "project_id": project_id,
-            "kind": "ghost",
-            "plaintext_payload_b64": base64.b64encode(
-                b"keyid:00112233445566778899aabbccddeeff"
-            ).decode("ascii"),
-            "config_json": {"ghost_url": "https://ghost.example", "api_version": "v5.0"},
-        },
+    cred = _create_integration_credential(
+        mcp_client,
+        project_id=project_id,
+        kind="ghost",
+        payload=b"keyid:00112233445566778899aabbccddeeff",
+        config_json={"ghost_url": "https://ghost.example", "api_version": "v5.0"},
     )
 
     out = mcp_client.call_tool_structured(
@@ -141,7 +151,7 @@ def test_gsc_oauth_get_reports_missing_env(
     assert out["redirect_uri"] == "http://127.0.0.1:5180/api/v1/integrations/gsc/oauth/callback"
 
 
-def test_gsc_oauth_start_returns_agent_consent_url(
+def test_auth_start_route_returns_gsc_consent_url(
     mcp_client: MCPClient,
     seeded_project: dict,
     monkeypatch,
@@ -150,7 +160,13 @@ def test_gsc_oauth_start_returns_agent_consent_url(
     monkeypatch.setenv("GSC_OAUTH_CLIENT_SECRET", "client-secret-fake")
     project_id = seeded_project["data"]["id"]
 
-    out = mcp_client.call_tool_structured("gscOauth.start", {"project_id": project_id})
+    response = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/gsc/start",
+        json={},
+        headers=mcp_client._headers(),
+    )
+    response.raise_for_status()
+    out = response.json()
     parsed = urlparse(out["data"]["authorization_url"])
     params = parse_qs(parsed.query)
 
@@ -160,9 +176,10 @@ def test_gsc_oauth_start_returns_agent_consent_url(
     )
     assert params["client_id"] == ["client-id-fake"]
     assert params["state"] == [out["data"]["state"]]
+    assert out["data"]["credential_ref"].startswith("cred_")
 
 
-def test_gsc_oauth_start_validates_missing_env(
+def test_auth_start_route_validates_missing_gsc_env(
     mcp_client: MCPClient,
     seeded_project: dict,
     monkeypatch,
@@ -170,11 +187,26 @@ def test_gsc_oauth_start_validates_missing_env(
     monkeypatch.delenv("GSC_OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("GSC_OAUTH_CLIENT_SECRET", raising=False)
 
-    err = mcp_client.call_tool_error(
-        "gscOauth.start",
-        {"project_id": seeded_project["data"]["id"]},
+    response = mcp_client.test_client.post(
+        f"/api/v1/projects/{seeded_project['data']['id']}/auth/gsc/start",
+        json={},
+        headers=mcp_client._headers(),
     )
 
-    assert err["code"] == -32602
-    assert err["message"] == "ValidationError"
-    assert err["data"]["missing"] == ["GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET"]
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == -32602
+    assert body["data"]["missing"] == ["GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET"]
+
+
+def test_auth_start_is_not_agent_system_granted(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    err = mcp_client.call_tool_error(
+        "auth.start",
+        {"project_id": seeded_project["data"]["id"], "provider_key": "gsc"},
+    )
+
+    assert err["code"] == -32007
+    assert err["message"] == "ToolNotGrantedError"

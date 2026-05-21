@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from content_stack.auth_providers import AuthRepository
 from content_stack.config import Settings
 from content_stack.db.models import (
     CompliancePosition,
@@ -873,32 +874,20 @@ async def _gsc_oauth_start(
     ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> WriteEnvelope[GscOauthStartOutput]:
-    import secrets
-
-    from content_stack.integrations.gsc import build_authorize_url
-    from content_stack.repositories.base import ValidationError
-
-    missing = _missing_gsc_oauth_env_vars()
-    if missing:
-        raise ValidationError(
-            "GSC OAuth client not configured",
-            data={"vendor": "gsc", "missing": missing, "hint": _gsc_oauth_setup_hint()},
-        )
-
-    state = secrets.token_urlsafe(32)
-    redirect_uri = inp.redirect_uri or _default_gsc_redirect_uri(_settings_from_context(ctx))
-    authorization_url = build_authorize_url(state=state, redirect_uri=redirect_uri)
-    env = IntegrationCredentialRepository(ctx.session).set(
+    env = AuthRepository(ctx.session).start(
         project_id=inp.project_id,
-        kind="gsc",
-        plaintext_payload=b"{}",
-        config_json={"oauth_state": state, "redirect_uri": redirect_uri},
+        provider_key="gsc",
+        settings=_settings_from_context(ctx),
+        redirect_uri=inp.redirect_uri,
     )
+    assert env.data.authorization_url is not None
+    assert env.data.state is not None
+    assert env.data.redirect_uri is not None
     return WriteEnvelope[GscOauthStartOutput](
         data=GscOauthStartOutput(
-            authorization_url=authorization_url,
-            state=state,
-            redirect_uri=redirect_uri,
+            authorization_url=env.data.authorization_url,
+            state=env.data.state,
+            redirect_uri=env.data.redirect_uri,
         ),
         run_id=ctx.run_id,
         project_id=env.project_id,
