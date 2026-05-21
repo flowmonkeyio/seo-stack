@@ -9,9 +9,10 @@ The boundary is strict:
 - Agents and humans choose strategy, providers, variants, payloads, approvals,
   and next actions.
 - StackOS stores the plan, validates shape, gates approvals, links context,
-  opens the audit run, records step results, and redacts secrets.
-- StackOS does not decide winners, optimize campaigns, pick topics, or execute
-  generic actions in D07.
+  opens the audit run, records step results, grants explicit step tools, and
+  redacts secrets.
+- StackOS does not decide winners, optimize campaigns, pick topics, or invent
+  action payloads.
 
 ## Layers
 
@@ -43,6 +44,7 @@ Run plans use `schema_version: stackos.run-plan.v1` and can store:
 - input values and expected output contracts
 - capability/action/resource refs
 - concrete action payload configuration authored by the agent
+- MCP tool grants for exact run-plan steps
 - opaque `credential_ref` values
 - approval gates and approval decisions
 - step results, errors, and audit timestamps
@@ -67,8 +69,8 @@ legacy `runs.kind` enum; the run metadata records `stackos_type=run-plan` and
 `run_plan_id`.
 
 `runPlan.claimStep` and `runPlan.recordStep` move concrete step state. They do
-not execute actions. The agent remains responsible for calling the appropriate
-tools and then recording the outcome.
+not decide or invent the workflow. The agent remains responsible for calling the
+appropriate tools with explicit payloads and then recording the outcome.
 
 When all steps are successful or skipped, the run plan is marked `completed`
 and the linked run is finished as `success`. A failed step marks the run plan
@@ -109,6 +111,19 @@ Run-token-scoped tools:
 - `runPlan.claimStep`
 - `runPlan.recordStep`
 
+Run-plan-granted context/query and generic mutation tools:
+
+- `context.query`
+- `resource.upsert`
+- `artifact.create`
+- `context.snapshot`
+- `learning.create`
+- `learning.update`
+- `experiment.create`
+- `experiment.recordObservation`
+- `experiment.recordDecision`
+- `decision.record`
+
 Admin/human-scoped tool:
 
 - `runPlan.update`
@@ -121,9 +136,66 @@ The controller token is also bound to the exact linked `runs.id`: a token from
 one started plan cannot claim or record another plan, even inside the same
 project.
 
+## MCP Tool Grants
+
+Generic writes are step-scoped. A run plan can grant MCP tools with either a
+compact `step_tools` map or explicit `mcp_tool_grants` entries:
+
+```json
+{
+  "grants": {
+    "mcp_tool_grants": [
+      {
+        "step_id": "write-learning",
+        "tool": "resource.upsert",
+        "plugin_slug": "core",
+        "resource_key": "learning"
+      }
+    ]
+  }
+}
+```
+
+Advanced context reads use the same shape and must name explicit sources and
+fields:
+
+```json
+{
+  "grants": {
+    "mcp_tool_grants": [
+      {
+        "step_id": "read-context",
+        "tool": "context.query",
+        "sources": ["learnings"],
+        "fields": ["statement", "evidence_json"]
+      }
+    ]
+  }
+}
+```
+
+The daemon enforces all of the following before a granted tool runs:
+
+- the caller token resolves to `stackos/run-plan-controller`
+- the token belongs to a started run plan
+- the requested plan has exactly one running step
+- the tool is explicitly granted to that running step
+- the request targets the same `project_id` as the plan
+- optional grant restrictions such as `plugin_slug`, `resource_key`, `sources`,
+  and `fields` match
+
+Admin/setup tools such as `auth.start`, `auth.revoke`, `plugin.enable`,
+`plugin.disable`, template save/fork, and `runPlan.update` cannot be granted by
+a run plan. `action.execute` is still withheld until the D10 action-execution
+surface is exposed.
+
+Direct `context.query`, `context.timeline`, `learning.query`,
+`experiment.query`, and `decision.query` remain available for safe default
+fields. Fields outside that direct safe set require a run-plan grant.
+
 ## Clean Cut
 
-D07 creates only these sidecar tables:
+D07 created only these sidecar tables:
 
 - `run_plans`
 - `run_plan_steps`

@@ -53,7 +53,7 @@ from content_stack.mcp.errors import (
     ToolNotGrantedError,
     map_repository_error,
 )
-from content_stack.mcp.permissions import check_grant
+from content_stack.mcp.permissions import check_call_grant
 from content_stack.mcp.streaming import ProgressEmitter
 from content_stack.repositories.base import ConflictError, RepositoryError
 from content_stack.repositories.runs import IdempotencyKeyRepository
@@ -413,7 +413,7 @@ class MCPDispatcher:
                     return scope_error
                 # Tool-grant matrix.
                 try:
-                    check_grant(spec.name, ctx.skill_name)
+                    check_call_grant(spec.name, ctx, parsed)
                 except RepositoryError as exc:
                     return self._repo_error(exc)
                 # Idempotency short-circuit (mutating tools that opted in).

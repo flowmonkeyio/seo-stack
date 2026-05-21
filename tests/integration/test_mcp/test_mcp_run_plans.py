@@ -15,6 +15,64 @@ def _plan_json() -> dict:
     }
 
 
+def _resource_grant_plan_json(key: str = "ops.resource-write.run") -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": key,
+        "title": "Resource Write",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "write-resource",
+                    "tool": "resource.upsert",
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "write-resource",
+                "title": "Write resource",
+                "resource_refs": ["core.learning"],
+            }
+        ],
+    }
+
+
+def _context_query_grant_plan_json(key: str = "ops.context-read.run") -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": key,
+        "title": "Context Read",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "read-context",
+                    "tool": "context.query",
+                    "sources": ["learnings"],
+                    "fields": ["statement", "evidence_json"],
+                }
+            ]
+        },
+        "steps": [{"id": "read-context", "title": "Read context"}],
+    }
+
+
+def _create_learning(mcp: MCPClient, project_id: int) -> dict:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/learnings",
+        json={
+            "statement": "Creative angle survived with api_key=secret",
+            "review_state": "accepted",
+            "evidence_json": {"refresh_token": "rt"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    return response.json()["data"]
+
+
 def test_run_plan_create_start_and_step_with_run_token(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -68,6 +126,205 @@ def test_run_plan_create_start_and_step_with_run_token(
     assert update_denied["code"] == -32007
     assert claimed["data"]["status"] == "running"
     assert completed["data"]["status"] == "completed"
+
+
+def test_run_plan_grant_allows_only_active_claimed_step_tool(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _resource_grant_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+
+    before_claim = mcp_client.call_tool_error(
+        "resource.upsert",
+        {
+            "project_id": project_id,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "data_json": {"body": "too early"},
+            "run_token": run_token,
+        },
+    )
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write-resource",
+            "run_token": run_token,
+        },
+    )
+    denied_artifact = mcp_client.call_tool_error(
+        "artifact.create",
+        {
+            "project_id": project_id,
+            "plugin_slug": "utils",
+            "kind": "image",
+            "uri": "/generated-assets/no-grant.png",
+            "run_token": run_token,
+        },
+    )
+    written = mcp_client.call_tool_structured(
+        "resource.upsert",
+        {
+            "project_id": project_id,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "external_id": "run-plan-learning",
+            "data_json": {"body": "active step can write"},
+            "run_token": run_token,
+        },
+    )
+    completed = mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write-resource",
+            "status": "success",
+            "run_token": run_token,
+        },
+    )
+    after_completion = mcp_client.call_tool_error(
+        "resource.upsert",
+        {
+            "project_id": project_id,
+            "plugin_slug": "core",
+            "resource_key": "learning",
+            "data_json": {"body": "too late"},
+            "run_token": run_token,
+        },
+    )
+
+    assert before_claim["code"] == -32007
+    assert claimed["data"]["allowed_tools"] == ["resource.upsert"]
+    assert denied_artifact["code"] == -32007
+    assert written["data"]["data_json"] == {"body": "active step can write"}
+    assert completed["data"]["status"] == "completed"
+    assert after_completion["code"] == -32007
+
+
+def test_run_plan_grant_argument_restrictions_are_enforced(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {
+            "project_id": project_id,
+            "run_plan_json": _resource_grant_plan_json("ops.resource-restricted.run"),
+        },
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write-resource",
+            "run_token": run_token,
+        },
+    )
+
+    denied = mcp_client.call_tool_error(
+        "resource.upsert",
+        {
+            "project_id": project_id,
+            "plugin_slug": "seo",
+            "resource_key": "learning",
+            "data_json": {"body": "wrong plugin"},
+            "run_token": run_token,
+        },
+    )
+
+    assert denied["code"] == -32007
+    assert "arguments" in denied["data"]["detail"]
+
+
+def test_run_plan_context_query_grant_enforces_sources_and_fields(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    learning = _create_learning(mcp_client, project_id)
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _context_query_grant_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+
+    before_claim = mcp_client.call_tool_error(
+        "context.query",
+        {
+            "project_id": project_id,
+            "sources": ["learnings"],
+            "fields": ["statement", "evidence_json"],
+            "run_token": run_token,
+        },
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "read-context",
+            "run_token": run_token,
+        },
+    )
+    wrong_field = mcp_client.call_tool_error(
+        "context.query",
+        {
+            "project_id": project_id,
+            "sources": ["learnings"],
+            "fields": ["statement", "metadata_json"],
+            "run_token": run_token,
+        },
+    )
+    wrong_source = mcp_client.call_tool_error(
+        "context.query",
+        {
+            "project_id": project_id,
+            "sources": ["decisions"],
+            "fields": ["statement"],
+            "run_token": run_token,
+        },
+    )
+    missing_filters = mcp_client.call_tool_error(
+        "context.query",
+        {
+            "project_id": project_id,
+            "run_token": run_token,
+        },
+    )
+    context = mcp_client.call_tool_structured(
+        "context.query",
+        {
+            "project_id": project_id,
+            "sources": ["learnings"],
+            "fields": ["statement", "evidence_json"],
+            "run_token": run_token,
+        },
+    )
+
+    assert before_claim["code"] == -32007
+    assert wrong_field["code"] == -32007
+    assert wrong_source["code"] == -32007
+    assert missing_filters["code"] == -32007
+    assert context["items"][0]["id"] == learning["id"]
+    assert context["items"][0]["fields"]["evidence_json"] == {"refresh_token": "[redacted]"}
 
 
 def test_run_plan_token_cannot_mutate_another_plan(

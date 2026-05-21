@@ -1219,7 +1219,7 @@ API/MCP changes:
   - project plugin enable/disable
   - auth start/revoke
 - Step-scoped/gated surface includes:
-  - action execution
+  - future action execution once D10 exposes `action.execute`
   - mutating resource/artifact calls
   - context queries beyond safe metadata
   - learning/experiment/decision writes
@@ -1267,6 +1267,23 @@ Acceptance criteria:
 - New StackOS bridge surface exists.
 - Generic grants work.
 - SEO operations are no longer treated as core direct tools.
+
+Implementation status:
+
+- Delivered with a daemon-side run-plan grant parser and dispatcher check. The
+  bridge can describe and inject run tokens for active run-plan step grants,
+  but the daemon remains the authority.
+- Grant snapshots support `mcp_tool_grants` and compact `step_tools` entries.
+- Generic run-plan-granted tools are `context.query`, `resource.upsert`,
+  `artifact.create`, `context.snapshot`, `learning.create`, `learning.update`,
+  `experiment.create`, `experiment.recordObservation`,
+  `experiment.recordDecision`, and `decision.record`.
+- Direct context reads stay available for safe default fields; fields beyond
+  that safe set require an active run-plan step grant with explicit `sources`
+  and `fields`.
+- Admin/setup tools and `action.execute` are rejected by run-plan schema/grant
+  validation until their own signed-off delivery exposes them.
+- No migrations or legacy table cleanup were added.
 
 Verification commands:
 

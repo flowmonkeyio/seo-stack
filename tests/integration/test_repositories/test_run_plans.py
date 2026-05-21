@@ -144,6 +144,27 @@ def test_approval_gate_transition_then_step_completion(
     assert run.status == RunStatus.SUCCESS
 
 
+def test_claimed_step_exposes_static_mcp_tool_grants(session: Session, project_id: int) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "ops.resource-write.run",
+            "title": "Resource write",
+            "grants": {"step_tools": {"write": ["resource.upsert"]}},
+            "steps": [{"id": "write", "title": "Write resource"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+
+    step = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="write").data
+    fetched = repo.get(plan.id)
+
+    assert step.allowed_tools == ["resource.upsert"]
+    assert fetched.steps[0].allowed_tools == ["resource.upsert"]
+
+
 def test_step_linked_approval_gate_blocks_claim(session: Session, project_id: int) -> None:
     repo = RunPlanRepository(session)
     plan = repo.create(

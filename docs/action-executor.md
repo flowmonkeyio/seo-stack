@@ -67,9 +67,10 @@ D08 exposes only read/discovery tools:
 - `action.describe`
 - `action.validate`
 
-`action.execute` is not registered as an MCP tool in D08. Generic execution
-remains internal until D09/D10 add run-plan-scoped grants and expose the first
-safe real action.
+`action.execute` is not registered as an MCP tool after D09. The run-plan grant
+model is now in place for generic mutations, but generic action execution
+remains internal until D10 exposes the first safe real action through the same
+step-scoped path.
 
 ## Boundary
 

@@ -87,8 +87,8 @@ Built-in resource schemas include:
 
 ## Agent Exposure
 
-Before D09, normal agents may discover catalog metadata and bounded generic
-reads:
+Normal agents may discover catalog metadata and bounded generic reads through
+the direct bridge surface:
 
 - `action.describe`
 - `action.validate`
@@ -111,18 +111,32 @@ reads:
 
 Setup/admin-gated mutations are registered in the daemon catalog but are not
 advertised through the normal agent bridge and are not granted to the
-system/bootstrap agent surface before D09:
+system/bootstrap agent surface:
 
 - `plugin.enable`
 - `plugin.disable`
 - `auth.start`
 - `auth.revoke`
-- `resource.upsert`
-- `artifact.create`
 - `workflowTemplate.save`
 - `workflowTemplate.fork`
 
-Generic execution is also withheld from normal agents before the grant model:
+Advanced context reads and generic run-plan writes are bridge-hidden or
+daemon-filtered. They become callable only with a started run plan, an active
+claimed step, and an explicit step grant:
+
+- `context.query` for fields outside the direct safe set
+- `resource.upsert`
+- `artifact.create`
+- `context.snapshot`
+- `learning.create`
+- `learning.update`
+- `experiment.create`
+- `experiment.recordObservation`
+- `experiment.recordDecision`
+- `decision.record`
+
+Generic execution is still withheld until D10 wires it into the same grant
+model:
 
 - `action.execute`
 

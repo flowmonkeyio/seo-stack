@@ -59,6 +59,64 @@ def test_run_plan_schema_rejects_secrets_but_allows_credential_refs() -> None:
     assert "api_key" in result.errors[0].message
 
 
+def test_run_plan_schema_rejects_unknown_step_tool_grant() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "missing", "tool": "resource.upsert"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "unknown step" in result.errors[0].message
+
+
+def test_run_plan_schema_rejects_admin_tool_grant() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "auth.start"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "admin/setup tool" in result.errors[0].message
+
+
+def test_run_plan_schema_rejects_action_execute_until_exposed() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "action.execute"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "action.execute" in result.errors[0].message
+
+
+def test_run_plan_schema_requires_context_query_grant_filters() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "context.query"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "sources and fields" in result.errors[0].message
+
+
+def test_run_plan_schema_rejects_compact_context_query_grant() -> None:
+    data = _plan_dict()
+    data["grants"] = {"step_tools": {"create-campaign": ["context.query"]}}
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "sources and fields" in result.errors[0].message
+
+
 def test_run_plan_schema_rejects_cyclic_step_dependencies() -> None:
     data = _plan_dict()
     data["steps"] = [

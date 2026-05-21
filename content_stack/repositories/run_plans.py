@@ -36,6 +36,7 @@ from content_stack.repositories.base import (
     validate_transition,
 )
 from content_stack.repositories.runs import RunOut, RunRepository
+from content_stack.workflows.run_plan_grants import allowed_tools_for_run_plan_step
 from content_stack.workflows.run_plan_schema import (
     RunPlanValidationOut,
     find_run_plan_secret_paths,
@@ -93,6 +94,7 @@ class RunPlanStepOut(BaseModel):
     expected_outputs_json: dict[str, Any] | None
     result_json: dict[str, Any] | None
     metadata_json: dict[str, Any] | None
+    allowed_tools: list[str] = Field(default_factory=list)
     error: str | None
     claimed_by: str | None
     claimed_at: datetime | None
@@ -586,7 +588,7 @@ class RunPlanRepository:
         self._s.commit()
         self._s.refresh(step)
         return Envelope(
-            data=RunPlanStepOut.model_validate(step),
+            data=self._step_out(step, plan),
             run_id=plan.run_id,
             project_id=plan.project_id,
         )
@@ -853,9 +855,22 @@ class RunPlanRepository:
             ).all()
         )
 
+    def _step_out(self, step: RunPlanStep, plan: RunPlan | None = None) -> RunPlanStepOut:
+        data = RunPlanStepOut.model_validate(step)
+        if plan is None:
+            plan = self._s.get(RunPlan, step.run_plan_id)
+        if plan is not None:
+            data.allowed_tools = sorted(
+                allowed_tools_for_run_plan_step(
+                    plan.grant_snapshot_json,
+                    step_id=step.step_id,
+                )
+            )
+        return data
+
     def _plan_out(self, row: RunPlan) -> RunPlanOut:
         data = RunPlanOut.model_validate(row)
-        data.steps = [RunPlanStepOut.model_validate(step) for step in self._step_rows(row.id)]
+        data.steps = [self._step_out(step, row) for step in self._step_rows(row.id)]
         data.approval_requests = [
             ApprovalRequestOut.model_validate(item) for item in self._approval_rows(row.id)
         ]

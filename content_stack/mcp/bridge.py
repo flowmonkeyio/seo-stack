@@ -11,6 +11,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from content_stack.workflows.run_plan_grants import (
+    RUN_PLAN_ADMIN_ONLY_TOOL_NAMES,
+    RUN_PLAN_CONTROLLER_TOOL_NAMES,
+    RUN_PLAN_GRANTABLE_TOOL_NAMES,
+)
+
 _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     # Repo/project setup.
     "workspace.startSession",
@@ -72,34 +78,11 @@ _AGENT_VISIBLE_TOOL_NAMES = frozenset(_AGENT_VISIBLE_TOOL_ORDER)
 _TOOLBOX_DESCRIBE_TOOL = "toolbox.describe"
 _TOOLBOX_CALL_TOOL = "toolbox.call"
 _TOOLBOX_TOOL_NAMES = frozenset({_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL})
-_AGENT_ADMIN_GATED_TOOL_NAMES = frozenset(
-    {
-        "artifact.create",
-        "auth.revoke",
-        "auth.start",
-        "context.snapshot",
-        "decision.record",
-        "experiment.create",
-        "experiment.recordDecision",
-        "experiment.recordObservation",
-        "gscOauth.start",
-        "integration.remove",
-        "integration.set",
-        "learning.create",
-        "learning.update",
-        "plugin.disable",
-        "plugin.enable",
-        "resource.upsert",
-        "runPlan.update",
-        "workflowTemplate.fork",
-        "workflowTemplate.save",
-    }
-)
-_AGENT_STEP_GATED_TOOL_NAMES: frozenset[str] = frozenset(
-    {
-        "runPlan.claimStep",
-        "runPlan.recordStep",
-    }
+_AGENT_ADMIN_GATED_TOOL_NAMES: frozenset[str] = frozenset(RUN_PLAN_ADMIN_ONLY_TOOL_NAMES)
+_AGENT_RUN_PLAN_GATED_TOOL_NAMES: frozenset[str] = frozenset(RUN_PLAN_GRANTABLE_TOOL_NAMES)
+_AGENT_STEP_GATED_TOOL_NAMES: frozenset[str] = frozenset(RUN_PLAN_CONTROLLER_TOOL_NAMES)
+_AGENT_GATED_TOOL_NAMES: frozenset[str] = (
+    _AGENT_ADMIN_GATED_TOOL_NAMES | _AGENT_RUN_PLAN_GATED_TOOL_NAMES
 )
 
 # Tools that stay out of the advertised MCP list but are still useful during
@@ -256,8 +239,8 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
             "name": _TOOLBOX_DESCRIBE_TOOL,
             "description": (
                 "Describe hidden content-stack daemon tools available through the bridge. "
-                "Use this before toolbox.call when setup or the current procedure step "
-                "mentions a tool that is not listed directly."
+                "Use this before toolbox.call when setup, a run-plan step, or the current "
+                "procedure step mentions a tool that is not listed directly."
             ),
             "inputSchema": {
                 "type": "object",
@@ -286,8 +269,8 @@ def _bridge_toolbox_specs() -> list[dict[str, Any]]:
             "name": _TOOLBOX_CALL_TOOL,
             "description": (
                 "Call one hidden daemon tool by name. The bridge permits setup tools and "
-                "the active procedure step's allowed_tools only; pass run_id so the bridge "
-                "can refresh grants and inject the run token when available."
+                "the active run-plan/procedure step's allowed tools only; pass run_id so "
+                "the bridge can refresh grants and inject the run token when available."
             ),
             "inputSchema": {
                 "type": "object",
@@ -416,13 +399,23 @@ def _bridge_call_error(
 def _bridge_step_context(structured: object) -> dict[str, Any] | None:
     if not isinstance(structured, dict):
         return None
+    if (
+        "current_step" in structured
+        or "run_token" in structured
+        or "run_id" in structured
+        or "allowed_tools" in structured
+        or "plan" in structured
+    ):
+        return structured
     data = structured.get("data")
     if isinstance(data, dict) and (
-        "current_step" in data or "run_token" in data or "run_id" in data
+        "current_step" in data
+        or "run_token" in data
+        or "run_id" in data
+        or "allowed_tools" in data
+        or "plan" in data
     ):
         return data
-    if "current_step" in structured or "run_token" in structured or "run_id" in structured:
-        return structured
     return None
 
 
@@ -431,6 +424,7 @@ def _bridge_cache_step_context(
     *,
     allowed_by_run: dict[int, set[str]],
     tokens_by_run: dict[int, str],
+    plans_by_run: dict[int, int] | None = None,
 ) -> None:
     try:
         envelope = json.loads(response_text)
@@ -447,17 +441,50 @@ def _bridge_cache_step_context(
     run_id = _bridge_as_int(context.get("run_id"))
     if run_id is None:
         run_id = _bridge_as_int(result.get("run_id"))
+    data = context.get("data")
+    if isinstance(data, dict) and run_id is None:
+        run_id = _bridge_as_int(data.get("run_id"))
     if run_id is None:
         return
     run_token = context.get("run_token")
+    if not isinstance(run_token, str) and isinstance(data, dict):
+        run_token = data.get("run_token")
     if isinstance(run_token, str) and run_token:
         tokens_by_run[run_id] = run_token
+    plan = context.get("plan")
+    if not isinstance(plan, dict) and isinstance(data, dict):
+        plan = data.get("plan")
+    if isinstance(plan, dict):
+        plan_id = _bridge_as_int(plan.get("id"))
+        if plan_id is not None and plans_by_run is not None:
+            plans_by_run[run_id] = plan_id
     current_step = context.get("current_step")
     if not isinstance(current_step, dict):
+        step_package = data if isinstance(data, dict) else context
+        if isinstance(step_package, dict) and isinstance(step_package.get("step_id"), str):
+            allowed_tools = step_package.get("allowed_tools")
+            if isinstance(allowed_tools, list):
+                allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | {
+                    name for name in allowed_tools if isinstance(name, str) and name
+                }
+                return
+        plan_package = data if isinstance(data, dict) and "steps" in data else context
+        if isinstance(plan_package, dict) and isinstance(plan_package.get("steps"), list):
+            running_step_tools: set[str] = set()
+            for step in plan_package["steps"]:
+                if not isinstance(step, dict) or step.get("status") != "running":
+                    continue
+                allowed_tools = step.get("allowed_tools")
+                if isinstance(allowed_tools, list):
+                    running_step_tools.update(
+                        name for name in allowed_tools if isinstance(name, str) and name
+                    )
+            allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | running_step_tools
+            return
         # runPlan.start returns a run token and linked plan instead of a
         # procedure current_step package. Cache the token and expose only the
         # narrow run-plan controller tools through toolbox.call for that run.
-        if isinstance(context.get("plan"), dict) and isinstance(run_token, str) and run_token:
+        if isinstance(plan, dict) and isinstance(run_token, str) and run_token:
             allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
         return
     allowed_tools = current_step.get("allowed_tools")
@@ -507,8 +534,8 @@ def _bridge_toolbox_describe(
         "unknown_tool_names": unknown,
         "usage": (
             "Use direct visible tools for setup/procedure/run-plan control. Use "
-            "toolbox.call only for setup helpers, run-plan controller tools, or the "
-            "active procedure step's allowed_tools."
+            "toolbox.call only for setup helpers, run-plan controller tools, run-plan "
+            "step grants, or the active procedure step's allowed_tools."
         ),
     }
     return _bridge_tool_result(request_id, payload, is_error=False)
@@ -539,6 +566,7 @@ class AgentBridgeProxy:
         self.tool_catalog: dict[str, dict[str, Any]] = {}
         self.allowed_by_run: dict[int, set[str]] = {}
         self.tokens_by_run: dict[int, str] = {}
+        self.plans_by_run: dict[int, int] = {}
 
     def request_daemon(self, client: Any, body: str) -> str:
         response = client.post(self.url, content=body, headers=self.headers)
@@ -609,12 +637,26 @@ class AgentBridgeProxy:
         except Exception:
             return
         self._cache_step_context(out)
+        run_plan_id = self.plans_by_run.get(run_id)
+        if run_plan_id is None:
+            return
+        body = _bridge_make_tool_call_payload(
+            f"content-stack-bridge-plan-{run_plan_id}",
+            "runPlan.get",
+            {"run_plan_id": run_plan_id},
+        )
+        try:
+            out = self.request_daemon(client, body)
+        except Exception:
+            return
+        self._cache_step_context(out)
 
     def _cache_step_context(self, response_text: str) -> None:
         _bridge_cache_step_context(
             response_text,
             allowed_by_run=self.allowed_by_run,
             tokens_by_run=self.tokens_by_run,
+            plans_by_run=self.plans_by_run,
         )
 
     def _handle_toolbox_describe(
@@ -715,6 +757,8 @@ class AgentBridgeProxy:
 __all__ = [
     "_AGENT_ADMIN_GATED_TOOL_NAMES",
     "_AGENT_BASE_TOOLBOX_NAMES",
+    "_AGENT_GATED_TOOL_NAMES",
+    "_AGENT_RUN_PLAN_GATED_TOOL_NAMES",
     "_AGENT_SETUP_TOOLBOX_NAMES",
     "_AGENT_STEP_GATED_TOOL_NAMES",
     "_AGENT_VISIBLE_TOOL_ORDER",

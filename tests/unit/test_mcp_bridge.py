@@ -8,6 +8,8 @@ from typing import Any
 from content_stack.mcp.bridge import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
+    _AGENT_GATED_TOOL_NAMES,
+    _AGENT_RUN_PLAN_GATED_TOOL_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
     _AGENT_STEP_GATED_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_NAMES,
@@ -58,7 +60,14 @@ class _FakeClient:
                 {
                     "jsonrpc": "2.0",
                     "id": body["id"],
-                    "result": {"tools": [_tool("article.get"), _tool("integration.test")]},
+                    "result": {
+                        "tools": [
+                            _tool("article.get"),
+                            _tool("integration.test"),
+                            _tool("resource.upsert"),
+                            _tool("runPlan.get"),
+                        ]
+                    },
                 }
             )
         tool_name = body["params"]["name"]
@@ -72,6 +81,29 @@ class _FakeClient:
                             "run_id": 7,
                             "run_token": "tok",
                             "current_step": {"allowed_tools": ["article.get"]},
+                        }
+                    },
+                }
+            )
+        if tool_name == "runPlan.get":
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {
+                        "structuredContent": {
+                            "data": {
+                                "id": body["params"]["arguments"]["run_plan_id"],
+                                "run_id": 9,
+                                "steps": [
+                                    {
+                                        "step_id": "write",
+                                        "status": "running",
+                                        "allowed_tools": ["resource.upsert"],
+                                    }
+                                ],
+                            },
+                            "run_id": 9,
                         }
                     },
                 }
@@ -211,6 +243,40 @@ def test_bridge_caches_run_plan_controller_grants() -> None:
     )
     allowed_by_run: dict[int, set[str]] = {}
     tokens_by_run: dict[int, str] = {}
+    plans_by_run: dict[int, int] = {}
+
+    _bridge_cache_step_context(
+        response,
+        allowed_by_run=allowed_by_run,
+        tokens_by_run=tokens_by_run,
+        plans_by_run=plans_by_run,
+    )
+
+    assert tokens_by_run == {9: "tok-plan"}
+    assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES)}
+    assert plans_by_run == {9: 3}
+
+
+def test_bridge_caches_claimed_run_plan_step_grants() -> None:
+    response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "structuredContent": {
+                    "data": {
+                        "step_id": "write",
+                        "status": "running",
+                        "allowed_tools": ["resource.upsert", 123, ""],
+                    },
+                    "run_id": 9,
+                    "project_id": 1,
+                }
+            },
+        }
+    )
+    allowed_by_run: dict[int, set[str]] = {}
+    tokens_by_run: dict[int, str] = {}
 
     _bridge_cache_step_context(
         response,
@@ -218,8 +284,7 @@ def test_bridge_caches_run_plan_controller_grants() -> None:
         tokens_by_run=tokens_by_run,
     )
 
-    assert tokens_by_run == {9: "tok-plan"}
-    assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES)}
+    assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES) | {"resource.upsert"}}
 
 
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
@@ -249,6 +314,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.claimStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.recordStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
+    assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
@@ -266,26 +334,32 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "workflowTemplate.save" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "workflowTemplate.fork" not in _AGENT_BASE_TOOLBOX_NAMES
     assert {
-        "artifact.create",
         "auth.revoke",
         "auth.start",
+        "gscOauth.start",
+        "integration.remove",
+        "integration.set",
+        "plugin.enable",
+        "plugin.disable",
+        "runPlan.update",
+        "workflowTemplate.fork",
+        "workflowTemplate.save",
+    } == _AGENT_ADMIN_GATED_TOOL_NAMES
+    assert {
+        "artifact.create",
+        "context.query",
         "context.snapshot",
         "decision.record",
         "experiment.create",
         "experiment.recordDecision",
         "experiment.recordObservation",
-        "gscOauth.start",
-        "integration.remove",
-        "integration.set",
         "learning.create",
         "learning.update",
-        "plugin.enable",
-        "plugin.disable",
         "resource.upsert",
-        "runPlan.update",
-        "workflowTemplate.fork",
-        "workflowTemplate.save",
-    } == _AGENT_ADMIN_GATED_TOOL_NAMES
+    } == _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert _AGENT_GATED_TOOL_NAMES == (
+        _AGENT_ADMIN_GATED_TOOL_NAMES | _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    )
     assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -383,7 +457,7 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
         for name in registered
         if verb_is_mutating(name)
         and name not in agent_surface
-        and name not in _AGENT_ADMIN_GATED_TOOL_NAMES
+        and name not in _AGENT_GATED_TOOL_NAMES
         and name not in _AGENT_STEP_GATED_TOOL_NAMES
         and not name.startswith(
             (
@@ -455,6 +529,37 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
 
     assert structured["tool"] == "integration.test"
     assert structured["arguments"] == {"credential_id": 1}
+
+
+def test_bridge_proxy_injects_run_plan_token_for_granted_tool() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    proxy.tokens_by_run[9] = "tok-plan"
+    proxy.plans_by_run[9] = 3
+    client = _FakeClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 102,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "resource.upsert",
+                "run_id": 9,
+                "arguments": {
+                    "project_id": 1,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "ok"},
+                },
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=102)
+    structured = _structured(response)
+
+    assert structured["tool"] == "resource.upsert"
+    assert structured["arguments"]["run_token"] == "tok-plan"
 
 
 def test_bridge_proxy_rejects_hidden_direct_tool_calls() -> None:

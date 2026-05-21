@@ -36,9 +36,28 @@ def test_agent_visible_context_reads_are_bounded_and_sanitized(
         {
             "project_id": project_id,
             "sources": ["learnings"],
-            "fields": ["statement", "confidence", "evidence_json"],
+            "fields": ["statement", "confidence"],
             "tags": ["creative"],
             "limit": 1,
+        },
+    )
+    advanced_err = mcp_client.call_tool_error(
+        "context.query",
+        {
+            "project_id": project_id,
+            "sources": ["learnings"],
+            "fields": ["statement", "evidence_json"],
+            "tags": ["creative"],
+            "limit": 1,
+        },
+    )
+    learning_advanced_err = mcp_client.call_tool_error(
+        "learning.query",
+        {
+            "project_id": project_id,
+            "review_state": "accepted",
+            "fields": ["statement", "evidence_json"],
+            "limit": 5,
         },
     )
     learning_page = mcp_client.call_tool_structured(
@@ -53,7 +72,9 @@ def test_agent_visible_context_reads_are_bounded_and_sanitized(
 
     assert context["items"][0]["id"] == learning["id"]
     assert context["items"][0]["fields"]["statement"].endswith("api_key=[redacted]")
-    assert context["items"][0]["fields"]["evidence_json"] == {"refresh_token": "[redacted]"}
+    assert advanced_err["code"] == -32007
+    assert advanced_err["data"]["denied_fields"] == ["evidence_json"]
+    assert learning_advanced_err["code"] == -32007
     assert learning_page["items"][0]["id"] == learning["id"]
     assert learning_page["items"][0]["fields"] == {
         "statement": "Founder creative lowered CPA with api_key=[redacted]",

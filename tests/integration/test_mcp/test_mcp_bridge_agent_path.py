@@ -418,6 +418,121 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
     assert completed["data"]["status"] == "completed"
 
 
+def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
+    mcp_client: MCPClient,
+) -> None:
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    created_project = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "project.create",
+            {
+                "slug": "bridge-run-plan-grant",
+                "name": "Bridge Run Plan Grant",
+                "domain": "bridge-run-plan-grant.example",
+                "locale": "en-US",
+            },
+            request_id="project-create",
+        )
+    )
+    project_id = created_project["data"]["id"]
+    created_plan = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.resource.run",
+                    "title": "Bridge resource write",
+                    "grants": {
+                        "mcp_tool_grants": [
+                            {
+                                "step_id": "write",
+                                "tool": "resource.upsert",
+                                "plugin_slug": "core",
+                                "resource_key": "learning",
+                            }
+                        ]
+                    },
+                    "steps": [{"id": "write", "title": "Write resource"}],
+                },
+            },
+            request_id="run-plan-create",
+        )
+    )
+    run_plan_id = created_plan["data"]["id"]
+    started = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": run_plan_id},
+            request_id="run-plan-start",
+        )
+    )
+    run_id = started["data"]["run_id"]
+    before_claim = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {"run_id": run_id, "tool_names": ["resource.upsert"]},
+            request_id="describe-before-claim",
+        )
+    )
+    _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "runPlan.claimStep",
+                "arguments": {"run_plan_id": run_plan_id, "step_id": "write"},
+            },
+            request_id="claim-run-plan",
+        )
+    )
+    after_claim = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.describe",
+            {"run_id": run_id, "tool_names": ["resource.upsert"]},
+            request_id="describe-after-claim",
+        )
+    )
+    written = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "resource.upsert",
+                "arguments": {
+                    "project_id": project_id,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {"body": "bridge injected run token"},
+                },
+            },
+            request_id="resource-upsert",
+        )
+    )
+
+    assert before_claim["denied_tool_names"] == ["resource.upsert"]
+    assert [tool["name"] for tool in after_claim["described_tools"]] == ["resource.upsert"]
+    assert written["data"]["data_json"] == {"body": "bridge injected run token"}
+
+
 def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:
     proxy, client = _bridge(mcp_client)
     _initialize(proxy, client)

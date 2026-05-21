@@ -5880,6 +5880,8 @@ export interface components {
             }[] | null;
             /** Action Refs Json */
             action_refs_json: string[];
+            /** Allowed Tools */
+            allowed_tools?: string[];
             /** Approval Refs Json */
             approval_refs_json: string[];
             /** Claimed At */

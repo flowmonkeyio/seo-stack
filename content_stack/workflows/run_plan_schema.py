@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from content_stack.artifacts import redact_secret_text
+from content_stack.workflows.run_plan_grants import validate_run_plan_mcp_tool_grants
 from content_stack.workflows.template_loader import LoadedWorkflowTemplate
 
 RUN_PLAN_SCHEMA_VERSION = "stackos.run-plan.v1"
@@ -307,6 +308,7 @@ class RunPlanSpec(BaseModel):
         if cycle is not None:
             raise ValueError("cyclic step dependencies are not allowed: " + " -> ".join(cycle))
 
+        validate_run_plan_mcp_tool_grants(self.grant_snapshot_json, step_ids=step_ids)
         ensure_run_plan_has_no_secrets(self.model_dump(mode="python", exclude_none=True))
         return self
 
