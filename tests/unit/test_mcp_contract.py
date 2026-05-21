@@ -63,6 +63,13 @@ from content_stack.mcp.server import (
         "auth.start",
         "auth.test",
         "auth.revoke",
+        "context.snapshot",
+        "learning.create",
+        "learning.update",
+        "experiment.create",
+        "experiment.recordObservation",
+        "experiment.recordDecision",
+        "decision.record",
     ],
 )
 def test_mutating_verb_classification(name: str) -> None:

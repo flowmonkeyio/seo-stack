@@ -49,6 +49,11 @@ are legacy/current-state implementation. Move or wrap them incrementally behind
 the StackOS plugin/generic model. Preserve existing SEO behavior until a task
 explicitly scopes its migration or removal.
 
+Clean-cut migration rule: add new StackOS primitives as sidecars and route new
+code through them. Do not add Alembic migrations that drop old SEO/procedure/
+content-stack tables during this pivot. Physical destructive cleanup requires a
+separate explicitly signed-off task with backup/restore and verification plans.
+
 ## Workflows
 
 Procedures are legacy compatibility. New workflow work should use:
@@ -143,6 +148,8 @@ Follow `docs/stackos-deliverable-task-plan.md`.
 
 - One deliverable equals one coherent commit after verification and signoff.
 - Preserve existing SEO flows unless the task explicitly migrates/removes them.
+- Keep migrations additive for the pivot; no dropping legacy tables/history
+  without a separate destructive-cleanup ticket and signoff.
 - Add tests proportional to the blast radius.
 - Any task touching auth, actions, context, logs, or audit needs redaction
   tests.

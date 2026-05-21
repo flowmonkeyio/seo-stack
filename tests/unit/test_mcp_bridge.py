@@ -201,6 +201,11 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "artifact.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "auth.status" in _AGENT_VISIBLE_TOOL_NAMES
     assert "auth.test" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "context.query" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "context.timeline" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "learning.query" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "experiment.query" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "decision.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
@@ -212,13 +217,23 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "experiment.recordDecision" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "decision.record" not in _AGENT_BASE_TOOLBOX_NAMES
     assert {
         "artifact.create",
         "auth.revoke",
         "auth.start",
+        "context.snapshot",
+        "decision.record",
+        "experiment.create",
+        "experiment.recordDecision",
+        "experiment.recordObservation",
         "gscOauth.start",
         "integration.remove",
         "integration.set",
+        "learning.create",
+        "learning.update",
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",

@@ -47,6 +47,16 @@ def test_check_grant_for_system_skill_covers_agent_owned_operations() -> None:
     check_grant("article.markPublished", SYSTEM_SKILL)
     check_grant("auth.status", SYSTEM_SKILL)
     check_grant("auth.test", SYSTEM_SKILL)
+    check_grant("context.query", SYSTEM_SKILL)
+    check_grant("learning.query", SYSTEM_SKILL)
+    check_grant("experiment.query", SYSTEM_SKILL)
+    check_grant("decision.query", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("learning.create", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("experiment.recordDecision", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("decision.record", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("gscOauth.start", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):

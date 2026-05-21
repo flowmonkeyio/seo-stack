@@ -758,9 +758,8 @@ export interface paths {
          * Gsc Oauth Authorize
          * @description Return the Google OAuth consent URL the operator opens in their browser.
          *
-         *     Stores the random ``state`` nonce in
-         *     ``integration_credentials.config_json.oauth_state`` so the callback
-         *     can validate it.
+         *     Delegates to the generic auth-provider flow, which stores the state
+         *     in ``oauth_states`` while preserving the legacy callback URL.
          */
         post: operations["gsc_oauth_authorize_api_v1_integrations_gsc_oauth_authorize_post"];
         delete?: never;
@@ -1450,6 +1449,66 @@ export interface paths {
         patch: operations["update_compliance_api_v1_projects__project_id__compliance__rule_id__patch"];
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/context/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Context
+         * @description Query bounded, projected, sanitized project context.
+         */
+        post: operations["query_context_api_v1_projects__project_id__context_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/context/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Context Snapshot
+         * @description Create a context snapshot through the local/admin REST surface.
+         */
+        post: operations["create_context_snapshot_api_v1_projects__project_id__context_snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/context/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Context Timeline
+         * @description Return the project event timeline.
+         */
+        get: operations["context_timeline_api_v1_projects__project_id__context_timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/cost": {
         parameters: {
             query?: never;
@@ -1469,6 +1528,30 @@ export interface paths {
         get: operations["get_project_cost_api_v1_projects__project_id__cost_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Decisions
+         * @description Query explicit project decisions.
+         */
+        get: operations["query_decisions_api_v1_projects__project_id__decisions_get"];
+        put?: never;
+        /**
+         * Record Decision
+         * @description Record an explicit decision supplied by an agent or human.
+         */
+        post: operations["record_decision_api_v1_projects__project_id__decisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1523,6 +1606,70 @@ export interface paths {
          *     The repo raises ``ConflictError`` which surfaces as 409.
          */
         patch: operations["patch_eeat_criterion_api_v1_projects__project_id__eeat__criterion_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Experiments
+         * @description Query project experiments without declaring a winner.
+         */
+        get: operations["query_experiments_api_v1_projects__project_id__experiments_get"];
+        put?: never;
+        /**
+         * Create Experiment
+         * @description Create an experiment as data supplied by an agent or human.
+         */
+        post: operations["create_experiment_api_v1_projects__project_id__experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/experiments/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Experiment Decision
+         * @description Record an explicit experiment decision supplied by agent or human.
+         */
+        post: operations["record_experiment_decision_api_v1_projects__project_id__experiments_decisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/experiments/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Experiment Observation
+         * @description Record supplied experiment observation data without interpreting it.
+         */
+        post: operations["record_experiment_observation_api_v1_projects__project_id__experiments_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/gsc": {
@@ -1772,6 +1919,50 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/learnings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query Learnings
+         * @description Query project learnings without inferring which ones are true.
+         */
+        get: operations["query_learnings_api_v1_projects__project_id__learnings_get"];
+        put?: never;
+        /**
+         * Create Learning
+         * @description Record a learning candidate or accepted learning as supplied data.
+         */
+        post: operations["create_learning_api_v1_projects__project_id__learnings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/learnings/{learning_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Learning
+         * @description Update learning review/status fields supplied by an agent or human.
+         */
+        patch: operations["update_learning_api_v1_projects__project_id__learnings__learning_id__patch"];
         trace?: never;
     };
     "/api/v1/projects/{project_id}/plugins/{plugin_slug}/disable": {
@@ -3249,6 +3440,126 @@ export interface components {
             /** Validator */
             validator?: string | null;
         };
+        /** ContextItemOut */
+        ContextItemOut: {
+            /** Fields */
+            fields?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: number;
+            /** Occurred At */
+            occurred_at: string | null;
+            /** Project Id */
+            project_id: number | null;
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+            /** Title */
+            title: string | null;
+        };
+        /** ContextQueryOut */
+        ContextQueryOut: {
+            /** Fields */
+            fields: string[];
+            /** Items */
+            items: components["schemas"]["ContextItemOut"][];
+            /** Limit */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /** Sources */
+            sources: string[];
+            /** Total Estimate */
+            total_estimate: number;
+        };
+        /**
+         * ContextQueryRequest
+         * @example {
+         *       "fields": [
+         *         "statement",
+         *         "confidence",
+         *         "status"
+         *       ],
+         *       "limit": 10,
+         *       "sources": [
+         *         "learnings",
+         *         "experiments"
+         *       ]
+         *     }
+         */
+        ContextQueryRequest: {
+            /** Domain */
+            domain?: string | null;
+            /** Fields */
+            fields?: string[] | null;
+            /** Limit */
+            limit?: number | null;
+            /** Sources */
+            sources?: string[] | null;
+            /** Statuses */
+            statuses?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** ContextSnapshotCreateRequest */
+        ContextSnapshotCreateRequest: {
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Query Json */
+            query_json?: {
+                [key: string]: unknown;
+            };
+            /** Run Id */
+            run_id?: number | null;
+            /** Selected Sources Json */
+            selected_sources_json?: {
+                [key: string]: unknown;
+            }[];
+            /** Summary Json */
+            summary_json?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** ContextSnapshotOut */
+        ContextSnapshotOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Query Json */
+            query_json: {
+                [key: string]: unknown;
+            };
+            /** Run Id */
+            run_id: number | null;
+            /** Selected Sources Json */
+            selected_sources_json: {
+                [key: string]: unknown;
+            }[];
+            /** Summary Json */
+            summary_json: {
+                [key: string]: unknown;
+            } | null;
+        };
         /**
          * CostResponse
          * @description Wire shape for ``GET /projects/{id}/cost``.
@@ -3334,6 +3645,72 @@ export interface components {
             setup_required: boolean;
             /** Status */
             status: string;
+        };
+        /** DecisionOut */
+        DecisionOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided By */
+            decided_by: string | null;
+            /** Decision */
+            decision: string;
+            /** Evidence Json */
+            evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Experiment Id */
+            experiment_id: number | null;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Project Id */
+            project_id: number;
+            /** Rationale */
+            rationale: string | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string | null;
+        };
+        /** DecisionRecordRequest */
+        DecisionRecordRequest: {
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision */
+            decision: string;
+            /** Evidence Json */
+            evidence_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Experiment Id */
+            experiment_id?: number | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Rationale */
+            rationale?: string | null;
+            /** Run Id */
+            run_id?: number | null;
+            /**
+             * Status
+             * @default recorded
+             */
+            status: string;
+            /** Tags */
+            tags?: string[] | null;
+            /** Title */
+            title?: string | null;
         };
         /** DriftBaselineOut */
         DriftBaselineOut: {
@@ -3594,6 +3971,210 @@ export interface components {
             topics_source: string[];
             /** Topics Status */
             topics_status: string[];
+        };
+        /** ExperimentCreateRequest */
+        ExperimentCreateRequest: {
+            /** Decision Policy Json */
+            decision_policy_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Domain */
+            domain?: string | null;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Key */
+            key?: string | null;
+            /** Linked Run Ids Json */
+            linked_run_ids_json?: number[] | null;
+            /** Linked Template Ids Json */
+            linked_template_ids_json?: string[] | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metric Targets Json */
+            metric_targets_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /**
+             * Status
+             * @default planned
+             */
+            status: string;
+            /** Variants */
+            variants?: components["schemas"]["ExperimentVariantRequest"][] | null;
+        };
+        /** ExperimentDecisionRequest */
+        ExperimentDecisionRequest: {
+            /** Decided By */
+            decided_by?: string | null;
+            /** Decision */
+            decision: string;
+            /** Evidence Json */
+            evidence_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Experiment Id */
+            experiment_id: number;
+            /** Experiment Status */
+            experiment_status?: string | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Rationale */
+            rationale?: string | null;
+            /** Run Id */
+            run_id?: number | null;
+            /**
+             * Status
+             * @default recorded
+             */
+            status: string;
+            /** Tags */
+            tags?: string[] | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** ExperimentObservationOut */
+        ExperimentObservationOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Experiment Id */
+            experiment_id: number;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Metrics Json */
+            metrics_json: {
+                [key: string]: unknown;
+            };
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Project Id */
+            project_id: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Summary */
+            summary: string | null;
+            /** Variant Key */
+            variant_key: string | null;
+        };
+        /** ExperimentObservationRequest */
+        ExperimentObservationRequest: {
+            /** Experiment Id */
+            experiment_id: number;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metrics Json */
+            metrics_json?: {
+                [key: string]: unknown;
+            };
+            /** Observed At */
+            observed_at?: string | null;
+            /** Run Id */
+            run_id?: number | null;
+            /** Summary */
+            summary?: string | null;
+            /** Variant Key */
+            variant_key?: string | null;
+        };
+        /** ExperimentOut */
+        ExperimentOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decision Policy Json */
+            decision_policy_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Domain */
+            domain: string | null;
+            /** Hypothesis */
+            hypothesis: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string | null;
+            /** Linked Run Ids Json */
+            linked_run_ids_json: number[] | null;
+            /** Linked Template Ids Json */
+            linked_template_ids_json: string[] | null;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Metric Targets Json */
+            metric_targets_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Variants */
+            variants: components["schemas"]["ExperimentVariantOut"][];
+        };
+        /** ExperimentVariantOut */
+        ExperimentVariantOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Experiment Id */
+            experiment_id: number;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name: string | null;
+            /** Resources Json */
+            resources_json: {
+                [key: string]: unknown;
+            }[] | null;
+        };
+        /** ExperimentVariantRequest */
+        ExperimentVariantRequest: {
+            /** Key */
+            key: string;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Resources Json */
+            resources_json?: {
+                [key: string]: unknown;
+            }[] | null;
         };
         /**
          * GscAuthorizeRequest
@@ -3934,6 +4515,122 @@ export interface components {
          * @enum {string}
          */
         InternalLinkStatus: InternalLinkStatus;
+        /** LearningCreateRequest */
+        LearningCreateRequest: {
+            /** Applies To Json */
+            applies_to_json?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Confidence
+             * @default unknown
+             */
+            confidence: string;
+            /** Created By */
+            created_by?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Evidence Json */
+            evidence_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Review State
+             * @default proposed
+             */
+            review_state: string;
+            /** Source Snapshot Id */
+            source_snapshot_id?: number | null;
+            /** Statement */
+            statement: string;
+            /**
+             * Status
+             * @default active
+             */
+            status: string;
+            /** Supersedes Learning Id */
+            supersedes_learning_id?: number | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** LearningOut */
+        LearningOut: {
+            /** Applies To Json */
+            applies_to_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Confidence */
+            confidence: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Domain */
+            domain: string | null;
+            /** Evidence Json */
+            evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Project Id */
+            project_id: number;
+            /** Review State */
+            review_state: string;
+            /** Source Snapshot Id */
+            source_snapshot_id: number | null;
+            /** Statement */
+            statement: string;
+            /** Status */
+            status: string;
+            /** Supersedes Learning Id */
+            supersedes_learning_id: number | null;
+            /** Tags */
+            tags: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** LearningUpdateRequest */
+        LearningUpdateRequest: {
+            /** Applies To Json */
+            applies_to_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Confidence */
+            confidence?: string | null;
+            /** Domain */
+            domain?: string | null;
+            /** Evidence Json */
+            evidence_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Metadata Json */
+            metadata_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Review State */
+            review_state?: string | null;
+            /** Statement */
+            statement?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
         /** MarkDraftedRequest */
         MarkDraftedRequest: {
             /** Expected Etag */
@@ -4051,6 +4748,42 @@ export interface components {
             total_estimate: number;
         };
         /**
+         * PageResponse[DecisionOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_DecisionOut_: {
+            /** Items */
+            items: components["schemas"]["DecisionOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
+         * PageResponse[ExperimentOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ExperimentOut_: {
+            /** Items */
+            items: components["schemas"]["ExperimentOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
          * PageResponse[InternalLinkOut]
          * @example {
          *       "items": [],
@@ -4060,6 +4793,42 @@ export interface components {
         PageResponse_InternalLinkOut_: {
             /** Items */
             items: components["schemas"]["InternalLinkOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
+         * PageResponse[LearningOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_LearningOut_: {
+            /** Items */
+            items: components["schemas"]["LearningOut"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /**
+         * PageResponse[ProjectEventOut]
+         * @example {
+         *       "items": [],
+         *       "total_estimate": 0
+         *     }
+         */
+        PageResponse_ProjectEventOut_: {
+            /** Items */
+            items: components["schemas"]["ProjectEventOut"][];
             /** Next Cursor */
             next_cursor?: number | null;
             /**
@@ -4455,6 +5224,41 @@ export interface components {
             } | null;
             /** Slug */
             slug: string;
+        };
+        /** ProjectEventOut */
+        ProjectEventOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Project Id */
+            project_id: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Source Id */
+            source_id: number | null;
+            /** Source Type */
+            source_type: string;
+            /** Summary */
+            summary: string | null;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string | null;
         };
         /**
          * ProjectOut
@@ -5394,6 +6198,32 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ContextSnapshotOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ContextSnapshotOut_: {
+            data: components["schemas"]["ContextSnapshotOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[DecisionOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_DecisionOut_: {
+            data: components["schemas"]["DecisionOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[DriftBaselineOut]
          * @example {
          *       "project_id": 1
@@ -5414,6 +6244,32 @@ export interface components {
          */
         WriteResponse_EeatCriterionOut_: {
             data: components["schemas"]["EeatCriterionOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[ExperimentObservationOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ExperimentObservationOut_: {
+            data: components["schemas"]["ExperimentObservationOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[ExperimentOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ExperimentOut_: {
+            data: components["schemas"]["ExperimentOut"];
             /** Project Id */
             project_id?: number | null;
             /** Run Id */
@@ -5453,6 +6309,19 @@ export interface components {
          */
         WriteResponse_InternalLinkOut_: {
             data: components["schemas"]["InternalLinkOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
+         * WriteResponse[LearningOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_LearningOut_: {
+            data: components["schemas"]["LearningOut"];
             /** Project Id */
             project_id?: number | null;
             /** Run Id */
@@ -5700,10 +6569,17 @@ export type SchemaClusterOut = components['schemas']['ClusterOut'];
 export type SchemaComplianceCreateRequest = components['schemas']['ComplianceCreateRequest'];
 export type SchemaComplianceRuleOut = components['schemas']['ComplianceRuleOut'];
 export type SchemaComplianceUpdateRequest = components['schemas']['ComplianceUpdateRequest'];
+export type SchemaContextItemOut = components['schemas']['ContextItemOut'];
+export type SchemaContextQueryOut = components['schemas']['ContextQueryOut'];
+export type SchemaContextQueryRequest = components['schemas']['ContextQueryRequest'];
+export type SchemaContextSnapshotCreateRequest = components['schemas']['ContextSnapshotCreateRequest'];
+export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut'];
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaCreateInterlinkRequest = components['schemas']['CreateInterlinkRequest'];
 export type SchemaCreateRedirectRequest = components['schemas']['CreateRedirectRequest'];
 export type SchemaCredentialConnectionOut = components['schemas']['CredentialConnectionOut'];
+export type SchemaDecisionOut = components['schemas']['DecisionOut'];
+export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
 export type SchemaDriftBaselineOut = components['schemas']['DriftBaselineOut'];
 export type SchemaDriftSnapshotRequest = components['schemas']['DriftSnapshotRequest'];
 export type SchemaEeatBulkRecordRequest = components['schemas']['EeatBulkRecordRequest'];
@@ -5715,6 +6591,13 @@ export type SchemaEeatReportResponse = components['schemas']['EeatReportResponse
 export type SchemaEeatScoreReport = components['schemas']['EeatScoreReport'];
 export type SchemaEeatTogglePatch = components['schemas']['EeatTogglePatch'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
+export type SchemaExperimentCreateRequest = components['schemas']['ExperimentCreateRequest'];
+export type SchemaExperimentDecisionRequest = components['schemas']['ExperimentDecisionRequest'];
+export type SchemaExperimentObservationOut = components['schemas']['ExperimentObservationOut'];
+export type SchemaExperimentObservationRequest = components['schemas']['ExperimentObservationRequest'];
+export type SchemaExperimentOut = components['schemas']['ExperimentOut'];
+export type SchemaExperimentVariantOut = components['schemas']['ExperimentVariantOut'];
+export type SchemaExperimentVariantRequest = components['schemas']['ExperimentVariantRequest'];
 export type SchemaGscAuthorizeRequest = components['schemas']['GscAuthorizeRequest'];
 export type SchemaGscAuthorizeResponse = components['schemas']['GscAuthorizeResponse'];
 export type SchemaGscMetricOut = components['schemas']['GscMetricOut'];
@@ -5731,6 +6614,9 @@ export type SchemaIntegrationUpdateRequest = components['schemas']['IntegrationU
 export type SchemaInterlinkSuggestion = components['schemas']['InterlinkSuggestion'];
 export type SchemaInterlinksReport = components['schemas']['InterlinksReport'];
 export type SchemaInternalLinkOut = components['schemas']['InternalLinkOut'];
+export type SchemaLearningCreateRequest = components['schemas']['LearningCreateRequest'];
+export type SchemaLearningOut = components['schemas']['LearningOut'];
+export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
 export type SchemaMarkDraftedRequest = components['schemas']['MarkDraftedRequest'];
 export type SchemaMarkEeatPassedRequest = components['schemas']['MarkEeatPassedRequest'];
 export type SchemaMarkPublishedRequest = components['schemas']['MarkPublishedRequest'];
@@ -5740,7 +6626,11 @@ export type SchemaPageResponseArticleVersionOut = components['schemas']['PageRes
 export type SchemaPageResponseArtifactOut = components['schemas']['PageResponse_ArtifactOut_'];
 export type SchemaPageResponseAuthorOut = components['schemas']['PageResponse_AuthorOut_'];
 export type SchemaPageResponseClusterOut = components['schemas']['PageResponse_ClusterOut_'];
+export type SchemaPageResponseDecisionOut = components['schemas']['PageResponse_DecisionOut_'];
+export type SchemaPageResponseExperimentOut = components['schemas']['PageResponse_ExperimentOut_'];
 export type SchemaPageResponseInternalLinkOut = components['schemas']['PageResponse_InternalLinkOut_'];
+export type SchemaPageResponseLearningOut = components['schemas']['PageResponse_LearningOut_'];
+export type SchemaPageResponseProjectEventOut = components['schemas']['PageResponse_ProjectEventOut_'];
 export type SchemaPageResponseProjectOut = components['schemas']['PageResponse_ProjectOut_'];
 export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_RedirectOut_'];
 export type SchemaPageResponseResourceRecordOut = components['schemas']['PageResponse_ResourceRecordOut_'];
@@ -5761,6 +6651,7 @@ export type SchemaProcedureRunStepOut = components['schemas']['ProcedureRunStepO
 export type SchemaProcedureStepContext = components['schemas']['ProcedureStepContext'];
 export type SchemaProcedureSummary = components['schemas']['ProcedureSummary'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
+export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
@@ -5810,11 +6701,16 @@ export type SchemaWriteResponseAuthorOut = components['schemas']['WriteResponse_
 export type SchemaWriteResponseBulkIngestResponse = components['schemas']['WriteResponse_BulkIngestResponse_'];
 export type SchemaWriteResponseClusterOut = components['schemas']['WriteResponse_ClusterOut_'];
 export type SchemaWriteResponseComplianceRuleOut = components['schemas']['WriteResponse_ComplianceRuleOut_'];
+export type SchemaWriteResponseContextSnapshotOut = components['schemas']['WriteResponse_ContextSnapshotOut_'];
+export type SchemaWriteResponseDecisionOut = components['schemas']['WriteResponse_DecisionOut_'];
 export type SchemaWriteResponseDriftBaselineOut = components['schemas']['WriteResponse_DriftBaselineOut_'];
 export type SchemaWriteResponseEeatCriterionOut = components['schemas']['WriteResponse_EeatCriterionOut_'];
+export type SchemaWriteResponseExperimentObservationOut = components['schemas']['WriteResponse_ExperimentObservationOut_'];
+export type SchemaWriteResponseExperimentOut = components['schemas']['WriteResponse_ExperimentOut_'];
 export type SchemaWriteResponseIntegrationBudgetOut = components['schemas']['WriteResponse_IntegrationBudgetOut_'];
 export type SchemaWriteResponseIntegrationCredentialOut = components['schemas']['WriteResponse_IntegrationCredentialOut_'];
 export type SchemaWriteResponseInternalLinkOut = components['schemas']['WriteResponse_InternalLinkOut_'];
+export type SchemaWriteResponseLearningOut = components['schemas']['WriteResponse_LearningOut_'];
 export type SchemaWriteResponseProjectOut = components['schemas']['WriteResponse_ProjectOut_'];
 export type SchemaWriteResponseProjectPluginOut = components['schemas']['WriteResponse_ProjectPluginOut_'];
 export type SchemaWriteResponsePublishTargetOut = components['schemas']['WriteResponse_PublishTargetOut_'];
@@ -8635,6 +9531,111 @@ export interface operations {
             };
         };
     };
+    query_context_api_v1_projects__project_id__context_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextQueryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextQueryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_context_snapshot_api_v1_projects__project_id__context_snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextSnapshotCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ContextSnapshotOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    context_timeline_api_v1_projects__project_id__context_timeline_get: {
+        parameters: {
+            query?: {
+                event_type?: string | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ProjectEventOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_project_cost_api_v1_projects__project_id__cost_get: {
         parameters: {
             query?: {
@@ -8655,6 +9656,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_decisions_api_v1_projects__project_id__decisions_get: {
+        parameters: {
+            query?: {
+                experiment_id?: number | null;
+                status?: string | null;
+                tags?: string[] | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_DecisionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_decision_api_v1_projects__project_id__decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionRecordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_DecisionOut_"];
                 };
             };
             /** @description Validation Error */
@@ -8757,6 +9830,148 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_EeatCriterionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_experiments_api_v1_projects__project_id__experiments_get: {
+        parameters: {
+            query?: {
+                domain?: string | null;
+                status?: string | null;
+                tags?: string[] | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_ExperimentOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_experiment_api_v1_projects__project_id__experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ExperimentOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_experiment_decision_api_v1_projects__project_id__experiments_decisions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_DecisionOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_experiment_observation_api_v1_projects__project_id__experiments_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExperimentObservationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ExperimentObservationOut_"];
                 };
             };
             /** @description Validation Error */
@@ -9231,6 +10446,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriteResponse_InternalLinkOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_learnings_api_v1_projects__project_id__learnings_get: {
+        parameters: {
+            query?: {
+                domain?: string | null;
+                status?: string | null;
+                review_state?: string | null;
+                tags?: string[] | null;
+                limit?: number;
+                after?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageResponse_LearningOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_learning_api_v1_projects__project_id__learnings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_LearningOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_learning_api_v1_projects__project_id__learnings__learning_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                learning_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_LearningOut_"];
                 };
             };
             /** @description Validation Error */

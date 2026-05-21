@@ -25,6 +25,7 @@ from content_stack.api.clusters import (
 from content_stack.api.clusters import (
     project_router as clusters_project_router,
 )
+from content_stack.api.context import router as context_router
 from content_stack.api.errors import (
     RequestIdMiddleware,
     register_error_handlers,
@@ -82,6 +83,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(plugins_router)
     # Generic StackOS resources/artifacts.
     app.include_router(resources_router)
+    # Project memory/context primitives.
+    app.include_router(context_router)
     # Domain routers — projects + nested presets land first because most
     # other resources hang off ``/projects/{id}/...``.
     app.include_router(projects_router)

@@ -104,6 +104,10 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "project.activate" not in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
+    assert "context.query" in names
+    assert "learning.query" in names
+    assert "learning.create" not in names
+    assert "decision.record" not in names
     assert "dataforseo.serp" not in names
 
 

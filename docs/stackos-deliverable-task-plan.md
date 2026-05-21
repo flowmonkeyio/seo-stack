@@ -24,6 +24,9 @@ StackOS:
 - No deliverable should mix unrelated architecture layers.
 - Compatibility for current SEO flows must be preserved unless a task
   explicitly says otherwise.
+- Clean cut means additive schema and surface changes. Do not write migrations
+  that drop old SEO/procedure/content-stack tables during this pivot. Legacy
+  tables stay in place until a separately signed-off destructive cleanup task.
 - New domain-specific behavior belongs in plugin manifests/resources/actions,
   not StackOS core.
 - Workflow UI must be generic. Do not create bespoke UI per workflow.
@@ -31,6 +34,15 @@ StackOS:
 - Any task touching auth, actions, context, logs, or audit must include
   redaction tests.
 - Every task must update docs if the behavior or architecture changes.
+
+Clean-cut migration rule:
+
+- Add new StackOS tables/primitives as sidecars.
+- Disable, hide, wrap, or stop routing legacy surfaces in code/UI when a task
+  scopes that behavior.
+- Do not physically drop previous tables or erase historical state in a pivot
+  migration. Any destructive database cleanup requires its own explicit ticket,
+  verification plan, backup/restore path, and user signoff.
 
 ## Verification Status
 
@@ -753,6 +765,8 @@ Migration/rollback concerns:
 
 - Add project memory tables as append-only sidecars first. Rollback disables
   new writes while preserving existing run history and typed SEO state.
+- No migration may drop existing SEO/procedure/content-stack tables. D05 only
+  adds project memory sidecars.
 
 Risks:
 
@@ -2084,6 +2098,8 @@ Before implementation starts, verify this task plan against the vision:
 - Does every domain-specific task place behavior under plugin ownership?
 - Are procedures always legacy/compatibility after the transition begins?
 - Does every task preserve existing SEO flows unless explicitly scoped?
+- Does every migration preserve old tables/history unless a separately
+  signed-off destructive cleanup ticket exists?
 - Is each task small enough to commit independently after signoff?
 
 ## Open Questions Before D02
