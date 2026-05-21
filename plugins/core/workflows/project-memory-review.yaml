@@ -1,0 +1,149 @@
+schema_version: stackos.workflow-template.v1
+key: core.project-memory-review
+name: Project Memory Review
+version: 0.1.0
+description: Review bounded project context and prepare an agent-authored run plan or next-step recommendation.
+domain: core
+owner:
+  team: StackOS
+when_to_use:
+  - The agent needs to understand recent project history before planning work.
+  - A workflow should start from prior runs, learnings, experiments, and decisions.
+when_not_to_use:
+  - The goal already has a concrete run plan ready for execution.
+  - The agent needs to call provider actions immediately without reviewing context.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+    description: The user or agent goal to evaluate against project history.
+  - key: focus_domain
+    name: Focus Domain
+    type: string
+    required: false
+    description: Optional domain filter such as seo, media-buying, gtm, or operations.
+context_requirements:
+  - id: recent_runs
+    source: runs
+    purpose: Inspect recent execution evidence without loading full run state.
+    filters:
+      statuses:
+        - success
+        - failed
+        - aborted
+    fields:
+      - kind
+      - status
+      - procedure_slug
+      - last_step
+      - metadata_json
+    max_items: 10
+    return_mode: compact
+  - id: accepted_learnings
+    source: learnings
+    purpose: Pull reusable accepted/proposed learnings relevant to the current goal.
+    filters:
+      statuses:
+        - active
+    fields:
+      - statement
+      - domain
+      - confidence
+      - status
+      - review_state
+      - tags
+    max_items: 20
+    return_mode: compact
+  - id: active_experiments
+    source: experiments
+    purpose: Understand active experiments so the agent does not ignore ongoing work.
+    filters:
+      statuses:
+        - planned
+        - running
+        - pending-decision
+    fields:
+      - name
+      - domain
+      - hypothesis
+      - status
+      - metric_targets_json
+      - variants
+    max_items: 20
+    return_mode: compact
+  - id: recent_decisions
+    source: decisions
+    purpose: Read explicit prior decisions that constrain the next plan.
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: project-data
+    required: true
+    description: Query project context, learnings, experiments, decisions, and artifacts.
+policies:
+  - key: no-platform-decisions
+    kind: boundary
+    description: StackOS stores and retrieves context; the agent decides what the context means.
+approval_gates:
+  - key: human-review
+    description: Request human review before mutating templates, project memory, provider state, or external systems.
+    required_when: mutation_or_external_action
+steps:
+  - id: clarify-goal
+    title: Clarify Goal And Scope
+    purpose: Restate the goal, assumptions, constraints, and missing inputs.
+    input_refs:
+      - goal
+      - focus_domain
+    output_refs:
+      - context_summary
+  - id: retrieve-context
+    title: Retrieve Bounded Context
+    purpose: Query only the declared fields and limits before reasoning.
+    context_refs:
+      - recent_runs
+      - accepted_learnings
+      - active_experiments
+      - recent_decisions
+    depends_on:
+      - clarify-goal
+    output_refs:
+      - context_summary
+  - id: propose-next-plan
+    title: Propose Next Plan
+    purpose: Draft an agent-authored plan, explicit open questions, and any approval needs.
+    policy_refs:
+      - no-platform-decisions
+    approval_refs:
+      - human-review
+    depends_on:
+      - retrieve-context
+    output_refs:
+      - recommended_plan
+outputs:
+  - key: context_summary
+    name: Context Summary
+    type: object
+    required: true
+    description: Compact summary of relevant evidence with provenance.
+  - key: recommended_plan
+    name: Recommended Plan
+    type: object
+    required: true
+    description: Agent-authored next plan or rationale for no action.
+learning_hooks:
+  - key: capture-reusable-learning
+    prompt: Capture reusable learning candidates only when evidence is explicit and provenance is known.
+    tags:
+      - project-memory
+failure_handling:
+  - If context is insufficient, return missing context requirements instead of inventing facts.
+metadata:
+  builtin: true

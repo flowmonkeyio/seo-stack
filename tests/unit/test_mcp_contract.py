@@ -60,6 +60,8 @@ from content_stack.mcp.server import (
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",
+        "workflowTemplate.save",
+        "workflowTemplate.fork",
         "auth.start",
         "auth.test",
         "auth.revoke",
@@ -79,7 +81,15 @@ def test_mutating_verb_classification(name: str) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["article.get", "article.list", "topic.list", "meta.enums", "cost.queryAll", "gscOauth.get"],
+    [
+        "article.get",
+        "article.list",
+        "topic.list",
+        "meta.enums",
+        "cost.queryAll",
+        "gscOauth.get",
+        "workflowTemplate.validate",
+    ],
 )
 def test_read_verb_not_mutating(name: str) -> None:
     """Read verbs are not mutating."""

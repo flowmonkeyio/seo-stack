@@ -106,8 +106,11 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "integration.set" not in names
     assert "context.query" in names
     assert "learning.query" in names
+    assert "workflowTemplate.list" in names
+    assert "workflowTemplate.validate" in names
     assert "learning.create" not in names
     assert "decision.record" not in names
+    assert "workflowTemplate.save" not in names
     assert "dataforseo.serp" not in names
 
 

@@ -848,6 +848,7 @@ Data model changes:
 - `workflow_templates`
 - `workflow_template_versions`
 - `project_workflow_templates`
+- These are additive sidecars only. No legacy procedure/SEO table is removed.
 
 API/MCP changes:
 
@@ -860,6 +861,8 @@ API/MCP changes:
 - Before D09, `save` and `fork` are local-admin/project APIs or
   compatibility-only. Normal agents can list, describe, and validate templates
   without mutating state.
+- `workflowTemplate.validate` is read-only for template schema checks. It must
+  not create rows, start runs, or execute actions.
 
 UI changes:
 
@@ -887,6 +890,8 @@ Migration/rollback concerns:
 
 - Load plugin/repo templates beside existing procedure definitions first.
   Rollback disables template loading and leaves procedure execution unchanged.
+- No migration may drop existing SEO/procedure/content-stack tables. D06 only
+  adds workflow template sidecars.
 
 Risks:
 

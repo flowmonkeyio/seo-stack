@@ -54,6 +54,7 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "dismiss",
         "enable",
         "disable",
+        "save",
         # Bulk verbs.
         "bulkCreate",
         "bulkUpdate",
@@ -133,6 +134,13 @@ READ_VERBS: frozenset[str] = frozenset(
     }
 )
 
+READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        # D06 template validation is pure schema checking; it saves no state.
+        "workflowTemplate.validate",
+    }
+)
+
 
 def verb_is_mutating(name: str) -> bool:
     """Return ``True`` if a tool name's verb component is mutating.
@@ -142,6 +150,8 @@ def verb_is_mutating(name: str) -> bool:
     ``MUTATING_VERBS``. Names without a dot are treated as bare verbs so
     test fixtures can stress the helper without inventing namespaces.
     """
+    if name in READ_ONLY_TOOL_NAMES:
+        return False
     verb = name.rsplit(".", 1)[-1]
     if verb in MUTATING_VERBS:
         return True
@@ -220,6 +230,7 @@ class WriteEnvelope(BaseModel, Generic[T]):  # noqa: UP046 — explicit Generic 
 
 __all__ = [
     "MUTATING_VERBS",
+    "READ_ONLY_TOOL_NAMES",
     "READ_VERBS",
     "MCPInput",
     "MCPOutput",

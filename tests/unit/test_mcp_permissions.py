@@ -51,8 +51,15 @@ def test_check_grant_for_system_skill_covers_agent_owned_operations() -> None:
     check_grant("learning.query", SYSTEM_SKILL)
     check_grant("experiment.query", SYSTEM_SKILL)
     check_grant("decision.query", SYSTEM_SKILL)
+    check_grant("workflowTemplate.list", SYSTEM_SKILL)
+    check_grant("workflowTemplate.describe", SYSTEM_SKILL)
+    check_grant("workflowTemplate.validate", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("learning.create", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("workflowTemplate.save", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
+        check_grant("workflowTemplate.fork", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("experiment.recordDecision", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):

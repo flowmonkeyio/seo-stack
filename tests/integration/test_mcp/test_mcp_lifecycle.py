@@ -57,6 +57,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "target": 5,
     "topic": 8,
     "voice": 4,
+    "workflowTemplate": 5,
     "workspace": 5,
 }
 

@@ -28,6 +28,7 @@ from content_stack.mcp.tools import (
     runs,
     sitemap,
     vendor_ops,
+    workflows,
     workspaces,
 )
 
@@ -49,6 +50,7 @@ def register_all(registry: ToolRegistry) -> None:
     resources.register(registry)
     artifacts.register(registry)
     sitemap.register(registry)
+    workflows.register(registry)
     workspaces.register(registry)
     vendor_ops.register(registry)
 

@@ -42,6 +42,9 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "learning.query",
     "experiment.query",
     "decision.query",
+    "workflowTemplate.list",
+    "workflowTemplate.describe",
+    "workflowTemplate.validate",
     "meta.enums",
     # Agent-led procedure controls.
     "procedure.list",
@@ -80,6 +83,8 @@ _AGENT_ADMIN_GATED_TOOL_NAMES = frozenset(
         "plugin.disable",
         "plugin.enable",
         "resource.upsert",
+        "workflowTemplate.fork",
+        "workflowTemplate.save",
     }
 )
 

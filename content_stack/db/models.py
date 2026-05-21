@@ -578,6 +578,122 @@ class ActionVersion(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
+class WorkflowTemplate(SQLModel, table=True):
+    """Reusable workflow template catalog/storage row.
+
+    Templates are inert configuration and instruction contracts. They do not
+    execute actions or decide provider payloads; agents turn them into concrete
+    run plans later.
+    """
+
+    __tablename__ = "workflow_templates"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "key",
+            "source",
+            name="uq_workflow_templates_project_key_source",
+        ),
+        Index("ix_workflow_templates_key", "key"),
+        Index("ix_workflow_templates_project", "project_id"),
+        Index("ix_workflow_templates_plugin", "plugin_id"),
+        Index("ix_workflow_templates_source", "source"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=True,
+        ),
+    )
+    plugin_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("plugins.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    key: str = Field(max_length=160)
+    name: str = Field(max_length=200)
+    description: str = Field(default="")
+    source: str = Field(max_length=40)
+    origin_path: str | None = Field(default=None, max_length=1000)
+    status: str = Field(default="active", max_length=40)
+    metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class WorkflowTemplateVersion(SQLModel, table=True):
+    """Immutable version snapshot for a workflow template."""
+
+    __tablename__ = "workflow_template_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "template_id",
+            "version",
+            name="uq_workflow_template_versions_template_version",
+        ),
+        Index("ix_workflow_template_versions_template", "template_id"),
+        Index("ix_workflow_template_versions_checksum", "checksum"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    template_id: int = Field(
+        sa_column=Column(
+            ForeignKey("workflow_templates.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    version: str = Field(max_length=40)
+    spec_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    checksum: str = Field(max_length=64)
+    created_by: str | None = Field(default=None, max_length=200)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ProjectWorkflowTemplate(SQLModel, table=True):
+    """Project-level enablement/current pointer for stored templates."""
+
+    __tablename__ = "project_workflow_templates"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "template_id",
+            name="uq_project_workflow_templates_project_template",
+        ),
+        Index("ix_project_workflow_templates_project", "project_id"),
+        Index("ix_project_workflow_templates_template", "template_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    template_id: int = Field(
+        sa_column=Column(
+            ForeignKey("workflow_templates.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    active_version_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("workflow_template_versions.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    enabled: bool = Field(default=True)
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
 class Resource(SQLModel, table=True):
     """Resource type declared by a StackOS plugin.
 

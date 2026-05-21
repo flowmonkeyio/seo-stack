@@ -206,6 +206,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "learning.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "experiment.query" in _AGENT_VISIBLE_TOOL_NAMES
     assert "decision.query" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "workflowTemplate.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "workflowTemplate.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "workflowTemplate.validate" in _AGENT_VISIBLE_TOOL_NAMES
     assert "integration.set" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "integration.test" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
@@ -220,6 +223,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "experiment.recordDecision" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "decision.record" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "workflowTemplate.save" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "workflowTemplate.fork" not in _AGENT_BASE_TOOLBOX_NAMES
     assert {
         "artifact.create",
         "auth.revoke",
@@ -237,6 +242,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
         "plugin.enable",
         "plugin.disable",
         "resource.upsert",
+        "workflowTemplate.fork",
+        "workflowTemplate.save",
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES

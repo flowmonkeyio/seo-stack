@@ -85,6 +85,9 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "schema_emits",
         "topics",
         "voice_profiles",
+        "workflow_template_versions",
+        "workflow_templates",
+        "project_workflow_templates",
         "workspace_bindings",
     }
 )

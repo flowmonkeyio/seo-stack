@@ -1,0 +1,135 @@
+"""Unit tests for StackOS workflow template schema."""
+
+from __future__ import annotations
+
+from content_stack.workflows.template_schema import (
+    WorkflowTemplateSpec,
+    parse_workflow_template_yaml,
+    validate_workflow_template_obj,
+)
+
+
+def _template_dict() -> dict:
+    return {
+        "schema_version": "stackos.workflow-template.v1",
+        "key": "media.campaign-launch",
+        "name": "Campaign Launch",
+        "version": "0.1.0",
+        "inputs": [{"key": "goal", "type": "string", "required": True}],
+        "context_requirements": [
+            {
+                "id": "recent_learnings",
+                "source": "learnings",
+                "filters": {"tags": ["creative"]},
+                "fields": ["statement", "confidence"],
+                "max_items": 5,
+            }
+        ],
+        "capability_requirements": [{"key": "media-buying"}],
+        "auth_requirements": [{"key": "meta-auth", "provider": "meta"}],
+        "action_contracts": [
+            {
+                "key": "create-campaign",
+                "capability": "media-buying",
+                "provider": "meta",
+                "auth_ref": "meta-auth",
+                "input_schema": {"type": "object"},
+            }
+        ],
+        "policies": [{"key": "human-approval", "kind": "approval"}],
+        "approval_gates": [{"key": "approve-launch"}],
+        "steps": [
+            {
+                "id": "plan",
+                "title": "Plan launch",
+                "input_refs": ["goal"],
+                "context_refs": ["recent_learnings"],
+                "action_refs": ["create-campaign"],
+                "policy_refs": ["human-approval"],
+                "approval_refs": ["approve-launch"],
+                "output_refs": ["plan_summary"],
+            }
+        ],
+        "outputs": [{"key": "plan_summary", "type": "object"}],
+    }
+
+
+def test_template_schema_accepts_generic_contracts() -> None:
+    template = WorkflowTemplateSpec.model_validate(_template_dict())
+
+    assert template.key == "media.campaign-launch"
+    assert template.context_requirements[0].filters_json == {"tags": ["creative"]}
+    assert template.action_contracts[0].input_schema_json == {"type": "object"}
+
+
+def test_template_schema_rejects_unknown_references() -> None:
+    data = _template_dict()
+    data["steps"][0]["action_refs"] = ["missing-action"]
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "missing-action" in result.errors[0].message
+
+
+def test_template_schema_rejects_secret_values() -> None:
+    data = _template_dict()
+    data["metadata"] = {"api_key": "real-value"}
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "must not contain secrets" in result.errors[0].message
+
+
+def test_template_schema_rejects_concrete_action_payloads() -> None:
+    data = _template_dict()
+    data["action_contracts"][0]["config"] = {
+        "payload": {"name": "Specific launch"},
+        "ad_account_id": "act_123",
+    }
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "final action payloads" in result.errors[0].message
+    assert "ad_account_id" in result.errors[0].message
+
+
+def test_template_schema_rejects_hard_coded_business_decisions() -> None:
+    data = _template_dict()
+    data["extensions"] = {"business_decision": "winner is variant A"}
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "hard-coded business decisions" in result.errors[0].message
+
+
+def test_template_yaml_parser_supports_authoring_aliases() -> None:
+    template = parse_workflow_template_yaml(
+        """
+schema_version: stackos.workflow-template.v1
+key: core.simple-review
+name: Simple Review
+steps:
+  - id: read
+    title: Read context
+context_requirements:
+  - id: recent
+    source: runs
+    filters:
+      statuses: [success]
+    max_items: 3
+outputs:
+  - key: summary
+    schema:
+      type: object
+metadata:
+  safe: true
+"""
+    )
+
+    assert template.context_requirements[0].filters_json == {"statuses": ["success"]}
+    assert template.outputs[0].schema_json == {"type": "object"}
+    assert template.metadata_json == {"safe": True}

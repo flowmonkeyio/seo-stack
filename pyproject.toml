@@ -150,4 +150,6 @@ filterwarnings = [
     "ignore:Field name \"schema_json\" in \"Resource\" shadows an attribute in parent \"SQLModel\":UserWarning",
     "ignore:Field name \"schema_json\" in \"ResourceOut\" shadows an attribute in parent \"BaseModel\":UserWarning",
     "ignore:Field name \"schema\" in \"ResourceManifest\" shadows an attribute in parent \"BaseModel\":UserWarning",
+    "ignore:Field name \"schema_json\" in \"TemplateIOSpec\" shadows an attribute in parent \"BaseModel\":UserWarning",
+    "ignore:Field name \"schema_json\" in \"ResourceContractSpec\" shadows an attribute in parent \"BaseModel\":UserWarning",
 ]

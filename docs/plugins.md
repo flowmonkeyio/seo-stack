@@ -55,6 +55,16 @@ resources:
 Required identifiers use lowercase kebab or dotted form, for example
 `seo-content`, `openai-images`, or `catalog.describe`.
 
+Workflow templates live beside plugin metadata as files:
+
+```text
+plugins/<plugin>/workflows/*.yaml
+```
+
+The loader treats those files as plugin defaults. They can be overridden by
+project/user templates in the DB or by repository/company templates under
+`.stackos/workflows`.
+
 ## Built-In Plugins
 
 The initial StackOS daemon registers three built-ins:
@@ -88,6 +98,9 @@ reads:
 - `resource.query`
 - `artifact.get`
 - `artifact.query`
+- `workflowTemplate.list`
+- `workflowTemplate.describe`
+- `workflowTemplate.validate`
 
 Setup/admin-gated mutations are registered in the daemon catalog but are not
 advertised through the normal agent bridge and are not granted to the
@@ -99,6 +112,8 @@ system/bootstrap agent surface before D09:
 - `auth.revoke`
 - `resource.upsert`
 - `artifact.create`
+- `workflowTemplate.save`
+- `workflowTemplate.fork`
 
 Credential setup is metadata-driven by plugin providers, but secrets stay
 outside agent context. Provider manifests declare `auth_type`; the daemon maps

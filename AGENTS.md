@@ -68,6 +68,8 @@ Procedures are legacy compatibility. New workflow work should use:
 
 Templates should not contain one-size-fits-all hard-coded business logic. They
 provide a base contract that agents can adapt in a project/repo context.
+Template precedence is repo/company `.stackos/workflows` over project/user DB
+templates over plugin defaults in `plugins/<plugin>/workflows`.
 
 Project-level context, learnings, experiments, decisions, artifacts, and metric
 snapshots are data stores. StackOS can filter and retrieve them; agents decide
