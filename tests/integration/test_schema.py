@@ -1,4 +1,4 @@
-"""Integration tests for the M1.A schema (30 tables + seed)."""
+"""Integration tests for the schema and seed data."""
 
 from __future__ import annotations
 
@@ -29,9 +29,10 @@ from content_stack.db.models import (
 )
 from content_stack.db.seed import seed_eeat_criteria
 
-# Names of all 30 tables expected to exist after `alembic upgrade head`.
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
+        "action_versions",
+        "actions",
         "agent_sessions",
         "article_assets",
         "article_publishes",
@@ -39,6 +40,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "articles",
         "authors",
         "clusters",
+        "capabilities",
         "compliance_rules",
         "drift_baselines",
         "eeat_criteria",
@@ -49,8 +51,11 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "integration_budgets",
         "integration_credentials",
         "internal_links",
+        "plugins",
         "procedure_run_steps",
         "projects",
+        "project_plugins",
+        "providers",
         "publish_targets",
         "redirects",
         "research_sources",
@@ -106,13 +111,13 @@ def _list_tables(db_path: Path) -> set[str]:
         conn.close()
 
 
-def test_alembic_upgrade_creates_30_tables(isolated_alembic: Path) -> None:
+def test_alembic_upgrade_creates_expected_tables(isolated_alembic: Path) -> None:
     _run_alembic(["upgrade", "head"])
     tables = _list_tables(isolated_alembic)
     assert tables == EXPECTED_TABLES, (
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )
-    assert len(tables) == 30
+    assert len(tables) == len(EXPECTED_TABLES)
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:

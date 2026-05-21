@@ -302,6 +302,15 @@ class RunStepStatus(enum.StrEnum):
     SKIPPED = "skipped"
 
 
+class PluginSource(enum.StrEnum):
+    """Persists to ``plugins.source`` for StackOS catalog ownership."""
+
+    BUILTIN = "builtin"
+    REPO = "repo"
+    PROJECT = "project"
+    USER = "user"
+
+
 class TopicIntent(enum.StrEnum):
     """Persists to ``topics.intent`` per PLAN.md L387."""
 
@@ -405,6 +414,168 @@ class Project(SQLModel, table=True):
     schedule_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class Plugin(SQLModel, table=True):
+    """Installed StackOS plugin manifest metadata.
+
+    Plugin rows are catalog state only. They describe capabilities, providers,
+    actions, resources, and UI contributions; domain execution remains in
+    plugin-owned manifests/connectors and grant-gated tools.
+    """
+
+    __tablename__ = "plugins"
+
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(max_length=120, unique=True, index=True)
+    name: str = Field(max_length=200)
+    version: str = Field(default="0.1.0", max_length=40)
+    description: str = Field(default="")
+    source: PluginSource = Field(sa_column=_enum_column(PluginSource))
+    manifest_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ProjectPlugin(SQLModel, table=True):
+    """Project-level plugin enablement state."""
+
+    __tablename__ = "project_plugins"
+    __table_args__ = (
+        UniqueConstraint("project_id", "plugin_id", name="uq_project_plugins_project_plugin"),
+        Index("ix_project_plugins_project", "project_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    plugin_id: int = Field(
+        sa_column=Column(
+            ForeignKey("plugins.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    enabled: bool = Field(default=True)
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    enabled_at: datetime | None = Field(default_factory=_utcnow)
+    disabled_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class Capability(SQLModel, table=True):
+    """Capability contributed by a plugin, such as SEO publishing or images."""
+
+    __tablename__ = "capabilities"
+    __table_args__ = (
+        UniqueConstraint("plugin_id", "key", name="uq_capabilities_plugin_key"),
+        Index("ix_capabilities_plugin", "plugin_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    plugin_id: int = Field(
+        sa_column=Column(
+            ForeignKey("plugins.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    key: str = Field(max_length=160)
+    name: str = Field(max_length=200)
+    description: str = Field(default="")
+    kind: str = Field(default="domain", max_length=80)
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class Provider(SQLModel, table=True):
+    """External or internal provider declared by a plugin."""
+
+    __tablename__ = "providers"
+    __table_args__ = (
+        UniqueConstraint("plugin_id", "key", name="uq_providers_plugin_key"),
+        Index("ix_providers_plugin", "plugin_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    plugin_id: int = Field(
+        sa_column=Column(
+            ForeignKey("plugins.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    key: str = Field(max_length=160)
+    name: str = Field(max_length=200)
+    description: str = Field(default="")
+    auth_type: str = Field(default="none", max_length=80)
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class Action(SQLModel, table=True):
+    """Generic action declared by a plugin/provider.
+
+    D02 stores schema/catalog metadata only. Execution lands in later action
+    deliverables and must remain grant-gated.
+    """
+
+    __tablename__ = "actions"
+    __table_args__ = (
+        UniqueConstraint("plugin_id", "key", name="uq_actions_plugin_key"),
+        Index("ix_actions_plugin", "plugin_id"),
+        Index("ix_actions_provider", "provider_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    plugin_id: int = Field(
+        sa_column=Column(
+            ForeignKey("plugins.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    provider_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("providers.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    key: str = Field(max_length=160)
+    name: str = Field(max_length=200)
+    description: str = Field(default="")
+    capability_key: str | None = Field(default=None, max_length=160)
+    risk_level: str = Field(default="read", max_length=40)
+    input_schema_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    output_schema_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    config_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ActionVersion(SQLModel, table=True):
+    """Versioned action manifest snapshots."""
+
+    __tablename__ = "action_versions"
+    __table_args__ = (
+        UniqueConstraint("action_id", "version", name="uq_action_versions_action_version"),
+        Index("ix_action_versions_action", "action_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    action_id: int = Field(
+        sa_column=Column(
+            ForeignKey("actions.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    version: str = Field(max_length=40)
+    manifest_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class VoiceProfile(SQLModel, table=True):

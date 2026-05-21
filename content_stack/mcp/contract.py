@@ -50,6 +50,8 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "reject",
         "apply",
         "dismiss",
+        "enable",
+        "disable",
         # Bulk verbs.
         "bulkCreate",
         "bulkUpdate",

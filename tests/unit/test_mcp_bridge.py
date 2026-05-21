@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from content_stack.mcp.bridge import (
+    _AGENT_ADMIN_GATED_TOOL_NAMES,
     _AGENT_BASE_TOOLBOX_NAMES,
     _AGENT_SETUP_TOOLBOX_NAMES,
     _AGENT_VISIBLE_TOOL_NAMES,
@@ -93,6 +94,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
         *[_tool(name) for name in _AGENT_VISIBLE_TOOL_ORDER],
         _tool("article.get"),
         _tool("integration.set"),
+        _tool("plugin.enable"),
         _tool("cost.queryProject"),
         _tool("dataforseo.serp"),
     ]
@@ -106,6 +108,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert "toolbox.call" in names
     assert "article.get" not in names
     assert "integration.set" not in names
+    assert "plugin.enable" not in names
     assert "cost.queryProject" not in names
     assert "dataforseo.serp" not in names
 
@@ -183,10 +186,17 @@ def test_bridge_caches_run_token_and_step_grants() -> None:
 
 
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:
+    assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "capability.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "provider.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "integration.set" in _AGENT_BASE_TOOLBOX_NAMES
     assert "article.setDraft" in _AGENT_BASE_TOOLBOX_NAMES
     assert "cost.queryProject" in _AGENT_BASE_TOOLBOX_NAMES
     assert "publish.recordPublish" in _AGENT_BASE_TOOLBOX_NAMES
+    assert "plugin.enable" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert {"plugin.enable", "plugin.disable"} == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES
 
@@ -286,6 +296,7 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
         for name in registered
         if verb_is_mutating(name)
         and name not in agent_surface
+        and name not in _AGENT_ADMIN_GATED_TOOL_NAMES
         and not name.startswith(
             (
                 "dataforseo.",

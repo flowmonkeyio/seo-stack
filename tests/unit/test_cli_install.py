@@ -342,7 +342,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
             ).scalar_one()
     finally:
         engine.dispose()
-    assert version == "0005_targetless_article_publishes"
+    assert version == "0006_stackos_plugin_catalog"
     assert templates >= 5
 
 
@@ -356,7 +356,7 @@ def test_upgrade_to_head_works_outside_repo_cwd(
     result = upgrade_to_head(settings)
 
     assert result.stamped_existing_schema is False
-    assert current_alembic_version(settings) == "0005_targetless_article_publishes"
+    assert current_alembic_version(settings) == "0006_stackos_plugin_catalog"
 
 
 def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:

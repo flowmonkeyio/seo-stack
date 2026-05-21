@@ -57,6 +57,8 @@ from content_stack.mcp.server import (
         "compliance.remove",
         "project.activate",
         "project.delete",
+        "plugin.enable",
+        "plugin.disable",
     ],
 )
 def test_mutating_verb_classification(name: str) -> None:

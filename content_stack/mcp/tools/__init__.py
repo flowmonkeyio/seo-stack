@@ -19,6 +19,7 @@ from content_stack.mcp.tools import (
     gsc,
     interlinks,
     meta,
+    plugins,
     projects,
     runs,
     sitemap,
@@ -38,6 +39,7 @@ def register_all(registry: ToolRegistry) -> None:
     authors.register(registry)
     cost.register(registry)
     meta.register(registry)
+    plugins.register(registry)
     sitemap.register(registry)
     workspaces.register(registry)
     vendor_ops.register(registry)

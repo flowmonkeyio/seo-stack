@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, cast, get_origin
 
@@ -335,6 +335,7 @@ class MCPDispatcher:
         registry: ToolRegistry,
         engine_resolver: Callable[[], Any],
         procedure_runner_resolver: Callable[[], Any] | None = None,
+        settings_resolver: Callable[[], Any] | None = None,
     ) -> None:
         self._registry = registry
         self._engine_resolver = engine_resolver
@@ -342,6 +343,7 @@ class MCPDispatcher:
         # dispatcher without one (the M7 runs.py handlers gracefully
         # raise a typed error when called with no runner attached).
         self._procedure_runner_resolver = procedure_runner_resolver
+        self._settings_resolver = settings_resolver
 
     async def dispatch(self, name: str, arguments: dict[str, Any] | None) -> _CallResult:
         """Resolve a tool, validate input, execute, return JSON-RPC payload.
@@ -386,6 +388,9 @@ class MCPDispatcher:
         engine = self._engine_resolver()
         with Session(engine) as session:
             ctx = build_context(arguments, session)
+            if self._settings_resolver is not None:
+                with suppress(RuntimeError):
+                    ctx.extras["settings"] = self._settings_resolver()
             if self._procedure_runner_resolver is not None:
                 try:
                     ctx.procedure_runner = self._procedure_runner_resolver()
@@ -751,7 +756,13 @@ def register_mcp(app: FastAPI) -> None:
             raise RuntimeError("procedure_runner not initialised on app.state")
         return runner
 
-    dispatcher = MCPDispatcher(registry, _engine_resolver, _runner_resolver)
+    def _settings_resolver() -> Any:
+        settings = getattr(app.state, "settings", None)
+        if settings is None:  # pragma: no cover — lifespan did not finish
+            raise RuntimeError("settings not initialised on app.state")
+        return settings
+
+    dispatcher = MCPDispatcher(registry, _engine_resolver, _runner_resolver, _settings_resolver)
     server = build_server(registry, dispatcher)
 
     # Stash on app.state so tests / introspection can reach the registry.

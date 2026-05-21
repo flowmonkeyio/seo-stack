@@ -550,13 +550,93 @@ export interface paths {
         };
         /**
          * Get Ui Token
-         * @description Return the daemon's bearer token to the same-origin Vue UI.
+         * @description Return the browser's read-only bearer token to the same-origin Vue UI.
          *
-         *     The token is loaded once at app boot in ``server._build_lifespan`` and
-         *     stored on ``request.app.state.token``; we just hand it back. No I/O,
+         *     The token is derived once at app boot in ``server.create_app`` and stored
+         *     on ``request.app.state.ui_token``; we just hand it back. No I/O,
          *     no allocation, no logging of the token value.
          */
         get: operations["get_ui_token_api_v1_auth_ui_token_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Capabilities
+         * @description List registered capabilities.
+         */
+        get: operations["list_capabilities_api_v1_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/capabilities/{capability_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Capability
+         * @description Describe one capability; pass plugin_slug if the key is ambiguous.
+         */
+        get: operations["describe_capability_api_v1_capabilities__capability_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Catalog
+         * @description Return the full installed plugin catalog.
+         */
+        get: operations["list_catalog_api_v1_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/catalog/{plugin_slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Catalog
+         * @description Return one plugin's catalog contribution.
+         */
+        get: operations["describe_catalog_api_v1_catalog__plugin_slug__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -708,6 +788,46 @@ export interface paths {
          *     boot and cache.
          */
         get: operations["get_meta_enums_api_v1_meta_enums_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Plugins
+         * @description List installed plugins, optionally annotated with project enablement.
+         */
+        get: operations["list_plugins_api_v1_plugins_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plugins/{plugin_slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Plugin
+         * @description Describe one installed plugin.
+         */
+        get: operations["get_plugin_api_v1_plugins__plugin_slug__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1510,6 +1630,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/plugins/{plugin_slug}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Project Plugin
+         * @description Local-admin setup route for disabling a plugin on a project.
+         */
+        post: operations["disable_project_plugin_api_v1_projects__project_id__plugins__plugin_slug__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/plugins/{plugin_slug}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Project Plugin
+         * @description Local-admin setup route for enabling a plugin on a project.
+         */
+        post: operations["enable_project_plugin_api_v1_projects__project_id__plugins__plugin_slug__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/publish-targets": {
         parameters: {
             query?: never;
@@ -1834,6 +1994,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Providers
+         * @description List registered providers.
+         */
+        get: operations["list_providers_api_v1_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/providers/{provider_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Provider
+         * @description Describe one provider; pass plugin_slug if the key is ambiguous.
+         */
+        get: operations["describe_provider_api_v1_providers__provider_key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -1986,6 +2186,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionOut */
+        ActionOut: {
+            /** Capability Key */
+            capability_key: string | null;
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Input Schema Json */
+            input_schema_json: {
+                [key: string]: unknown;
+            };
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Output Schema Json */
+            output_schema_json: {
+                [key: string]: unknown;
+            };
+            /** Plugin Id */
+            plugin_id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Provider Id */
+            provider_id: number | null;
+            /** Provider Key */
+            provider_key: string | null;
+            /** Risk Level */
+            risk_level: string;
+        };
         /**
          * ArticleAssetKind
          * @description Persists to ``article_assets.kind`` per PLAN.md L396.
@@ -2426,6 +2661,32 @@ export interface components {
         CanonicalSetRequest: {
             /** Target Id */
             target_id: number;
+        };
+        /** CapabilityOut */
+        CapabilityOut: {
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Plugin Id */
+            plugin_id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+        };
+        /** CatalogOut */
+        CatalogOut: {
+            /** Plugins */
+            plugins: components["schemas"]["PluginCatalogOut"][];
         };
         /**
          * ClusterCreateRequest
@@ -3411,6 +3672,65 @@ export interface components {
              */
             total_estimate: number;
         };
+        /** PluginCatalogOut */
+        PluginCatalogOut: {
+            /** Actions */
+            actions: components["schemas"]["ActionOut"][];
+            /** Capabilities */
+            capabilities: components["schemas"]["CapabilityOut"][];
+            plugin: components["schemas"]["PluginOut"];
+            /** Providers */
+            providers: components["schemas"]["ProviderOut"][];
+        };
+        /**
+         * PluginEnableRequest
+         * @description Local-admin setup body for enabling a plugin on a project.
+         * @example {
+         *       "config_json": {}
+         *     }
+         */
+        PluginEnableRequest: {
+            /** Config Json */
+            config_json?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** PluginOut */
+        PluginOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Enabled For Project */
+            enabled_for_project?: boolean | null;
+            /** Id */
+            id: number;
+            /** Manifest Json */
+            manifest_json: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            source: components["schemas"]["PluginSource"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: string;
+        };
+        /**
+         * PluginSource
+         * @description Persists to ``plugins.source`` for StackOS catalog ownership.
+         * @enum {string}
+         */
+        PluginSource: PluginSource;
         /**
          * ProcedureClaimStepRequest
          * @description Wire shape for claiming the next procedure step.
@@ -3664,6 +3984,37 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectPluginOut */
+        ProjectPluginOut: {
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Disabled At */
+            disabled_at: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Enabled At */
+            enabled_at: string | null;
+            /** Id */
+            id: number;
+            /** Plugin Id */
+            plugin_id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * ProjectUpdateRequest
          * @description Body for ``PATCH /projects/{id}`` — UI-permissive, slug rejected.
@@ -3691,6 +4042,27 @@ export interface components {
             schedule_json?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ProviderOut */
+        ProviderOut: {
+            /** Auth Type */
+            auth_type: string;
+            /** Config Json */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Plugin Id */
+            plugin_id: number;
+            /** Plugin Slug */
+            plugin_slug: string;
         };
         /** PublishCreateRequest */
         PublishCreateRequest: {
@@ -4447,6 +4819,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ProjectPluginOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ProjectPluginOut_: {
+            data: components["schemas"]["ProjectPluginOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[PublishTargetOut]
          * @example {
          *       "project_id": 1
@@ -4613,6 +4998,7 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaArticleAssetOut = components['schemas']['ArticleAssetOut'];
 export type SchemaArticleCreateRequest = components['schemas']['ArticleCreateRequest'];
 export type SchemaArticleOut = components['schemas']['ArticleOut'];
@@ -4631,6 +5017,8 @@ export type SchemaBulkIngestResponse = components['schemas']['BulkIngestResponse
 export type SchemaBulkTopicCreateRequest = components['schemas']['BulkTopicCreateRequest'];
 export type SchemaBulkUpdateStatusRequest = components['schemas']['BulkUpdateStatusRequest'];
 export type SchemaCanonicalSetRequest = components['schemas']['CanonicalSetRequest'];
+export type SchemaCapabilityOut = components['schemas']['CapabilityOut'];
+export type SchemaCatalogOut = components['schemas']['CatalogOut'];
 export type SchemaClusterCreateRequest = components['schemas']['ClusterCreateRequest'];
 export type SchemaClusterOut = components['schemas']['ClusterOut'];
 export type SchemaComplianceCreateRequest = components['schemas']['ComplianceCreateRequest'];
@@ -4680,6 +5068,9 @@ export type SchemaPageResponseRedirectOut = components['schemas']['PageResponse_
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseTopicOut = components['schemas']['PageResponse_TopicOut_'];
 export type SchemaPageResponseVoiceProfileOut = components['schemas']['PageResponse_VoiceProfileOut_'];
+export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
+export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
+export type SchemaPluginOut = components['schemas']['PluginOut'];
 export type SchemaProcedureClaimStepRequest = components['schemas']['ProcedureClaimStepRequest'];
 export type SchemaProcedureExecuteProgrammaticStepRequest = components['schemas']['ProcedureExecuteProgrammaticStepRequest'];
 export type SchemaProcedureForkRequest = components['schemas']['ProcedureForkRequest'];
@@ -4692,7 +5083,9 @@ export type SchemaProcedureStepContext = components['schemas']['ProcedureStepCon
 export type SchemaProcedureSummary = components['schemas']['ProcedureSummary'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
+export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
+export type SchemaProviderOut = components['schemas']['ProviderOut'];
 export type SchemaPublishCreateRequest = components['schemas']['PublishCreateRequest'];
 export type SchemaPublishExternalCreateRequest = components['schemas']['PublishExternalCreateRequest'];
 export type SchemaPublishTargetCreateRequest = components['schemas']['PublishTargetCreateRequest'];
@@ -4737,6 +5130,7 @@ export type SchemaWriteResponseIntegrationBudgetOut = components['schemas']['Wri
 export type SchemaWriteResponseIntegrationCredentialOut = components['schemas']['WriteResponse_IntegrationCredentialOut_'];
 export type SchemaWriteResponseInternalLinkOut = components['schemas']['WriteResponse_InternalLinkOut_'];
 export type SchemaWriteResponseProjectOut = components['schemas']['WriteResponse_ProjectOut_'];
+export type SchemaWriteResponseProjectPluginOut = components['schemas']['WriteResponse_ProjectPluginOut_'];
 export type SchemaWriteResponsePublishTargetOut = components['schemas']['WriteResponse_PublishTargetOut_'];
 export type SchemaWriteResponseRedirectOut = components['schemas']['WriteResponse_RedirectOut_'];
 export type SchemaWriteResponseResearchSourceOut = components['schemas']['WriteResponse_ResearchSourceOut_'];
@@ -5820,6 +6214,121 @@ export interface operations {
             };
         };
     };
+    list_capabilities_api_v1_capabilities_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_capability_api_v1_capabilities__capability_key__get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path: {
+                capability_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_catalog_api_v1_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogOut"];
+                };
+            };
+        };
+    };
+    describe_catalog_api_v1_catalog__plugin_slug__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plugin_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginCatalogOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_cluster_api_v1_clusters__cluster_id__get: {
         parameters: {
             query?: never;
@@ -6005,6 +6514,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnumLookupResponse"];
+                };
+            };
+        };
+    };
+    list_plugins_api_v1_plugins_get: {
+        parameters: {
+            query?: {
+                project_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plugin_api_v1_plugins__plugin_slug__get: {
+        parameters: {
+            query?: {
+                project_id?: number | null;
+            };
+            header?: never;
+            path: {
+                plugin_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7711,6 +8284,74 @@ export interface operations {
             };
         };
     };
+    disable_project_plugin_api_v1_projects__project_id__plugins__plugin_slug__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                plugin_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ProjectPluginOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_project_plugin_api_v1_projects__project_id__plugins__plugin_slug__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: number;
+                plugin_slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PluginEnableRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WriteResponse_ProjectPluginOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_publish_targets_api_v1_projects__project_id__publish_targets_get: {
         parameters: {
             query?: never;
@@ -8462,6 +9103,70 @@ export interface operations {
             };
         };
     };
+    list_providers_api_v1_providers_get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_provider_api_v1_providers__provider_key__get: {
+        parameters: {
+            query?: {
+                plugin_slug?: string | null;
+            };
+            header?: never;
+            path: {
+                provider_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_run_api_v1_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -8796,6 +9501,12 @@ export enum InternalLinkStatus {
     applied = "applied",
     dismissed = "dismissed",
     broken = "broken"
+}
+export enum PluginSource {
+    builtin = "builtin",
+    repo = "repo",
+    project = "project",
+    user = "user"
 }
 export enum ProcedureRunStepStatus {
     pending = "pending",

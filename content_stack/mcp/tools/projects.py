@@ -856,12 +856,12 @@ _GSC_OAUTH_ENV_VARS = ("GSC_OAUTH_CLIENT_ID", "GSC_OAUTH_CLIENT_SECRET")
 
 async def _gsc_oauth_get(
     _inp: GscOauthGetInput,
-    _ctx: MCPContext,
+    ctx: MCPContext,
     _emit: ProgressEmitter,
 ) -> GscOauthInfoOutput:
     missing = _missing_gsc_oauth_env_vars()
     return GscOauthInfoOutput(
-        redirect_uri=_default_gsc_redirect_uri(Settings()),
+        redirect_uri=_default_gsc_redirect_uri(_settings_from_context(ctx)),
         configured=len(missing) == 0,
         missing=missing,
         hint=_gsc_oauth_setup_hint() if missing else None,
@@ -886,7 +886,7 @@ async def _gsc_oauth_start(
         )
 
     state = secrets.token_urlsafe(32)
-    redirect_uri = inp.redirect_uri or _default_gsc_redirect_uri(Settings())
+    redirect_uri = inp.redirect_uri or _default_gsc_redirect_uri(_settings_from_context(ctx))
     authorization_url = build_authorize_url(state=state, redirect_uri=redirect_uri)
     env = IntegrationCredentialRepository(ctx.session).set(
         project_id=inp.project_id,
@@ -907,6 +907,13 @@ async def _gsc_oauth_start(
 
 def _default_gsc_redirect_uri(settings: Settings) -> str:
     return f"http://{settings.host}:{settings.port}/api/v1/integrations/gsc/oauth/callback"
+
+
+def _settings_from_context(ctx: MCPContext) -> Settings:
+    settings = ctx.extras.get("settings")
+    if isinstance(settings, Settings):
+        return settings
+    return Settings()
 
 
 def _missing_gsc_oauth_env_vars() -> list[str]:

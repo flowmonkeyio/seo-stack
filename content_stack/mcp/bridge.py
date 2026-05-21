@@ -24,6 +24,13 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "project.update",
     "project.setActive",
     "project.getActive",
+    "plugin.list",
+    "catalog.list",
+    "catalog.describe",
+    "capability.list",
+    "capability.describe",
+    "provider.list",
+    "provider.describe",
     "meta.enums",
     # Agent-led procedure controls.
     "procedure.list",
@@ -44,6 +51,7 @@ _AGENT_VISIBLE_TOOL_NAMES = frozenset(_AGENT_VISIBLE_TOOL_ORDER)
 _TOOLBOX_DESCRIBE_TOOL = "toolbox.describe"
 _TOOLBOX_CALL_TOOL = "toolbox.call"
 _TOOLBOX_TOOL_NAMES = frozenset({_TOOLBOX_DESCRIBE_TOOL, _TOOLBOX_CALL_TOOL})
+_AGENT_ADMIN_GATED_TOOL_NAMES = frozenset({"plugin.enable", "plugin.disable"})
 
 # Tools that stay out of the advertised MCP list but are still useful during
 # setup when an agent explicitly asks the bridge to describe/call them. Procedure
@@ -441,6 +449,7 @@ def _bridge_toolbox_describe(
     payload = {
         "visible_tool_names": list(_AGENT_VISIBLE_TOOL_ORDER),
         "setup_toolbox_tool_names": sorted(_AGENT_SETUP_TOOLBOX_NAMES & set(catalog)),
+        "admin_gated_tool_names": sorted(_AGENT_ADMIN_GATED_TOOL_NAMES & set(catalog)),
         "current_step_tool_names": current_step_tools,
         "available_tool_names": sorted(name for name in allowed if name in catalog),
         "described_tools": described,
@@ -652,6 +661,7 @@ class AgentBridgeProxy:
 
 
 __all__ = [
+    "_AGENT_ADMIN_GATED_TOOL_NAMES",
     "_AGENT_BASE_TOOLBOX_NAMES",
     "_AGENT_SETUP_TOOLBOX_NAMES",
     "_AGENT_VISIBLE_TOOL_ORDER",
