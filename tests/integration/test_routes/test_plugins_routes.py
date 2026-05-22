@@ -27,6 +27,11 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert web_read["connector_key"] == "jina"
     assert web_read["availability"]["status"] == "ready"
     assert web_read["availability"]["executable"] is True
+    sitemap_fetch = next(a for a in actions.json() if a["key"] == "sitemap.fetch")
+    assert sitemap_fetch["action_ref"] == "utils.sitemap.fetch"
+    assert sitemap_fetch["connector_key"] == "sitemap"
+    assert sitemap_fetch["requires_credential"] is False
+    assert sitemap_fetch["availability"]["status"] == "ready"
 
     action = api.get("/api/v1/actions/image.generate", params={"plugin_slug": "utils"})
     assert action.status_code == 200

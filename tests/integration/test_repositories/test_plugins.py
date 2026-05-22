@@ -58,6 +58,8 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert utils_actions["web.scrape"].config_json["connector"] == "firecrawl"
     assert utils_actions["web.read"].config_json["connector"] == "jina"
     assert utils_actions["web.read"].config_json["requires_credential"] is False
+    assert utils_actions["sitemap.fetch"].config_json["connector"] == "sitemap"
+    assert utils_actions["sitemap.fetch"].config_json["requires_credential"] is False
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
     assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
@@ -93,6 +95,8 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
         "budget_required",
     ]
     assert missing_setup["web.read"].availability.status == "ready"
+    assert missing_setup["sitemap.fetch"].availability.status == "ready"
+    assert missing_setup["sitemap.fetch"].availability.executable is True
 
     IntegrationCredentialRepository(session).set(
         project_id=project_id,

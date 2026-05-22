@@ -238,6 +238,22 @@ _WEB_READ_INPUT_SCHEMA = {
     "required": ["url"],
     "properties": {"url": {"type": "string"}},
 }
+_SITEMAP_FETCH_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["urls"],
+    "properties": {
+        "urls": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 1,
+            "maxItems": 20,
+        },
+        "timeout_s": {"type": "number", "minimum": 0.1, "maximum": 60},
+        "max_index_depth": {"type": "integer", "minimum": 0, "maximum": 4},
+        "max_entries": {"type": "integer", "minimum": 1, "maximum": 20000},
+    },
+}
 _REDDIT_SEARCH_INPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -504,6 +520,23 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "allows_credential": True,
                     "budget_kind": "jina",
                     "enforce_budget": False,
+                },
+            ),
+            ActionManifest(
+                key="sitemap.fetch",
+                name="Fetch Sitemap",
+                description="Fetch and parse public sitemap URLs with sitemap-index recursion.",
+                provider=None,
+                capability="web-retrieval",
+                risk_level="read",
+                input_schema=_SITEMAP_FETCH_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "sitemap",
+                    "operation": "fetch",
+                    "requires_credential": False,
+                    "allows_credential": False,
                 },
             ),
             ActionManifest(

@@ -31,12 +31,14 @@ from content_stack.actions.vendor_connectors import (
     FirecrawlActionConnector,
     JinaActionConnector,
     RedditActionConnector,
+    SitemapActionConnector,
 )
 
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
 
@@ -62,6 +64,7 @@ __all__ = [
     "JinaActionConnector",
     "OpenAIImagesActionConnector",
     "RedditActionConnector",
+    "SitemapActionConnector",
     "build_action_availability",
     "parse_action_manifest",
 ]

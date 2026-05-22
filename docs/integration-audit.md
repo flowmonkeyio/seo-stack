@@ -135,6 +135,7 @@ Current executable connector registry:
 | `openai-images` | `utils.image.generate` | `openai-images` | Ready and connected to generic `action.execute`. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `firecrawl` | Ready through generic `action.execute`. |
 | `jina` | `utils.web.read` | `jina` | Ready with optional credentials. |
+| `sitemap` | `utils.sitemap.fetch` | none | Ready as a no-auth utility action, while the setup helper remains available. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `reddit` | Ready through generic `action.execute`. |
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze` | `dataforseo` | Ready for the first SEO research actions. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `ahrefs` | Ready for the first SEO research actions. |
@@ -184,7 +185,7 @@ Wrapper inventory:
 | `google-paa` | PAA extraction through Firecrawl | Wrapper only | Partial. No provider/action manifest; dependency on Firecrawl should be explicit. |
 | `wordpress` | current user, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/media actions, and connector. |
 | `ghost` | users, credential test | Wrapper registered only; no plugin provider manifest | Not setup-ready. Needs publishing plugin provider manifest, post/image actions, and connector. |
-| sitemap | sitemap fetch | Project REST/MCP setup utility | Useful core utility. Could remain core or become a utility action for run-plan use. |
+| sitemap | sitemap fetch | Project REST/MCP setup utility and `utils.sitemap.fetch` action | Ready for setup and run-plan use. |
 
 ## Key Gaps
 
@@ -195,7 +196,6 @@ remaining connector gaps are:
 
 - Google PAA needs an explicit action contract and dependency decision.
 - WordPress and Ghost need provider manifests, publishing actions, and connectors.
-- Sitemap fetch should either stay a setup utility or also become a run-plan action.
 - User-owned tools need a custom HTTP/Webhook connector.
 - Legacy vendor MCP tools are removed; keep them from reappearing as a parallel execution path.
 
@@ -550,7 +550,7 @@ Needed next integrations:
 - GA4 for landing-page engagement and conversion context
 - PageSpeed or CrUX style performance evidence
 - CMS publishing through the publishing plugin
-- sitemap and crawl imports through utility/core actions
+- crawl imports through utility/core actions
 - SERP and competitor research migrated from hidden MCP tools to connectors
 
 Templates to add:
@@ -600,7 +600,8 @@ disabled plugin, disabled provider, missing budget, and budget blocked.
 6. Keep removed vendor MCP names unknown to MCP clients.
 7. Decide whether `integration_credentials` remains only an internal encrypted blob store or is migrated into the new credential model.
 8. Promote WordPress and Ghost from credential-test wrappers to publishing actions.
-9. Decide the long-term home for sitemap fetch: core setup tool, utility action, or both.
+9. Keep sitemap fetch available both as a setup helper and as `utils.sitemap.fetch`
+   for run-plan use.
 10. Add a custom HTTP/Webhook connector for user-owned tools.
 11. Expand first-party templates after connectors exist.
 12. Treat `action_calls` as the primary external-operation audit ledger for new work.

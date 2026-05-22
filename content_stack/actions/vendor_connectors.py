@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import asdict
 from typing import Any
 
 import httpx
@@ -17,6 +18,12 @@ from content_stack.integrations.dataforseo import DataForSeoIntegration
 from content_stack.integrations.firecrawl import FirecrawlIntegration
 from content_stack.integrations.jina_reader import JinaReaderIntegration
 from content_stack.integrations.reddit import RedditIntegration
+from content_stack.integrations.sitemap import (
+    DEFAULT_TIMEOUT_S,
+    MAX_ENTRIES_PER_FETCH,
+    MAX_INDEX_DEPTH,
+    fetch_sitemap_entries,
+)
 from content_stack.repositories.base import ValidationError
 
 
@@ -52,6 +59,32 @@ def _int_range(
             _issue(
                 f"$.{key}",
                 f"{key} must be an integer between {minimum} and {maximum}",
+                "range",
+            )
+        )
+
+
+def _float_range(
+    payload: dict[str, Any],
+    key: str,
+    issues: list[ActionValidationIssue],
+    *,
+    minimum: float,
+    maximum: float,
+) -> None:
+    value = payload.get(key)
+    if value is None:
+        return
+    if (
+        not isinstance(value, int | float)
+        or isinstance(value, bool)
+        or value < minimum
+        or value > maximum
+    ):
+        issues.append(
+            _issue(
+                f"$.{key}",
+                f"{key} must be a number between {minimum:g} and {maximum:g}",
                 "range",
             )
         )
@@ -270,6 +303,53 @@ class RedditActionConnector:
         return _result("reddit", request.operation, result.data, result.cost_usd)
 
 
+class SitemapActionConnector:
+    """Decision-free adapter for public sitemap fetches."""
+
+    key = "sitemap"
+
+    def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
+        if request.operation != "fetch":
+            return _unknown_operation(request)
+        payload = request.input_json
+        issues: list[ActionValidationIssue] = []
+        _str_list(payload, "urls", issues, required=True)
+        urls = payload.get("urls")
+        if isinstance(urls, list):
+            if len(urls) == 0:
+                issues.append(_issue("$.urls", "urls must contain at least 1 item", "length"))
+            if len(urls) > 20:
+                issues.append(_issue("$.urls", "urls must contain at most 20 items", "length"))
+        _int_range(payload, "max_entries", issues, minimum=1, maximum=20_000)
+        _int_range(payload, "max_index_depth", issues, minimum=0, maximum=4)
+        _float_range(payload, "timeout_s", issues, minimum=0.1, maximum=60)
+        return issues
+
+    def estimate_cost_cents(self, _request: ActionConnectorRequest) -> int:
+        return 0
+
+    async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
+        if request.operation != "fetch":
+            raise ValidationError(f"unsupported sitemap operation {request.operation!r}")
+        payload = request.input_json
+        timeout_s = float(payload.get("timeout_s", DEFAULT_TIMEOUT_S))
+        async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as http:
+            result = await fetch_sitemap_entries(
+                list(payload["urls"]),
+                client=http,
+                timeout_s=timeout_s,
+                max_index_depth=int(payload.get("max_index_depth", MAX_INDEX_DEPTH)),
+                max_entries=int(payload.get("max_entries", MAX_ENTRIES_PER_FETCH)),
+            )
+        return ActionConnectorResult(
+            output_json={
+                "entries": [asdict(entry) for entry in result.entries],
+                "errors": [asdict(error) for error in result.errors],
+            },
+            metadata_json={"vendor": "sitemap", "operation": request.operation},
+        )
+
+
 class DataForSeoActionConnector:
     """Decision-free adapter for DataForSEO actions."""
 
@@ -425,4 +505,5 @@ __all__ = [
     "FirecrawlActionConnector",
     "JinaActionConnector",
     "RedditActionConnector",
+    "SitemapActionConnector",
 ]

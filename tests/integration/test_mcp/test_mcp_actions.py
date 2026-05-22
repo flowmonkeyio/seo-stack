@@ -150,6 +150,30 @@ def _firecrawl_action_plan_json() -> dict:
     }
 
 
+def _sitemap_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.sitemap-action.run",
+        "title": "Sitemap action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "fetch-sitemap",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.sitemap.fetch"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "fetch-sitemap",
+                "title": "Fetch sitemap",
+                "action_refs": ["utils.sitemap.fetch"],
+            }
+        ],
+    }
+
+
 def test_action_execute_requires_run_plan_grant(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -328,3 +352,73 @@ def test_action_execute_firecrawl_grant_uses_generic_connector(
     assert data["action_call"]["connector_key"] == "firecrawl"
     assert "credential_id" not in rendered
     assert "fc-key" not in rendered
+
+
+def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "utils.sitemap.fetch"},
+    )
+    validation = mcp_client.call_tool_structured(
+        "action.validate",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.sitemap.fetch",
+            "input_json": {"urls": ["https://example.com/sitemap.xml"], "max_entries": 5},
+        },
+    )
+
+    assert described["availability"]["status"] == "ready"
+    assert described["manifest"]["requires_credential"] is False
+    assert validation["valid"] is True
+    assert validation["credential_ref"] is None
+
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _sitemap_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "fetch-sitemap",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url="https://example.com/sitemap.xml",
+        text=(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            "<url><loc>https://example.com/a</loc></url>"
+            "</urlset>"
+        ),
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.sitemap.fetch",
+            "input_json": {"urls": ["https://example.com/sitemap.xml"], "max_entries": 5},
+            "run_token": run_token,
+        },
+    )
+
+    data = out["data"]
+    assert data["credential_ref"] is None
+    assert data["action_call"]["provider_key"] is None
+    assert data["action_call"]["connector_key"] == "sitemap"
+    assert data["output_json"]["entries"][0]["url"] == "https://example.com/a"
+    assert data["output_json"]["errors"] == []

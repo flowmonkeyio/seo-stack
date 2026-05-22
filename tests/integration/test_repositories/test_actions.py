@@ -87,6 +87,19 @@ class _NoAuthConnector:
         return ActionConnectorResult(output_json={"ok": True})
 
 
+SITEMAP_URLSET = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://example.com/a</loc>
+    <lastmod>2026-05-22</lastmod>
+  </url>
+  <url>
+    <loc>https://example.com/b</loc>
+  </url>
+</urlset>
+"""
+
+
 def _seed_action(session: Session) -> None:
     plugin = Plugin(
         slug="test-actions",
@@ -261,6 +274,7 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
     action_refs = {
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
+        "utils.sitemap.fetch": ("sitemap", False, "ready"),
         "utils.reddit.search-subreddit": ("reddit", True, "unknown"),
         "seo.keyword.research": ("dataforseo", True, "unknown"),
         "seo.serp.analyze": ("dataforseo", True, "unknown"),
@@ -373,6 +387,64 @@ def test_jina_action_preserves_optional_credentials(
     assert out.output_json == {"data": "# Example"}
     assert out.credential_ref is None
     assert out.action_call.credential_ref is None
+
+
+def test_sitemap_action_executes_through_generic_connector(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_response(
+        method="GET",
+        url="https://example.com/sitemap.xml",
+        text=SITEMAP_URLSET,
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="utils.sitemap.fetch",
+            input_json={"urls": ["https://example.com/sitemap.xml"], "max_entries": 10},
+        )
+    ).data
+
+    assert out.credential_ref is None
+    assert out.action_call.provider_key is None
+    assert out.action_call.connector_key == "sitemap"
+    assert out.output_json == {
+        "entries": [
+            {
+                "url": "https://example.com/a",
+                "lastmod": "2026-05-22",
+                "changefreq": None,
+                "priority": None,
+                "source_sitemap": "https://example.com/sitemap.xml",
+            },
+            {
+                "url": "https://example.com/b",
+                "lastmod": None,
+                "changefreq": None,
+                "priority": None,
+                "source_sitemap": "https://example.com/sitemap.xml",
+            },
+        ],
+        "errors": [],
+    }
+    assert out.metadata_json == {"vendor": "sitemap", "operation": "fetch"}
+
+
+def test_sitemap_action_rejects_empty_url_list(
+    session: Session,
+    project_id: int,
+) -> None:
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.sitemap.fetch",
+        input_json={"urls": []},
+    )
+
+    assert validation.valid is False
+    assert {issue.code for issue in validation.issues} == {"length"}
 
 
 def test_firecrawl_action_executes_through_generic_connector(

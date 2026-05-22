@@ -107,6 +107,7 @@ Registered first-party connectors now cover the migrated clean path for:
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`,
   `utils.web.extract`
 - `jina`: `utils.web.read` with optional credentials
+- `sitemap`: `utils.sitemap.fetch`
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`

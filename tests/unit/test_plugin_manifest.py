@@ -44,6 +44,13 @@ def test_builtin_plugin_manifests_validate() -> None:
         "budget_kind": "jina",
         "enforce_budget": False,
     }
+    assert utils_actions["sitemap.fetch"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "sitemap",
+        "operation": "fetch",
+        "requires_credential": False,
+        "allows_credential": False,
+    }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
 
 
