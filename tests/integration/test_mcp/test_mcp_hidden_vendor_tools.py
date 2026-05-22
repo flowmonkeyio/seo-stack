@@ -1,4 +1,4 @@
-"""Hidden vendor tools are not directly agent-callable."""
+"""Legacy vendor MCP tools are removed from the daemon catalog."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _start_run_for_skill(mcp: MCPClient, project_id: int, skill_name: str) -> st
     return env["data"]["run_token"]
 
 
-def test_hidden_vendor_tool_requires_grant(
+def test_legacy_vendor_tool_is_unknown(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -28,13 +28,10 @@ def test_hidden_vendor_tool_requires_grant(
         {"project_id": project_id, "url": "https://example.com"},
     )
 
-    assert err["code"] == -32007
-    assert err["message"] == "ToolNotGrantedError"
-    assert err["data"]["tool"] == "jina.read"
-    assert err["data"]["skill"] == "__system__"
+    assert err["code"] == -32601
 
 
-def test_removed_legacy_skill_names_do_not_grant_vendor_tools(
+def test_removed_legacy_skill_names_do_not_restore_vendor_tools(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -50,5 +47,4 @@ def test_removed_legacy_skill_names_do_not_grant_vendor_tools(
         },
     )
 
-    assert err["code"] == -32007
-    assert err["data"]["skill"] == "01-research/serp-analyzer"
+    assert err["code"] == -32601

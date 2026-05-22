@@ -150,7 +150,7 @@ _RUN_PLAN_CONTROLLER_TOOLS: frozenset[str] = _RUN_PLAN_CONTROL | _RUN_PLAN_DYNAM
 
 # The matrix proper. ``__system__`` is explicit bootstrap/setup authority, not
 # a workflow execution grant. Operational work remains gated by run-plan step
-# grants and hidden vendor tools are not directly granted.
+# grants and provider calls flow through generic action connectors.
 SKILL_TOOL_GRANTS: dict[str, frozenset[str]] = {
     SYSTEM_SKILL: _SYSTEM_TOOLS,
     TEST_SKILL: frozenset(),  # full grant; sentinel-checked in check_grant

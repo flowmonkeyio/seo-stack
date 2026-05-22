@@ -117,7 +117,9 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "dataforseo.serp" not in names
 
 
-def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPClient) -> None:
+def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown(
+    mcp_client: MCPClient,
+) -> None:
     proxy, client = _bridge(mcp_client)
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
@@ -144,7 +146,8 @@ def test_bridge_describes_setup_tools_and_denies_vendor_tools(mcp_client: MCPCli
         "schedule.remove",
         "auth.test",
     ]
-    assert payload["denied_tool_names"] == ["auth.start", "dataforseo.serp"]
+    assert payload["denied_tool_names"] == ["auth.start"]
+    assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
 
 
@@ -646,7 +649,7 @@ def test_bridge_executes_run_plan_granted_action_with_injected_token(
     assert executed["data"]["credential_ref"] == credential_ref
 
 
-def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:
+def test_bridge_refuses_removed_vendor_tool(mcp_client: MCPClient) -> None:
     proxy, client = _bridge(mcp_client)
     _initialize(proxy, client)
     _send(proxy, client, method="tools/list", request_id="tools")
@@ -664,5 +667,4 @@ def test_bridge_refuses_ungranted_vendor_tool(mcp_client: MCPClient) -> None:
     result = envelope["result"]
 
     assert result["isError"] is True
-    assert result["structuredContent"]["code"] == -32007
-    assert result["structuredContent"]["data"]["tool"] == "dataforseo.serp"
+    assert result["structuredContent"]["code"] == -32601

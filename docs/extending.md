@@ -124,7 +124,8 @@ items belong in the run plan created by the agent.
 ## Add MCP Tools
 
 Add direct MCP tools only for generic StackOS primitives. Domain operations
-should be actions or scoped hidden tools. For every tool change, update:
+should be plugin actions executed through `action.execute`. For every tool
+change, update:
 
 - input/output model
 - repository invariant

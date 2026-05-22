@@ -109,10 +109,11 @@ workflow execution path. Project-memory writes (`learning.create`,
 `action.execute` require a started run plan with a running step and an explicit
 tool grant.
 
-The bridge hides operational vendor tools from normal discovery. Agents use
+Provider operations are modeled as plugin actions. Agents use
 `action.describe`, `action.validate`, `action.execute`, and scoped run-plan
 grants. Vendor wrappers remain inside daemon-side integrations where auth,
-budget checks, retries, and output normalization can be enforced.
+budget checks, retries, and output normalization can be enforced; they are not
+registered as provider-specific MCP tools.
 
 ## Auth Flow
 

@@ -63,7 +63,7 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     with pytest.raises(ToolNotGrantedError):
         check_grant("integration.test", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
-        check_grant("dataforseo.serp", SYSTEM_SKILL)
+        check_grant("learning.update", SYSTEM_SKILL)
 
 
 def test_check_grant_passes_for_test_skill() -> None:

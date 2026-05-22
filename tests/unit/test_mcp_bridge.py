@@ -116,7 +116,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
         _tool("resource.upsert"),
         _tool("artifact.create"),
         _tool("cost.queryProject"),
-        _tool("dataforseo.serp"),
+        _tool("learning.update"),
     ]
     daemon_response = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"tools": daemon_tools}})
 
@@ -131,7 +131,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert "resource.upsert" not in names
     assert "artifact.create" not in names
     assert "cost.queryProject" not in names
-    assert "dataforseo.serp" not in names
+    assert "learning.update" not in names
 
 
 def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
@@ -141,9 +141,9 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
             "auth.start",
             "resource.upsert",
             "action.execute",
-            "dataforseo.serp",
             "cost.queryProject",
-            "openaiImages.generate",
+            "artifact.create",
+            "learning.update",
         ]
     }
     allowed_by_run = {7: {"resource.upsert", "action.execute"}}
@@ -158,9 +158,9 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
                 "integration.test",
                 "resource.upsert",
                 "action.execute",
-                "dataforseo.serp",
                 "cost.queryProject",
-                "openaiImages.generate",
+                "artifact.create",
+                "learning.update",
                 "missing",
             ],
         },
@@ -176,9 +176,9 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     ]
     assert payload["active_step_tool_names"] == ["action.execute", "resource.upsert"]
     assert set(payload["denied_tool_names"]) == {
-        "dataforseo.serp",
+        "artifact.create",
         "auth.start",
-        "openaiImages.generate",
+        "learning.update",
     }
     assert payload["unknown_tool_names"] == ["integration.test", "missing"]
     assert "admin_gated_tool_names" not in payload
@@ -350,8 +350,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert _AGENT_GATED_TOOL_NAMES == (
         _AGENT_ADMIN_GATED_TOOL_NAMES | _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     )
-    assert "dataforseo.serp" not in _AGENT_BASE_TOOLBOX_NAMES
-    assert "openaiImages.generate" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "learning.update" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
 
 
@@ -524,7 +524,10 @@ def test_bridge_proxy_rejects_hidden_direct_tool_calls() -> None:
         "jsonrpc": "2.0",
         "id": 100,
         "method": "tools/call",
-        "params": {"name": "dataforseo.serp", "arguments": {"project_id": 1, "keyword": "crm"}},
+        "params": {
+            "name": "learning.update",
+            "arguments": {"project_id": 1, "learning_id": 2, "body": "ok"},
+        },
     }
 
     response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=100)

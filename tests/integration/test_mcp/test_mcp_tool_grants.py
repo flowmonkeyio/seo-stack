@@ -138,5 +138,4 @@ def test_no_run_token_cannot_write_project_state_or_call_vendor(
         "dataforseo.serp",
         {"project_id": pid, "keyword": "best crm software"},
     )
-    assert err["code"] == -32007
-    assert err["data"]["skill"] == "__system__"
+    assert err["code"] == -32601

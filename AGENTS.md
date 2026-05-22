@@ -45,8 +45,7 @@ storage:
 
 - API keys, OAuth tokens, and account metadata are stored server-side.
 - Agents receive provider/account ids, status, scopes, and safe diagnostics.
-- `action.execute` and provider-specific tools resolve credentials inside the
-  daemon process.
+- `action.execute` resolves credentials inside the daemon process.
 - Credential usage events should be recorded for auditability.
 
 ## MCP Surface
@@ -67,9 +66,10 @@ project and start the first run plan. Workflow execution writes are different:
 `decision.record`, and `action.execute` require a started run plan, one running
 step, and an explicit grant in the run-plan snapshot.
 
-Hidden vendor operations stay behind grants and action execution. Do not expose
-vendor-specific write operations directly to normal agents unless the operation
-is intentionally part of the generic StackOS contract.
+Vendor operations should be modeled as plugin actions and executed through
+`action.execute`. Do not add provider-specific MCP tools for normal agents; if
+a provider needs a new callable operation, add a provider manifest entry, action
+manifest, connector, grant tests, and docs.
 
 ## UI Direction
 
