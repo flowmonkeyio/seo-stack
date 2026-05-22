@@ -10,7 +10,7 @@ routes.
 
 1. **Operational, not promotional.** This is admin tooling. Calm > exciting.
 2. **Density is a feature.** Operators scan many rows. 13/18 body, 32px controls.
-3. **Observer-first.** Product mutations belong to the agent/MCP path. The UI shows state, history, readiness, and artifacts.
+3. **Observer-first.** Product mutations belong to the agent/MCP path. The UI shows state, history, readiness, and artifacts; the narrow exception is local-admin provider credential setup on Connections.
 4. **Keyboard-readable.** Every control reachable with `Tab` + `Enter`/`Space`. Focus rings always visible.
 5. **Predictability over delight.** Same shape, same place, same shortcut, every screen.
 6. **State is information.** Loading, empty, stale, error, disabled — all explicit, all consistent.
@@ -53,11 +53,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   product lanes.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
-- Page header: title, slug, description, and read-only utility controls (right). Breadcrumbs optional, above title.
+- Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.
 - Tab bar separates the page header from page body. 32px tab height, 2px active underline in `accent.primary`.
 - List pages: filter bar (sticky), table, pagination/footer. Bulk action bar appears on selection, takes filter bar's slot.
 - Detail pages: page header, tab bar, tab content. No nested cards.
-- Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances.
+- Buttons in product views are limited to navigation, filtering, refresh/read, copy, and close/view affordances, plus the generic provider-auth setup controls on Connections.
 - Workflow UI is generic. Templates, run plans, resources, artifacts, context,
   action schemas, and plugin nav render through reusable renderers; do not add
   per-workflow or per-channel pages for campaign creation, content production, or
@@ -65,7 +65,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 ## 5. Component usage rules
 
-**UiButton.** Default `secondary`. `primary` only for navigation to another observer view or non-mutating local utility. `danger` is not used in product views.
+**UiButton.** Default `secondary`. `primary` only for navigation to another observer view, non-mutating local utility, or saving a provider credential through the generic Connections setup surface. `danger` is reserved for explicit local-admin revocation/destructive controls.
 
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 

@@ -4,12 +4,18 @@ import { defineStore } from 'pinia'
 import type {
   SchemaActionOut,
   SchemaAuthProviderOut,
+  SchemaAuthRevokeRequest,
   SchemaAuthStatusOut,
+  SchemaAuthSecretSetRequest,
+  SchemaAuthTestRequest,
   SchemaCapabilityOut,
   SchemaCatalogOut,
   SchemaPluginOut,
   SchemaProviderOut,
   SchemaResourceOut,
+  SchemaWriteResponseAuthRevokeOut,
+  SchemaWriteResponseAuthSecretSetOut,
+  SchemaWriteResponseAuthTestOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
 
@@ -73,6 +79,58 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     }
   }
 
+  async function storeCredential(
+    projectId: number,
+    providerKey: string,
+    body: SchemaAuthSecretSetRequest,
+  ): Promise<SchemaWriteResponseAuthSecretSetOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAuthSecretSetOut>(
+      `/api/v1/projects/${projectId}/auth/${providerKey}/credentials`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAuth(projectId)
+    return response
+  }
+
+  async function testCredential(
+    projectId: number,
+    body: SchemaAuthTestRequest,
+  ): Promise<SchemaWriteResponseAuthTestOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAuthTestOut>(
+      `/api/v1/projects/${projectId}/auth/test`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAuth(projectId)
+    return response
+  }
+
+  async function revokeCredential(
+    projectId: number,
+    body: SchemaAuthRevokeRequest,
+  ): Promise<SchemaWriteResponseAuthRevokeOut> {
+    error.value = null
+    const response = await apiFetch<SchemaWriteResponseAuthRevokeOut>(
+      `/api/v1/projects/${projectId}/auth/revoke`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    )
+    await refreshAuth(projectId)
+    return response
+  }
+
   function actionsFor(pluginSlug: string): SchemaActionOut[] {
     return actions.value.filter((action) => action.plugin_slug === pluginSlug)
   }
@@ -103,6 +161,9 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     enabledPlugins,
     refresh,
     refreshAuth,
+    storeCredential,
+    testCredential,
+    revokeCredential,
     actionsFor,
     capabilitiesFor,
     providersFor,

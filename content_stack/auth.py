@@ -37,7 +37,7 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 # - ``/api/v1/health``: ``doctor`` probes liveness *before* it has resolved
 #   the token (e.g., when diagnosing token-related failures themselves).
 # - ``/api/v1/auth/ui-token``: the same-origin Vue UI cannot read the token
-#   file from the browser, so it fetches a derived read-only token at boot via
+#   file from the browser, so it fetches a derived console token at boot via
 #   this endpoint. The HostHeaderMiddleware (loopback-only) and CORSMiddleware
 #   (same-origin) form the upstream guard. Trade-off documented in
 #   ``docs/security.md`` and in ``content_stack/api/auth.py``.
@@ -48,8 +48,10 @@ WHITELIST_PREFIXES: tuple[str, ...] = (
 
 _TOKEN_BYTES = 32
 _REQUIRED_MODE = 0o600
-_UI_TOKEN_MESSAGE = b"content-stack-ui-read-only-v1"
+_UI_TOKEN_MESSAGE = b"content-stack-ui-console-v1"
 _UI_SAFE_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
+_UI_AUTH_SETUP_ACTIONS: frozenset[str] = frozenset({"test", "revoke"})
+_UI_AUTH_PROVIDER_ACTIONS: frozenset[str] = frozenset({"credentials", "start"})
 
 
 class TokenFileError(RuntimeError):
@@ -103,15 +105,15 @@ def ensure_token(token_path: Path) -> str:
 
 
 def derive_ui_token(token: str) -> str:
-    """Derive the browser's read-only bearer token from the daemon token.
+    """Derive the browser's console bearer token from the daemon token.
 
     The daemon token remains the write-capable local-admin token stored on disk.
     The derived UI token is what ``/api/v1/auth/ui-token`` returns; middleware
-    accepts it only for safe REST reads.
+    accepts it only for safe REST reads and narrow provider-auth setup writes.
     """
     digest = hmac.new(token.encode("utf-8"), _UI_TOKEN_MESSAGE, hashlib.sha256).digest()
     encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return f"ui_ro_{encoded}"
+    return f"ui_console_{encoded}"
 
 
 def requires_auth(path: str) -> bool:
@@ -137,13 +139,47 @@ def _allows_ui_read(path: str, method: str) -> bool:
     return path == "/api/v1" or path.startswith("/api/v1/")
 
 
+def _allows_ui_auth_setup(path: str, method: str) -> bool:
+    """Return True for the only local-admin writes the browser may perform.
+
+    The browser never receives the daemon token and cannot access MCP. The
+    console token can only manage provider credential setup for a concrete
+    project: store a local secret, run a sanitized health probe, start a local
+    setup flow, or revoke an opaque credential ref.
+    """
+    if method.upper() != "POST":
+        return False
+    segments = path.strip("/").split("/")
+    if (
+        len(segments) < 6
+        or segments[:3] != ["api", "v1", "projects"]
+        or not segments[3].isdigit()
+        or segments[4] != "auth"
+    ):
+        return False
+    if len(segments) == 6:
+        return segments[5] in _UI_AUTH_SETUP_ACTIONS
+    if len(segments) == 7:
+        return bool(segments[5]) and segments[6] in _UI_AUTH_PROVIDER_ACTIONS
+    return False
+
+
+def _ui_scope_for_request(path: str, method: str) -> str | None:
+    if _allows_ui_read(path, method):
+        return "ui-read"
+    if _allows_ui_auth_setup(path, method):
+        return "ui-auth-setup"
+    return None
+
+
 class BearerTokenMiddleware(BaseHTTPMiddleware):
     """Reject requests whose bearer token does not match an allowed scope.
 
     The daemon token is write-capable local-admin authority used by REST callers
     and the local MCP bridge process. The bridge does not reveal that token to
     agents; agent workflow execution is gated inside MCP by run-plan grants.
-    The UI token is read-only, REST-only, and accepted only for safe methods.
+    The UI token is REST-only and limited to reads plus provider-auth setup
+    writes. It cannot access MCP or general mutation routes.
     Token values are supplied at construction time so middleware setup never
     re-reads the file at request time. Token rotation requires a daemon restart,
     which matches the spec (rotation runs via `make install`).
@@ -176,12 +212,18 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if secrets.compare_digest(value, self._ui_token):
-            if not _allows_ui_read(request.url.path, request.method):
+            scope = _ui_scope_for_request(request.url.path, request.method)
+            if scope is None:
                 return JSONResponse(
-                    {"detail": "UI token is read-only; use the daemon token for mutations"},
+                    {
+                        "detail": (
+                            "UI token can only read REST data and manage provider auth setup; "
+                            "use the daemon token for other mutations"
+                        )
+                    },
                     status_code=403,
                 )
-            request.state.auth_scope = "ui-read-only"
+            request.state.auth_scope = scope
             return await call_next(request)
 
         return JSONResponse(

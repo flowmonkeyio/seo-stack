@@ -102,9 +102,10 @@ model as the only public concept and keep `integration_credentials` fully
 internal, or migrate the encrypted payload columns into the credential model and
 remove the duplicate naming.
 
-Current gap: the UI `Connections` page is read-only. The API can store, test,
-and revoke secrets, but the operator-facing local setup controls are not yet
-present in the generic UI.
+Current state: the UI `Connections` page exposes generic local-admin controls
+to store, test, and revoke provider credentials. Secrets are typed into a
+write-only field, sent only to the daemon credential endpoint, cleared after a
+successful save, and replaced in UI state by an opaque `credential_ref`.
 
 ### Generic Action Executor
 

@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiCallout, UiJsonBlock, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
-import type { SchemaCredentialConnectionOut } from '@/api'
+import {
+  UiBadge,
+  UiButton,
+  UiCallout,
+  UiFormField,
+  UiInput,
+  UiJsonBlock,
+  UiPageShell,
+  UiPanel,
+  UiSecretInput,
+  UiSectionHeader,
+} from '@/components/ui'
+import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
 import type { DataTableColumn } from '@/components/types'
+import { formatApiError } from '@/lib/client'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
@@ -18,6 +30,12 @@ const catalogStore = useStackOsCatalogStore()
 const { authProviders, authStatus, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const secretByProvider = ref<Record<string, string>>({})
+const labelByProvider = ref<Record<string, string>>({})
+const busyAction = ref<string | null>(null)
+const providerMessages = ref<Record<string, { tone: 'success' | 'danger' | 'info'; text: string }>>(
+  {},
+)
 const connections = computed<ConnectionRow[]>(() =>
   (authStatus.value?.connections ?? []).map((connection) => ({
     ...connection,
@@ -36,6 +54,97 @@ const columns: DataTableColumn<ConnectionRow>[] = [
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   await catalogStore.refreshAuth(projectId.value)
+}
+
+function supportsSecret(provider: SchemaAuthProviderOut): boolean {
+  return !['none', 'local'].includes(provider.auth_type)
+}
+
+function connectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
+  return (
+    (authStatus.value?.connections ?? []).find(
+      (connection) => connection.provider_key === providerKey && connection.revoked_at === null,
+    ) ?? null
+  )
+}
+
+function actionKey(providerKey: string, action: string): string {
+  return `${providerKey}:${action}`
+}
+
+function isBusy(providerKey: string, action: string): boolean {
+  return busyAction.value === actionKey(providerKey, action)
+}
+
+function setProviderMessage(
+  providerKey: string,
+  tone: 'success' | 'danger' | 'info',
+  text: string,
+): void {
+  providerMessages.value = {
+    ...providerMessages.value,
+    [providerKey]: { tone, text },
+  }
+}
+
+async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
+  if (!supportsSecret(provider)) return
+  const secret = (secretByProvider.value[provider.key] ?? '').trim()
+  if (!secret) {
+    setProviderMessage(provider.key, 'danger', 'Secret is required.')
+    return
+  }
+  busyAction.value = actionKey(provider.key, 'save')
+  try {
+    const label = (labelByProvider.value[provider.key] ?? '').trim()
+    const response = await catalogStore.storeCredential(projectId.value, provider.key, {
+      plaintext_payload: secret,
+      payload_encoding: 'plain',
+      config_json: label ? { label } : null,
+    })
+    secretByProvider.value = { ...secretByProvider.value, [provider.key]: '' }
+    setProviderMessage(provider.key, 'success', `Stored ${response.data.credential_ref}.`)
+  } catch (err) {
+    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to store credential'))
+  } finally {
+    busyAction.value = null
+  }
+}
+
+async function testProvider(provider: SchemaAuthProviderOut): Promise<void> {
+  const connection = connectionFor(provider.key)
+  if (!connection) return
+  busyAction.value = actionKey(provider.key, 'test')
+  try {
+    const response = await catalogStore.testCredential(projectId.value, {
+      credential_ref: connection.credential_ref,
+    })
+    setProviderMessage(
+      provider.key,
+      response.data.ok ? 'success' : 'danger',
+      response.data.summary,
+    )
+  } catch (err) {
+    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to test credential'))
+  } finally {
+    busyAction.value = null
+  }
+}
+
+async function revokeProvider(provider: SchemaAuthProviderOut): Promise<void> {
+  const connection = connectionFor(provider.key)
+  if (!connection) return
+  busyAction.value = actionKey(provider.key, 'revoke')
+  try {
+    await catalogStore.revokeCredential(projectId.value, {
+      credential_ref: connection.credential_ref,
+    })
+    setProviderMessage(provider.key, 'info', `Revoked ${connection.credential_ref}.`)
+  } catch (err) {
+    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to revoke credential'))
+  } finally {
+    busyAction.value = null
+  }
 }
 
 onMounted(load)
@@ -104,7 +213,92 @@ watch(projectId, load)
             <span class="font-medium">{{ provider.name }}</span>
             <UiBadge>{{ provider.auth_type }}</UiBadge>
           </div>
-          <p class="text-sm text-fg-muted">{{ provider.key }}</p>
+          <div class="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
+            <span>{{ provider.key }}</span>
+            <UiBadge
+              v-if="connectionFor(provider.key)"
+              tone="success"
+            >
+              {{ connectionFor(provider.key)?.status }}
+            </UiBadge>
+          </div>
+
+          <div
+            v-if="supportsSecret(provider)"
+            class="mt-3 grid gap-2"
+          >
+            <UiFormField label="Secret">
+              <template #default="{ id, describedBy, invalid }">
+                <UiSecretInput
+                  :id="id"
+                  v-model="secretByProvider[provider.key]"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  no-copy
+                  no-reveal
+                  placeholder="Paste credential"
+                  size="sm"
+                />
+              </template>
+            </UiFormField>
+            <UiFormField label="Label">
+              <template #default="{ id, describedBy, invalid }">
+                <UiInput
+                  :id="id"
+                  v-model="labelByProvider[provider.key]"
+                  :aria-describedby="describedBy"
+                  :invalid="invalid"
+                  placeholder="Primary"
+                  size="sm"
+                />
+              </template>
+            </UiFormField>
+            <div class="flex flex-wrap gap-2">
+              <UiButton
+                size="sm"
+                variant="primary"
+                icon-left="save"
+                :loading="isBusy(provider.key, 'save')"
+                :disabled="!secretByProvider[provider.key]?.trim()"
+                @click="saveCredential(provider)"
+              >
+                Save
+              </UiButton>
+              <UiButton
+                size="sm"
+                icon-left="plug-zap"
+                :loading="isBusy(provider.key, 'test')"
+                :disabled="!connectionFor(provider.key)"
+                @click="testProvider(provider)"
+              >
+                Test
+              </UiButton>
+              <UiButton
+                size="sm"
+                variant="danger"
+                icon-left="ban"
+                :loading="isBusy(provider.key, 'revoke')"
+                :disabled="!connectionFor(provider.key)"
+                @click="revokeProvider(provider)"
+              >
+                Revoke
+              </UiButton>
+            </div>
+          </div>
+          <UiCallout
+            v-else
+            tone="info"
+            class="mt-3"
+          >
+            No credential required.
+          </UiCallout>
+          <UiCallout
+            v-if="providerMessages[provider.key]"
+            :tone="providerMessages[provider.key].tone"
+            class="mt-3"
+          >
+            {{ providerMessages[provider.key].text }}
+          </UiCallout>
         </li>
       </ul>
     </UiPanel>

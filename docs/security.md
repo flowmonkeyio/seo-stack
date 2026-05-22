@@ -30,7 +30,7 @@ the bearer-token check. Currently:
 | Path | Why it is whitelisted | Residual exposure |
 |---|---|---|
 | `/api/v1/health` | `doctor` probes liveness before it has resolved the token (when diagnosing token-related failures). | None worth caring about; the response carries only liveness booleans + version. |
-| `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived read-only bearer token at app boot via this endpoint. | **See below.** |
+| `/api/v1/auth/ui-token` | The Vue SPA cannot read the on-disk daemon token file from the browser, so it fetches a derived console bearer token at app boot via this endpoint. | **See below.** |
 
 ## No-secret auth provider boundary
 
@@ -58,10 +58,13 @@ before persistence. Secret-like keys such as `api_key`, `access_token`,
 ## REST vs agent execution
 
 REST mutation routes are local-admin surfaces behind the daemon bearer token.
-The browser UI receives only the derived read-only UI token, and the installable
-MCP bridge keeps the daemon bearer inside the bridge process rather than giving
-it to the agent. Normal agent workflow writes and external action execution go
-through MCP run-plan grants (`runPlan.claimStep` + step-scoped
+The browser UI receives only a derived REST-only console token. That token can
+read REST state and can manage provider auth setup for a project (`auth.start`,
+secret storage, sanitized auth tests, and revoke), but it cannot access MCP or
+general mutation routes. The installable MCP bridge keeps the daemon bearer
+inside the bridge process rather than giving it to the agent. Normal agent
+workflow writes and external action execution go through MCP run-plan grants
+(`runPlan.claimStep` + step-scoped
 `resource.upsert`, `artifact.create`, `learning.create`, `decision.record`,
 `experiment.*`, `context.snapshot`, and `action.execute`). Possession of the
 raw daemon token is therefore treated as local administrator authority, not as a
@@ -69,7 +72,7 @@ normal agent credential.
 
 ## Token-bootstrap trade-off (M5.A)
 
-Adding `/api/v1/auth/ui-token` accepts a small reduction in defence depth.
+Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 
 **What's gained.** The browser-based UI works without prompting the user
 to paste a token by hand. The disk-backed daemon token never leaves the
@@ -80,12 +83,15 @@ in a Pinia-store ref).
 **What's lost.** Any other process on the same machine that can connect
 to `127.0.0.1:5180` can fetch the UI token by sending `GET
 /api/v1/auth/ui-token` with no credentials. That token is accepted only
-for safe REST reads under `/api/v1/*`; it cannot mutate data and cannot
-access `/mcp`. Previously, only a process that could read `auth.token`
-(mode 0600, owned by the daemon's user) could obtain any bearer token.
-On a single-user macOS or Linux box that's a near-zero delta (same-user
-processes already had file access). On a multi-user / shared-tenant box,
-the residual exposure is read access to the local operator console data.
+for REST reads and the narrow provider-auth setup routes under
+`/api/v1/projects/{id}/auth/*`; it cannot access `/mcp` and cannot mutate
+projects, resources, runs, action execution, templates, or project data.
+Previously, only a process that could read `auth.token` (mode 0600, owned by
+the daemon's user) could obtain any bearer token. On a single-user macOS or
+Linux box that's a near-zero delta (same-user processes already had file
+access). On a multi-user / shared-tenant box, the residual exposure is read
+access to the local operator console data plus the ability to add/test/revoke
+provider credentials through the local setup surface.
 
 **Mitigations already in place.**
 
@@ -93,7 +99,8 @@ the residual exposure is read access to the local operator console data.
   output redact it as part of normal practice.
 - The returned token is derived from, but not equal to, the disk-backed
   daemon token. `BearerTokenMiddleware` accepts it only for `GET`,
-  `HEAD`, and `OPTIONS` requests under `/api/v1/*`.
+  `HEAD`, and `OPTIONS` requests under `/api/v1/*`, plus `POST` to the
+  exact project auth setup endpoints. It is never accepted for `/mcp`.
 - The `HostHeaderMiddleware` rejects requests with a forged `Host:`
   header, so a remote attacker who has somehow proxied to the loopback
   port (e.g. through a compromised tunnel) is rebuffed.
@@ -105,7 +112,7 @@ the residual exposure is read access to the local operator console data.
   middleware runs.
 
 **When to reach for stricter posture.** Operators who run multi-user
-machines and want even read-only browser bootstrap removed can:
+machines and want browser bootstrap removed can:
 
 1. **Run the UI in a separate browser profile** that has no other tabs.
    This eliminates same-origin script attacks against the SPA itself.

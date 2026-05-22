@@ -1,10 +1,10 @@
-"""UI read-only token bootstrap endpoint — ``GET /api/v1/auth/ui-token``.
+"""UI console token bootstrap endpoint — ``GET /api/v1/auth/ui-token``.
 
 The Vue UI ships in the same origin as the daemon, but JavaScript in the
 browser cannot read the token file at ``~/.local/state/content-stack/auth.token``
 directly (file system access is blocked). This endpoint is the bridge: the
-SPA fetches a read-only bearer token at boot via a same-origin GET and then
-attaches ``Authorization: Bearer <token>`` to subsequent read requests.
+SPA fetches a derived console bearer token at boot via a same-origin GET and
+then attaches ``Authorization: Bearer <token>`` to subsequent REST requests.
 
 **Whitelist note (security trade-off; documented in docs/security.md):**
 
@@ -25,8 +25,9 @@ The residual exposure is *another local process on the same machine* that
 can connect to ``127.0.0.1:5180`` — those processes can fetch the token
 just by GETting this endpoint. This is a regression from the file-mode-0600
 posture in that narrow case, accepted as the cost of admitting a browser
-client. The token returned here is now REST read-only; the disk-backed daemon
-token remains the agent/MCP token for mutations.
+client. The token returned here is REST-only and limited to reads plus
+provider-auth setup writes; the disk-backed daemon token remains the agent/MCP
+token for all other mutations.
 """
 
 from __future__ import annotations
@@ -45,7 +46,7 @@ class UiTokenResponse(BaseModel):
 
 @router.get("/ui-token", response_model=UiTokenResponse)
 async def get_ui_token(request: Request) -> UiTokenResponse:
-    """Return the browser's read-only bearer token to the same-origin Vue UI.
+    """Return the browser's console bearer token to the same-origin Vue UI.
 
     The token is derived once at app boot in ``server.create_app`` and stored
     on ``request.app.state.ui_token``; we just hand it back. No I/O,

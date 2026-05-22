@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * Get Ui Token
-         * @description Return the browser's read-only bearer token to the same-origin Vue UI.
+         * @description Return the browser's console bearer token to the same-origin Vue UI.
          *
          *     The token is derived once at app boot in ``server.create_app`` and stored
          *     on ``request.app.state.ui_token``; we just hand it back. No I/O,

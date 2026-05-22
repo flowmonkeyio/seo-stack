@@ -71,8 +71,33 @@ def test_ui_token_can_read_rest_data(client: TestClient, auth_token: str) -> Non
     assert resp.json()["items"] == []
 
 
-def test_ui_token_cannot_mutate_rest_data(client: TestClient, auth_token: str) -> None:
-    """The browser token is not accepted for POST/PATCH/DELETE flows."""
+def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token: str) -> None:
+    """The browser token can only perform narrow local-admin credential setup."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    created = client.post(
+        f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"plaintext_payload": "fc-secret", "config_json": {"label": "Primary"}},
+    )
+    assert created.status_code == 201, created.text
+    credential_ref = created.json()["data"]["credential_ref"]
+    assert credential_ref.startswith("cred_")
+    assert "fc-secret" not in created.text
+
+    revoked = client.post(
+        f"/api/v1/projects/{project_id}/auth/revoke",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"credential_ref": credential_ref},
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["data"]["status"] == "revoked"
+    assert "fc-secret" not in revoked.text
+
+
+def test_ui_token_cannot_mutate_non_auth_rest_data(client: TestClient, auth_token: str) -> None:
+    """The browser token is not accepted for general POST/PATCH/DELETE flows."""
     ui_token = derive_ui_token(auth_token)
     resp = client.post(
         "/api/v1/projects",
@@ -85,7 +110,7 @@ def test_ui_token_cannot_mutate_rest_data(client: TestClient, auth_token: str) -
         },
     )
     assert resp.status_code == 403
-    assert "read-only" in resp.json()["detail"]
+    assert "provider auth setup" in resp.json()["detail"]
 
 
 def test_ui_token_cannot_access_mcp(client: TestClient, auth_token: str) -> None:
@@ -97,7 +122,7 @@ def test_ui_token_cannot_access_mcp(client: TestClient, auth_token: str) -> None
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
     )
     assert resp.status_code == 403
-    assert "read-only" in resp.json()["detail"]
+    assert "provider auth setup" in resp.json()["detail"]
 
 
 def test_daemon_token_can_still_mutate_rest_data(client: TestClient, auth_token: str) -> None:
@@ -113,3 +138,18 @@ def test_daemon_token_can_still_mutate_rest_data(client: TestClient, auth_token:
         },
     )
     assert resp.status_code == 201
+
+
+def _create_project(client: TestClient, auth_token: str) -> int:
+    resp = client.post(
+        "/api/v1/projects",
+        headers={"authorization": f"Bearer {auth_token}"},
+        json={
+            "slug": "auth-ui-project",
+            "name": "Auth UI Project",
+            "domain": "example.test",
+            "locale": "en-US",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["data"]["id"])

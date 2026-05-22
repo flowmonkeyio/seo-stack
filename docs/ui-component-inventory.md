@@ -116,5 +116,7 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 If you're carving up the work:
 
 1. Keep the observer-mode route audit green.
-2. Keep `read-only-ui.spec.ts` scanning product code for write calls.
-3. Add new domain components only when they display state without owning product mutations.
+2. Keep `read-only-ui.spec.ts` scanning product code for writes outside the
+   explicit provider-auth setup store.
+3. Add new domain components only when they display state or delegate to a
+   generic StackOS setup surface rather than owning workflow-specific mutations.
