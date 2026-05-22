@@ -142,6 +142,7 @@ Current executable connector registry:
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `ahrefs` | Ready for the first SEO research actions. |
 | `wordpress` | `publishing.wordpress.post.create` | `wordpress` | Ready for explicit WordPress post payloads. |
 | `ghost` | `publishing.ghost.post.create` | `ghost` | Ready for explicit Ghost post payloads. |
+| `http` | project/plugin-defined custom HTTP/Webhook actions | plugin-defined | Ready as a static connector foundation for user-owned tools. |
 
 `action.execute` now returns the public action-call audit shape. Internal
 database identifiers such as `credential_id`, `action_id`, and replay-only
@@ -202,7 +203,8 @@ remaining connector gaps are:
   `seo.paa.extract` through DataForSEO.
 - WordPress and Ghost now have provider manifests and post-create connectors;
   media/upload/update actions still need contracts.
-- User-owned tools need a custom HTTP/Webhook connector.
+- User-owned tools now have a static HTTP/Webhook connector foundation; project
+  plugin authoring and install affordances still need depth.
 - Legacy vendor MCP tools are removed; keep them from reappearing as a parallel execution path.
 
 ### 2. SEO Actions Need Broader Coverage
@@ -364,7 +366,7 @@ These are needed before adding many new domains:
 | Firecrawl-derived Google PAA action contract | DataForSEO PAA is now wired as `seo.paa.extract`; decide later whether the Firecrawl-derived wrapper belongs as a separate utility or SEO action. |
 | WordPress publishing connector breadth | `publishing.wordpress.post.create` is wired; media upload, post update, and richer publication-state actions remain. |
 | Ghost publishing connector breadth | `publishing.ghost.post.create` is wired; image upload, post update, and richer publication-state actions remain. |
-| Custom HTTP/Webhook connector | Allows user-owned internal tools to become StackOS actions without hard-coding each one into core. |
+| Custom HTTP/Webhook connector | Static plugin actions can now use connector `http`; next add authoring docs/examples and optional UI affordances for project-local plugin installation. |
 
 ### P1: Utilities Plugin Expansion
 
@@ -376,7 +378,8 @@ Utilities should be available to any domain:
 - web retrieval: Firecrawl, Jina, browser/screenshot capture
 - file storage: S3, R2, GCS, local artifact store
 - document parsing: PDF, HTML, CSV, spreadsheet ingestion
-- notifications: Slack, email, webhook
+- notifications: Slack, email, webhook; custom webhook actions can start with
+  connector `http`
 - data export/import: Google Sheets, Airtable, CSV, database query adapters
 - media processing: resize, transcode, extract frames, transcription
 
@@ -606,7 +609,7 @@ disabled plugin, disabled provider, missing budget, and budget blocked.
 8. Expand WordPress and Ghost from post-create actions to media/upload/update coverage.
 9. Keep sitemap fetch available both as a setup helper and as `utils.sitemap.fetch`
    for run-plan use.
-10. Add a custom HTTP/Webhook connector for user-owned tools.
+10. Expand custom HTTP/Webhook connector examples and project-local plugin install affordances.
 11. Expand first-party templates after connectors exist.
 12. Treat `action_calls` as the primary external-operation audit ledger for new work.
 

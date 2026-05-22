@@ -172,6 +172,52 @@ def _seed_noauth_action(session: Session) -> None:
     session.commit()
 
 
+def _seed_http_action(session: Session) -> None:
+    plugin = session.exec(select(Plugin).where(Plugin.slug == "test-actions")).one()
+    assert plugin.id is not None
+    provider = Provider(
+        plugin_id=plugin.id,
+        key="internal-webhook",
+        name="Internal Webhook",
+        auth_type="api-key",
+    )
+    session.add(provider)
+    session.flush()
+    assert provider.id is not None
+    session.add(
+        Action(
+            plugin_id=plugin.id,
+            provider_id=provider.id,
+            key="webhook.trigger",
+            name="Trigger Webhook",
+            description="Trigger a static internal webhook.",
+            risk_level="write",
+            input_schema_json={
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["task"],
+                "properties": {"task": {"type": "string"}},
+            },
+            output_schema_json={"type": "object", "additionalProperties": True},
+            config_json={
+                "schema_version": "stackos.action.v1",
+                "connector": "http",
+                "operation": "request",
+                "requires_credential": True,
+                "http": {
+                    "method": "POST",
+                    "url": "https://hooks.example/internal/run",
+                    "auth": {"type": "bearer"},
+                    "request_mode": "json",
+                    "response_mode": "json",
+                    "headers": {"Content-Type": "application/json"},
+                },
+            },
+        )
+    )
+    session.commit()
+
+
 def _credential_ref(session: Session, project_id: int) -> str:
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
@@ -448,6 +494,60 @@ def test_sitemap_action_rejects_empty_url_list(
 
     assert validation.valid is False
     assert {issue.code for issue in validation.issues} == {"length"}
+
+
+def test_custom_http_action_executes_static_webhook_with_daemon_side_auth(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    _seed_action(session)
+    _seed_http_action(session)
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="internal-webhook",
+        plaintext_payload=b"webhook-token",
+        config_json={"label": "Internal webhook"},
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="internal-webhook",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://hooks.example/internal/run",
+        json={"ok": True, "authorization": "Bearer leaked-token"},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="test-actions.webhook.trigger",
+            input_json={"task": "sync-catalog"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request.headers["authorization"] == "Bearer webhook-token"
+    assert request_body == {"task": "sync-catalog"}
+    assert out.action_call.provider_key == "internal-webhook"
+    assert out.action_call.connector_key == "http"
+    assert out.output_json == {
+        "status_code": 200,
+        "body": {"ok": True, "authorization": "[redacted]"},
+    }
+    assert out.metadata_json == {
+        "vendor": "http",
+        "operation": "request",
+        "method": "POST",
+    }
+    assert "webhook-token" not in rendered
+    assert "leaked-token" not in rendered
 
 
 def test_firecrawl_action_executes_through_generic_connector(

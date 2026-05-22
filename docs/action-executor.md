@@ -113,11 +113,18 @@ Registered first-party connectors now cover the migrated clean path for:
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
+- `http`: static custom HTTP/Webhook actions declared by installed plugins
 
 The OpenAI Images connector persists base64 image bytes under generated assets
 and returns local artifact URLs with no `b64_json` payload. Other connectors
 normalize wrapper results into action output JSON and record the provider,
 operation, cost, status, and redacted payloads in `action_calls`.
+
+The generic HTTP connector is a plugin-authoring escape hatch, not a direct
+agent browsing tool. The endpoint, method, auth mode, request mode, static
+headers, timeout, and response mode live in action `config_json.http`; the
+agent only supplies the action input payload allowed by that plugin action's
+schema.
 
 ## Boundary
 

@@ -67,6 +67,26 @@ The action validates shape and executes the requested operation. The agent
 decides campaign intent, structure, budget strategy, and variants before calling
 the action.
 
+For user-owned HTTP/Webhook tools, use the generic daemon connector instead of
+adding core code:
+
+```yaml
+config:
+  schema_version: stackos.action.v1
+  connector: http
+  operation: request
+  requires_credential: true
+  http:
+    method: POST
+    url: https://internal.example/tools/campaigns
+    auth: { type: bearer }
+    request_mode: json
+    response_mode: json
+```
+
+The endpoint remains static configuration. The action's `input_schema` defines
+the payload the agent may pass, and the daemon injects the provider credential.
+
 ## Add A Resource
 
 Resources define durable plugin-owned records:

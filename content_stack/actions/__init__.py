@@ -11,6 +11,7 @@ from content_stack.actions.connectors import (
     ActionConnectorResult,
     ActionValidationIssue,
 )
+from content_stack.actions.http import HttpActionConnector
 from content_stack.actions.manifest import (
     ACTION_MANIFEST_SCHEMA_VERSION,
     ExecutableActionManifest,
@@ -45,6 +46,7 @@ DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(HttpActionConnector())
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -66,6 +68,7 @@ __all__ = [
     "ExecutableActionManifest",
     "FirecrawlActionConnector",
     "GhostActionConnector",
+    "HttpActionConnector",
     "JinaActionConnector",
     "OpenAIImagesActionConnector",
     "RedditActionConnector",

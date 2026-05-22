@@ -72,6 +72,28 @@ Providers may include safe `config.setup_fields` for local-admin setup values
 such as site URLs or API versions. These fields are stored in credential
 `config_json`; secrets still belong only in the encrypted credential payload.
 
+Custom internal tools can use the generic HTTP/Webhook connector by declaring a
+static action config:
+
+```yaml
+config:
+  schema_version: stackos.action.v1
+  connector: http
+  operation: request
+  requires_credential: true
+  http:
+    method: POST
+    url: https://internal.example/actions/create-campaign
+    auth:
+      type: bearer
+    request_mode: json
+    response_mode: json
+```
+
+The URL and auth mode are static plugin configuration. The agent supplies only
+the action input JSON allowed by the action schema, and the daemon injects the
+credential inside the connector process.
+
 ## Resources
 
 Resources are plugin-owned durable records. Use them for objects that agents
