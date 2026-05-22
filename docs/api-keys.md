@@ -24,8 +24,9 @@ place plaintext keys or OAuth secrets are accepted.
 
 ## DataForSEO
 
-Used by: SEO plugin actions such as keyword research, SERP analysis, and
-competitor discovery.
+Used by: SEO plugin actions such as keyword research, SERP analysis, and People
+Also Ask extraction. Competitor discovery currently uses the Ahrefs action
+connector when that optional provider is enabled.
 
 1. Sign up at <https://app.dataforseo.com>.
 2. Top up a small balance (~$5 covers thousands of test queries).
@@ -172,12 +173,14 @@ REDDIT_CLIENT_SECRET=...
 
 ## Google PAA
 
-Used by: plugin actions that need People Also Ask style discovery.
+Used by: future plugin actions that need Firecrawl-derived People Also Ask
+style discovery.
 
-No credential needed. The Google PAA wrapper delegates to Firecrawl
-under the hood. If you set a direct budget for the wrapper, use kind
-``google-paa``; older ``paa`` budget rows are normalized to ``google-paa``
-by the REST routes.
+The current first-party PAA action is ``seo.paa.extract`` and uses
+DataForSEO credentials plus the ``dataforseo`` project budget. The separate
+``google-paa`` wrapper still delegates to Firecrawl under the hood, but it is
+not exposed as a first-party plugin action yet. If we add that wrapper later,
+its dependency and budget policy should be explicit in the action manifest.
 
 ---
 

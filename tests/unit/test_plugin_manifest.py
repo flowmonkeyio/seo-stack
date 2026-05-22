@@ -87,9 +87,18 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "enforce_budget": True,
     }
     assert actions["serp.analyze"].config["connector"] == "dataforseo"
+    assert actions["paa.extract"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "dataforseo",
+        "operation": "paa",
+        "requires_credential": True,
+        "budget_kind": "dataforseo",
+        "enforce_budget": True,
+    }
     assert actions["competitor.keywords"].config["connector"] == "ahrefs"
     assert actions["backlink.research"].config["connector"] == "ahrefs"
     assert actions["keyword.research"].input_schema["required"] == ["keywords"]
+    assert actions["paa.extract"].input_schema["required"] == ["keyword"]
 
 
 def test_plugin_manifest_loader_reads_bundled_assets_when_repo_plugins_absent(

@@ -84,6 +84,32 @@ actions:
       requires_credential: true
       budget_kind: dataforseo
       enforce_budget: true
+  - key: paa.extract
+    name: Extract People Also Ask
+    description: Fetch People Also Ask evidence for an agent-selected query through DataForSEO.
+    provider: dataforseo
+    capability: seo-research
+    risk_level: cost
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - keyword
+      properties:
+        keyword:
+          type: string
+        location:
+          type: string
+        language:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: dataforseo
+      operation: paa
+      requires_credential: true
+      budget_kind: dataforseo
+      enforce_budget: true
   - key: competitor.keywords
     name: Competitor Keywords
     description: Pull competitor organic keyword evidence for agent analysis.

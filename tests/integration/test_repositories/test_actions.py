@@ -278,6 +278,7 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.reddit.search-subreddit": ("reddit", True, "unknown"),
         "seo.keyword.research": ("dataforseo", True, "unknown"),
         "seo.serp.analyze": ("dataforseo", True, "unknown"),
+        "seo.paa.extract": ("dataforseo", True, "unknown"),
         "seo.competitor.keywords": ("ahrefs", True, "unknown"),
         "seo.backlink.research": ("ahrefs", True, "unknown"),
     }
@@ -529,6 +530,70 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
     assert out.action_call.provider_key == "dataforseo"
     assert out.action_call.connector_key == "dataforseo"
     assert out.output_json["tasks"][0]["result"][0]["title"] == "Example"
+    assert "password" not in rendered
+    assert "login@example.com" not in rendered
+
+
+def test_dataforseo_paa_action_uses_explicit_action_contract(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="dataforseo",
+        plaintext_payload=b"password",
+        config_json={"login": "login@example.com"},
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="dataforseo",
+        monthly_budget_usd=10.0,
+    )
+    from content_stack.auth_providers import AuthRepository
+
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="dataforseo",
+    ).connections[0].credential_ref
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+        json={
+            "tasks": [
+                {
+                    "cost": 0.001,
+                    "result": [
+                        {
+                            "items": [
+                                {"type": "people_also_ask", "title": "What is SEO?"}
+                            ]
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.paa.extract",
+            input_json={"keyword": "seo tools"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request_body[0]["keyword"] == "seo tools"
+    assert request_body[0]["people_also_ask_click_depth"] == 1
+    assert out.action_call.provider_key == "dataforseo"
+    assert out.action_call.connector_key == "dataforseo"
+    assert (
+        out.output_json["tasks"][0]["result"][0]["items"][0]["title"]
+        == "What is SEO?"
+    )
     assert "password" not in rendered
     assert "login@example.com" not in rendered
 

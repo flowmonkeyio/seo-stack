@@ -67,11 +67,14 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert {action.key for action in seo.actions} >= {
         "keyword.research",
         "serp.analyze",
+        "paa.extract",
         "competitor.keywords",
     }
     seo_actions = {action.key: action for action in seo.actions}
     assert seo_actions["keyword.research"].config_json["connector"] == "dataforseo"
     assert seo_actions["serp.analyze"].config_json["connector"] == "dataforseo"
+    assert seo_actions["paa.extract"].config_json["connector"] == "dataforseo"
+    assert seo_actions["paa.extract"].config_json["operation"] == "paa"
     assert seo_actions["competitor.keywords"].config_json["connector"] == "ahrefs"
     assert seo_actions["backlink.research"].config_json["connector"] == "ahrefs"
     assert {resource.key for resource in seo.resources} >= {

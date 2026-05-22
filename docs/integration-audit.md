@@ -44,7 +44,7 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
-| `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired. More templates and richer provider actions are still needed. |
+| `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
 
 Current templates are intentionally small and reusable, but the library is thin:
 
@@ -137,7 +137,7 @@ Current executable connector registry:
 | `jina` | `utils.web.read` | `jina` | Ready with optional credentials. |
 | `sitemap` | `utils.sitemap.fetch` | none | Ready as a no-auth utility action, while the setup helper remains available. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `reddit` | Ready through generic `action.execute`. |
-| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze` | `dataforseo` | Ready for the first SEO research actions. |
+| `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `dataforseo` | Ready for the first SEO research actions. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `ahrefs` | Ready for the first SEO research actions. |
 
 `action.execute` now returns the public action-call audit shape. Internal
@@ -177,7 +177,7 @@ Wrapper inventory:
 | Provider | Wrapper Operations | Current Exposure | Readiness |
 | --- | --- | --- | --- |
 | `openai-images` | `generate`, `test_credentials` | Generic action connector | Ready. |
-| `dataforseo` | SERP, keyword volume, domain intersection, keywords for site, PAA, credential test | SEO plugin actions | First connector path ready for `keyword.research` and `serp.analyze`; remaining wrapper operations need action contracts. |
+| `dataforseo` | SERP, keyword volume, domain intersection, keywords for site, PAA, credential test | SEO plugin actions | First connector path ready for `keyword.research`, `serp.analyze`, and `paa.extract`; remaining wrapper operations need action contracts. |
 | `ahrefs` | keywords for site, top backlinks, credential test | SEO plugin actions | First connector path ready for competitor keywords and backlink research. |
 | `firecrawl` | scrape, crawl, map, extract, credential test | Utils actions | Ready through generic utility actions. |
 | `jina` | read URL, credential test | Utils action | Ready through `utils.web.read` with optional auth. |
@@ -194,7 +194,9 @@ Wrapper inventory:
 The first utility and SEO wrappers are now on the generic connector path. The
 remaining connector gaps are:
 
-- Google PAA needs an explicit action contract and dependency decision.
+- Firecrawl-derived Google PAA needs an explicit action contract and dependency
+  decision if we want that wrapper as a separate action. The first PAA action is
+  `seo.paa.extract` through DataForSEO.
 - WordPress and Ghost need provider manifests, publishing actions, and connectors.
 - User-owned tools need a custom HTTP/Webhook connector.
 - Legacy vendor MCP tools are removed; keep them from reappearing as a parallel execution path.
@@ -205,11 +207,12 @@ The first SEO actions are executable:
 
 - `seo.keyword.research`
 - `seo.serp.analyze`
+- `seo.paa.extract`
 - `seo.competitor.keywords`
 - `seo.backlink.research`
 
 The remaining gap is breadth, not basic executability. DataForSEO domain
-intersection, keywords-for-site, PAA, GSC, GA4, crawl imports, and CMS publishing
+intersection, keywords-for-site, GSC, GA4, crawl imports, and CMS publishing
 still need explicit plugin actions, schemas, templates, and tests.
 
 ### 3. Legacy Vendor MCP Tools Are Removed
@@ -256,13 +259,10 @@ Some wrappers exist without first-class plugin provider/action definitions:
 - `ghost`
 - `google-paa`
 
-Some plugin providers exist without generic executable actions:
-
-- `firecrawl`
-- `jina`
-- `reddit`
-- `dataforseo`
-- `ahrefs`
+The original set of plugin providers without generic executable actions has
+been closed for Firecrawl, Jina, Reddit, DataForSEO, and Ahrefs. Future plugin
+providers should not be considered setup-ready until they have the same action
+connector coverage, even if a daemon wrapper already exists.
 
 For a clean plugin system, every external provider should have matching:
 
@@ -357,7 +357,7 @@ These are needed before adding many new domains:
 | Need | Why |
 | --- | --- |
 | Guard against vendor MCP tool reintroduction | Firecrawl, Jina, Reddit, DataForSEO, and Ahrefs now have generic action connectors, so provider-specific MCP tools should remain removed. |
-| Google PAA action contract | Decide whether it is a DataForSEO action, Firecrawl-derived utility action, or SEO action that depends on Firecrawl. |
+| Firecrawl-derived Google PAA action contract | DataForSEO PAA is now wired as `seo.paa.extract`; decide later whether the Firecrawl-derived wrapper belongs as a separate utility or SEO action. |
 | WordPress publishing connector | Current wrapper only tests credentials. Publishing needs post/media actions. |
 | Ghost publishing connector | Current wrapper only tests credentials. Publishing needs post/image actions. |
 | Custom HTTP/Webhook connector | Allows user-owned internal tools to become StackOS actions without hard-coding each one into core. |
@@ -616,6 +616,7 @@ Jina, Reddit, DataForSEO, and Ahrefs. Remaining Phase 1 cleanup:
 - keep removed provider-specific MCP tool names unknown to clients
 - keep action availability signals visible in catalog/UI surfaces
 - add remaining DataForSEO operation contracts where templates need them
+  beyond keyword research, SERP analysis, and PAA extraction
 - keep focused tests for connector validation, daemon-side credential resolution,
   run-plan grants, and redacted action-call audit
 

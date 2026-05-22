@@ -51,6 +51,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
     assert {a["key"] for a in seo_catalog.json()["actions"]} >= {
         "keyword.research",
         "serp.analyze",
+        "paa.extract",
         "competitor.keywords",
     }
     assert {r["key"] for r in seo_catalog.json()["resources"]} >= {

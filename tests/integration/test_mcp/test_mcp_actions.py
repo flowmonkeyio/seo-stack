@@ -102,6 +102,23 @@ def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/dataforseo/credentials",
+        json={
+            "plaintext_payload": "password",
+            "config_json": {"login": "login@example.com"},
+        },
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "dataforseo"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _image_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -169,6 +186,30 @@ def _sitemap_action_plan_json() -> dict:
                 "id": "fetch-sitemap",
                 "title": "Fetch sitemap",
                 "action_refs": ["utils.sitemap.fetch"],
+            }
+        ],
+    }
+
+
+def _dataforseo_paa_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "seo.paa-action.run",
+        "title": "PAA action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "extract-paa",
+                    "tool": "action.execute",
+                    "action_refs": ["seo.paa.extract"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "extract-paa",
+                "title": "Extract PAA",
+                "action_refs": ["seo.paa.extract"],
             }
         ],
     }
@@ -422,3 +463,98 @@ def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
     assert data["action_call"]["connector_key"] == "sitemap"
     assert data["output_json"]["entries"][0]["url"] == "https://example.com/a"
     assert data["output_json"]["errors"] == []
+
+
+def test_action_execute_dataforseo_paa_grant_uses_generic_connector(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_dataforseo_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "dataforseo", "monthly_budget_usd": 10.0},
+        headers={"authorization": f"Bearer {mcp_client.auth_token}"},
+    )
+    assert budget_resp.status_code == 200
+    described = mcp_client.call_tool_structured(
+        "action.describe",
+        {"project_id": project_id, "action_ref": "seo.paa.extract"},
+    )
+    validation = mcp_client.call_tool_structured(
+        "action.validate",
+        {
+            "project_id": project_id,
+            "action_ref": "seo.paa.extract",
+            "input_json": {"keyword": "seo tools"},
+            "credential_ref": credential_ref,
+        },
+    )
+
+    assert described["availability"]["status"] == "ready"
+    assert described["manifest"]["connector_key"] == "dataforseo"
+    assert validation["valid"] is True
+    assert validation["credential_ref"] == credential_ref
+
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _dataforseo_paa_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "extract-paa",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+        json={
+            "tasks": [
+                {
+                    "cost": 0.001,
+                    "result": [
+                        {
+                            "items": [
+                                {"type": "people_also_ask", "title": "What is SEO?"}
+                            ]
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "seo.paa.extract",
+            "input_json": {"keyword": "seo tools"},
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    data = out["data"]
+    rendered = json.dumps(data)
+    assert request_body[0]["keyword"] == "seo tools"
+    assert request_body[0]["people_also_ask_click_depth"] == 1
+    assert data["credential_ref"] == credential_ref
+    assert data["action_call"]["provider_key"] == "dataforseo"
+    assert data["action_call"]["connector_key"] == "dataforseo"
+    assert (
+        data["output_json"]["tasks"][0]["result"][0]["items"][0]["title"]
+        == "What is SEO?"
+    )
+    assert "password" not in rendered
+    assert "login@example.com" not in rendered

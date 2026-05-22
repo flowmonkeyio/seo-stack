@@ -109,7 +109,7 @@ Registered first-party connectors now cover the migrated clean path for:
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
-- `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`
+- `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 
 The OpenAI Images connector persists base64 image bytes under generated assets
