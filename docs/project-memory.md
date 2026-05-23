@@ -25,6 +25,10 @@ workflow-specific storage should not be treated as project memory. Any schema
 cleanup that deletes stored data needs explicit signoff and backup/restore
 verification.
 
+`agent_requests` are a core inbox/queue primitive, not project memory. They can
+point at resources, messages, or future trigger sources, but the queue stores
+claim state and run linkage rather than durable learnings or decisions.
+
 ## Agent Retrieval
 
 Normal agents may read bounded, sanitized context:

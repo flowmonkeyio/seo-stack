@@ -16,6 +16,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "action_calls",
         "action_versions",
         "actions",
+        "agent_requests",
         "agent_sessions",
         "approval_requests",
         "artifacts",

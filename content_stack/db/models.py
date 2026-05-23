@@ -26,6 +26,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     LargeBinary,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy import Enum as SAEnum
@@ -146,6 +147,27 @@ class ActionCallStatus(enum.StrEnum):
     FAILED = "failed"
 
 
+class AgentRequestStatus(enum.StrEnum):
+    """Persists to ``agent_requests.status`` for the generic agent inbox."""
+
+    NEW = "new"
+    CLAIMED = "claimed"
+    RUN_CREATED = "run-created"
+    RUN_STARTED = "run-started"
+    RESPONDED = "responded"
+    RESOLVED = "resolved"
+    IGNORED = "ignored"
+    FAILED = "failed"
+
+
+class AgentRequestAttentionStatus(enum.StrEnum):
+    """Persists to ``agent_requests.attention_status`` for local inbox state."""
+
+    UNREAD = "unread"
+    READ = "read"
+    ARCHIVED = "archived"
+
+
 class PluginSource(enum.StrEnum):
     """Persists to ``plugins.source`` for StackOS catalog ownership."""
 
@@ -221,6 +243,53 @@ ACTION_CALL_STATUS_TRANSITIONS: dict[ActionCallStatus, frozenset[ActionCallStatu
     ActionCallStatus.DRY_RUN: frozenset(),
     ActionCallStatus.SUCCESS: frozenset(),
     ActionCallStatus.FAILED: frozenset(),
+}
+
+
+AGENT_REQUEST_STATUS_TRANSITIONS: dict[AgentRequestStatus, frozenset[AgentRequestStatus]] = {
+    AgentRequestStatus.NEW: frozenset(
+        {
+            AgentRequestStatus.CLAIMED,
+            AgentRequestStatus.IGNORED,
+            AgentRequestStatus.FAILED,
+        }
+    ),
+    AgentRequestStatus.CLAIMED: frozenset(
+        {
+            AgentRequestStatus.NEW,
+            AgentRequestStatus.RUN_CREATED,
+            AgentRequestStatus.RUN_STARTED,
+            AgentRequestStatus.RESPONDED,
+            AgentRequestStatus.RESOLVED,
+            AgentRequestStatus.IGNORED,
+            AgentRequestStatus.FAILED,
+        }
+    ),
+    AgentRequestStatus.RUN_CREATED: frozenset(
+        {
+            AgentRequestStatus.RUN_STARTED,
+            AgentRequestStatus.RESPONDED,
+            AgentRequestStatus.RESOLVED,
+            AgentRequestStatus.IGNORED,
+            AgentRequestStatus.FAILED,
+        }
+    ),
+    AgentRequestStatus.RUN_STARTED: frozenset(
+        {
+            AgentRequestStatus.RESPONDED,
+            AgentRequestStatus.RESOLVED,
+            AgentRequestStatus.FAILED,
+        }
+    ),
+    AgentRequestStatus.RESPONDED: frozenset(
+        {
+            AgentRequestStatus.RESOLVED,
+            AgentRequestStatus.FAILED,
+        }
+    ),
+    AgentRequestStatus.RESOLVED: frozenset(),
+    AgentRequestStatus.IGNORED: frozenset(),
+    AgentRequestStatus.FAILED: frozenset(),
 }
 
 
@@ -844,6 +913,70 @@ class ResourceRecord(SQLModel, table=True):
     title: str | None = Field(default=None, max_length=300)
     data_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     provenance_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class AgentRequest(SQLModel, table=True):
+    """Generic project inbox item that agents can claim and turn into runs.
+
+    Provider plugins may feed this queue through trusted ingestion or granted
+    run-plan steps. The table remains core and provider-agnostic so Telegram,
+    IMAP, webhooks, schedules, CI events, and future triggers share one claim
+    contract instead of inventing provider-specific queues.
+    """
+
+    __tablename__ = "agent_requests"
+    __table_args__ = (
+        UniqueConstraint("project_id", "request_key", name="uq_agent_requests_project_key"),
+        Index("ix_agent_requests_project_status", "project_id", "status"),
+        Index("ix_agent_requests_project_attention", "project_id", "attention_status"),
+        Index("ix_agent_requests_project_created", "project_id", "created_at"),
+        Index("ix_agent_requests_claim", "status", "claim_expires_at"),
+        Index("ix_agent_requests_source_record", "source_resource_record_id"),
+        Index("ix_agent_requests_run_plan", "run_plan_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    request_key: str = Field(max_length=200)
+    title: str = Field(max_length=300)
+    body_preview: str = Field(default="", sa_column=Column(Text, nullable=False))
+    source_provider: str | None = Field(default=None, max_length=160)
+    source_kind: str | None = Field(default=None, max_length=120)
+    source_resource_key: str | None = Field(default=None, max_length=160)
+    source_resource_record_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("resource_records.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    source_message_ref: str | None = Field(default=None, max_length=300)
+    priority: int = Field(default=0, nullable=False)
+    status: AgentRequestStatus = Field(sa_column=_enum_column(AgentRequestStatus))
+    attention_status: AgentRequestAttentionStatus = Field(
+        sa_column=_enum_column(AgentRequestAttentionStatus)
+    )
+    claimed_by: str | None = Field(default=None, max_length=120)
+    claim_token_hash: str | None = Field(default=None, max_length=128)
+    claimed_at: datetime | None = Field(default=None)
+    claim_expires_at: datetime | None = Field(default=None)
+    run_plan_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("run_plans.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    completed_at: datetime | None = Field(default=None)
+    ignored_at: datetime | None = Field(default=None)
+    metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 

@@ -94,6 +94,7 @@ Core StackOS tables include:
 - `learnings`, `experiments`, `experiment_variants`,
   `experiment_observations`, `decisions`
 - `approval_requests`
+- `agent_requests`
 
 Plugin tables may exist for first-party domains when they provide durable
 domain resources. Those tables are plugin-owned and should not drive core UI

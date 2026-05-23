@@ -327,8 +327,8 @@ Suggested statuses:
 
 - `new`
 - `claimed`
-- `run_created`
-- `run_started`
+- `run-created`
+- `run-started`
 - `responded`
 - `resolved`
 - `ignored`
@@ -394,10 +394,9 @@ read.
 StackOS/agent workflow state:
 
 - `new`
-- `request_created`
 - `claimed`
-- `run_created`
-- `run_started`
+- `run-created`
+- `run-started`
 - `responded`
 - `resolved`
 - `ignored`

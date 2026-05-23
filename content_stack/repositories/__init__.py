@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from content_stack.repositories.agent_requests import (
+    AgentRequestClaimOut,
+    AgentRequestOut,
+    AgentRequestRepository,
+)
 from content_stack.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -51,6 +56,9 @@ from content_stack.repositories.workspaces import (
 )
 
 __all__ = [
+    "AgentRequestClaimOut",
+    "AgentRequestOut",
+    "AgentRequestRepository",
     "AgentSessionOut",
     "ArtifactOut",
     "ArtifactRepository",

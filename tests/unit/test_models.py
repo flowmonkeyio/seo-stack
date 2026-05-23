@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from content_stack.db.models import (
     ACTION_CALL_STATUS_TRANSITIONS,
+    AGENT_REQUEST_STATUS_TRANSITIONS,
     APPROVAL_REQUEST_STATUS_TRANSITIONS,
     RUN_PLAN_STATUS_TRANSITIONS,
     RUN_PLAN_STEP_STATUS_TRANSITIONS,
     RUN_STATUS_TRANSITIONS,
     ActionCallStatus,
+    AgentRequestAttentionStatus,
+    AgentRequestStatus,
     ApprovalRequestStatus,
     PluginSource,
     RunKind,
@@ -64,6 +67,23 @@ def test_action_call_status_values() -> None:
     assert _values(ActionCallStatus) == {"dry-run", "success", "failed"}
 
 
+def test_agent_request_status_values() -> None:
+    assert _values(AgentRequestStatus) == {
+        "new",
+        "claimed",
+        "run-created",
+        "run-started",
+        "responded",
+        "resolved",
+        "ignored",
+        "failed",
+    }
+
+
+def test_agent_request_attention_status_values() -> None:
+    assert _values(AgentRequestAttentionStatus) == {"unread", "read", "archived"}
+
+
 def test_plugin_source_values() -> None:
     assert _values(PluginSource) == {"builtin", "repo", "project", "user"}
 
@@ -89,6 +109,10 @@ def test_status_machine_legal_transitions_only_reference_defined_statuses() -> N
         assert isinstance(src, ActionCallStatus)
         for dest in dests:
             assert isinstance(dest, ActionCallStatus)
+    for src, dests in AGENT_REQUEST_STATUS_TRANSITIONS.items():
+        assert isinstance(src, AgentRequestStatus)
+        for dest in dests:
+            assert isinstance(dest, AgentRequestStatus)
 
 
 def test_terminal_states_are_terminal() -> None:
@@ -96,3 +120,6 @@ def test_terminal_states_are_terminal() -> None:
     assert RUN_PLAN_STATUS_TRANSITIONS[RunPlanStatus.COMPLETED] == frozenset()
     assert RUN_PLAN_STATUS_TRANSITIONS[RunPlanStatus.FAILED] == frozenset()
     assert ACTION_CALL_STATUS_TRANSITIONS[ActionCallStatus.SUCCESS] == frozenset()
+    assert AGENT_REQUEST_STATUS_TRANSITIONS[AgentRequestStatus.RESOLVED] == frozenset()
+    assert AGENT_REQUEST_STATUS_TRANSITIONS[AgentRequestStatus.IGNORED] == frozenset()
+    assert AGENT_REQUEST_STATUS_TRANSITIONS[AgentRequestStatus.FAILED] == frozenset()
