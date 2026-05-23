@@ -109,7 +109,8 @@ def derive_ui_token(token: str) -> str:
 
     The daemon token remains the write-capable local-admin token stored on disk.
     The derived UI token is what ``/api/v1/auth/ui-token`` returns; middleware
-    accepts it only for safe REST reads and narrow provider-auth setup writes.
+    accepts it only for safe REST reads, project creation setup, and narrow
+    provider-auth setup writes.
     """
     digest = hmac.new(token.encode("utf-8"), _UI_TOKEN_MESSAGE, hashlib.sha256).digest()
     encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
@@ -164,9 +165,16 @@ def _allows_ui_auth_setup(path: str, method: str) -> bool:
     return False
 
 
+def _allows_ui_project_setup(path: str, method: str) -> bool:
+    """Return True for the local browser's project creation setup mutation."""
+    return method.upper() == "POST" and path == "/api/v1/projects"
+
+
 def _ui_scope_for_request(path: str, method: str) -> str | None:
     if _allows_ui_read(path, method):
         return "ui-read"
+    if _allows_ui_project_setup(path, method):
+        return "ui-project-setup"
     if _allows_ui_auth_setup(path, method):
         return "ui-auth-setup"
     return None
@@ -178,8 +186,8 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
     The daemon token is write-capable local-admin authority used by REST callers
     and the local MCP bridge process. The bridge does not reveal that token to
     agents; agent workflow execution is gated inside MCP by run-plan grants.
-    The UI token is REST-only and limited to reads plus provider-auth setup
-    writes. It cannot access MCP or general mutation routes.
+    The UI token is REST-only and limited to reads plus setup writes needed for
+    the local console. It cannot access MCP or general mutation routes.
     Token values are supplied at construction time so middleware setup never
     re-reads the file at request time. Token rotation requires a daemon restart,
     which matches the spec (rotation runs via `make install`).
@@ -217,8 +225,8 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     {
                         "detail": (
-                            "UI token can only read REST data and manage provider auth setup; "
-                            "use the daemon token for other mutations"
+                            "UI token can only read REST data, create projects, and manage "
+                            "provider auth setup; use the daemon token for other mutations"
                         )
                     },
                     status_code=403,

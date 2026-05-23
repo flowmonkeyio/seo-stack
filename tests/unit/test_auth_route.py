@@ -100,8 +100,11 @@ def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token:
     assert "fc-secret" not in revoked.text
 
 
-def test_ui_token_cannot_mutate_non_auth_rest_data(client: TestClient, auth_token: str) -> None:
-    """The browser token is not accepted for general POST/PATCH/DELETE flows."""
+def test_ui_token_can_create_project_for_local_setup(
+    client: TestClient,
+    auth_token: str,
+) -> None:
+    """The browser token can create the first project without exposing daemon auth."""
     ui_token = derive_ui_token(auth_token)
     resp = client.post(
         "/api/v1/projects",
@@ -113,8 +116,32 @@ def test_ui_token_cannot_mutate_non_auth_rest_data(client: TestClient, auth_toke
             "locale": "en-US",
         },
     )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["data"]["slug"] == "observer-mode"
+
+
+def test_ui_token_cannot_mutate_general_rest_data(client: TestClient, auth_token: str) -> None:
+    """The browser token is not accepted for general PATCH/DELETE flows."""
+    ui_token = derive_ui_token(auth_token)
+    created = client.post(
+        "/api/v1/projects",
+        headers={"authorization": f"Bearer {auth_token}"},
+        json={
+            "slug": "observer-mode",
+            "name": "Observer Mode",
+            "domain": "example.test",
+            "locale": "en-US",
+        },
+    )
+    project_id = created.json()["data"]["id"]
+
+    resp = client.patch(
+        f"/api/v1/projects/{project_id}",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"name": "Changed"},
+    )
     assert resp.status_code == 403
-    assert "provider auth setup" in resp.json()["detail"]
+    assert "create projects" in resp.json()["detail"]
 
 
 def test_ui_token_cannot_access_mcp(client: TestClient, auth_token: str) -> None:
@@ -126,7 +153,7 @@ def test_ui_token_cannot_access_mcp(client: TestClient, auth_token: str) -> None
         json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
     )
     assert resp.status_code == 403
-    assert "provider auth setup" in resp.json()["detail"]
+    assert "create projects" in resp.json()["detail"]
 
 
 def test_daemon_token_can_still_mutate_rest_data(client: TestClient, auth_token: str) -> None:

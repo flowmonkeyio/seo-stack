@@ -5,11 +5,10 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const SCOPES = ['components', 'lib', 'stores', 'views']
-const WRITE_PATTERNS = [
-  /\bapiWrite\b/,
-  /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/,
-]
+const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
+const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
+const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE])
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -28,7 +27,10 @@ describe('restricted UI write contract', () => {
     for (const scope of SCOPES) {
       for (const file of filesUnder(join(ROOT, scope))) {
         const text = readFileSync(file, 'utf8')
-        if (WRITE_PATTERNS.some((pattern) => pattern.test(text)) && file !== AUTH_SETUP_STORE) {
+        if (
+          WRITE_PATTERNS.some((pattern) => pattern.test(text)) &&
+          !ALLOWED_WRITE_FILES.has(file)
+        ) {
           offenders.push(file)
         }
       }
@@ -50,5 +52,13 @@ describe('restricted UI write contract', () => {
       '/api/v1/projects/${projectId}/auth/test',
       '/api/v1/projects/${projectId}/auth/revoke',
     ])
+  })
+
+  it('limits project store writes to first-project creation', () => {
+    const text = readFileSync(PROJECTS_STORE, 'utf8')
+
+    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
+    expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
+    expect(text).toContain("method: 'POST'")
   })
 })

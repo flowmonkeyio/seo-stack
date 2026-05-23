@@ -40,7 +40,11 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
         { key: 'connections', label: 'Connections', to: `${base}/connections` },
         { key: 'operations', label: 'Operations', to: `${base}/operations` },
         { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
-        { key: 'workflow-templates', label: 'Workflow Templates', to: `${base}/workflow-templates` },
+        {
+          key: 'workflow-templates',
+          label: 'Workflow Templates',
+          to: `${base}/workflow-templates`,
+        },
         { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true },
       ],
     },
@@ -61,6 +65,7 @@ export function setupNavSection(projectId: number): StackOsNavSection {
     key: 'project-setup',
     label: 'Project Setup',
     items: [
+      { key: 'setup', label: 'Setup Status', to: `${base}/setup` },
       { key: 'schedules', label: 'Schedules', to: `${base}/schedules` },
       { key: 'cost-budget', label: 'Cost & Budget', to: `${base}/cost-budget` },
     ],
@@ -116,9 +121,7 @@ export function isStackOsNavItemActive(
   const targetParams = new URLSearchParams(targetSearch)
   const targetKeys = Array.from(new Set(Array.from(targetParams.keys())))
   if (targetKeys.length > 0) {
-    return targetKeys.every((key) =>
-      queryValueMatches(currentQuery[key], targetParams.getAll(key)),
-    )
+    return targetKeys.every((key) => queryValueMatches(currentQuery[key], targetParams.getAll(key)))
   }
 
   return currentQuery.plugin_slug === undefined || currentQuery.plugin_slug === null
@@ -132,10 +135,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function queryValueMatches(
-  current: unknown,
-  expected: string[],
-): boolean {
+function queryValueMatches(current: unknown, expected: string[]): boolean {
   if (expected.length === 0) return current === undefined || current === null
   if (Array.isArray(current)) {
     return expected.every((value) => current.map(String).includes(value))

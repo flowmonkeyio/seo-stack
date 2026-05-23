@@ -1964,6 +1964,15 @@ def install(
     ensure_seed_file(settings.seed_path)
     ensure_token(settings.token_path)
     typer.echo(f"==> Bootstrap state ready: {settings.state_dir}")
+
+    if not (skills_only or mcp_only or plugins_only):
+        from content_stack.db.migrate import upgrade_to_head
+
+        result = upgrade_to_head(settings)
+        if result.stamped_existing_schema:
+            typer.echo("==> Database schema stamped at alembic head")
+        typer.echo(f"==> Database schema ready: {settings.db_path}")
+
     home = Path.home()
 
     runtimes: tuple[Literal["codex", "claude"], ...] = ("codex", "claude")

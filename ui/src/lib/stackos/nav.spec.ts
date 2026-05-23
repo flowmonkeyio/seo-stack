@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { SchemaPluginOut } from '@/api'
-import { coreNavSections, isStackOsNavItemActive, pluginContributionSections } from './nav'
+import {
+  coreNavSections,
+  isStackOsNavItemActive,
+  pluginContributionSections,
+  setupNavSection,
+} from './nav'
 
 describe('StackOS nav contributions', () => {
   it('keeps generic core nav focused on StackOS primitives', () => {
@@ -48,6 +53,16 @@ describe('StackOS nav contributions', () => {
       label: 'Campaigns',
       to: '/projects/9/resources',
     })
+  })
+
+  it('exposes project setup status before setup support pages', () => {
+    const section = setupNavSection(12)
+
+    expect(section.items.map((item) => item.to)).toEqual([
+      '/projects/12/setup',
+      '/projects/12/schedules',
+      '/projects/12/cost-budget',
+    ])
   })
 
   it('loads SEO nav from the plugin manifest contribution only when enabled', () => {
@@ -103,9 +118,7 @@ describe('StackOS nav contributions', () => {
     const genericTemplates = { to: '/projects/7/workflow-templates' }
     const seoTemplates = { to: '/projects/7/workflow-templates?plugin_slug=seo' }
 
-    expect(
-      isStackOsNavItemActive(genericResources, '/projects/7/resources', {}),
-    ).toBe(true)
+    expect(isStackOsNavItemActive(genericResources, '/projects/7/resources', {})).toBe(true)
     expect(
       isStackOsNavItemActive(genericResources, '/projects/7/resources', { plugin_slug: 'seo' }),
     ).toBe(false)

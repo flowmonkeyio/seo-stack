@@ -71,10 +71,11 @@ content-stack install
 content-stack start
 ```
 
-`content-stack install` initializes local state, hydrates plugin assets from the
-package, registers MCP bridge entries, and runs `doctor`. A daemon-down doctor
-result is treated as a first-run warning during install; run `content-stack
-start` next to start the singleton daemon in the background.
+`content-stack install` initializes local state, runs database migrations,
+hydrates plugin assets from the package, registers MCP bridge entries, and runs
+`doctor`. A daemon-down doctor result is treated as a first-run warning during
+install; run `content-stack start` next to start the singleton daemon in the
+background.
 
 Use `content-stack restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
@@ -122,14 +123,19 @@ After the daemon is running, use the UI in this order:
 1. Open `http://127.0.0.1:5180/`.
 2. Create or select the project that represents the business, site, product, or
    client.
-3. Enable the plugins that match current work, such as SEO, media buying, GTM,
-   publishing, or utilities.
-4. Add connections for each provider account. A provider may allow multiple
+3. Review the installed plugin catalog and confirm the project has the domains
+   it needs, such as SEO, media buying, GTM, publishing, or utilities. Plugin
+   enablement is seeded by setup today; future enable/disable changes should go
+   through an admin CLI, REST, or agent-owned setup flow rather than exposing
+   broad catalog mutation in the browser.
+4. Open the project Setup page to review runtime, plugin, connection, template,
+   action, and run-plan readiness.
+5. Add connections for each provider account. A provider may allow multiple
    connections, for example multiple Meta ad accounts or several SMTP profiles.
-5. Review workflow templates available from enabled plugins.
-6. Create a run plan from a template or from an agent-authored plan.
-7. Grant only the tool actions needed by the run plan.
-8. Review action calls, resources, artifacts, learnings, experiments, and
+6. Review workflow templates available from enabled plugins.
+7. Create a run plan from a template or from an agent-authored plan.
+8. Grant only the tool actions needed by the run plan.
+9. Review action calls, resources, artifacts, learnings, experiments, and
    decisions after the run.
 
 StackOS should render generic objects instead of bespoke workflow pages. A

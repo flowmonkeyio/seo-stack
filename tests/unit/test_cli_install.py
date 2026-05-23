@@ -257,6 +257,8 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
         sandbox / ".codex" / "plugins" / "content-stack" / ".codex-plugin" / "plugin.json"
     ).is_file()
     assert not (sandbox / ".codex" / "skills" / "content-stack").exists()
+    assert (sandbox / ".local" / "share" / "content-stack" / "content-stack.db").is_file()
+    assert current_alembic_version(Settings()) == "0013_stackos_auth_method_profiles"
 
 
 def test_cli_install_tolerates_daemon_down_doctor(

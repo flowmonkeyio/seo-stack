@@ -5,6 +5,7 @@ import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectsView from './views/ProjectsView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import OverviewTab from './views/project-detail/OverviewTab.vue'
+import SetupStatusTab from './views/project-detail/SetupStatusTab.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
 import RunsView from './views/RunsView.vue'
@@ -27,6 +28,7 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => ({ path: `/projects/${to.params.id}/overview` }),
     children: [
       { path: 'overview', name: 'project-detail-overview', component: OverviewTab },
+      { path: 'setup', name: 'project-detail-setup', component: SetupStatusTab },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
     ],

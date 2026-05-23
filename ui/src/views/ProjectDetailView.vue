@@ -25,10 +25,7 @@ const activeKey = computed<string>(() => {
   return match ? match[1] : 'overview'
 })
 
-type ProjectSetupKey =
-  | 'overview'
-  | 'schedules'
-  | 'cost-budget'
+type ProjectSetupKey = 'overview' | 'setup' | 'schedules' | 'cost-budget'
 
 interface PageCopy {
   title: string
@@ -42,7 +39,13 @@ type ProjectSetupPageCopy = {
 const PAGE_COPY = {
   overview: {
     title: 'Overview',
-    description: 'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
+    description:
+      'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
+  },
+  setup: {
+    title: 'Setup',
+    description:
+      'Runtime health, project enablement, connection status, templates, actions, and run readiness.',
   },
   schedules: {
     title: 'Schedules',

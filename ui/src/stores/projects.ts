@@ -1,10 +1,10 @@
-// Projects store — read-only list + active project marker from server state.
+// Projects store — project list, first-run creation, and active project marker.
 
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { apiFetch } from '@/lib/client'
-import type { components } from '@/api'
+import type { SchemaProjectCreateRequest, SchemaWriteResponseProjectOut, components } from '@/api'
 
 export type Project = components['schemas']['ProjectOut']
 type ProjectsPage = components['schemas']['PageResponse_ProjectOut_']
@@ -65,6 +65,30 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
+  async function createProject(body: SchemaProjectCreateRequest): Promise<Project> {
+    loading.value = true
+    error.value = null
+    try {
+      const response = await apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      items.value = [
+        response.data,
+        ...items.value.filter((project) => project.id !== response.data.id),
+      ]
+      totalEstimate.value = Math.max(totalEstimate.value, items.value.length)
+      activeProjectId.value = response.data.id
+      return response.data
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'failed to create project'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   function setActiveProjectId(id: number | null): void {
     activeProjectId.value = id
   }
@@ -83,6 +107,7 @@ export const useProjectsStore = defineStore('projects', () => {
     activeProject,
     refresh,
     loadMore,
+    createProject,
     setActiveProjectId,
     getById,
   }
