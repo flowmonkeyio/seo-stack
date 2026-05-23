@@ -111,14 +111,14 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "salesforce",
         "apollo",
         "outreach",
-        "gtm-webhook",
+        "custom-gtm-tool",
     }
     assert {action.key for action in gtm.actions} >= {
         "hubspot.crm.companies.batch_upsert",
         "salesforce.lead.upsert_by_external_id",
         "apollo.people.enrich",
         "outreach.sequence_state.create",
-        "webhook.pipeline.fetch",
+        "custom_gtm.pipeline.fetch",
     }
     gtm_actions = {action.key: action for action in gtm.actions}
     company_upsert = gtm_actions["hubspot.crm.companies.batch_upsert"]
@@ -145,7 +145,7 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "google-ads",
         "outbrain",
         "taboola",
-        "media-buying-webhook",
+        "custom-media-tool",
     }
     assert {action.key for action in media.actions} >= {
         "meta.campaign.create",
@@ -156,7 +156,7 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "taboola.item.create",
         "outbrain.campaign.create",
         "taboola.campaign.create",
-        "webhook.media_campaign.create",
+        "custom_media.campaign.create",
     }
     media_actions = {action.key: action for action in media.actions}
     campaign_create = media_actions["meta.campaign.create"]

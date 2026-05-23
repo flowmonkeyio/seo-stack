@@ -34,6 +34,20 @@ const { items: toastItems } = storeToRefs(toasts)
 const theme = ref<'light' | 'dark'>('light')
 const drawerOpen = ref(false)
 
+const routeProjectId = computed(() => {
+  const raw = route.params.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  return Number.isNaN(parsed) ? null : parsed
+})
+
+const currentProjectId = computed(() => routeProjectId.value ?? activeProject.value?.id ?? null)
+
+const currentProject = computed(() => {
+  if (currentProjectId.value === null) return activeProject.value
+  return projects.getById(currentProjectId.value) ?? activeProject.value
+})
+
 function applyTheme(): void {
   if (typeof document === 'undefined') return
   document.documentElement.classList.toggle('dark', theme.value === 'dark')
@@ -62,7 +76,7 @@ onMounted(() => {
 })
 
 const projectNavSections = computed<StackOsNavSection[]>(() => {
-  const id = activeProject.value?.id
+  const id = currentProjectId.value
   if (!id) return []
   return [
     ...coreNavSections(id),
@@ -72,7 +86,7 @@ const projectNavSections = computed<StackOsNavSection[]>(() => {
 })
 
 watch(
-  () => activeProject.value?.id,
+  () => currentProjectId.value,
   (projectId) => {
     if (projectId) void catalog.refresh(projectId)
   },
@@ -103,7 +117,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             StackOS
           </div>
           <div class="truncate text-xs text-fg-muted">
-            {{ activeProject?.name ?? 'Projects' }}
+            {{ currentProject?.name ?? 'Projects' }}
           </div>
         </div>
       </div>

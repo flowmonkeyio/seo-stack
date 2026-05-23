@@ -35,7 +35,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     assert {a["key"] for a in gtm["plugins"][0]["actions"]} >= {
         "hubspot.crm.companies.batch_upsert",
         "outreach.sequence_state.create",
-        "webhook.pipeline.fetch",
+        "custom_gtm.pipeline.fetch",
     }
     gtm_action = next(
         action
@@ -53,7 +53,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "meta.campaign.create",
         "meta.ad_set.create",
         "google.campaign.create",
-        "webhook.media_campaign.create",
+        "custom_media.campaign.create",
     }
     media_action = next(
         action

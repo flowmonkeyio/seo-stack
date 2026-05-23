@@ -13,6 +13,7 @@ function makeRouter() {
       { path: '/', component: { template: '<div/>' } },
       { path: '/projects', component: { template: '<div/>' } },
       { path: '/projects/:id/overview', component: { template: '<div/>' } },
+      { path: '/projects/:id/connections', component: { template: '<div/>' } },
     ],
   })
 }
@@ -77,6 +78,23 @@ describe('ProjectSwitcher', () => {
     expect(options.length).toBe(2)
     expect(options[0].text()).toContain('Alpha')
     expect(options[1].text()).toContain('Beta')
+  })
+
+  it('uses the routed project as selected without changing server active state', async () => {
+    const projects = useProjectsStore()
+    projects.items = sample as never
+    projects.activeProjectId = 1
+    const router = makeRouter()
+    await router.push('/projects/2/connections')
+    await router.isReady()
+    const w = mount(ProjectSwitcher, {
+      global: { plugins: [router] },
+    })
+
+    expect(w.find('button').text()).toContain('Beta')
+    await w.find('button').trigger('click')
+    expect(w.findAll('[role="option"]')[1].attributes('aria-selected')).toBe('true')
+    expect(projects.activeProjectId).toBe(1)
   })
 
   it('navigates without activating when a non-active project is picked', async () => {

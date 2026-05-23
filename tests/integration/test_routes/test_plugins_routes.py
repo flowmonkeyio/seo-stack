@@ -75,14 +75,14 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "salesforce",
         "apollo",
         "outreach",
-        "gtm-webhook",
+        "custom-gtm-tool",
     }
     assert {a["key"] for a in gtm_catalog.json()["actions"]} >= {
         "hubspot.crm.companies.batch_upsert",
         "salesforce.lead.upsert_by_external_id",
         "apollo.people.enrich",
         "outreach.sequence_state.create",
-        "webhook.pipeline.fetch",
+        "custom_gtm.pipeline.fetch",
     }
     assert {r["key"] for r in gtm_catalog.json()["resources"]} >= {
         "account",
@@ -109,7 +109,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "google-ads",
         "outbrain",
         "taboola",
-        "media-buying-webhook",
+        "custom-media-tool",
     }
     assert {a["key"] for a in media_catalog.json()["actions"]} >= {
         "meta.campaign.create",
@@ -119,7 +119,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "taboola.item.create",
         "outbrain.campaign.create",
         "taboola.campaign.create",
-        "webhook.media_campaign.create",
+        "custom_media.campaign.create",
     }
     assert {r["key"] for r in media_catalog.json()["resources"]} >= {
         "campaign",

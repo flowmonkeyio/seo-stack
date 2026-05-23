@@ -70,7 +70,7 @@ capability_requirements:
       - apollo
       - clay
       - clearbit-by-hubspot
-      - gtm-webhook
+      - custom-gtm-tool
   - key: lead-management
     required: true
 auth_requirements:
@@ -84,10 +84,6 @@ auth_requirements:
     optional: true
   - key: clearbit_by_hubspot
     provider: clearbit-by-hubspot
-    auth_type: api-key
-    optional: true
-  - key: gtm_webhook
-    provider: gtm-webhook
     auth_type: api-key
     optional: true
 action_contracts:
@@ -140,12 +136,11 @@ action_contracts:
     risk_level: cost
     auth_ref: clearbit_by_hubspot
     approval_ref: cost_review
-  - key: webhook_enrichment
-    action: webhook.enrichment.run
+  - key: custom_gtm_enrichment
+    action: custom_gtm.enrichment.run
     capability: enrichment
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     risk_level: cost
-    auth_ref: gtm_webhook
     approval_ref: cost_review
 resource_contracts:
   - key: leads
@@ -198,7 +193,7 @@ steps:
       - clay_table_webhook_submit
       - clay_workflow_result_ingest
       - clearbit_by_hubspot_enrichment
-      - webhook_enrichment
+      - custom_gtm_enrichment
     policy_refs:
       - no_secret_exposure
     approval_refs:

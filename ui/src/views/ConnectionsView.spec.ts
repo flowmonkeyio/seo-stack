@@ -25,6 +25,8 @@ describe('ConnectionsView', () => {
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
 
       if (url === '/api/v1/auth/providers') {
         return json([
@@ -97,20 +99,20 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
 
-    expect(wrapper.text()).toContain('No credential required.')
     expect(wrapper.find('[aria-label="Reveal value"]').exists()).toBe(false)
     expect(wrapper.find('[aria-label="Copy value"]').exists()).toBe(false)
 
     const secretInput = wrapper.find<HTMLInputElement>('input[placeholder="fc-..."]')
     await secretInput.setValue('fc-secret')
-    await wrapper.find('input[placeholder="Primary"]').setValue('Primary')
-    await clickButton(wrapper, 'Save')
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Stored cred_firecrawl.'))
+    await wrapper.find('input[placeholder="Primary account"]').setValue('Primary')
+    await clickButton(wrapper, 'Save connection')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Primary Firecrawl'))
     await flushPromises()
 
-    expect(secretInput.element.value).toBe('')
     expect(wrapper.text()).not.toContain('fc-secret')
     expect(wrapper.html()).not.toContain('fc-secret')
     expect(postedBodies).toContainEqual({
@@ -133,10 +135,13 @@ describe('ConnectionsView', () => {
 
   it('stores safe auth method fields with the credential payload', async () => {
     const postedBodies: unknown[] = []
+    let connected = false
 
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
 
       if (url === '/api/v1/auth/providers') {
         return json([
@@ -185,10 +190,22 @@ describe('ConnectionsView', () => {
           project_id: 1,
           provider_key: null,
           providers: [],
-          connections: [],
+          connections: connected
+            ? [
+                {
+                  ...authConnection({ revokedAt: null }),
+                  credential_ref: 'cred_wordpress',
+                  provider_key: 'wordpress',
+                  auth_type: 'application-password',
+                  auth_method_key: 'application_password',
+                  label: 'Editorial',
+                },
+              ]
+            : [],
         })
       }
       if (url === '/api/v1/projects/1/auth/wordpress/credentials') {
+        connected = true
         return json(
           {
             data: {
@@ -211,15 +228,17 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('No services connected.'))
+    await clickButton(wrapper, 'Add connection')
     await vi.waitFor(() => expect(wrapper.text()).toContain('WordPress'))
 
     await wrapper.find<HTMLInputElement>('input[placeholder="editor"]').setValue('editor')
     await wrapper.find<HTMLInputElement>('input[placeholder="xxxx xxxx"]').setValue('app pass')
-    await wrapper.find('input[placeholder="Primary"]').setValue('Editorial')
+    await wrapper.find('input[placeholder="Primary account"]').setValue('Editorial')
     await wrapper.find('input[placeholder="https://example.com"]').setValue('https://wp.example')
-    await clickButton(wrapper, 'Save')
+    await clickButton(wrapper, 'Save connection')
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Stored cred_wordpress.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('cred_wordpress'))
     expect(postedBodies).toContainEqual({
       auth_method_key: 'application_password',
       profile_key: 'default',
@@ -236,6 +255,9 @@ describe('ConnectionsView', () => {
   it('does not report failed credentials as connected and keeps operator actions available', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
+      const catalogResponse = catalogJson(url)
+      if (catalogResponse) return catalogResponse
+
       if (url === '/api/v1/auth/providers') {
         return json([authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod('fc-...'))])
       }
@@ -339,6 +361,38 @@ function apiKeyMethod(placeholder = 'sk-...') {
 
 function hasCredentialFields(body: unknown): boolean {
   return typeof body === 'object' && body !== null && 'fields' in body
+}
+
+function catalogJson(url: string): Response | null {
+  const now = '2026-05-22T00:00:00Z'
+  if (url === '/api/v1/plugins?project_id=1') {
+    return json([
+      {
+        id: 1,
+        slug: 'utils',
+        name: 'Utils',
+        version: '0.1.0',
+        description: '',
+        source: 'builtin',
+        manifest_json: {},
+        enabled_for_project: true,
+        created_at: now,
+        updated_at: now,
+      },
+    ])
+  }
+  if (url === '/api/v1/catalog?project_id=1') return json({ plugins: [] })
+  if (
+    [
+      '/api/v1/capabilities?project_id=1',
+      '/api/v1/providers?project_id=1',
+      '/api/v1/actions?project_id=1',
+      '/api/v1/resources?project_id=1',
+    ].includes(url)
+  ) {
+    return json([])
+  }
+  return null
 }
 
 async function clickButton(wrapper: ReturnType<typeof mount>, label: string): Promise<void> {

@@ -99,11 +99,15 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
         "clay",
         "outreach",
         "salesloft",
-        "gtm-webhook",
+        "custom-gtm-tool",
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["hubspot"])[:2] == ["access_token", "portal_ref"]
-    assert _auth_field_keys(providers["gtm-webhook"]) == ["api_key", "tool_owner"]
+    assert providers["custom-gtm-tool"].auth_type == "local"
+    assert (
+        providers["custom-gtm-tool"].config["connection_setup"]
+        == "project-local-plugin-required"
+    )
     actions = {action.key: action for action in manifest.actions}
     assert actions["hubspot.crm.companies.batch_upsert"].provider == "hubspot"
     assert actions["hubspot.crm.companies.batch_upsert"].risk_level == "write"
@@ -119,12 +123,12 @@ def test_gtm_plugin_yaml_facade_validates() -> None:
     ]
     assert actions["apollo.people.enrich"].capability == "enrichment"
     assert actions["outreach.sequence_state.create"].provider == "outreach"
-    assert actions["webhook.pipeline.fetch"].provider == "gtm-webhook"
+    assert actions["custom_gtm.pipeline.fetch"].provider == "custom-gtm-tool"
     assert actions["hubspot.crm.companies.batch_upsert"].config["connector"] == "hubspot"
     assert actions["salesforce.lead.upsert_by_external_id"].config["connector"] == "salesforce"
     assert actions["apollo.people.enrich"].config["connector"] == "apollo"
     assert actions["outreach.sequence_state.create"].config["connector"] == "outreach"
-    assert actions["webhook.pipeline.fetch"].config["execution_mode"] == "project-local-http"
+    assert actions["custom_gtm.pipeline.fetch"].config["execution_mode"] == "project-local-http"
     assert {resource.key for resource in manifest.resources} >= {
         "account",
         "company",
@@ -157,11 +161,15 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "google-ads",
         "outbrain",
         "taboola",
-        "media-buying-webhook",
+        "custom-media-tool",
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["meta-ads"])[:2] == ["access_token", "business_ref"]
-    assert _auth_field_keys(providers["media-buying-webhook"]) == ["api_key", "tool_owner"]
+    assert providers["custom-media-tool"].auth_type == "local"
+    assert (
+        providers["custom-media-tool"].config["connection_setup"]
+        == "project-local-plugin-required"
+    )
     actions = {action.key: action for action in manifest.actions}
     assert actions["meta.campaign.create"].provider == "meta-ads"
     assert actions["meta.campaign.create"].risk_level == "write"
@@ -169,13 +177,13 @@ def test_media_buying_plugin_yaml_facade_validates() -> None:
         "account_ref",
         "campaign",
     ]
-    assert actions["webhook.media_campaign.create"].provider == "media-buying-webhook"
-    assert actions["webhook.media_performance.fetch"].capability == "media-measurement"
+    assert actions["custom_media.campaign.create"].provider == "custom-media-tool"
+    assert actions["custom_media.performance.fetch"].capability == "media-measurement"
     assert actions["meta.campaign.create"].config["connector"] == "meta-ads"
     assert actions["google.campaign.create"].config["connector"] == "google-ads"
     assert actions["taboola.campaign.create"].config["connector"] == "taboola"
     assert actions["outbrain.campaign.create"].config["execution_mode"] == "deferred-partner-api"
-    assert actions["webhook.media_campaign.create"].config["execution_mode"] == "project-local-http"
+    assert actions["custom_media.campaign.create"].config["execution_mode"] == "project-local-http"
     assert {resource.key for resource in manifest.resources} >= {
         "ad-account",
         "campaign",

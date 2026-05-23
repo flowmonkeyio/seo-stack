@@ -90,7 +90,7 @@ capability_requirements:
       - meta-ads
       - google-ads
       - taboola
-      - media-buying-webhook
+      - custom-media-tool
 auth_requirements:
   - key: meta_ads
     provider: meta-ads
@@ -103,10 +103,6 @@ auth_requirements:
   - key: taboola
     provider: taboola
     auth_type: oauth
-    optional: true
-  - key: media_webhook
-    provider: media-buying-webhook
-    auth_type: api-key
     optional: true
 action_contracts:
   - key: meta_insights
@@ -127,12 +123,11 @@ action_contracts:
     provider: taboola
     risk_level: read
     auth_ref: taboola
-  - key: webhook_media_performance
-    action: webhook.media_performance.fetch
+  - key: custom_media_performance
+    action: custom_media.performance.fetch
     capability: media-measurement
-    provider: media-buying-webhook
+    provider: custom-media-tool
     risk_level: read
-    auth_ref: media_webhook
 resource_contracts:
   - key: performance_snapshots
     resource: performance-snapshot
@@ -181,7 +176,7 @@ steps:
       - meta_insights
       - google_report
       - taboola_report
-      - webhook_media_performance
+      - custom_media_performance
     policy_refs:
       - no_secret_exposure
     approval_refs:

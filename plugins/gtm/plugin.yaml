@@ -374,28 +374,13 @@ providers:
           secret: false
           required: false
           placeholder: delegated or application permission reference
-  - key: gtm-webhook
-    name: GTM Webhook
-    description: User-owned GTM or RevOps tooling exposed through project-local static HTTP actions.
-    auth_type: api-key
-    auth_methods:
-      - key: api_key
-        label: API key
-        auth_type: api-key
-        payload_format: raw
-        payload_field: api_key
-        fields:
-        - key: api_key
-          label: API Key
-          type: secret
-          secret: true
-          required: true
-        - key: tool_owner
-          label: Tool Owner
-          type: text
-          secret: false
-          required: false
-          placeholder: team or system name
+  - key: custom-gtm-tool
+    name: Custom GTM Tool
+    description: Placeholder for project-local GTM or RevOps tooling. Install a project plugin with concrete HTTP connector config before execution.
+    auth_type: local
+    config:
+      connection_setup: project-local-plugin-required
+      setup_note: Custom GTM tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
 actions:
   - key: hubspot.crm.companies.batch_upsert
     name: Batch Upsert HubSpot Companies
@@ -1218,13 +1203,13 @@ actions:
       connector: microsoft-365
       operation: graph.calendar.event.create
       requires_credential: true
-  - key: webhook.lead.import
-    name: Import Leads Through Webhook
+  - key: custom_gtm.lead.import
+    name: Import Leads Through Custom GTM Tool
     description: Contract for user-owned GTM tooling. Project-local plugins should provide static HTTP connector config before execution.
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     capability: lead-management
     risk_level: write
-    input_schema: &gtm_webhook_request_input
+    input_schema: &custom_gtm_tool_request_input
       type: object
       additionalProperties: false
       required:
@@ -1237,26 +1222,26 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in GTM webhook actions require project-local static HTTP connector config.
-  - key: webhook.enrichment.run
-    name: Run Enrichment Through Webhook
+      deferred_reason: Built-in custom GTM tool actions require project-local static HTTP connector config.
+  - key: custom_gtm.enrichment.run
+    name: Run Enrichment Through Custom GTM Tool
     description: Contract for user-owned enrichment tooling exposed through project-local static HTTP actions.
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     capability: enrichment
     risk_level: cost
-    input_schema: *gtm_webhook_request_input
+    input_schema: *custom_gtm_tool_request_input
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in GTM webhook actions require project-local static HTTP connector config.
-  - key: webhook.sequence.add
-    name: Add Sequence Through Webhook
+      deferred_reason: Built-in custom GTM tool actions require project-local static HTTP connector config.
+  - key: custom_gtm.sequence.add
+    name: Add Sequence Through Custom GTM Tool
     description: Contract for user-owned outbound tooling exposed through project-local static HTTP actions.
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     capability: outbound-operations
     risk_level: write
-    input_schema: &webhook_sequence_input
+    input_schema: &custom_gtm_sequence_input
       type: object
       additionalProperties: false
       required:
@@ -1277,19 +1262,19 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in GTM webhook actions require project-local static HTTP connector config.
-  - key: webhook.pipeline.fetch
-    name: Fetch Pipeline Through Webhook
+      deferred_reason: Built-in custom GTM tool actions require project-local static HTTP connector config.
+  - key: custom_gtm.pipeline.fetch
+    name: Fetch Pipeline Through Custom GTM Tool
     description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     capability: pipeline-management
     risk_level: read
-    input_schema: *gtm_webhook_request_input
+    input_schema: *custom_gtm_tool_request_input
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in GTM webhook actions require project-local static HTTP connector config.
+      deferred_reason: Built-in custom GTM tool actions require project-local static HTTP connector config.
 resources:
   - key: account
     name: Account
@@ -1362,4 +1347,4 @@ config:
       - microsoft-365
     deferred:
       - clearbit-by-hubspot
-      - gtm-webhook
+      - custom-gtm-tool

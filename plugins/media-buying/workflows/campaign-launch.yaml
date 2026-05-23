@@ -113,7 +113,7 @@ capability_requirements:
       - meta-ads
       - google-ads
       - taboola
-      - media-buying-webhook
+      - custom-media-tool
   - key: creative-operations
     required: true
   - key: media-measurement
@@ -130,10 +130,6 @@ auth_requirements:
   - key: taboola
     provider: taboola
     auth_type: oauth
-    optional: true
-  - key: media_webhook
-    provider: media-buying-webhook
-    auth_type: api-key
     optional: true
 action_contracts:
   - key: meta_campaign_create
@@ -234,12 +230,11 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: launch_review
-  - key: webhook_media_campaign_create
-    action: webhook.media_campaign.create
+  - key: custom_media_campaign_create
+    action: custom_media.campaign.create
     capability: campaign-management
-    provider: media-buying-webhook
+    provider: custom-media-tool
     risk_level: write
-    auth_ref: media_webhook
     approval_ref: launch_review
 resource_contracts:
   - key: campaigns
@@ -329,7 +324,7 @@ steps:
       - taboola_campaign_create
       - taboola_item_create
       - taboola_conversion_rule_create
-      - webhook_media_campaign_create
+      - custom_media_campaign_create
     policy_refs:
       - no_secret_exposure
       - approval_before_spend

@@ -72,7 +72,7 @@ capability_requirements:
       - salesloft
       - google-workspace
       - microsoft-365
-      - gtm-webhook
+      - custom-gtm-tool
   - key: lead-management
     required: true
 auth_requirements:
@@ -92,10 +92,6 @@ auth_requirements:
     provider: microsoft-365
     auth_type: oauth
     optional: true
-  - key: gtm_webhook
-    provider: gtm-webhook
-    auth_type: api-key
-    optional: true
 action_contracts:
   - key: outreach_sequence_state_create
     action: outreach.sequence_state.create
@@ -111,12 +107,11 @@ action_contracts:
     risk_level: write
     auth_ref: salesloft
     approval_ref: sequence_review
-  - key: webhook_sequence_add
-    action: webhook.sequence.add
+  - key: custom_gtm_sequence_add
+    action: custom_gtm.sequence.add
     capability: outbound-operations
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     risk_level: write
-    auth_ref: gtm_webhook
     approval_ref: sequence_review
   - key: google_workspace_mail_send
     action: google-workspace.gmail.message.send
@@ -203,7 +198,7 @@ steps:
     action_refs:
       - outreach_sequence_state_create
       - salesloft_cadence_membership_create
-      - webhook_sequence_add
+      - custom_gtm_sequence_add
       - google_workspace_mail_send
       - google_workspace_calendar_event_create
       - microsoft_365_mail_send

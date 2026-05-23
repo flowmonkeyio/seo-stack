@@ -57,8 +57,8 @@ Current built-in plugins:
 | --- | --- | --- |
 | `core` | Local daemon provider, catalog primitives, project data resources, project memory review template | Good generic foundation. |
 | `utils` | OpenAI Images, Firecrawl, Jina, Reddit providers; image generation, web retrieval, and community research actions | Core utility connectors are now executable through the generic action path. |
-| `gtm` | HubSpot, Salesforce, Pipedrive, Apollo, Clay, Clearbit, Outreach, Salesloft, Google Workspace, Microsoft 365, and internal GTM provider contracts; GTM resources; five reusable templates | First provider-specific connectors are executable; Clearbit, inbound Clay result ingestion, and user-owned webhooks remain explicit deferred modes. |
-| `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and internal campaign-tool provider contracts; paid media resources; five reusable templates | Meta Ads, Google Ads, and Taboola first connectors are executable; Outbrain and user-owned webhooks remain explicit deferred modes. |
+| `gtm` | HubSpot, Salesforce, Pipedrive, Apollo, Clay, Clearbit, Outreach, Salesloft, Google Workspace, Microsoft 365, and custom GTM tool contracts; GTM resources; five reusable templates | First provider-specific connectors are executable; Clearbit, inbound Clay result ingestion, and custom GTM tool actions remain explicit project-local HTTP deferred modes. |
+| `media-buying` | Meta Ads, Google Ads, Outbrain, Taboola, and custom media tool contracts; paid media resources; five reusable templates | Meta Ads, Google Ads, and Taboola first connectors are executable; Outbrain and custom media tool actions remain explicit deferred modes. |
 | `publishing` | WordPress and Ghost providers, CMS publishing actions, and generic publishing resources | First post-create connector path is wired. Media/upload/update actions and templates are still needed. |
 | `seo` | DataForSEO and Ahrefs providers, SEO actions, SEO resource schemas, two SEO templates | First SEO connector path is wired, including PAA extraction through DataForSEO. More templates and richer provider actions are still needed. |
 
@@ -325,7 +325,7 @@ The clean model is provider-specific action refs with shared resource schemas:
 - `media-buying.outbrain.promoted_link.create`
 - `media-buying.taboola.campaign.create`
 - `media-buying.taboola.item.create`
-- `media-buying.webhook.media_campaign.create`
+- `media-buying.custom_media.campaign.create`
 
 The shared `campaign`, `ad-group`, `creative`, `audience`, and `performance`
 resources can store normalized durable records. The provider-specific actions
@@ -472,7 +472,7 @@ actions for Meta Ads, Google Ads, and Taboola, including
 `meta.campaign.create`, `meta.ad_set.create`, `meta.ad_creative.create`,
 `google.campaign.create`, and `taboola.item.create`. Outbrain actions are
 marked `deferred-partner-api` because endpoint-level campaign/report contracts
-are gated. User-owned `webhook.media_*` actions are `project-local-http` until
+are gated. User-owned `custom_media.*` actions are `project-local-http` until
 a project supplies static HTTP connector config.
 
 ### P1: GTM And RevOps Plugin
@@ -514,7 +514,7 @@ Action groups:
 - provider-native cadence membership, such as `salesloft.cadence_membership.create`
 - provider-native mail/calendar sends through Google Workspace and Microsoft 365
 - provider-native pipeline reads, such as `salesforce.opportunities.query`
-- user-owned GTM webhooks, such as `webhook.pipeline.fetch`
+- user-owned GTM tools, such as `custom_gtm.pipeline.fetch`
 
 Templates:
 

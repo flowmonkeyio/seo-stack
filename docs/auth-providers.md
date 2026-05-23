@@ -82,3 +82,37 @@ OAuth providers use the generic auth provider boundary:
 Provider-specific OAuth callbacks must be added deliberately by the provider
 plugin/integration. The generic model can describe the flow, but provider code
 owns the token exchange, refresh, scopes, and callback validation.
+
+## Connections UI Contract
+
+The local Connections screen is service/account first:
+
+- primary action: `Add connection`
+- main list: connected services grouped by provider, with multiple named
+  connections per service
+- connection rows: safe label, account metadata, profile key, status, last
+  tested time, expiry, and opaque `credential_ref`
+- setup panel: enabled-plugin providers only, rendered from `auth_methods`
+- diagnostics: raw sanitized auth status only in a disclosure
+
+Built-in placeholder providers for project-local custom tools, such as
+`custom-media-tool` and `custom-gtm-tool`, are not normal service credentials.
+They stay hidden from the add-connection picker until a project-local plugin
+declares a concrete HTTP connector, allowlisted endpoint, auth injection fields,
+timeout policy, and response contract.
+
+## Known Architecture Follow-Ups
+
+- Provider identity is still mostly bare `provider_key`. User-installed plugins
+  can collide unless auth routes, credential storage, and action manifests move
+  to a stable provider ref such as `plugin_slug.provider_key` or
+  `auth_provider_id`.
+- Multiple credentials are supported through `profile_key`, but account/scopes
+  need richer population from safe setup fields and provider health-check
+  metadata.
+- `auth.test` should distinguish `untested`, `test_unavailable`, and
+  `connected` instead of marking every stored credential connected before a
+  provider health check exists.
+- Template `auth_ref` is a local requirement label. Execution should document
+  or model the binding from template auth requirement to selected
+  `credential_ref`, for example `auth_bindings`.

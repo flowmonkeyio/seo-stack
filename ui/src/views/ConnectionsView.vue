@@ -3,7 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
-import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
   UiBadge,
@@ -17,31 +16,64 @@ import {
   UiSecretInput,
   UiSectionHeader,
   UiSelect,
+  UiSidePanel,
 } from '@/components/ui'
 import type { SchemaAuthProviderOut, SchemaCredentialConnectionOut } from '@/api'
-import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
-import { sanitizeForDisplay } from '@/lib/stackos/json'
+import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 type ConnectionRow = SchemaCredentialConnectionOut & { id: string }
 type AuthMethod = NonNullable<SchemaAuthProviderOut['auth_methods']>[number]
 type AuthField = NonNullable<AuthMethod['fields']>[number]
+type MessageTone = 'success' | 'danger' | 'info'
+type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
+
+interface ServiceGroup {
+  provider: SchemaAuthProviderOut | null
+  providerKey: string
+  connections: ConnectionRow[]
+}
+
+const AUTH_TYPE_LABELS: Record<string, string> = {
+  'api-key': 'API key',
+  'application-password': 'Application password',
+  basic: 'Username and password',
+  local: 'Local',
+  none: 'No auth',
+  oauth: 'OAuth2',
+  'oauth-client-credentials': 'OAuth2 client credentials',
+}
+
+const STATUS_ORDER: Record<string, number> = {
+  connected: 0,
+  pending: 1,
+  expired: 2,
+  failed: 3,
+  revoked: 4,
+}
+
+const PLUGIN_LABELS: Record<string, string> = {
+  gtm: 'GTM',
+  'media-buying': 'Media Buying',
+  seo: 'SEO',
+}
 
 const route = useRoute()
 const catalogStore = useStackOsCatalogStore()
-const { authProviders, authStatus, loading, error } = storeToRefs(catalogStore)
+const { authProviders, authStatus, enabledPlugins, loading, error } = storeToRefs(catalogStore)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+const addPanelOpen = ref(false)
+const selectedProviderKey = ref('')
 const selectedMethodByProvider = ref<Record<string, string>>({})
-const selectedConnectionByProvider = ref<Record<string, string>>({})
 const labelByForm = ref<Record<string, string>>({})
 const profileByForm = ref<Record<string, string>>({})
 const fieldsByForm = ref<Record<string, Record<string, string>>>({})
 const busyAction = ref<string | null>(null)
-const providerMessages = ref<Record<string, { tone: 'success' | 'danger' | 'info'; text: string }>>(
-  {},
-)
+const providerMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
+const connectionMessages = ref<Record<string, { tone: MessageTone; text: string }>>({})
+
 const connections = computed<ConnectionRow[]>(() =>
   (authStatus.value?.connections ?? []).map((connection) => ({
     ...connection,
@@ -49,19 +81,84 @@ const connections = computed<ConnectionRow[]>(() =>
   })),
 )
 
-const columns: DataTableColumn<ConnectionRow>[] = [
-  { key: 'provider_key', label: 'Provider' },
-  { key: 'profile_key', label: 'Profile', widthClass: 'w-32' },
-  { key: 'status', label: 'Status', widthClass: 'w-32' },
-  { key: 'auth_method_key', label: 'Method', widthClass: 'w-36' },
-  { key: 'label', label: 'Label', format: (value) => String(value ?? '-') },
-  { key: 'credential_ref', label: 'Credential ref' },
-  { key: 'expires_at', label: 'Expires', format: (value) => String(value ?? '-') },
-]
+const providerByKey = computed(() => {
+  const rows = new Map<string, SchemaAuthProviderOut>()
+  for (const provider of authProviders.value) rows.set(provider.key, provider)
+  return rows
+})
+
+const visibleAuthProviders = computed(() => {
+  const enabledPluginSlugs = new Set(enabledPlugins.value.map((plugin) => plugin.slug))
+  if (enabledPluginSlugs.size === 0) return []
+  return authProviders.value.filter(
+    (provider) =>
+      canAddProvider(provider) &&
+      (!provider.plugin_slug || enabledPluginSlugs.has(provider.plugin_slug)),
+  )
+})
+
+const providerOptions = computed(() =>
+  visibleAuthProviders.value.map((provider) => ({
+    value: provider.key,
+    label: provider.name,
+    group: pluginLabel(provider.plugin_slug),
+  })),
+)
+
+const selectedProvider = computed(() => {
+  if (selectedProviderKey.value) {
+    const provider = providerByKey.value.get(selectedProviderKey.value)
+    if (provider) return provider
+  }
+  return visibleAuthProviders.value[0] ?? null
+})
+
+const activeConnections = computed(() =>
+  connections.value.filter((connection) => connection.revoked_at === null),
+)
+
+const connectedConnections = computed(() =>
+  activeConnections.value.filter((connection) => connection.status === 'connected'),
+)
+
+const attentionConnections = computed(() =>
+  activeConnections.value.filter((connection) => connection.status !== 'connected'),
+)
+
+const serviceGroups = computed<ServiceGroup[]>(() => {
+  const grouped = new Map<string, ConnectionRow[]>()
+  for (const connection of connections.value) {
+    const rows = grouped.get(connection.provider_key) ?? []
+    rows.push(connection)
+    grouped.set(connection.provider_key, rows)
+  }
+  return Array.from(grouped.entries())
+    .map(([providerKey, rows]) => ({
+      providerKey,
+      provider: providerByKey.value.get(providerKey) ?? null,
+      connections: [...rows].sort(compareConnections),
+    }))
+    .sort((left, right) => serviceName(left).localeCompare(serviceName(right)))
+})
+
+const connectedServiceCount = computed(
+  () => new Set(connectedConnections.value.map((connection) => connection.provider_key)).size,
+)
 
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
+  await catalogStore.refresh(projectId.value)
   await catalogStore.refreshAuth(projectId.value)
+  syncProviderSelectionFromQuery()
+}
+
+function syncProviderSelectionFromQuery(): void {
+  const providerKey = typeof route.query.provider_key === 'string' ? route.query.provider_key : ''
+  if (!providerKey) return
+  const provider = providerByKey.value.get(providerKey)
+  if (!provider || !canAddProvider(provider)) return
+  selectedProviderKey.value = providerKey
+  addPanelOpen.value = true
 }
 
 function authMethods(provider: SchemaAuthProviderOut): AuthMethod[] {
@@ -95,14 +192,33 @@ function supportsCredential(provider: SchemaAuthProviderOut): boolean {
   )
 }
 
-function inputType(field: AuthField): 'text' | 'url' | 'number' {
+function canAddProvider(provider: SchemaAuthProviderOut): boolean {
+  return provider.config_json?.connection_setup !== 'project-local-plugin-required'
+}
+
+function inputType(field: AuthField): 'text' | 'url' | 'number' | 'email' {
   if (field.type === 'url') return 'url'
   if (field.type === 'number') return 'number'
+  if (field.type === 'email') return 'email'
   return 'text'
 }
 
 function isSecretField(field: AuthField): boolean {
   return field.secret || ['secret', 'password'].includes(field.type)
+}
+
+function fieldOptions(field: AuthField): Array<{ value: string; label: string }> {
+  return (field.options ?? [])
+    .map((option) => {
+      const value = option.value ?? option.key ?? option.label
+      const label = option.label ?? option.value ?? option.key
+      return value && label ? { value: String(value), label: String(label) } : null
+    })
+    .filter((option): option is { value: string; label: string } => option !== null)
+}
+
+function hasFieldOptions(field: AuthField): boolean {
+  return field.type === 'select' || fieldOptions(field).length > 0
 }
 
 function fieldValue(providerKey: string, methodKey: string, fieldKey: string): string {
@@ -125,61 +241,117 @@ function setFieldValue(
   }
 }
 
-function activeConnectionsFor(providerKey: string): SchemaCredentialConnectionOut[] {
-  return (authStatus.value?.connections ?? []).filter(
-    (connection) => connection.provider_key === providerKey && connection.revoked_at === null,
-  )
+function setSelectedProvider(value: string | number | null): void {
+  selectedProviderKey.value = String(value ?? '')
 }
 
-function connectedConnectionsFor(providerKey: string): SchemaCredentialConnectionOut[] {
-  return activeConnectionsFor(providerKey).filter((connection) => connection.status === 'connected')
-}
-
-function selectedConnectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
-  const active = activeConnectionsFor(providerKey)
-  const selectedRef = selectedConnectionByProvider.value[providerKey]
-  return (
-    active.find((connection) => connection.credential_ref === selectedRef) ?? active[0] ?? null
-  )
-}
-
-function setSelectedConnection(providerKey: string, value: string | number | null): void {
-  selectedConnectionByProvider.value = {
-    ...selectedConnectionByProvider.value,
-    [providerKey]: String(value ?? ''),
+function openAddConnection(providerKey?: string): void {
+  if (providerKey) selectedProviderKey.value = providerKey
+  if (!selectedProviderKey.value && visibleAuthProviders.value[0]) {
+    selectedProviderKey.value = visibleAuthProviders.value[0].key
   }
+  addPanelOpen.value = true
 }
 
-function connectionLabel(connection: SchemaCredentialConnectionOut): string {
-  const parts = [connection.profile_key]
-  if (connection.label) parts.push(connection.label)
-  if (connection.status !== 'connected') parts.push(connection.status)
-  parts.push(connection.credential_ref)
-  return parts.join(' · ')
+function compareConnections(left: ConnectionRow, right: ConnectionRow): number {
+  const statusDiff = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99)
+  if (statusDiff !== 0) return statusDiff
+  return connectionTitle(left).localeCompare(connectionTitle(right))
 }
 
-function statusTone(connection: SchemaCredentialConnectionOut): 'success' | 'warning' | 'danger' {
+function serviceName(group: ServiceGroup): string {
+  return group.provider?.name ?? group.providerKey
+}
+
+function pluginLabel(slug: string | null | undefined): string {
+  if (!slug) return 'StackOS'
+  if (PLUGIN_LABELS[slug]) return PLUGIN_LABELS[slug]
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function providerSetupNote(provider: SchemaAuthProviderOut): string | null {
+  const value = provider.config_json?.setup_note
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function formatAuthType(authType: string | null | undefined): string {
+  if (!authType) return 'Auth'
+  return AUTH_TYPE_LABELS[authType] ?? authType
+}
+
+function methodLabel(provider: SchemaAuthProviderOut, methodKey: string): string {
+  return authMethods(provider).find((method) => method.key === methodKey)?.label ?? methodKey
+}
+
+function serviceStatusTone(group: ServiceGroup): BadgeTone {
+  if (group.connections.some((connection) => connection.status === 'connected' && connection.revoked_at === null)) {
+    return 'success'
+  }
+  if (group.connections.some((connection) => ['failed', 'revoked'].includes(connection.status))) {
+    return 'danger'
+  }
+  return 'warning'
+}
+
+function serviceStatusLabel(group: ServiceGroup): string {
+  const connected = group.connections.filter(
+    (connection) => connection.status === 'connected' && connection.revoked_at === null,
+  ).length
+  if (connected > 0) return `${connected} connected`
+  const first = group.connections[0]
+  return first ? first.status : 'not connected'
+}
+
+function statusTone(connection: SchemaCredentialConnectionOut): BadgeTone {
   if (connection.status === 'connected' && !connection.setup_required) return 'success'
   if (connection.status === 'failed' || connection.status === 'revoked') return 'danger'
   return 'warning'
 }
 
-function actionKey(providerKey: string, action: string): string {
+function connectionTitle(connection: SchemaCredentialConnectionOut): string {
+  return String(connection.label || connection.account?.display_name || connection.profile_key)
+}
+
+function accountLabel(connection: SchemaCredentialConnectionOut): string {
+  return String(
+    connection.account?.display_name ??
+    connection.account?.provider_account_id ??
+    connection.profile_key ??
+    '-',
+  )
+}
+
+function connectionActionKey(credentialRef: string, action: string): string {
+  return `${credentialRef}:${action}`
+}
+
+function isConnectionBusy(credentialRef: string, action: string): boolean {
+  return busyAction.value === connectionActionKey(credentialRef, action)
+}
+
+function providerActionKey(providerKey: string, action: string): string {
   return `${providerKey}:${action}`
 }
 
-function isBusy(providerKey: string, action: string): boolean {
-  return busyAction.value === actionKey(providerKey, action)
+function isProviderBusy(providerKey: string, action: string): boolean {
+  return busyAction.value === providerActionKey(providerKey, action)
 }
 
-function setProviderMessage(
-  providerKey: string,
-  tone: 'success' | 'danger' | 'info',
-  text: string,
-): void {
+function setProviderMessage(providerKey: string, tone: MessageTone, text: string): void {
   providerMessages.value = {
     ...providerMessages.value,
     [providerKey]: { tone, text },
+  }
+}
+
+function setConnectionMessage(credentialRef: string, tone: MessageTone, text: string): void {
+  connectionMessages.value = {
+    ...connectionMessages.value,
+    [credentialRef]: { tone, text },
   }
 }
 
@@ -208,7 +380,7 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
     setProviderMessage(provider.key, 'danger', 'Credential fields are required.')
     return
   }
-  busyAction.value = actionKey(provider.key, 'save')
+  busyAction.value = providerActionKey(provider.key, 'save')
   try {
     const response = await catalogStore.storeCredential(projectId.value, provider.key, {
       auth_method_key: method.key,
@@ -217,7 +389,10 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
       fields,
     })
     fieldsByForm.value = { ...fieldsByForm.value, [key]: {} }
+    profileByForm.value = { ...profileByForm.value, [key]: '' }
+    labelByForm.value = { ...labelByForm.value, [key]: '' }
     setProviderMessage(provider.key, 'success', `Stored ${response.data.credential_ref}.`)
+    addPanelOpen.value = false
   } catch (err) {
     setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to store credential'))
   } finally {
@@ -228,7 +403,7 @@ async function saveCredential(provider: SchemaAuthProviderOut): Promise<void> {
 async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
   const method = selectedMethod(provider)
   if (!method) return
-  busyAction.value = actionKey(provider.key, 'start')
+  busyAction.value = providerActionKey(provider.key, 'start')
   try {
     const response = await catalogStore.startCredential(projectId.value, provider.key, {
       auth_method_key: method.key,
@@ -247,37 +422,41 @@ async function startProvider(provider: SchemaAuthProviderOut): Promise<void> {
   }
 }
 
-async function testProvider(provider: SchemaAuthProviderOut): Promise<void> {
-  const connection = selectedConnectionFor(provider.key)
-  if (!connection) return
-  busyAction.value = actionKey(provider.key, 'test')
+async function testConnection(connection: SchemaCredentialConnectionOut): Promise<void> {
+  busyAction.value = connectionActionKey(connection.credential_ref, 'test')
   try {
     const response = await catalogStore.testCredential(projectId.value, {
       credential_ref: connection.credential_ref,
     })
-    setProviderMessage(
-      provider.key,
+    setConnectionMessage(
+      connection.credential_ref,
       response.data.ok ? 'success' : 'danger',
       response.data.summary,
     )
   } catch (err) {
-    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to test credential'))
+    setConnectionMessage(
+      connection.credential_ref,
+      'danger',
+      formatApiError(err, 'failed to test credential'),
+    )
   } finally {
     busyAction.value = null
   }
 }
 
-async function revokeProvider(provider: SchemaAuthProviderOut): Promise<void> {
-  const connection = selectedConnectionFor(provider.key)
-  if (!connection) return
-  busyAction.value = actionKey(provider.key, 'revoke')
+async function revokeConnection(connection: SchemaCredentialConnectionOut): Promise<void> {
+  busyAction.value = connectionActionKey(connection.credential_ref, 'revoke')
   try {
     await catalogStore.revokeCredential(projectId.value, {
       credential_ref: connection.credential_ref,
     })
-    setProviderMessage(provider.key, 'info', `Revoked ${connection.credential_ref}.`)
+    setConnectionMessage(connection.credential_ref, 'info', `Revoked ${connection.credential_ref}.`)
   } catch (err) {
-    setProviderMessage(provider.key, 'danger', formatApiError(err, 'failed to revoke credential'))
+    setConnectionMessage(
+      connection.credential_ref,
+      'danger',
+      formatApiError(err, 'failed to revoke credential'),
+    )
   } finally {
     busyAction.value = null
   }
@@ -285,6 +464,23 @@ async function revokeProvider(provider: SchemaAuthProviderOut): Promise<void> {
 
 onMounted(load)
 watch(projectId, load)
+watch(authProviders, (providers) => {
+  if (!selectedProviderKey.value && providers[0]) {
+    selectedProviderKey.value = visibleAuthProviders.value[0]?.key ?? providers[0].key
+  }
+  syncProviderSelectionFromQuery()
+})
+watch(visibleAuthProviders, (providers) => {
+  if (!selectedProviderKey.value && providers[0]) selectedProviderKey.value = providers[0].key
+  if (
+    selectedProviderKey.value &&
+    providers.length > 0 &&
+    !providers.some((provider) => provider.key === selectedProviderKey.value)
+  ) {
+    selectedProviderKey.value = providers[0].key
+  }
+})
+watch(() => route.query.provider_key, syncProviderSelectionFromQuery)
 </script>
 
 <template>
@@ -292,9 +488,19 @@ watch(projectId, load)
     <ProjectPageHeader
       :project-id="projectId"
       title="Connections"
-      description="Sanitized provider auth state and opaque credential references."
+      description="Add provider accounts once, keep secrets daemon-side, and give agents only safe credential refs."
       :breadcrumbs="[{ label: 'Connections' }]"
-    />
+    >
+      <template #actions>
+        <UiButton
+          variant="primary"
+          icon-left="plus"
+          @click="openAddConnection()"
+        >
+          Add connection
+        </UiButton>
+      </template>
+    </ProjectPageHeader>
 
     <UiCallout
       v-if="error"
@@ -303,230 +509,179 @@ watch(projectId, load)
       {{ error }}
     </UiCallout>
 
+    <div class="grid gap-3 md:grid-cols-3">
+      <UiPanel class="p-3">
+        <p class="text-xs text-fg-muted">Connected services</p>
+        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ connectedServiceCount }}</p>
+      </UiPanel>
+      <UiPanel class="p-3">
+        <p class="text-xs text-fg-muted">Active connections</p>
+        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ activeConnections.length }}</p>
+      </UiPanel>
+      <UiPanel class="p-3">
+        <p class="text-xs text-fg-muted">Needs attention</p>
+        <p class="mt-1 text-2xl font-semibold text-fg-strong">{{ attentionConnections.length }}</p>
+      </UiPanel>
+    </div>
+
     <UiPanel class="p-4">
       <UiSectionHeader
-        title="Credential Refs"
-        as="h3"
+        title="Connected Services"
+        description="Each service can have multiple named connections for different accounts, workspaces, or client profiles."
       >
         <template #actions>
           <UiBadge>{{ connections.length }}</UiBadge>
         </template>
       </UiSectionHeader>
-      <DataTable
-        :items="connections"
-        :columns="columns"
-        :loading="loading"
-        aria-label="Connections"
-        empty-message="No credentials connected."
-      >
-        <template #cell:provider_key="{ value }">
-          <UiBadge tone="accent">{{ value }}</UiBadge>
-        </template>
-        <template #cell:status="{ value, row }">
-          <UiBadge :tone="statusTone(row as ConnectionRow)">
-            {{ value }}
-          </UiBadge>
-        </template>
-      </DataTable>
-    </UiPanel>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader
-        title="Providers"
-        as="h3"
+      <div
+        v-if="loading"
+        class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
       >
-        <template #actions>
-          <UiBadge>{{ authProviders.length }}</UiBadge>
-        </template>
-      </UiSectionHeader>
-      <ul class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <li
-          v-for="provider in authProviders"
-          :key="provider.key"
-          class="rounded-md border border-subtle bg-bg-surface p-3"
+        Loading connections...
+      </div>
+
+      <div
+        v-else-if="serviceGroups.length === 0"
+        class="rounded-md border border-dashed border-default bg-bg-surface p-6 text-center"
+      >
+        <p class="font-medium text-fg-strong">No services connected.</p>
+        <p class="mx-auto mt-1 max-w-xl text-sm text-fg-muted">
+          Add the first connection for a provider account or internal tool. The daemon stores
+          the secret and exposes only status, labels, and credential refs.
+        </p>
+        <UiButton
+          class="mt-4"
+          variant="primary"
+          icon-left="plus"
+          @click="openAddConnection()"
         >
-          <div class="mb-1 flex items-center justify-between gap-2">
-            <span class="font-medium">{{ provider.name }}</span>
-            <UiBadge>{{ provider.auth_type }}</UiBadge>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
-            <span>{{ provider.key }}</span>
-            <UiBadge
-              v-if="connectedConnectionsFor(provider.key).length > 0"
-              tone="success"
+          Add connection
+        </UiButton>
+      </div>
+
+      <ul
+        v-else
+        class="grid gap-3"
+      >
+        <li
+          v-for="group in serviceGroups"
+          :key="group.providerKey"
+          class="rounded-md border border-subtle bg-bg-surface p-4"
+        >
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-base font-semibold text-fg-strong">{{ serviceName(group) }}</h3>
+                <UiBadge
+                  v-if="group.provider"
+                  tone="accent"
+                >
+                  {{ pluginLabel(group.provider.plugin_slug) }}
+                </UiBadge>
+                <UiBadge :tone="serviceStatusTone(group)">
+                  {{ serviceStatusLabel(group) }}
+                </UiBadge>
+              </div>
+              <p
+                v-if="group.provider?.description"
+                class="mt-1 max-w-3xl text-sm text-fg-muted"
+              >
+                {{ group.provider.description }}
+              </p>
+              <p class="mt-1 font-mono text-xs text-fg-subtle">{{ group.providerKey }}</p>
+            </div>
+            <UiButton
+              v-if="group.provider && canAddProvider(group.provider)"
+              size="sm"
+              icon-left="plus"
+              @click="openAddConnection(group.provider.key)"
             >
-              {{ connectedConnectionsFor(provider.key).length }} connected
-            </UiBadge>
+              Add another
+            </UiButton>
           </div>
 
-          <div
-            v-if="supportsCredential(provider) && selectedMethod(provider)"
-            class="mt-3 grid gap-2"
-          >
-            <UiFormField
-              v-if="authMethods(provider).length > 1"
-              label="Auth Method"
+          <div class="mt-3 grid gap-2">
+            <article
+              v-for="connection in group.connections"
+              :key="connection.credential_ref"
+              class="rounded-md border border-subtle bg-bg-surface-alt p-3"
             >
-              <template #default="{ id, describedBy, invalid }">
-                <UiSelect
-                  :id="id"
-                  :model-value="selectedMethodKey(provider)"
-                  :options="
-                    authMethods(provider).map((method) => ({
-                      value: method.key,
-                      label: method.label,
-                    }))
-                  "
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  size="sm"
-                  @update:model-value="setSelectedMethod(provider.key, $event)"
-                />
-              </template>
-            </UiFormField>
-            <UiFormField label="Profile">
-              <template #default="{ id, describedBy, invalid }">
-                <UiInput
-                  :id="id"
-                  v-model="profileByForm[formKey(provider.key, selectedMethod(provider)?.key ?? '')]"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  placeholder="default"
-                  size="sm"
-                />
-              </template>
-            </UiFormField>
-            <UiFormField label="Label">
-              <template #default="{ id, describedBy, invalid }">
-                <UiInput
-                  :id="id"
-                  v-model="labelByForm[formKey(provider.key, selectedMethod(provider)?.key ?? '')]"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  placeholder="Primary"
-                  size="sm"
-                />
-              </template>
-            </UiFormField>
-            <UiFormField
-              v-for="field in selectedMethod(provider)?.fields ?? []"
-              :key="field.key"
-              :label="field.label"
-              :help="field.description ?? undefined"
-              :required="field.required"
-            >
-              <template #default="{ id, describedBy, invalid }">
-                <UiSecretInput
-                  v-if="isSecretField(field)"
-                  :id="id"
-                  :model-value="
-                    fieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key)
-                  "
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  no-copy
-                  no-reveal
-                  :placeholder="field.placeholder ?? ''"
-                  size="sm"
-                  @update:model-value="
-                    setFieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key, $event)
-                  "
-                />
-                <UiInput
-                  v-else
-                  :id="id"
-                  :model-value="
-                    fieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key)
-                  "
-                  :type="inputType(field)"
-                  :aria-describedby="describedBy"
-                  :invalid="invalid"
-                  :placeholder="field.placeholder ?? undefined"
-                  size="sm"
-                  @update:model-value="
-                    setFieldValue(provider.key, selectedMethod(provider)?.key ?? '', field.key, $event)
-                  "
-                />
-              </template>
-            </UiFormField>
-            <div class="flex flex-wrap gap-2">
-              <UiFormField
-                v-if="activeConnectionsFor(provider.key).length > 0"
-                label="Credential Profile"
-                class="basis-full"
-              >
-                <template #default="{ id, describedBy, invalid }">
-                  <UiSelect
-                    :id="id"
-                    :model-value="selectedConnectionFor(provider.key)?.credential_ref ?? null"
-                    :options="
-                      activeConnectionsFor(provider.key).map((connection) => ({
-                        value: connection.credential_ref,
-                        label: connectionLabel(connection),
-                      }))
-                    "
-                    :aria-describedby="describedBy"
-                    :invalid="invalid"
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h4 class="text-sm font-semibold text-fg-default">
+                      {{ connectionTitle(connection) }}
+                    </h4>
+                    <UiBadge :tone="statusTone(connection)">
+                      {{ connection.status }}
+                    </UiBadge>
+                    <UiBadge>{{ formatAuthType(connection.auth_type) }}</UiBadge>
+                    <UiBadge
+                      v-if="
+                        group.provider &&
+                        methodLabel(group.provider, connection.auth_method_key) !==
+                          formatAuthType(connection.auth_type)
+                      "
+                    >
+                      {{ methodLabel(group.provider, connection.auth_method_key) }}
+                    </UiBadge>
+                  </div>
+                  <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                    {{ connection.credential_ref }}
+                  </p>
+                </div>
+                <div class="flex shrink-0 flex-wrap gap-2">
+                  <UiButton
                     size="sm"
-                    @update:model-value="setSelectedConnection(provider.key, $event)"
-                  />
-                </template>
-              </UiFormField>
-              <UiButton
-                v-if="selectedMethod(provider)?.interactive"
-                size="sm"
-                variant="secondary"
-                icon-left="external-link"
-                :loading="isBusy(provider.key, 'start')"
-                @click="startProvider(provider)"
+                    icon-left="plug-zap"
+                    :loading="isConnectionBusy(connection.credential_ref, 'test')"
+                    :disabled="connection.revoked_at !== null"
+                    @click="testConnection(connection)"
+                  >
+                    Test
+                  </UiButton>
+                  <UiButton
+                    size="sm"
+                    variant="danger"
+                    icon-left="ban"
+                    :loading="isConnectionBusy(connection.credential_ref, 'revoke')"
+                    :disabled="connection.revoked_at !== null"
+                    @click="revokeConnection(connection)"
+                  >
+                    Revoke
+                  </UiButton>
+                </div>
+              </div>
+
+              <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <dt class="text-xs text-fg-muted">Connection key</dt>
+                  <dd class="font-mono text-fg-default">{{ connection.profile_key }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-fg-muted">Account</dt>
+                  <dd class="truncate text-fg-default">{{ accountLabel(connection) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-fg-muted">Expires</dt>
+                  <dd class="text-fg-default">{{ formatDateTime(connection.expires_at) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-fg-muted">Last tested</dt>
+                  <dd class="text-fg-default">{{ formatDateTime(connection.last_tested_at) }}</dd>
+                </div>
+              </dl>
+
+              <UiCallout
+                v-if="connectionMessages[connection.credential_ref]"
+                :tone="connectionMessages[connection.credential_ref].tone"
+                class="mt-3"
               >
-                Start
-              </UiButton>
-              <UiButton
-                size="sm"
-                variant="primary"
-                icon-left="save"
-                :loading="isBusy(provider.key, 'save')"
-                :disabled="selectedMethod(provider)?.payload_format === 'none'"
-                @click="saveCredential(provider)"
-              >
-                Save
-              </UiButton>
-              <UiButton
-                v-if="selectedConnectionFor(provider.key)"
-                size="sm"
-                icon-left="plug-zap"
-                :loading="isBusy(provider.key, 'test')"
-                @click="testProvider(provider)"
-              >
-                Test
-              </UiButton>
-              <UiButton
-                v-if="selectedConnectionFor(provider.key)"
-                size="sm"
-                variant="danger"
-                icon-left="ban"
-                :loading="isBusy(provider.key, 'revoke')"
-                @click="revokeProvider(provider)"
-              >
-                Revoke
-              </UiButton>
-            </div>
+                {{ connectionMessages[connection.credential_ref].text }}
+              </UiCallout>
+            </article>
           </div>
-          <UiCallout
-            v-else
-            tone="info"
-            class="mt-3"
-          >
-            No credential required.
-          </UiCallout>
-          <UiCallout
-            v-if="providerMessages[provider.key]"
-            :tone="providerMessages[provider.key].tone"
-            class="mt-3"
-          >
-            {{ providerMessages[provider.key].text }}
-          </UiCallout>
         </li>
       </ul>
     </UiPanel>
@@ -547,5 +702,221 @@ watch(projectId, load)
         />
       </div>
     </details>
+
+    <UiSidePanel
+      v-model="addPanelOpen"
+      title="Add connection"
+      description="Choose a service and store the credential in the local daemon."
+      size="lg"
+    >
+      <div
+        v-if="selectedProvider"
+        class="grid gap-4"
+      >
+        <UiCallout
+          v-if="visibleAuthProviders.length === 0"
+          tone="info"
+        >
+          Enable a plugin before adding provider connections.
+        </UiCallout>
+
+        <UiFormField label="Service">
+          <template #default="{ id, describedBy, invalid }">
+            <UiSelect
+              :id="id"
+              :model-value="selectedProvider.key"
+              :options="providerOptions"
+              :aria-describedby="describedBy"
+              :invalid="invalid"
+              @update:model-value="setSelectedProvider"
+            />
+          </template>
+        </UiFormField>
+
+        <div class="rounded-md border border-subtle bg-bg-surface-alt p-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="text-sm font-semibold text-fg-strong">{{ selectedProvider.name }}</h3>
+            <UiBadge tone="accent">{{ pluginLabel(selectedProvider.plugin_slug) }}</UiBadge>
+            <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
+          </div>
+          <p
+            v-if="selectedProvider.description"
+            class="mt-1 text-sm text-fg-muted"
+          >
+            {{ selectedProvider.description }}
+          </p>
+        </div>
+
+        <UiCallout
+          v-if="providerSetupNote(selectedProvider)"
+          tone="info"
+        >
+          {{ providerSetupNote(selectedProvider) }}
+        </UiCallout>
+
+        <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
+          <UiFormField
+            v-if="authMethods(selectedProvider).length > 1"
+            label="Auth method"
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiSelect
+                :id="id"
+                :model-value="selectedMethodKey(selectedProvider)"
+                :options="
+                  authMethods(selectedProvider).map((method) => ({
+                    value: method.key,
+                    label: method.label,
+                  }))
+                "
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                @update:model-value="setSelectedMethod(selectedProvider.key, $event)"
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField
+            label="Connection key"
+            help="Use a unique key per account or workspace. Reusing a key replaces that service connection."
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="profileByForm[formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')]"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="default"
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField
+            label="Display label"
+            help="Shown to operators and agents as safe metadata."
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiInput
+                :id="id"
+                v-model="labelByForm[formKey(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '')]"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                placeholder="Primary account"
+              />
+            </template>
+          </UiFormField>
+
+          <UiFormField
+            v-for="field in selectedMethod(selectedProvider)?.fields ?? []"
+            :key="field.key"
+            :label="field.label"
+            :help="field.description ?? undefined"
+            :required="field.required"
+          >
+            <template #default="{ id, describedBy, invalid }">
+              <UiSelect
+                v-if="hasFieldOptions(field)"
+                :id="id"
+                :model-value="
+                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                "
+                :options="fieldOptions(field)"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                :placeholder="field.placeholder ?? 'Select'"
+                @update:model-value="
+                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                "
+              />
+              <UiSecretInput
+                v-else-if="isSecretField(field)"
+                :id="id"
+                :model-value="
+                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                "
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                no-copy
+                no-reveal
+                :placeholder="field.placeholder ?? ''"
+                @update:model-value="
+                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                "
+              />
+              <UiInput
+                v-else
+                :id="id"
+                :model-value="
+                  fieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key)
+                "
+                :type="inputType(field)"
+                :aria-describedby="describedBy"
+                :invalid="invalid"
+                :placeholder="field.placeholder ?? undefined"
+                @update:model-value="
+                  setFieldValue(selectedProvider.key, selectedMethod(selectedProvider)?.key ?? '', field.key, $event)
+                "
+              />
+            </template>
+          </UiFormField>
+
+          <UiCallout
+            v-if="selectedMethod(selectedProvider)?.description"
+            tone="info"
+          >
+            {{ selectedMethod(selectedProvider)?.description }}
+          </UiCallout>
+
+          <UiCallout
+            v-if="providerMessages[selectedProvider.key]"
+            :tone="providerMessages[selectedProvider.key].tone"
+          >
+            {{ providerMessages[selectedProvider.key].text }}
+          </UiCallout>
+        </template>
+
+        <UiCallout
+          v-else
+          tone="info"
+        >
+          No credential required.
+        </UiCallout>
+      </div>
+
+      <UiCallout
+        v-else
+        tone="info"
+      >
+        Enable a plugin before adding provider connections.
+      </UiCallout>
+
+      <template #footer>
+        <UiButton
+          variant="ghost"
+          @click="addPanelOpen = false"
+        >
+          Cancel
+        </UiButton>
+        <UiButton
+          v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
+          variant="secondary"
+          icon-left="external-link"
+          :loading="isProviderBusy(selectedProvider.key, 'start')"
+          @click="startProvider(selectedProvider)"
+        >
+          Start setup
+        </UiButton>
+        <UiButton
+          v-if="selectedProvider"
+          variant="primary"
+          icon-left="save"
+          :loading="isProviderBusy(selectedProvider.key, 'save')"
+          :disabled="selectedMethod(selectedProvider)?.payload_format === 'none'"
+          @click="saveCredential(selectedProvider)"
+        >
+          Save connection
+        </UiButton>
+      </template>
+    </UiSidePanel>
   </UiPageShell>
 </template>

@@ -87,15 +87,11 @@ capability_requirements:
       - meta-ads
       - google-ads
       - taboola
-      - media-buying-webhook
+      - custom-media-tool
 auth_requirements:
   - key: meta_ads
     provider: meta-ads
     auth_type: oauth
-    optional: true
-  - key: media_webhook
-    provider: media-buying-webhook
-    auth_type: api-key
     optional: true
   - key: google_ads
     provider: google-ads
@@ -145,18 +141,16 @@ action_contracts:
     provider: taboola
     risk_level: read
     auth_ref: taboola
-  - key: webhook_media_performance
-    action: webhook.media_performance.fetch
+  - key: custom_media_performance
+    action: custom_media.performance.fetch
     capability: media-measurement
-    provider: media-buying-webhook
+    provider: custom-media-tool
     risk_level: read
-    auth_ref: media_webhook
-  - key: webhook_media_budget_update
-    action: webhook.media_budget.update
+  - key: custom_media_budget_update
+    action: custom_media.budget.update
     capability: campaign-management
-    provider: media-buying-webhook
+    provider: custom-media-tool
     risk_level: write
-    auth_ref: media_webhook
     approval_ref: budget_change_review
 resource_contracts:
   - key: performance_snapshots
@@ -206,7 +200,7 @@ steps:
       - meta_insights
       - google_report_search
       - taboola_report
-      - webhook_media_performance
+      - custom_media_performance
     policy_refs:
       - no_secret_exposure
     depends_on:
@@ -232,7 +226,7 @@ steps:
       - meta_campaign_budget_update
       - meta_ad_set_budget_update
       - google_campaign_budget_update
-      - webhook_media_budget_update
+      - custom_media_budget_update
     resource_refs:
       - budget_changes
     policy_refs:

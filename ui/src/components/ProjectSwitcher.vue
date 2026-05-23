@@ -8,12 +8,13 @@
 
 import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { useProjectsStore } from '@/stores/projects'
 
 const projects = useProjectsStore()
 const router = useRouter()
+const route = useRoute()
 const { items, activeProject } = storeToRefs(projects)
 
 const open = ref(false)
@@ -30,6 +31,20 @@ const sortedItems = computed(() => {
   const live = [...items.value].filter((p) => p.is_active)
   const archived = [...items.value].filter((p) => !p.is_active)
   return [...live, ...archived]
+})
+
+const routeProjectId = computed(() => {
+  const raw = route.params.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  return Number.isNaN(parsed) ? null : parsed
+})
+
+const selectedProject = computed(() => {
+  if (routeProjectId.value !== null) {
+    return items.value.find((project) => project.id === routeProjectId.value) ?? activeProject.value
+  }
+  return activeProject.value
 })
 
 async function pick(id: number): Promise<void> {
@@ -60,10 +75,10 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
     >
       <span class="truncate text-left">
         <span
-          v-if="activeProject"
+          v-if="selectedProject"
           class="font-medium text-fg-strong"
         >
-          {{ activeProject.name }}
+          {{ selectedProject.name }}
         </span>
         <span
           v-else
@@ -84,10 +99,10 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
         v-for="p in sortedItems"
         :key="p.id"
         role="option"
-        :aria-selected="p.id === activeProject?.id"
+        :aria-selected="p.id === selectedProject?.id"
         type="button"
         class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-        :class="p.id === activeProject?.id ? 'bg-accent-subtle' : ''"
+        :class="p.id === selectedProject?.id ? 'bg-accent-subtle' : ''"
         @click="pick(p.id)"
       >
         <span>

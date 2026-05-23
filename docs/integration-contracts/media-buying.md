@@ -1,7 +1,7 @@
 # Media Buying Integration Contract Audit
 
 Status: first executable connector pass delivered on 2026-05-22 for Meta Ads,
-Google Ads, and Taboola. Outbrain and user-owned webhooks remain explicit
+Google Ads, and Taboola. Outbrain and custom media-tool actions remain explicit
 deferred modes until endpoint-level contracts or project-local static HTTP
 config exist.
 
@@ -62,19 +62,19 @@ Implication: Outbrain is beta/partner-gated and uses `OB-TOKEN-V1` tokens that e
 
 Implication: Taboola uses OAuth2 bearer access tokens and account-scoped paths. The current scaffold uses `auth_type: oauth`. Campaign items are the creative/ad units; a campaign create/update contract must not imply Meta-style ad sets. Updates are partial and pause/resume uses `is_active`, while `status` is read-only.
 
-### User-Owned HTTP Webhooks
+### Custom Media Tools
 
 - StackOS internal executor notes: `docs/action-executor.md`
 
-Implication: webhook actions are project-local HTTP contracts, not provider APIs. They may adapt to a user's own campaign tooling, but must require static connector config, fixed host allowlisting, method/path/headers declared in metadata, daemon-side secret injection, idempotency keys for writes, timeout/retry policy, and response redaction before execution. Media webhook refs should stay media-specific so they do not collide with GTM or other domains.
+Implication: custom media-tool actions are project-local HTTP contracts, not provider APIs. They may adapt to a user's own campaign tooling, but must require static connector config, fixed host allowlisting, method/path/headers declared in metadata, daemon-side secret injection, idempotency keys for writes, timeout/retry policy, and response redaction before execution. Built-in StackOS must not ask for a vague "media webhook" credential; a project-local plugin owns the concrete service name, endpoint, and auth fields.
 
 ## Current Scaffold Findings
 
 - Good: Meta Ads, Google Ads, and Taboola now have provider-specific daemon connectors instead of one generic REST adapter.
 - Good: workflow templates separate approval gates from action contracts and keep secrets daemon-side.
 - Resolved in the scaffold: Google Ads now has customer, budget, campaign, ad group, asset, ad, reporting, conversion action, and conversion upload contracts, and the templates can reference Google explicitly.
-- Resolved in the scaffold: Taboola is OAuth-based, Outbrain has a daemon-managed token-lifecycle note, Meta budget updates are split by campaign and ad-set surface, reports use provider-native reporting refs, Meta conversions are represented, and user-owned webhook refs are media-specific.
-- Still deferred: Outbrain endpoint-level campaign/report contracts are partner/API-doc gated, and user-owned webhooks need project-local static HTTP connector config.
+- Resolved in the scaffold: Taboola is OAuth-based, Outbrain has a daemon-managed token-lifecycle note, Meta budget updates are split by campaign and ad-set surface, reports use provider-native reporting refs, Meta conversions are represented, and custom media-tool refs are media-specific.
+- Still deferred: Outbrain endpoint-level campaign/report contracts are partner/API-doc gated, and custom media tools need project-local static HTTP connector config.
 - Still required before expanding execution: stricter provider enum coverage, more mocked provider tests, rate-limit/error classification, and richer pagination handling. Conversion uploads require callers to pass already-normalized provider events; StackOS does not hash or normalize PII inside this connector.
 
 ## Action Ref Recommendations
@@ -85,7 +85,7 @@ Keep provider-specific refs. Do not introduce `campaign.create` as a first-party
 - Google Ads: `google.customer.list`, `google.campaign_budget.create`, `google.campaign_budget.update`, `google.campaign.create`, `google.ad_group.create`, `google.asset.create`, `google.ad_group_ad.create`, `google.report.search`, `google.conversion_action.create`, `google.conversion_upload.clicks`.
 - Outbrain: `outbrain.marketer.list`, `outbrain.campaign.create`, `outbrain.campaign.update`, `outbrain.campaign.pause`, `outbrain.campaign.resume`, `outbrain.budget.update`, `outbrain.promoted_link.create`, `outbrain.promoted_link.update`, `outbrain.report.fetch`, `outbrain.conversion_import.create` if official partner docs confirm the exact endpoint.
 - Taboola: `taboola.account.get`, `taboola.campaign.create`, `taboola.campaign.update`, `taboola.campaign.pause`, `taboola.campaign.resume`, `taboola.item.create`, `taboola.item.update`, `taboola.report.fetch`, `taboola.conversion_rule.create`, `taboola.conversion_rule.update`.
-- Webhook: prefer project-owned refs such as `webhook.media_campaign.create`, `webhook.media_campaign.update`, `webhook.media_budget.update`, and `webhook.media_performance.fetch` only after static HTTP connector config exists.
+- Custom media tools: prefer project-owned refs such as `custom_media.campaign.create`, `custom_media.campaign.update`, `custom_media.budget.update`, and `custom_media.performance.fetch` only after static HTTP connector config exists.
 
 Use underscores in action keys for provider terms that are single concepts in code (`ad_set`, `ad_group`, `ad_creative`).
 
@@ -98,7 +98,7 @@ Inputs must be explicit, bounded, and provider-specific:
 - Require budget currency, amount micros/minor units where the provider expects them, period, delivery model, and cap semantics. Do not accept free-form `budget`.
 - Require schedule/time zone, landing page/destination refs, tracking template or UTM policy, and conversion event refs when optimization depends on conversion tracking.
 - Require reporting windows with concrete `start_date`/`end_date`, provider level/dimension, metrics, breakdowns/segments, attribution/conversion options, and pagination/async controls.
-- Require idempotency or client request key for every write if the provider or webhook connector can support it; otherwise record the lack of idempotency as risk.
+- Require idempotency or client request key for every write if the provider or custom HTTP connector can support it; otherwise record the lack of idempotency as risk.
 - For conversion events, require event source, event time, dedupe id/order id, consent/privacy flags, and hashing/normalization provenance. The agent must not receive raw PII.
 
 ## Output Principles
@@ -129,7 +129,7 @@ Outputs should be normalized but preserve provider diagnostics:
 - Reporting reads may still need cost/volume approval because Meta insights, Google GAQL, Outbrain performance reporting, and Taboola reports can exhaust quotas or return large result sets.
 - Campaign launch templates should include a tracking-health gate before spend-bearing writes when conversion optimization is part of the plan.
 - Budget reallocation should separate recommendation, approval, mutation, and observation. The connector must not compute reallocations.
-- Webhooks are high trust because the user's endpoint can perform arbitrary internal work. Treat write webhooks as external writes with allowlisted hosts, static methods, redacted logs, and explicit approval.
+- Custom HTTP actions are high trust because the user's endpoint can perform arbitrary internal work. Treat write custom-tool calls as external writes with allowlisted hosts, static methods, redacted logs, and explicit approval.
 
 ## Credential Boundary
 
@@ -137,7 +137,7 @@ Outputs should be normalized but preserve provider diagnostics:
 - Google Ads: OAuth refresh token, developer token, login customer id, and linked manager/customer metadata stay daemon-side. Templates should use `customer_ref`, not raw customer ids.
 - Outbrain: username/password must never reach agents. If token generation is supported, only the daemon performs login and stores/rotates `OB-TOKEN-V1`.
 - Taboola: OAuth2 client credentials/access tokens stay daemon-side. Provider setup should store safe account refs and token status diagnostics.
-- Webhook: API keys, bearer tokens, HMAC secrets, mTLS material, and custom auth headers stay daemon-side. Agents provide only payload refs and approved operation inputs.
+- Custom media tools: API keys, bearer tokens, HMAC secrets, mTLS material, and custom auth headers stay daemon-side inside the project-local connector. Agents provide only payload refs and approved operation inputs.
 
 ## Remaining Execution Gaps
 
@@ -151,12 +151,12 @@ Outputs should be normalized but preserve provider diagnostics:
    and conversions.
 5. Keep conversion-event inputs already normalized by the caller; add a separate
    utility action later if StackOS should hash or normalize PII.
-6. Add media webhook SSRF/private-network review, redacted structured errors,
+6. Add custom media-tool SSRF/private-network review, redacted structured errors,
    and retry/audit policy before executable HTTP campaign writes.
 
 ## Recommended Manifest And Template Corrections
 
-- Keep Meta, Google Ads, Outbrain, Taboola, and media-webhook action refs provider-specific.
+- Keep Meta, Google Ads, Outbrain, Taboola, and custom media-tool action refs provider-specific.
 - Tighten remaining provider schemas before executable adapters are added.
 - Keep conversion-event actions/resources behind explicit approval gates and tracking-health checks.
-- For webhook actions, require project-local static HTTP connector metadata before execution and rename refs to media-specific names to avoid colliding with GTM/webhook domains.
+- For custom media-tool actions, require project-local static HTTP connector metadata before execution and keep refs media-specific to avoid colliding with GTM or other custom-tool domains.

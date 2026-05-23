@@ -82,7 +82,7 @@ capability_requirements:
       - hubspot
       - salesforce
       - pipedrive
-      - gtm-webhook
+      - custom-gtm-tool
 auth_requirements:
   - key: hubspot
     provider: hubspot
@@ -95,10 +95,6 @@ auth_requirements:
   - key: pipedrive
     provider: pipedrive
     auth_type: oauth
-    optional: true
-  - key: gtm_webhook
-    provider: gtm-webhook
-    auth_type: api-key
     optional: true
 action_contracts:
   - key: hubspot_pipeline_fetch
@@ -119,12 +115,11 @@ action_contracts:
     provider: pipedrive
     risk_level: read
     auth_ref: pipedrive
-  - key: webhook_pipeline_fetch
-    action: webhook.pipeline.fetch
+  - key: custom_gtm_pipeline_fetch
+    action: custom_gtm.pipeline.fetch
     capability: pipeline-management
-    provider: gtm-webhook
+    provider: custom-gtm-tool
     risk_level: read
-    auth_ref: gtm_webhook
 resource_contracts:
   - key: pipeline_snapshots
     resource: pipeline-snapshot
@@ -175,7 +170,7 @@ steps:
       - hubspot_pipeline_fetch
       - salesforce_pipeline_fetch
       - pipedrive_deal_fetch
-      - webhook_pipeline_fetch
+      - custom_gtm_pipeline_fetch
     policy_refs:
       - no_secret_exposure
     approval_refs:

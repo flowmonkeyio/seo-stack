@@ -90,7 +90,7 @@ capability_requirements:
       - meta-ads
       - google-ads
       - taboola
-      - media-buying-webhook
+      - custom-media-tool
   - key: image-generation
     required: false
     preferred_providers:
@@ -99,10 +99,6 @@ auth_requirements:
   - key: meta_ads
     provider: meta-ads
     auth_type: oauth
-    optional: true
-  - key: media_webhook
-    provider: media-buying-webhook
-    auth_type: api-key
     optional: true
   - key: google_ads
     provider: google-ads
@@ -152,12 +148,11 @@ action_contracts:
     risk_level: write
     auth_ref: taboola
     approval_ref: creative_upload_review
-  - key: webhook_media_campaign_update
-    action: webhook.media_campaign.update
+  - key: custom_media_campaign_update
+    action: custom_media.campaign.update
     capability: campaign-management
-    provider: media-buying-webhook
+    provider: custom-media-tool
     risk_level: write
-    auth_ref: media_webhook
     approval_ref: creative_upload_review
 resource_contracts:
   - key: creatives
@@ -256,7 +251,7 @@ steps:
       - meta_asset_upload
       - google_asset_create
       - taboola_item_create
-      - webhook_media_campaign_update
+      - custom_media_campaign_update
     policy_refs:
       - review_before_external_upload
     approval_refs:

@@ -153,28 +153,13 @@ providers:
           secret: false
           required: false
           placeholder: safe account reference
-  - key: media-buying-webhook
-    name: Media Buying Webhook
-    description: User-owned campaign tooling exposed through project-local static HTTP actions.
-    auth_type: api-key
-    auth_methods:
-      - key: api_key
-        label: API key
-        auth_type: api-key
-        payload_format: raw
-        payload_field: api_key
-        fields:
-        - key: api_key
-          label: API Key
-          type: secret
-          secret: true
-          required: true
-        - key: tool_owner
-          label: Tool Owner
-          type: text
-          secret: false
-          required: false
-          placeholder: team or system name
+  - key: custom-media-tool
+    name: Custom Media Tool
+    description: Placeholder for project-local paid media tooling. Install a project plugin with concrete HTTP connector config before execution.
+    auth_type: local
+    config:
+      connection_setup: project-local-plugin-required
+      setup_note: Custom media tools need a project-local plugin that declares the endpoint, method, allowlisted host, auth injection, timeout, and response contract.
 actions:
   - key: meta.account.list
     name: List Meta Ad Accounts
@@ -1380,10 +1365,10 @@ actions:
       connector: taboola
       operation: conversion_rule.update
       requires_credential: true
-  - key: webhook.media_campaign.create
-    name: Create Media Campaign Through Webhook
+  - key: custom_media.campaign.create
+    name: Create Media Campaign Through Custom Media Tool
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
-    provider: media-buying-webhook
+    provider: custom-media-tool
     capability: campaign-management
     risk_level: write
     input_schema: *campaign_create_input
@@ -1391,11 +1376,11 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
-  - key: webhook.media_campaign.update
-    name: Update Media Campaign Through Webhook
+      deferred_reason: Built-in custom media tool actions require project-local static HTTP connector config.
+  - key: custom_media.campaign.update
+    name: Update Media Campaign Through Custom Media Tool
     description: Contract for user-owned campaign tooling. Project-local plugins should provide static HTTP connector config before execution.
-    provider: media-buying-webhook
+    provider: custom-media-tool
     capability: campaign-management
     risk_level: write
     input_schema: *campaign_update_input
@@ -1403,14 +1388,14 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
-  - key: webhook.media_performance.fetch
-    name: Fetch Media Performance Through Webhook
+      deferred_reason: Built-in custom media tool actions require project-local static HTTP connector config.
+  - key: custom_media.performance.fetch
+    name: Fetch Media Performance Through Custom Media Tool
     description: Contract for user-owned reporting tools exposed through project-local static HTTP actions.
-    provider: media-buying-webhook
+    provider: custom-media-tool
     capability: media-measurement
     risk_level: read
-    input_schema: &media_webhook_performance_input
+    input_schema: &custom_media_tool_performance_input
       type: object
       additionalProperties: false
       required:
@@ -1423,11 +1408,11 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
-  - key: webhook.media_budget.update
-    name: Update Media Budget Through Webhook
+      deferred_reason: Built-in custom media tool actions require project-local static HTTP connector config.
+  - key: custom_media.budget.update
+    name: Update Media Budget Through Custom Media Tool
     description: Contract for user-owned budget tooling exposed through project-local static HTTP actions.
-    provider: media-buying-webhook
+    provider: custom-media-tool
     capability: campaign-management
     risk_level: write
     input_schema: &media_budget_update_input
@@ -1450,7 +1435,7 @@ actions:
     config:
       schema_version: stackos.action.v1
       execution_mode: project-local-http
-      deferred_reason: Built-in media webhook actions require project-local static HTTP connector config.
+      deferred_reason: Built-in custom media tool actions require project-local static HTTP connector config.
 resources:
   - key: ad-account
     name: Ad Account
@@ -1521,4 +1506,4 @@ config:
       - taboola
     deferred:
       - outbrain
-      - media-buying-webhook
+      - custom-media-tool
