@@ -47,6 +47,30 @@ const props = withDefaults(defineProps<UiButtonProps>(), {
   ariaLabel: undefined,
 });
 
+const BUTTON_ICON_PATHS: Record<string, string[]> = {
+  ban: [
+    'M4.93 4.93 19.07 19.07',
+    'M20 12a8 8 0 0 1-12.12 6.84A8 8 0 0 1 5.16 6.12 8 8 0 0 1 20 12Z',
+  ],
+  'external-link': [
+    'M15 3h6v6',
+    'M10 14 21 3',
+    'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6',
+  ],
+  plus: ['M5 12h14', 'M12 5v14'],
+  'plug-zap': [
+    'M13 2 11 9h7l-5 13',
+    'M9 8V2',
+    'M15 8V2',
+    'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z',
+  ],
+  save: [
+    'M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+    'M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7',
+    'M7 3v4a1 1 0 0 0 1 1h7',
+  ],
+};
+
 defineEmits<{
   (e: 'click', ev: MouseEvent): void;
 }>();
@@ -71,6 +95,10 @@ const sizeClass = computed(() => ({
   md: props.iconOnly ? 'h-8 w-8 px-0 text-sm'  : 'h-8 px-3 gap-2 text-sm',
   lg: props.iconOnly ? 'h-10 w-10 px-0 text-base' : 'h-10 px-4 gap-2 text-base',
 }[props.size]));
+
+function iconPaths(name: string | undefined): string[] {
+  return name ? BUTTON_ICON_PATHS[name] ?? [] : [];
+}
 </script>
 
 <template>
@@ -124,11 +152,23 @@ const sizeClass = computed(() => ({
       v-else
       name="iconLeft"
     >
-      <span
-        v-if="iconLeft"
-        :class="['i-lucide-' + iconLeft]"
+      <svg
+        v-if="iconPaths(iconLeft).length"
+        class="ui-button__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
-      />
+      >
+        <path
+          v-for="path in iconPaths(iconLeft)"
+          :key="path"
+          :d="path"
+        />
+      </svg>
     </slot>
     <span
       v-if="!iconOnly"
@@ -140,11 +180,23 @@ const sizeClass = computed(() => ({
       v-if="!iconOnly"
       name="iconRight"
     >
-      <span
-        v-if="iconRight"
-        :class="['i-lucide-' + iconRight]"
+      <svg
+        v-if="iconPaths(iconRight).length"
+        class="ui-button__icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
-      />
+      >
+        <path
+          v-for="path in iconPaths(iconRight)"
+          :key="path"
+          :d="path"
+        />
+      </svg>
     </slot>
     <span
       v-if="iconOnly && !loading"
@@ -157,5 +209,6 @@ const sizeClass = computed(() => ({
 
 <style scoped>
 .ui-button { line-height: 1; }
+.ui-button__icon { width: 1em; height: 1em; flex: none; }
 .ui-button__spinner { display: inline-flex; }
 </style>
