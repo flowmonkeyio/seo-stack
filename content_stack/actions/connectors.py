@@ -40,6 +40,7 @@ class ActionConnectorRequest:
     config_json: Mapping[str, Any]
     credential: ResolvedCredential | None = field(default=None, repr=False)
     asset_dir: Path | None = None
+    session: Any | None = field(default=None, repr=False)
     dry_run: bool = False
 
 

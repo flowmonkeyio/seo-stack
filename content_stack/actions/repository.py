@@ -901,6 +901,7 @@ class ActionRepository:
             config_json=manifest.config_json,
             credential=credential,
             asset_dir=self._asset_dir,
+            session=self._s,
             dry_run=dry_run,
         )
 

@@ -119,7 +119,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert (
         providers["telegram-bot"]
         .config["setup_note"]
-        .startswith("Telegram polling and webhook modes are mutually exclusive")
+        .startswith("Store only Telegram token material and transport endpoints here")
     )
     assert _auth_field_keys(providers["smtp"], "smtp-password")[:4] == [
         "password",
@@ -145,6 +145,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["telegram-bot.photo.send"].config["operation"] == "photo.send"
     assert actions["telegram-bot.photo.send"].input_schema["required"] == [
         "chat_ref",
+        "bot_profile_key",
         "photo",
     ]
     photo_schema = actions["telegram-bot.photo.send"].input_schema["properties"]["photo"]
@@ -159,13 +160,15 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["telegram-bot.updates.poll"].capability == "agent-triggering"
     assert actions["telegram-bot.updates.poll"].config["operation"] == "updates.poll"
     assert actions["telegram-bot.identity.get"].config["connector"] == "telegram-bot"
-    assert actions["telegram-bot.webhook.set"].config["execution_mode"] == "deferred-connector"
+    assert actions["telegram-bot.webhook.set"].config["connector"] == "telegram-bot"
+    assert actions["telegram-bot.webhook.set"].config["operation"] == "webhook.set"
     assert actions["smtp.email.send"].config["execution_mode"] == "deferred-connector"
     assert actions["imap.message.fetch"].input_schema["required"] == [
         "mailbox_ref",
         "uid",
     ]
     assert {resource.key for resource in manifest.resources} >= {
+        "communication-bot-profile",
         "communication-channel",
         "communication-thread",
         "communication-message",

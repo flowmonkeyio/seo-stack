@@ -12,8 +12,10 @@ from sqlmodel import Session
 
 from content_stack.actions import ActionRepository
 from content_stack.auth_providers import AuthRepository
+from content_stack.repositories.agent_requests import AgentRequestRepository
 from content_stack.repositories.base import ConflictError
 from content_stack.repositories.projects import IntegrationCredentialRepository
+from content_stack.repositories.resources import ResourceRepository
 
 _TOKEN = "123456:ABC"
 _BASE = f"https://api.telegram.org/bot{_TOKEN}"
@@ -29,11 +31,53 @@ def _telegram_credential_ref(
     IntegrationCredentialRepository(session).set(
         project_id=project_id,
         kind="telegram-bot",
-        secret_payload=json.dumps({"bot_token": _TOKEN}).encode("utf-8"),
+        secret_payload=json.dumps(
+            {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
+        ).encode("utf-8"),
         config_json=config_json or {},
     )
     status = AuthRepository(session).status(project_id=project_id, provider_key="telegram-bot")
     return status.connections[0].credential_ref
+
+
+def _telegram_bot_profile(
+    session: Session,
+    project_id: int,
+    *,
+    key: str = "support-bot",
+    auth_profile_key: str = "default",
+    access_policy: dict | None = None,
+    response_policy: dict | None = None,
+    profile_overrides: dict | None = None,
+) -> None:
+    data_json = {
+        "key": key,
+        "provider_key": "telegram-bot",
+        "auth_profile_key": auth_profile_key,
+        "enabled": True,
+        "bot_username": "stackos_bot",
+        "allowed_updates": ["message", "callback_query"],
+        "refs": {"main": "12345"},
+        "access_policy": access_policy
+        or {
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "user_mode": "all",
+            "allowed_chat_refs": ["main", "telegram-chat:12345"],
+        },
+        "response_policy": response_policy or {},
+    }
+    if profile_overrides:
+        data_json.update(profile_overrides)
+    ResourceRepository(session).upsert_record(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-bot-profile",
+        external_id=f"telegram-bot-profile:{key}",
+        title=key,
+        data_json=data_json,
+        provenance_json={"source": "test"},
+    )
 
 
 def test_telegram_builtin_actions_are_registered(session: Session) -> None:
@@ -45,6 +89,9 @@ def test_telegram_builtin_actions_are_registered(session: Session) -> None:
         "communications.telegram-bot.photo.send": "photo.send",
         "communications.telegram-bot.callback.answer": "callback.answer",
         "communications.telegram-bot.updates.poll": "updates.poll",
+        "communications.telegram-bot.webhook.set": "webhook.set",
+        "communications.telegram-bot.webhook.delete": "webhook.delete",
+        "communications.telegram-bot.webhook.info": "webhook.info",
     }.items():
         described = repo.describe(action_ref=action_ref)
 
@@ -61,12 +108,8 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
     credential_ref = _telegram_credential_ref(
         session,
         project_id,
-        config_json={
-            "allowed_chat_refs": "main,12345",
-            "allowed_updates": "message,callback_query",
-            "refs": {"main": "12345"},
-        },
     )
+    _telegram_bot_profile(session, project_id)
     httpx_mock.add_response(
         method="POST",
         url=f"{_BASE}/getMe",
@@ -114,11 +157,19 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             project_id=project_id,
             action_ref="communications.telegram-bot.message.send",
             input_json={
+                "bot_profile_key": "support-bot",
                 "chat_ref": "main",
                 "text": "Ready to review?",
                 "reply_markup": {
                     "inline_keyboard": [
-                        [{"text": "Review", "callback_data": "ixn_123"}],
+                        [
+                            {
+                                "text": "Review",
+                                "callback_data": "ixn_123",
+                                "allowed_user_refs": ["telegram-user:555"],
+                                "allowed_chat_refs": ["telegram-chat:12345"],
+                            }
+                        ],
                         [{"text": "Open", "url": "https://example.com/review"}],
                     ]
                 },
@@ -130,7 +181,11 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
         repo.execute(
             project_id=project_id,
             action_ref="communications.telegram-bot.callback.answer",
-            input_json={"callback_query_id": "cbq_1", "text": "Queued"},
+            input_json={
+                "bot_profile_key": "support-bot",
+                "callback_query_id": "cbq_1",
+                "text": "Queued",
+            },
             credential_ref=credential_ref,
         )
     ).data
@@ -139,6 +194,7 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             project_id=project_id,
             action_ref="communications.telegram-bot.updates.poll",
             input_json={
+                "bot_profile_key": "support-bot",
                 "offset": 100,
                 "limit": 10,
                 "timeout_s": 0,
@@ -162,13 +218,37 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
     )
 
     assert message_body["chat_id"] == "12345"
-    assert message_body["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "ixn_123"
+    sent_button = message_body["reply_markup"]["inline_keyboard"][0][0]
+    assert sent_button["callback_data"] == "ixn_123"
+    assert "allowed_user_refs" not in sent_button
+    assert "allowed_chat_refs" not in sent_button
     assert callback_body == {"callback_query_id": "cbq_1", "text": "Queued"}
     assert updates_body["allowed_updates"] == ["message", "callback_query"]
     assert message.action_call.connector_key == "telegram-bot"
     assert callback.output_json["body"]["result"] is True
     assert updates.output_json["body"]["result"][0]["callback_query"]["data"] == "ixn_123"
     assert _TOKEN not in rendered
+    interactions = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-interaction",
+    )
+    buttons = [
+        item
+        for item in interactions.items
+        if item.external_id == "telegram-button:support-bot:telegram-message:12345:7:ixn_123"
+    ]
+    assert len(buttons) == 1
+    assert buttons[0].data_json["allowed_user_refs"] == ["telegram-user:555"]
+    assert buttons[0].data_json["allowed_chat_refs"] == ["telegram-chat:12345"]
+    messages = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-message",
+    )
+    outbound = [item for item in messages.items if item.data_json.get("direction") == "outbound"]
+    assert len(outbound) == 1
+    assert outbound[0].data_json["message_ref"] == "telegram-message:12345:7"
 
 
 def test_telegram_photo_uploads_generated_asset_ref(
@@ -183,7 +263,16 @@ def test_telegram_photo_uploads_generated_asset_ref(
     credential_ref = _telegram_credential_ref(
         session,
         project_id,
-        config_json={"allowed_chat_refs": "main", "refs": {"main": "12345"}},
+    )
+    _telegram_bot_profile(
+        session,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "user_mode": "all",
+            "allowed_chat_refs": ["main"],
+        },
     )
     httpx_mock.add_response(
         method="POST",
@@ -196,6 +285,7 @@ def test_telegram_photo_uploads_generated_asset_ref(
             project_id=project_id,
             action_ref="communications.telegram-bot.photo.send",
             input_json={
+                "bot_profile_key": "support-bot",
                 "chat_ref": "main",
                 "photo": {"artifact_ref": "/generated-assets/openai-images/sample.webp"},
                 "caption": "Generated option",
@@ -223,6 +313,7 @@ def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(
         project_id=project_id,
         action_ref="communications.telegram-bot.message.send",
         input_json={
+            "bot_profile_key": "support-bot",
             "chat_ref": "12345",
             "text": "Pick one",
             "reply_markup": {
@@ -235,6 +326,7 @@ def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(
         project_id=project_id,
         action_ref="communications.telegram-bot.photo.send",
         input_json={
+            "bot_profile_key": "support-bot",
             "chat_ref": "12345",
             "photo": {"file_id": "file_1", "url": "http://example.com/a.jpg"},
         },
@@ -247,7 +339,7 @@ def test_telegram_validation_rejects_unsafe_buttons_and_photo_sources(
     assert any(issue.code == "one_of" for issue in bad_photo.issues)
 
 
-def test_telegram_polling_rejects_webhook_mode_without_override(
+def test_telegram_webhook_actions_execute_against_local_bot_api_server(
     session: Session,
     project_id: int,
     httpx_mock: HTTPXMock,
@@ -255,18 +347,354 @@ def test_telegram_polling_rejects_webhook_mode_without_override(
     credential_ref = _telegram_credential_ref(
         session,
         project_id,
-        config_json={"ingestion_mode": "webhook"},
+        config_json={"api_base_url": "http://127.0.0.1:8081"},
+    )
+    _telegram_bot_profile(session, project_id)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://127.0.0.1:8081/bot{_TOKEN}/setWebhook",
+        json={"ok": True, "result": True},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://127.0.0.1:8081/bot{_TOKEN}/getWebhookInfo",
+        json={"ok": True, "result": {"url": "http://127.0.0.1:5180/api/v1/ingress/telegram/1/support-bot"}},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"http://127.0.0.1:8081/bot{_TOKEN}/deleteWebhook",
+        json={"ok": True, "result": True},
+    )
+    repo = ActionRepository(session)
+
+    set_out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.webhook.set",
+            input_json={
+                "bot_profile_key": "support-bot",
+                "webhook_url": "http://127.0.0.1:5180/api/v1/ingress/telegram/1/support-bot",
+                "allowed_updates": ["message", "callback_query"],
+                "drop_pending_updates": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    info_out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.webhook.info",
+            input_json={"bot_profile_key": "support-bot"},
+            credential_ref=credential_ref,
+        )
+    ).data
+    delete_out = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.webhook.delete",
+            input_json={"bot_profile_key": "support-bot", "drop_pending_updates": True},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    requests = httpx_mock.get_requests()
+    set_body = json.loads(requests[0].content.decode("utf-8"))
+    delete_body = json.loads(requests[2].content.decode("utf-8"))
+    rendered = json.dumps(
+        {
+            "set": set_out.model_dump(mode="json"),
+            "info": info_out.model_dump(mode="json"),
+            "delete": delete_out.model_dump(mode="json"),
+        }
+    )
+
+    assert set_body["secret_token"] == "telegram-secret"
+    assert set_body["allowed_updates"] == ["message", "callback_query"]
+    assert delete_body == {"drop_pending_updates": True}
+    assert set_out.output_json["body"]["result"] is True
+    assert info_out.output_json["body"]["result"]["url"].endswith("/support-bot")
+    assert delete_out.output_json["body"]["result"] is True
+    assert _TOKEN not in rendered
+    assert "telegram-secret" not in rendered
+
+
+def test_telegram_send_rejects_bot_profile_credential_mismatch(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_bot_profile(
+        session,
+        project_id,
+        key="support-bot",
+        auth_profile_key="other-profile",
     )
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
         asyncio.run(
             ActionRepository(session).execute(
                 project_id=project_id,
-                action_ref="communications.telegram-bot.updates.poll",
-                input_json={"limit": 1, "timeout_s": 0, "allowed_updates": ["message"]},
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "text": "hello",
+                },
                 credential_ref=credential_ref,
             )
         )
 
-    assert "webhook ingestion" in exc.value.data["error"]
+    assert "does not match credential profile" in exc.value.data["error"]
     assert httpx_mock.get_requests() == []
+
+
+def test_telegram_send_rejects_global_credential_for_project_bot_profile(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=None,
+        kind="telegram-bot",
+        secret_payload=json.dumps(
+            {"bot_token": _TOKEN, "webhook_secret_token": "telegram-secret"}
+        ).encode("utf-8"),
+    )
+    credential_ref = AuthRepository(session).status(
+        project_id=project_id,
+        provider_key="telegram-bot",
+    ).connections[0].credential_ref
+    _telegram_bot_profile(session, project_id)
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "chat_ref": "main",
+                    "text": "hello",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "requires a project-scoped credential" in exc.value.data["error"]
+    assert httpx_mock.get_requests() == []
+
+
+def test_telegram_webhook_set_rejects_wrong_project_or_profile_url(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(
+        session,
+        project_id,
+        config_json={"api_base_url": "http://127.0.0.1:8081"},
+    )
+    _telegram_bot_profile(session, project_id)
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.webhook.set",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "webhook_url": (
+                        "http://127.0.0.1:5180/api/v1/ingress/telegram/"
+                        f"{project_id}/other-bot"
+                    ),
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "must target this project bot profile" in exc.value.data["error"]
+
+    with pytest.raises(ConflictError, match="action connector failed") as host_exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.webhook.set",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "webhook_url": (
+                        "https://evil.example/api/v1/ingress/telegram/"
+                        f"{project_id}/support-bot"
+                    ),
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert "configured StackOS webhook host" in host_exc.value.data["error"]
+    assert httpx_mock.get_requests() == []
+
+
+def test_telegram_response_policy_requires_source_origin_and_exact_reply(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_bot_profile(
+        session,
+        project_id,
+        response_policy={
+            "origin_required": True,
+            "reply_to_source_message": True,
+            "same_thread": True,
+        },
+        profile_overrides={
+            "reply_to_message_refs": {"telegram-message:12345:77": 77},
+            "thread_refs": {"telegram-thread:12345:default": 1},
+        },
+    )
+    source = AgentRequestRepository(session).create(
+        project_id=project_id,
+        request_key="telegram-update:support-bot:500",
+        title="Telegram message",
+        body_preview="@stackos_bot review",
+        source_provider="telegram-bot",
+        source_kind="telegram_message",
+        source_message_ref="telegram-message:12345:77",
+        metadata_json={
+            "bot_profile_key": "support-bot",
+            "chat_ref": "telegram-chat:12345",
+            "thread_ref": "telegram-thread:12345:default",
+            "invoker_ref": "telegram-user:555",
+        },
+    ).data
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/sendMessage",
+        json={"ok": True, "result": {"message_id": 78, "chat": {"id": 12345}}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.message.send",
+            input_json={
+                "bot_profile_key": "support-bot",
+                "chat_ref": "main",
+                "source_agent_request_id": source.id,
+                "reply_to_message_ref": "telegram-message:12345:77",
+                "thread_ref": "telegram-thread:12345:default",
+                "text": "Queued the review.",
+                "reply_markup": {
+                    "inline_keyboard": [[{"text": "Done", "callback_data": "done_78"}]]
+                },
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+
+    assert out.output_json["body"]["result"]["message_id"] == 78
+    assert request_body["reply_to_message_id"] == 77
+    assert request_body["message_thread_id"] == 1
+    interactions = ResourceRepository(session).query_records(
+        project_id=project_id,
+        plugin_slug="communications",
+        resource_key="communication-interaction",
+    )
+    button = next(
+        item
+        for item in interactions.items
+        if item.external_id == "telegram-button:support-bot:telegram-message:12345:78:done_78"
+    )
+    assert button.data_json["allowed_user_refs"] == ["telegram-user:555"]
+    assert button.data_json["allowed_chat_refs"] == ["telegram-chat:12345"]
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "chat_ref": "main",
+                    "source_agent_request_id": source.id,
+                    "reply_to_message_ref": "telegram-message:12345:99",
+                    "thread_ref": "telegram-thread:12345:default",
+                    "text": "Wrong source.",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert "must reply to the source message" in exc.value.data["error"]
+
+
+def test_telegram_response_policy_rejects_malformed_non_telegram_source(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_bot_profile(
+        session,
+        project_id,
+        response_policy={"origin_required": True},
+    )
+    source = AgentRequestRepository(session).create(
+        project_id=project_id,
+        request_key="manual-request:1",
+        title="Manual task",
+        source_provider="manual",
+        source_kind="manual",
+        metadata_json={"bot_profile_key": "support-bot"},
+    ).data
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "chat_ref": "main",
+                    "source_agent_request_id": source.id,
+                    "text": "This should not send.",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "must be a Telegram agent request" in exc.value.data["error"]
+    assert httpx_mock.get_requests() == []
+
+
+def test_telegram_provider_error_redacts_bot_token_url(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_bot_profile(session, project_id)
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/sendMessage",
+        status_code=401,
+        text=f"unauthorized at https://api.telegram.org/bot{_TOKEN}/sendMessage",
+    )
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "bot_profile_key": "support-bot",
+                    "chat_ref": "main",
+                    "text": "hello",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert _TOKEN not in exc.value.data["error"]
+    assert "/bot[redacted]/sendMessage" in exc.value.data["error"]

@@ -131,6 +131,8 @@ cover the migrated clean path for:
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
 - `http`: static custom HTTP/Webhook actions declared by installed plugins
+- `telegram-bot`: project-scoped Telegram bot identity, message/photo sends,
+  callback answers, diagnostic update inspection, and webhook set/delete/info
 - `hubspot`, `salesforce`, `apollo`, `pipedrive`, `clay`, `outreach`,
   `salesloft`, `google-workspace`, and `microsoft-365`: first GTM/RevOps
   provider actions

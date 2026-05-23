@@ -19,14 +19,32 @@ does not run an assistant, classify intent, or decide workflows.
 - Local agent chat is a communication transport, not a model runner hidden in
   the daemon. Store messages/interactions, create generic agent requests, and
   let the selected agent runner decide the response.
+- Telegram behavior is project-scoped through `communication-bot-profile`
+  records. Credentials store token material and transport endpoints only.
+- Each Telegram bot profile binds to one credential profile through
+  `auth_profile_key`; do not add global Telegram credentials or fallback token
+  lookup.
+- `local-webhook` is the normal Telegram listener path for local StackOS.
+  `updates.poll` is bounded diagnostic/bootstrap access only, never a
+  background listener.
+- Telegram webhook set/delete/info actions are executable through
+  `action.execute`; they must resolve the bot profile and daemon-held credential
+  server-side.
+- Visibility is not activation. A bot profile may observe/store allowed chat
+  messages as context, but StackOS creates an `agent_request` only when trigger
+  policy matches and invoker access policy allows it.
 - Agents never receive bot tokens, SMTP passwords, IMAP passwords, webhook
   secrets, OAuth tokens, refresh tokens, or raw authorization headers.
 - Telegram inline buttons must use opaque `callback_data` only. Keep it within
   Telegram's 1-64 byte limit and never place secrets, prompts, credentials, or
   business decisions in it.
-- Store button/callback state as `communication-interaction` resources. Treat
-  callback payloads as untrusted routing hints until the agent has read the
-  linked project, run, resource, and interaction context.
+- Store button/callback state as `communication-interaction` resources keyed by
+  bot profile, provider message ref, and callback token. Treat callback payloads
+  as untrusted routing hints until the agent has read the linked project, run,
+  resource, and interaction context.
+- Outbound replies that are tied to inbound work should include
+  `source_agent_request_id` so response policy can enforce the originating bot
+  profile, chat, thread, and message.
 - `telegram-bot.callback.answer` may clear Telegram's client-side loading state
   with static acknowledgement text. It must not claim a workflow was completed
   unless the responsible agent or granted run actually completed it.
@@ -43,14 +61,15 @@ does not run an assistant, classify intent, or decide workflows.
 
 ## Current Status
 
-Telegram bot identity checks, text messages, photo sends, callback answers, and
-update polling are executable through `action.execute` and the `telegram-bot`
-connector. Telegram secret-token ingress is available for allowed webhook/relay
-profiles and only stores communication resources plus generic agent requests.
-SMTP, IMAP, Telegram webhook set/delete/info actions, automatic callback ACK
-jobs, and richer Telegram media/admin operations remain deferred until their
-connector, mocked provider tests, redaction tests, and run-plan grant coverage
-are delivered.
+Telegram bot identity checks, text messages, photo sends, callback answers,
+bounded diagnostic `updates.poll`, webhook set/delete/info, and
+bot-profile-scoped secret-token ingress are executable through `action.execute`
+and the `telegram-bot` connector. Webhook ingress stores communication
+resources and creates generic agent requests only after bot-profile trigger and
+access policy allow it. SMTP, IMAP, automatic background callback ACK jobs, and
+richer Telegram media/admin operations remain deferred until their connector,
+mocked provider tests, redaction tests, and run-plan grant coverage are
+delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,

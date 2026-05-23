@@ -31,7 +31,7 @@ providers:
         - docs/integration-contracts/communications.md
   - key: telegram-bot
     name: Telegram Bot
-    description: Telegram Bot API provider for bot identity, message send, update polling, and future webhook ingestion.
+    description: Telegram Bot API provider for bot identity, project-scoped bot profile messaging, local-webhook ingress, and diagnostics.
     auth_type: bot-token
     auth_methods:
       - key: bot-token
@@ -50,59 +50,14 @@ providers:
             type: secret
             secret: true
             required: false
-          - key: bot_username
-            label: Bot Username
+          - key: api_base_url
+            label: Bot API Base URL
             type: text
             secret: false
             required: false
-            placeholder: my_stackos_bot
-          - key: ingestion_mode
-            label: Ingestion Mode
-            type: select
-            secret: false
-            required: true
-            options:
-              - label: Polling
-                value: polling
-              - label: Webhook
-                value: webhook
-          - key: allowed_updates
-            label: Allowed Updates
-            type: text
-            secret: false
-            required: false
-            placeholder: message,edited_message,channel_post,callback_query
-          - key: allowed_chat_refs
-            label: Allowed Chat Refs
-            type: text
-            secret: false
-            required: false
-            placeholder: safe chat refs, comma separated
-          - key: allowed_user_refs
-            label: Allowed User Refs
-            type: text
-            secret: false
-            required: false
-            placeholder: safe user refs, comma separated
-          - key: privacy_mode_expected
-            label: Privacy Mode Expected
-            type: checkbox
-            secret: false
-            required: false
-          - key: default_parse_mode
-            label: Default Parse Mode
-            type: select
-            secret: false
-            required: false
-            options:
-              - label: Plain Text
-                value: plain
-              - label: MarkdownV2
-                value: MarkdownV2
-              - label: HTML
-                value: HTML
+            placeholder: http://127.0.0.1:8081
     config:
-      setup_note: Telegram polling and webhook modes are mutually exclusive. Bot tokens appear in provider URLs and must never be logged or returned to agents.
+      setup_note: Store only Telegram token material and transport endpoints here. Persona, access, trigger, context, and response policy belong to project-scoped communication-bot-profile records.
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
@@ -280,8 +235,11 @@ actions:
       additionalProperties: false
       required:
         - chat_ref
+        - bot_profile_key
         - text
       properties:
+        bot_profile_key:
+          type: string
         chat_ref:
           type: string
         text:
@@ -290,6 +248,8 @@ actions:
           type: string
         disable_notification:
           type: boolean
+        source_agent_request_id:
+          type: integer
         reply_to_message_ref:
           type: string
         thread_ref:
@@ -320,6 +280,14 @@ actions:
                       type: string
                       minLength: 1
                       maxLength: 64
+                    allowed_user_refs:
+                      type: array
+                      items:
+                        type: string
+                    allowed_chat_refs:
+                      type: array
+                      items:
+                        type: string
                   oneOf:
                     - required:
                         - url
@@ -346,8 +314,11 @@ actions:
       additionalProperties: false
       required:
         - chat_ref
+        - bot_profile_key
         - photo
       properties:
+        bot_profile_key:
+          type: string
         chat_ref:
           type: string
         photo:
@@ -374,6 +345,8 @@ actions:
           type: string
         disable_notification:
           type: boolean
+        source_agent_request_id:
+          type: integer
         reply_to_message_ref:
           type: string
         thread_ref:
@@ -404,6 +377,14 @@ actions:
                       type: string
                       minLength: 1
                       maxLength: 64
+                    allowed_user_refs:
+                      type: array
+                      items:
+                        type: string
+                    allowed_chat_refs:
+                      type: array
+                      items:
+                        type: string
                   oneOf:
                     - required:
                         - url
@@ -429,8 +410,11 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - bot_profile_key
         - callback_query_id
       properties:
+        bot_profile_key:
+          type: string
         callback_query_id:
           type: string
         text:
@@ -454,8 +438,8 @@ actions:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api#answercallbackquery
   - key: telegram-bot.updates.poll
-    name: Poll Telegram Updates
-    description: Poll bounded Telegram updates for an explicit bot credential profile and cursor.
+    name: Inspect Telegram Updates
+    description: Bounded diagnostic getUpdates call for setup/debugging only; it does not normalize updates, store resources, or create agent requests.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: read
@@ -463,10 +447,13 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - bot_profile_key
         - limit
         - timeout_s
         - allowed_updates
       properties:
+        bot_profile_key:
+          type: string
         cursor_ref:
           type: string
         offset:
@@ -483,8 +470,6 @@ actions:
           type: array
           items:
             type: string
-        allow_webhook_polling:
-          type: boolean
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
@@ -505,8 +490,11 @@ actions:
       type: object
       additionalProperties: false
       required:
+        - bot_profile_key
         - webhook_url
       properties:
+        bot_profile_key:
+          type: string
         webhook_url:
           type: string
         allowed_updates:
@@ -515,37 +503,72 @@ actions:
             type: string
         drop_pending_updates:
           type: boolean
+        max_connections:
+          type: integer
+          minimum: 1
+          maximum: 100
+        ip_address:
+          type: string
     output_schema: *object_schema
-    config: &telegram_deferred_config
+    config:
       schema_version: stackos.action.v1
-      execution_mode: deferred-connector
-      deferred_reason: Telegram webhook operations require explicit public ingress hardening and are not delivered yet.
+      connector: telegram-bot
+      operation: webhook.set
+      requires_credential: true
+      enforce_budget: false
       docs:
         - docs/integration-contracts/communications.md
-        - https://core.telegram.org/bots/api
+        - https://core.telegram.org/bots/api#setwebhook
   - key: telegram-bot.webhook.delete
     name: Delete Telegram Webhook
-    description: Remove a Telegram webhook before switching a bot profile back to polling mode.
+    description: Remove a Telegram webhook for a project-scoped bot profile.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: write
     input_schema:
       type: object
       additionalProperties: false
+      required:
+        - bot_profile_key
       properties:
+        bot_profile_key:
+          type: string
         drop_pending_updates:
           type: boolean
     output_schema: *object_schema
-    config: *telegram_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: webhook.delete
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#deletewebhook
   - key: telegram-bot.webhook.info
     name: Get Telegram Webhook Info
     description: Read safe Telegram webhook status for a bot profile.
     provider: telegram-bot
     capability: agent-triggering
     risk_level: read
-    input_schema: *empty_input
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - bot_profile_key
+      properties:
+        bot_profile_key:
+          type: string
     output_schema: *object_schema
-    config: *telegram_deferred_config
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: webhook.info
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#getwebhookinfo
   - key: smtp.email.send
     name: Send SMTP Email
     description: Send email through SMTP from an explicit agent-supplied message payload.
@@ -704,6 +727,10 @@ actions:
     output_schema: *object_schema
     config: *imap_deferred_config
 resources:
+  - key: communication-bot-profile
+    name: Communication Bot Profile
+    description: Project-scoped bot persona, credential binding, access policy, trigger policy, context policy, and response policy for Telegram or future chat transports.
+    schema: *object_schema
   - key: communication-channel
     name: Communication Channel
     description: Safe metadata for a Telegram chat/channel, SMTP identity, IMAP mailbox, or future communication surface.
@@ -754,9 +781,9 @@ config:
       - telegram-bot.photo.send
       - telegram-bot.callback.answer
       - telegram-bot.updates.poll
-    deferred:
       - telegram-bot.webhook.set
       - telegram-bot.webhook.delete
       - telegram-bot.webhook.info
+    deferred:
       - smtp
       - imap
