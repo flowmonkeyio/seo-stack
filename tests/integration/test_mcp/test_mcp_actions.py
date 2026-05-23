@@ -363,6 +363,45 @@ def test_action_execute_requires_step_action_ref(
     assert "declared on the active step" in err["data"]["detail"]
 
 
+def test_action_execute_requires_matching_grant_action_ref(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    plan = _image_action_plan_json()
+    plan["grants"]["mcp_tool_grants"][0]["action_refs"] = ["utils.web.scrape"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-image",
+            "run_token": run_token,
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.image.generate",
+            "input_json": {"prompt": "editorial hero"},
+            "run_token": run_token,
+        },
+    )
+
+    assert err["code"] == -32007
+    assert "arguments do not match" in err["data"]["detail"]
+
+
 def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -518,7 +557,7 @@ def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
         {"project_id": project_id, "run_plan_id": created["data"]["id"]},
     )
     run_token = started["data"]["run_token"]
-    mcp_client.call_tool_structured(
+    claimed = mcp_client.call_tool_structured(
         "runPlan.claimStep",
         {
             "run_plan_id": created["data"]["id"],
@@ -553,6 +592,34 @@ def test_action_execute_sitemap_grant_uses_noauth_utility_connector(
     assert data["action_call"]["connector_key"] == "sitemap"
     assert data["output_json"]["entries"][0]["url"] == "https://example.com/a"
     assert data["output_json"]["errors"] == []
+
+    audit_resp = mcp_client.test_client.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={
+            "run_id": started["data"]["run_id"],
+            "run_plan_id": created["data"]["id"],
+            "run_plan_step_id": claimed["data"]["id"],
+            "plugin_slug": "utils",
+            "action_key": "sitemap.fetch",
+            "status": "success",
+        },
+        headers=mcp_client._headers(),
+    )
+    assert audit_resp.status_code == 200
+    audit_body = audit_resp.json()
+    audit_rendered = json.dumps(audit_body)
+    assert audit_body["total_estimate"] == 1
+    audit_row = audit_body["items"][0]
+    assert audit_row["id"] == data["action_call"]["id"]
+    assert audit_row["run_id"] == started["data"]["run_id"]
+    assert audit_row["run_plan_id"] == created["data"]["id"]
+    assert audit_row["run_plan_step_id"] == claimed["data"]["id"]
+    assert audit_row["plugin_slug"] == "utils"
+    assert audit_row["action_key"] == "sitemap.fetch"
+    assert audit_row["credential_ref"] is None
+    assert audit_row["response_json"]["entries"][0]["url"] == "https://example.com/a"
+    assert "credential_id" not in audit_rendered
+    assert "idempotency_key" not in audit_rendered
 
 
 def test_action_execute_dataforseo_paa_grant_uses_generic_connector(

@@ -32,6 +32,12 @@ Direct context reads use the safe field set. Advanced context fields,
 resource/artifact mutations, memory writes, and `action.execute` require
 step-scoped grants.
 
+For `action.execute`, the active step must declare the target action ref and
+the matching `mcp_tool_grants` entry must include that exact ref in
+`action_refs`. A step that declares `utils.image.generate` cannot execute a
+different action, and a grant snapshot that names a different action cannot be
+used to satisfy the step.
+
 The run plan is not used for StackOS bootstrap itself. Creating a project,
 selecting it, setting non-secret budget/schedule configuration, and creating or
 starting the run plan are direct setup operations. Once execution begins, the

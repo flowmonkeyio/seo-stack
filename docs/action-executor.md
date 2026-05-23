@@ -106,7 +106,8 @@ Hidden, run-plan-scoped execution tool:
 started run plan, exactly one active claimed step, an explicit
 `mcp_tool_grants` entry with `tool: "action.execute"`, and matching
 `action_refs`. The active step must also declare the same action ref in
-`action_refs`.
+`action_refs`, so both the workflow step contract and the frozen grant snapshot
+must agree before the connector is invoked.
 
 Registered first-party connectors are one provider per connector file and now
 cover the migrated clean path for:
@@ -131,9 +132,9 @@ metadata, such as `deferred-partner-api`, `deferred-inbound`,
 `deferred-firecrawl-async-extract`, or `project-local-http`. `utils.web.extract`
 is intentionally deferred until StackOS has an explicit Firecrawl status-poll
 action and output artifact contract. Catalog availability reports those modes
-directly instead of treating them as missing connectors. Outbrain and user-owned webhook actions
-remain deferred until endpoint-level contracts or project-local static HTTP
-config are supplied.
+directly instead of treating them as missing connectors. Outbrain and user-owned
+webhook actions remain deferred until endpoint-level contracts or project-local
+static HTTP config are supplied.
 
 The OpenAI Images connector persists base64 image bytes under generated assets
 and returns local artifact URLs with no `b64_json` payload. Other connectors

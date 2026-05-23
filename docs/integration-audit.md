@@ -153,6 +153,13 @@ The action executor is the clean StackOS path:
 5. Connector executes the operation.
 6. `action_calls` records redacted request, response, status, cost, and refs.
 
+The run-plan permission proof is end to end: the MCP dispatcher requires the
+active step's declared `action_refs` and the frozen `mcp_tool_grants`
+`action_refs` to match the requested action before `ActionRepository.execute`
+can reach a connector. Successful executions are persisted to `action_calls`
+with `run_id`, `run_plan_id`, and `run_plan_step_id`, then exposed through the
+project Action Calls ledger using only the public audit shape.
+
 Current executable connector registry:
 
 | Connector | Action Ref | Provider | Status |
