@@ -8,7 +8,8 @@ surface policy allows that.
 OperationSpec
   -> MCP tool
   -> REST operation call
-  -> CLI ops command
+  -> CLI command
+  -> UI operation catalog
 ```
 
 The service, repository, connector, auth, and audit code remains the source of
@@ -30,6 +31,7 @@ returns an agent-readable description for every registered operation:
 ```bash
 content-stack ops list
 content-stack ops describe action.execute --json
+content-stack ops describe runPlan.claimStep --json
 ```
 
 The same metadata is available through REST:
@@ -52,6 +54,10 @@ Each description includes:
 
 MCP tools are generated from the same operation specs, so MCP clients still get
 tool schemas through `tools/list`.
+
+The UI reads the same docs at `/projects/{project_id}/operations`. That page is
+not a second registry; it renders `GET /api/v1/operations` and
+`GET /api/v1/operations/{operation_name}`.
 
 ## Generic REST Calls
 
@@ -103,13 +109,43 @@ content-stack ops call action.execute \
 
 `--input -` reads the operation arguments from stdin.
 
-## First Migrated Operations
+Common operations also have aliases that still call the generic operation
+endpoint:
 
-The first operations on the registry are:
+```bash
+content-stack actions describe utils.sitemap.fetch --project 1
+content-stack actions validate utils.sitemap.fetch --project 1 --input action-input.json
+content-stack actions execute utils.sitemap.fetch \
+  --project 1 \
+  --run-token "$RUN_TOKEN" \
+  --input action-input.json
+
+content-stack run-plans validate --project 1 --template-key core.project-memory-review
+content-stack run-plans create --project 1 --input run-plan.json
+content-stack run-plans start 42 --project 1
+content-stack run-plans claim-step 42 --step-id fetch-sitemap --run-token "$RUN_TOKEN"
+content-stack run-plans record-step 42 \
+  --step-id fetch-sitemap \
+  --status success \
+  --result step-result.json \
+  --run-token "$RUN_TOKEN"
+```
+
+## Registered Core Operations
+
+The current core operation registry includes:
 
 - `action.describe`
 - `action.validate`
 - `action.execute`
+- `runPlan.validate`
+- `runPlan.create`
+- `runPlan.start`
+- `runPlan.get`
+- `runPlan.list`
+- `runPlan.update`
+- `runPlan.claimStep`
+- `runPlan.recordStep`
 
 `action.execute` keeps the same boundary everywhere:
 
@@ -124,6 +160,18 @@ The first operations on the registry are:
    `credential_ref`.
 8. The execution writes an `action_calls` audit row with redacted request,
    response, metadata, and run-plan linkage.
+
+`runPlan.*` keeps the same boundary everywhere:
+
+1. `runPlan.validate`, `runPlan.create`, `runPlan.start`, `runPlan.get`, and
+   `runPlan.list` are bootstrap/setup operations.
+2. `runPlan.claimStep` and `runPlan.recordStep` require the `run_token` returned
+   by `runPlan.start`.
+3. `runPlan.claimStep` activates only the frozen grants for the claimed step.
+4. `runPlan.recordStep` persists the terminal result and closes the plan/run
+   when the last step finishes.
+5. `runPlan.update` remains an admin-only MCP operation and is intentionally not
+   exposed through REST or CLI.
 
 No operation adapter should bypass repository/connector auth, grant, idempotency,
 or audit code.

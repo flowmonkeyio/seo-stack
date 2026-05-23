@@ -42,6 +42,20 @@ ops_app = typer.Typer(
 )
 app.add_typer(ops_app, name="ops")
 
+actions_app = typer.Typer(
+    name="actions",
+    help="Describe, validate, and execute action operations through the shared dispatcher.",
+    no_args_is_help=True,
+)
+app.add_typer(actions_app, name="actions")
+
+run_plans_app = typer.Typer(
+    name="run-plans",
+    help="Create, start, inspect, and step through StackOS run plans.",
+    no_args_is_help=True,
+)
+app.add_typer(run_plans_app, name="run-plans")
+
 
 _LOOPBACK_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -161,6 +175,31 @@ def _echo_json(payload: Any) -> None:
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def _operation_call(operation_name: str, arguments: dict[str, Any]) -> Any:
+    return _api_request(
+        "POST",
+        f"/api/v1/operations/{operation_name}/call",
+        body={"arguments": arguments},
+    )
+
+
+def _merge_common_arguments(
+    arguments: dict[str, Any],
+    *,
+    project_id: int | None = None,
+    run_token: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    merged = {key: value for key, value in arguments.items() if value is not None}
+    if project_id is not None:
+        merged["project_id"] = project_id
+    if run_token is not None:
+        merged["run_token"] = run_token
+    if idempotency_key is not None:
+        merged["idempotency_key"] = idempotency_key
+    return merged
+
+
 @ops_app.command(name="list")
 def ops_list(
     json_output: Annotated[
@@ -233,19 +272,308 @@ def ops_call(
     ] = None,
 ) -> None:
     """Call one operation through the daemon's generic REST adapter."""
-    arguments = _load_operation_arguments(input_path)
-    if project_id is not None:
-        arguments["project_id"] = project_id
-    if run_token is not None:
-        arguments["run_token"] = run_token
-    if idempotency_key is not None:
-        arguments["idempotency_key"] = idempotency_key
-    payload = _api_request(
-        "POST",
-        f"/api/v1/operations/{operation_name}/call",
-        body={"arguments": arguments},
+    arguments = _merge_common_arguments(
+        _load_operation_arguments(input_path),
+        project_id=project_id,
+        run_token=run_token,
+        idempotency_key=idempotency_key,
     )
+    payload = _operation_call(operation_name, arguments)
     _echo_json(payload)
+
+
+# ---- action operation aliases --------------------------------------------
+
+
+@actions_app.command(name="describe")
+def actions_describe(
+    action_ref: Annotated[
+        str | None,
+        typer.Argument(help="Action ref, e.g. utils.sitemap.fetch."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    plugin_slug: Annotated[
+        str | None,
+        typer.Option("--plugin", help="Plugin slug when not passing action_ref."),
+    ] = None,
+    action_key: Annotated[
+        str | None,
+        typer.Option("--action-key", help="Action key when paired with --plugin."),
+    ] = None,
+) -> None:
+    """Describe one action manifest and safe availability state."""
+    arguments = _merge_common_arguments(
+        {
+            "action_ref": action_ref,
+            "plugin_slug": plugin_slug,
+            "action_key": action_key,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("action.describe", arguments))
+
+
+@actions_app.command(name="validate")
+def actions_validate(
+    action_ref: Annotated[
+        str | None,
+        typer.Argument(help="Action ref, e.g. utils.sitemap.fetch."),
+    ] = None,
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    plugin_slug: Annotated[
+        str | None,
+        typer.Option("--plugin", help="Plugin slug when not passing action_ref."),
+    ] = None,
+    action_key: Annotated[
+        str | None,
+        typer.Option("--action-key", help="Action key when paired with --plugin."),
+    ] = None,
+    credential_ref: Annotated[
+        str | None,
+        typer.Option("--credential-ref", help="Opaque credential ref; never a secret value."),
+    ] = None,
+) -> None:
+    """Validate a concrete action input without execution."""
+    arguments = _merge_common_arguments(
+        {
+            "action_ref": action_ref,
+            "plugin_slug": plugin_slug,
+            "action_key": action_key,
+            "credential_ref": credential_ref,
+            "input_json": _load_operation_arguments(input_path) if input_path else None,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("action.validate", arguments))
+
+
+@actions_app.command(name="execute")
+def actions_execute(
+    action_ref: Annotated[
+        str | None,
+        typer.Argument(help="Action ref, e.g. utils.sitemap.fetch."),
+    ] = None,
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON action input payload, or '-' for stdin."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    run_token: Annotated[
+        str | None,
+        typer.Option("--run-token", help="Run token returned by run-plans start."),
+    ] = None,
+    plugin_slug: Annotated[
+        str | None,
+        typer.Option("--plugin", help="Plugin slug when not passing action_ref."),
+    ] = None,
+    action_key: Annotated[
+        str | None,
+        typer.Option("--action-key", help="Action key when paired with --plugin."),
+    ] = None,
+    credential_ref: Annotated[
+        str | None,
+        typer.Option("--credential-ref", help="Opaque credential ref; never a secret value."),
+    ] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for the execution call."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Ask the connector to dry-run."),
+    ] = False,
+) -> None:
+    """Execute an action inside the currently claimed run-plan step."""
+    arguments = _merge_common_arguments(
+        {
+            "action_ref": action_ref,
+            "plugin_slug": plugin_slug,
+            "action_key": action_key,
+            "credential_ref": credential_ref,
+            "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "dry_run": dry_run,
+        },
+        project_id=project_id,
+        run_token=run_token,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("action.execute", arguments))
+
+
+# ---- run-plan operation aliases ------------------------------------------
+
+
+@run_plans_app.command(name="validate")
+def run_plans_validate(
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON run-plan spec, or '-' for stdin."),
+    ] = None,
+    template_key: Annotated[
+        str | None,
+        typer.Option("--template-key", help="Template key to validate as a run plan."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    repo_root: Annotated[str | None, typer.Option("--repo-root", help="Repository root.")] = None,
+    plugin_slug: Annotated[str | None, typer.Option("--plugin", help="Plugin slug filter.")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Template source filter.")] = None,
+) -> None:
+    """Validate a run plan without saving it."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_json": _load_operation_arguments(input_path) if input_path else None,
+            "template_key": template_key,
+            "repo_root": repo_root,
+            "plugin_slug": plugin_slug,
+            "source": source,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("runPlan.validate", arguments))
+
+
+@run_plans_app.command(name="create")
+def run_plans_create(
+    input_path: Annotated[
+        str | None,
+        typer.Option("--input", "-i", help="JSON run-plan spec, or '-' for stdin."),
+    ] = None,
+    template_key: Annotated[
+        str | None,
+        typer.Option("--template-key", help="Template key to instantiate."),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    key: Annotated[str | None, typer.Option("--key", help="Override run-plan key.")] = None,
+    title: Annotated[str | None, typer.Option("--title", help="Override run-plan title.")] = None,
+    created_by: Annotated[str | None, typer.Option("--created-by", help="Creator label.")] = None,
+    repo_root: Annotated[str | None, typer.Option("--repo-root", help="Repository root.")] = None,
+    plugin_slug: Annotated[str | None, typer.Option("--plugin", help="Plugin slug filter.")] = None,
+    source: Annotated[str | None, typer.Option("--source", help="Template source filter.")] = None,
+) -> None:
+    """Create a draft run plan from JSON or a template."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_json": _load_operation_arguments(input_path) if input_path else None,
+            "template_key": template_key,
+            "repo_root": repo_root,
+            "plugin_slug": plugin_slug,
+            "source": source,
+            "key": key,
+            "title": title,
+            "created_by": created_by,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("runPlan.create", arguments))
+
+
+@run_plans_app.command(name="start")
+def run_plans_start(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for start."),
+    ] = None,
+) -> None:
+    """Start a draft run plan and return the run token."""
+    arguments = _merge_common_arguments(
+        {"run_plan_id": run_plan_id},
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("runPlan.start", arguments))
+
+
+@run_plans_app.command(name="get")
+def run_plans_get(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    run_token: Annotated[
+        str | None,
+        typer.Option("--run-token", help="Optional run token for scoped reads."),
+    ] = None,
+) -> None:
+    """Fetch one run plan."""
+    arguments = _merge_common_arguments({"run_plan_id": run_plan_id}, run_token=run_token)
+    _echo_json(_operation_call("runPlan.get", arguments))
+
+
+@run_plans_app.command(name="list")
+def run_plans_list(
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    status: Annotated[str | None, typer.Option("--status", help="Run-plan status.")] = None,
+    template_key: Annotated[
+        str | None,
+        typer.Option("--template-key", help="Filter by template key."),
+    ] = None,
+    limit: Annotated[int | None, typer.Option("--limit", help="Page size.")] = None,
+    after_id: Annotated[int | None, typer.Option("--after-id", help="Cursor id.")] = None,
+    run_token: Annotated[
+        str | None,
+        typer.Option("--run-token", help="Optional run token for scoped reads."),
+    ] = None,
+) -> None:
+    """List run plans with optional filters."""
+    arguments = _merge_common_arguments(
+        {
+            "status": status,
+            "template_key": template_key,
+            "limit": limit,
+            "after_id": after_id,
+        },
+        project_id=project_id,
+        run_token=run_token,
+    )
+    _echo_json(_operation_call("runPlan.list", arguments))
+
+
+@run_plans_app.command(name="claim-step")
+def run_plans_claim_step(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    step_id: Annotated[str | None, typer.Option("--step-id", help="Step id to claim.")] = None,
+    run_token: Annotated[str, typer.Option("--run-token", help="Run token from start.")] = "",
+    claimed_by: Annotated[str | None, typer.Option("--claimed-by", help="Claimer label.")] = None,
+) -> None:
+    """Claim an eligible step and activate its tool grants."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": step_id,
+            "claimed_by": claimed_by,
+        },
+        run_token=run_token,
+    )
+    _echo_json(_operation_call("runPlan.claimStep", arguments))
+
+
+@run_plans_app.command(name="record-step")
+def run_plans_record_step(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    step_id: Annotated[str, typer.Option("--step-id", help="Step id to record.")],
+    status: Annotated[str, typer.Option("--status", help="success, failed, or skipped.")],
+    result_path: Annotated[
+        str | None,
+        typer.Option("--result", help="JSON result payload, or '-' for stdin."),
+    ] = None,
+    error: Annotated[str | None, typer.Option("--error", help="Terminal error text.")] = None,
+    run_token: Annotated[str, typer.Option("--run-token", help="Run token from start.")] = "",
+) -> None:
+    """Record the terminal result for a running step."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": step_id,
+            "status": status,
+            "result_json": _load_operation_arguments(result_path) if result_path else None,
+            "error": error,
+        },
+        run_token=run_token,
+    )
+    _echo_json(_operation_call("runPlan.recordStep", arguments))
 
 
 # ---- serve ----------------------------------------------------------------

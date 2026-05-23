@@ -155,7 +155,7 @@ def operation_specs() -> list[OperationSpec]:
                     enabled=True,
                     path="/api/v1/operations/action.describe/call",
                 ),
-                cli=OperationSurface(enabled=True, command="ops call action.describe"),
+                cli=OperationSurface(enabled=True, command="actions describe"),
             ),
             purpose=(
                 "Use this before a run to inspect the exact action contract and whether "
@@ -194,7 +194,7 @@ def operation_specs() -> list[OperationSpec]:
                     enabled=True,
                     path="/api/v1/operations/action.validate/call",
                 ),
-                cli=OperationSurface(enabled=True, command="ops call action.validate"),
+                cli=OperationSurface(enabled=True, command="actions validate"),
             ),
             purpose=(
                 "Use this to check a concrete payload against the action schema, "
@@ -238,7 +238,7 @@ def operation_specs() -> list[OperationSpec]:
                     enabled=True,
                     path="/api/v1/operations/action.execute/call",
                 ),
-                cli=OperationSurface(enabled=True, command="ops call action.execute"),
+                cli=OperationSurface(enabled=True, command="actions execute"),
             ),
             purpose=(
                 "Use this only after a run plan has started and the active claimed step "

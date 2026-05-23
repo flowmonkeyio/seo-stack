@@ -11,6 +11,7 @@ import RunsView from './views/RunsView.vue'
 import PluginsView from './views/PluginsView.vue'
 import CapabilitiesView from './views/CapabilitiesView.vue'
 import ConnectionsView from './views/ConnectionsView.vue'
+import OperationsView from './views/OperationsView.vue'
 import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
 import ProjectDataView from './views/ProjectDataView.vue'
 import ResourceExplorerView from './views/ResourceExplorerView.vue'
@@ -33,6 +34,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
   { path: '/projects/:id/capabilities', name: 'project-capabilities', component: CapabilitiesView },
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },
+  { path: '/projects/:id/operations', name: 'project-operations', component: OperationsView },
   { path: '/projects/:id/action-calls', name: 'project-action-calls', component: ActionCallsView },
   {
     path: '/projects/:id/workflow-templates',

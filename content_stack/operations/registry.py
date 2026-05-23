@@ -46,10 +46,12 @@ class OperationRegistry:
 
 
 def build_operation_registry() -> OperationRegistry:
-    from content_stack.operations import actions
+    from content_stack.operations import actions, run_plans
 
     registry = OperationRegistry()
     for spec in actions.operation_specs():
+        registry.register(spec)
+    for spec in run_plans.operation_specs():
         registry.register(spec)
     return registry
 
