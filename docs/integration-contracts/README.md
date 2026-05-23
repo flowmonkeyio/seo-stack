@@ -22,6 +22,7 @@ StackOS provider work has three states:
 | [GTM CRM](gtm-crm.md) | HubSpot, Salesforce, Pipedrive CRM and pipeline contracts | First executable connector pass delivered; keep schemas provider-native. |
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
 | [Media Buying](media-buying.md) | Meta Marketing API, Google Ads API, Outbrain, Taboola, custom media tool contracts | Meta, Google Ads, and Taboola first pass executable; Outbrain and custom media tool actions deferred until provider docs or project-local HTTP connector config exist. |
+| [Communications](communications.md) | Telegram Bot API, SMTP, IMAP, and generic agent request inbox | Planned; provider actions and agent-trigger queue designed, implementation not started. |
 
 ## Current Integration Status
 
@@ -33,6 +34,7 @@ StackOS provider work has three states:
 | `publishing` | WordPress and Ghost post-create actions are executable. Media upload, update, scheduling, taxonomy, and richer CMS operations still need contracts. |
 | `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |
 | `gtm` | First CRM, enrichment, outbound, and workspace actions are executable where provider contracts are documented. Clearbit/inbound/custom project-local actions remain explicit deferred modes. |
+| `communications` | Planned first-party plugin for Telegram bot, SMTP send, IMAP mailbox status, and generic agent request triggers. No executable communications connector is registered yet. |
 
 Provider-specific direct MCP tools are not part of the current architecture.
 Provider calls should enter through plugin action manifests, daemon connectors,
