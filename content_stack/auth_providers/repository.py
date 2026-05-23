@@ -410,6 +410,14 @@ class AuthRepository:
             project_id=project_id,
             credential_ref=credential_ref,
         )
+        if credential.status != "connected":
+            raise ConflictError(
+                "credential is not connected",
+                data={
+                    "credential_ref": credential.credential_ref,
+                    "status": credential.status,
+                },
+            )
         if provider_key is not None and credential.provider_key != provider_key:
             raise ValidationError(
                 "credential provider does not match action provider",
@@ -607,7 +615,8 @@ class AuthRepository:
             select(Credential).where(Credential.integration_credential_id == row.id)
         ).first()
         now = _utcnow()
-        resolved_status = status or self._status_for_integration(row)
+        row_status = self._status_for_integration(row)
+        resolved_status = status or row_status
         auth_type = (
             method.auth_type
             if method is not None
@@ -639,7 +648,12 @@ class AuthRepository:
             credential.auth_type = auth_type
             credential.auth_method_key = auth_method_key
             credential.profile_key = row.profile_key
-            credential.status = resolved_status if credential.revoked_at is None else "revoked"
+            if credential.revoked_at is not None:
+                credential.status = "revoked"
+            elif status is None and credential.status == "failed" and row_status == "connected":
+                credential.status = "failed"
+            else:
+                credential.status = resolved_status
             credential.expires_at = row.expires_at
             credential.config_json = self._safe_config(row.config_json)
             credential.updated_at = now
@@ -674,7 +688,7 @@ class AuthRepository:
             revoked_at=credential.revoked_at,
             scopes=scopes,
             account=self._account_for_credential(credential),
-            setup_required=row is None or credential.status in {"pending", "expired", "revoked"},
+            setup_required=row is None or credential.status != "connected",
         )
 
     def _credential_label(self, credential: Credential) -> str | None:

@@ -93,7 +93,7 @@ This row is **separate** from the LLM key used by your external agent
 (PLAN.md L1057-L1063), so you can budget images independently from prose.
 
 Default path: the utility image action uses the current GPT Image API
-(``gpt-image-1.5`` by default). GPT Image responses return base64 image data,
+(``gpt-image-2`` by default). GPT Image responses return base64 image data,
 so the daemon wrapper persists the bytes under
 ``CONTENT_STACK_DATA_DIR/generated-assets`` and returns local artifact URLs.
 

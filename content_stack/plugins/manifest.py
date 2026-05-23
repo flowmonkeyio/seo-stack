@@ -557,7 +557,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ActionManifest(
                 key="image.generate",
                 name="Generate Image",
-                description="Generate and persist image artifacts.",
+                description=(
+                    "Generate and persist image artifacts through an explicit GPT Image "
+                    "model profile."
+                ),
                 provider="openai-images",
                 capability="image-generation",
                 risk_level="cost",
@@ -569,14 +572,22 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "prompt": {"type": "string"},
                         "size": {
                             "type": "string",
-                            "enum": ["1024x1024", "1536x1024", "1024x1536"],
+                            "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"],
                         },
                         "quality": {
                             "type": "string",
-                            "enum": ["low", "medium", "high", "standard", "hd"],
+                            "enum": ["auto", "low", "medium", "high"],
                         },
                         "n": {"type": "integer"},
-                        "model": {"type": "string"},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "gpt-image-2",
+                                "gpt-image-1.5",
+                                "gpt-image-1",
+                                "gpt-image-1-mini",
+                            ],
+                        },
                         "output_format": {"type": "string", "enum": ["webp", "png", "jpeg"]},
                     },
                 },
@@ -588,6 +599,46 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "requires_credential": True,
                     "budget_kind": "openai-images",
                     "enforce_budget": True,
+                    "default_model": "gpt-image-2",
+                    "model_profiles": {
+                        "gpt-image-2": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "transparent_background": False,
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1.5": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                        "gpt-image-1-mini": {
+                            "qualities": ["auto", "low", "medium", "high"],
+                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "output_formats": ["webp", "png", "jpeg"],
+                            "docs": [
+                                "https://developers.openai.com/api/docs/guides/image-generation",
+                                "https://developers.openai.com/api/reference/resources/images",
+                            ],
+                        },
+                    },
                 },
             ),
             ActionManifest(
@@ -647,7 +698,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ActionManifest(
                 key="web.extract",
                 name="Extract Web Data",
-                description="Run structured extraction on an agent-selected URL.",
+                description=(
+                    "Deferred Firecrawl structured extraction contract; execution needs "
+                    "async status polling before this action can be enabled."
+                ),
                 provider="firecrawl",
                 capability="web-retrieval",
                 risk_level="cost",
@@ -655,11 +709,14 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 output_schema=_OBJECT_SCHEMA,
                 config={
                     "schema_version": "stackos.action.v1",
-                    "connector": "firecrawl",
                     "operation": "extract",
-                    "requires_credential": True,
-                    "budget_kind": "firecrawl",
-                    "enforce_budget": True,
+                    "execution_mode": "deferred-firecrawl-async-extract",
+                    "deferred_reason": (
+                        "Firecrawl extract submits an async job; enable this action only "
+                        "after StackOS has an explicit status-poll action and run-plan "
+                        "artifact contract."
+                    ),
+                    "docs": ["https://docs.firecrawl.dev/api-reference/endpoint/extract-post"],
                 },
             ),
             ActionManifest(
@@ -716,8 +773,11 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
             ),
             ActionManifest(
                 key="reddit.top-questions",
-                name="Top Reddit Questions",
-                description="Fetch top question-shaped Reddit posts from a subreddit.",
+                name="Top Reddit Posts",
+                description=(
+                    "Fetch raw top Reddit posts from a subreddit; the executing agent "
+                    "filters question-shaped titles when needed."
+                ),
                 provider="reddit",
                 capability="community-research",
                 risk_level="read",

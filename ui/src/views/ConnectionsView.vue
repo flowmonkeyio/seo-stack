@@ -131,6 +131,10 @@ function activeConnectionsFor(providerKey: string): SchemaCredentialConnectionOu
   )
 }
 
+function connectedConnectionsFor(providerKey: string): SchemaCredentialConnectionOut[] {
+  return activeConnectionsFor(providerKey).filter((connection) => connection.status === 'connected')
+}
+
 function selectedConnectionFor(providerKey: string): SchemaCredentialConnectionOut | null {
   const active = activeConnectionsFor(providerKey)
   const selectedRef = selectedConnectionByProvider.value[providerKey]
@@ -149,8 +153,15 @@ function setSelectedConnection(providerKey: string, value: string | number | nul
 function connectionLabel(connection: SchemaCredentialConnectionOut): string {
   const parts = [connection.profile_key]
   if (connection.label) parts.push(connection.label)
+  if (connection.status !== 'connected') parts.push(connection.status)
   parts.push(connection.credential_ref)
   return parts.join(' · ')
+}
+
+function statusTone(connection: SchemaCredentialConnectionOut): 'success' | 'warning' | 'danger' {
+  if (connection.status === 'connected' && !connection.setup_required) return 'success'
+  if (connection.status === 'failed' || connection.status === 'revoked') return 'danger'
+  return 'warning'
 }
 
 function actionKey(providerKey: string, action: string): string {
@@ -312,7 +323,7 @@ watch(projectId, load)
           <UiBadge tone="accent">{{ value }}</UiBadge>
         </template>
         <template #cell:status="{ value, row }">
-          <UiBadge :tone="(row as ConnectionRow).setup_required ? 'warning' : 'success'">
+          <UiBadge :tone="statusTone(row as ConnectionRow)">
             {{ value }}
           </UiBadge>
         </template>
@@ -341,10 +352,10 @@ watch(projectId, load)
           <div class="flex flex-wrap items-center gap-1.5 text-sm text-fg-muted">
             <span>{{ provider.key }}</span>
             <UiBadge
-              v-if="activeConnectionsFor(provider.key).length > 0"
+              v-if="connectedConnectionsFor(provider.key).length > 0"
               tone="success"
             >
-              {{ activeConnectionsFor(provider.key).length }} connected
+              {{ connectedConnectionsFor(provider.key).length }} connected
             </UiBadge>
           </div>
 
@@ -482,20 +493,20 @@ watch(projectId, load)
                 Save
               </UiButton>
               <UiButton
+                v-if="selectedConnectionFor(provider.key)"
                 size="sm"
                 icon-left="plug-zap"
                 :loading="isBusy(provider.key, 'test')"
-                :disabled="!selectedConnectionFor(provider.key)"
                 @click="testProvider(provider)"
               >
                 Test
               </UiButton>
               <UiButton
+                v-if="selectedConnectionFor(provider.key)"
                 size="sm"
                 variant="danger"
                 icon-left="ban"
                 :loading="isBusy(provider.key, 'revoke')"
-                :disabled="!selectedConnectionFor(provider.key)"
                 @click="revokeProvider(provider)"
               >
                 Revoke

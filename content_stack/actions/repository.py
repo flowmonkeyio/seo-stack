@@ -527,6 +527,15 @@ class ActionRepository:
                     "reasons": availability.reasons,
                 },
             )
+        if not dry_run and not availability.executable:
+            raise ValidationError(
+                "action is not executable for this project",
+                data={
+                    "action_ref": manifest.action_ref,
+                    "status": availability.status,
+                    "reasons": availability.reasons,
+                },
+            )
 
         self._check_run_scope(
             project_id=project_id,
@@ -612,6 +621,7 @@ class ActionRepository:
             result = await connector.execute(request)
         except Exception as exc:
             duration_ms = int((time.perf_counter() - started) * 1000)
+            safe_error = redact_secret_text(str(exc))
             row = self._record_call(
                 project_id=project_id,
                 manifest=manifest,
@@ -628,7 +638,7 @@ class ActionRepository:
                 dry_run=False,
                 cost_cents=estimated_cost_cents,
                 duration_ms=duration_ms,
-                error=redact_secret_text(str(exc)),
+                error=safe_error,
             )
             raise ConflictError(
                 "action connector failed",
@@ -636,6 +646,7 @@ class ActionRepository:
                     "action_ref": manifest.action_ref,
                     "action_call_id": row.id,
                     "connector": manifest.connector_key,
+                    "error": safe_error,
                 },
             ) from exc
 
@@ -818,6 +829,14 @@ class ActionRepository:
                     path="$.credential_ref",
                     message="credential is revoked",
                     code="credential_revoked",
+                )
+            ]
+        if credential.status != "connected":
+            return [
+                ActionValidationIssue(
+                    path="$.credential_ref",
+                    message=f"credential is {credential.status}",
+                    code="credential_not_connected",
                 )
             ]
         if credential.project_id is not None and credential.project_id != project_id:

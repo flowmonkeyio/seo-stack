@@ -19,6 +19,7 @@ from content_stack.actions.connectors import (
 )
 from content_stack.actions.provider_utils import (
     bearer_headers,
+    credential_config,
     dict_field,
     int_range,
     list_field,
@@ -55,6 +56,35 @@ def _record(payload: dict[str, Any]) -> dict[str, Any]:
     raise ValidationError("Apollo enrichment requires record")
 
 
+def _validate_phone_reveal_webhook(
+    payload: dict[str, Any],
+    issues: list[ActionValidationIssue],
+) -> None:
+    if payload.get("reveal_phone_number") is True and not (
+        isinstance(payload.get("webhook_url"), str) and payload["webhook_url"].strip()
+    ):
+        issues.append(
+            ActionValidationIssue(
+                path="$.webhook_url",
+                message="Apollo reveal_phone_number requires webhook_url",
+                code="validation_error",
+            )
+        )
+
+
+def _assert_master_api_key(request: ActionConnectorRequest) -> None:
+    scope = credential_config(request).get("access_scope")
+    if scope != "master":
+        raise ValidationError(
+            "Apollo people.search requires a credential profile marked access_scope='master'",
+            data={
+                "provider": "apollo",
+                "operation": "people.search",
+                "docs": "https://docs.apollo.io/reference/people-api-search",
+            },
+        )
+
+
 class ApolloActionConnector:
     """Decision-free adapter for Apollo API search and enrichment endpoints."""
 
@@ -70,8 +100,10 @@ class ApolloActionConnector:
                 int_range(payload, "per_page", issues, minimum=1, maximum=100)
             case "people.enrich":
                 dict_field(payload, "record", issues, required=True)
+                _validate_phone_reveal_webhook(payload, issues)
             case "people.bulk_enrich":
                 list_field(payload, "details", issues, required=True, max_items=10)
+                _validate_phone_reveal_webhook(payload, issues)
             case "organization.enrich":
                 required_str(payload, "domain", issues)
             case "organization.bulk_enrich":
@@ -84,8 +116,10 @@ class ApolloActionConnector:
         return 0
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
-        headers = _headers(request)
         payload = request.input_json
+        if request.operation == "people.search":
+            _assert_master_api_key(request)
+        headers = _headers(request)
         match request.operation:
             case "people.search":
                 status, body, response_headers = await send_json(

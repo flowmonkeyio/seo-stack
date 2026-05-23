@@ -158,7 +158,7 @@ Current executable connector registry:
 | Connector | Action Ref | Provider | Status |
 | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate` | `openai-images` | Ready and connected to generic `action.execute`. |
-| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `firecrawl` | Ready through generic `action.execute`. |
+| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `firecrawl` | Ready through generic `action.execute`; `utils.web.extract` is deferred until async status polling is modeled. |
 | `jina` | `utils.web.read` | `jina` | Ready with optional credentials. |
 | `sitemap` | `utils.sitemap.fetch` | none | Ready as a no-auth utility action, while the setup helper remains available. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `reddit` | Ready through generic `action.execute`. |
@@ -207,7 +207,7 @@ Wrapper inventory:
 | `openai-images` | `generate`, `test_credentials` | Generic action connector | Ready. |
 | `dataforseo` | SERP, keyword volume, domain intersection, keywords for site, PAA, credential test | SEO plugin actions | First connector path ready for `keyword.research`, `serp.analyze`, and `paa.extract`; remaining wrapper operations need action contracts. |
 | `ahrefs` | keywords for site, top backlinks, credential test | SEO plugin actions | First connector path ready for competitor keywords and backlink research. |
-| `firecrawl` | scrape, crawl, map, extract, credential test | Utils actions | Ready through generic utility actions. |
+| `firecrawl` | scrape, crawl, map, extract, credential test | Utils actions plus deferred extract contract | Scrape/crawl/map are ready; extract is manifest-deferred until StackOS adds status polling and an artifact contract. |
 | `jina` | read URL, credential test | Utils action | Ready through `utils.web.read` with optional auth. |
 | `reddit` | search subreddit, top questions, credential test | Utils actions | Ready through generic community research actions. |
 | `google-paa` | PAA extraction through Firecrawl | Wrapper only | Partial. No provider/action manifest; dependency on Firecrawl should be explicit. |

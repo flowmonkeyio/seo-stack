@@ -26,22 +26,22 @@ def test_generate_uses_gpt_image_defaults(httpx_mock: HTTPXMock, project_id: int
             integ = OpenAIImagesIntegration(
                 payload=b"sk-openai", project_id=project_id, http=client
             )
-            return await integ.generate(prompt="a cat", n=1)
+            return await integ.generate(prompt="image prompt", n=1)
 
     result = asyncio.run(go())
     request = httpx_mock.get_requests()[0]
     assert request.headers["authorization"] == "Bearer sk-openai"
     body = json.loads(request.content.decode("utf-8"))
     assert body == {
-        "prompt": "a cat",
+        "prompt": "image prompt",
         "n": 1,
-        "model": "gpt-image-1.5",
+        "model": "gpt-image-2",
         "size": "1536x1024",
         "quality": "medium",
         "output_format": "webp",
     }
     assert result.data["data"][0]["url"].endswith("image.png")
-    assert result.cost_usd == 0.08
+    assert result.cost_usd == 0.041
 
 
 def test_generate_persists_gpt_image_base64(
@@ -64,7 +64,7 @@ def test_generate_persists_gpt_image_base64(
                 http=client,
                 asset_dir=tmp_path,
             )
-            return await integ.generate(prompt="a cat", n=1)
+            return await integ.generate(prompt="image prompt", n=1)
 
     result = asyncio.run(go())
     item = result.data["data"][0]

@@ -41,9 +41,10 @@ redaction. Agents can request fields such as `statement`, `confidence`,
 
 ## Write Boundary
 
-Project memory writes are registered in the daemon and available through
-local/admin REST, but they are not normal agent-facing MCP operations before the
-D09 run-plan grant model:
+Project memory writes are normal workflow writes only after a run plan is
+started and the current running step grants the specific operation. Agents use
+them to persist explicit records they authored or observed; StackOS does not
+decide whether a learning is true or an experiment won.
 
 - `context.snapshot`
 - `learning.create`
@@ -53,9 +54,10 @@ D09 run-plan grant model:
 - `experiment.recordDecision`
 - `decision.record`
 
-This keeps the current model honest: agents may propose or supply records, but
-StackOS only stores them. Run-plan scoped grants will later decide which writes
-an agent can perform during a specific workflow.
+These writes require the active `run_token`, one claimed/running step, matching
+`project_id`, and a grant in the run-plan snapshot. Bootstrap agents can read
+project memory before a run, but they cannot write learnings, observations, or
+decisions until execution is inside that granted run-plan boundary.
 
 ## Experimentation
 

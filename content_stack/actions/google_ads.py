@@ -25,7 +25,6 @@ from content_stack.actions.provider_utils import (
     credential_config,
     credential_payload,
     dict_field,
-    int_range,
     list_field,
     required_str,
     resolve_ref,
@@ -98,11 +97,10 @@ async def _headers(request: ActionConnectorRequest) -> dict[str, str]:
         "developer-token": developer_token.strip(),
         "Content-Type": "application/json",
     }
-    login_customer_id = credential_config(request).get("login_customer_id") or payload.get(
-        "login_customer_id"
-    )
-    if login_customer_id:
-        headers["login-customer-id"] = clean_customer_id(login_customer_id)
+    config = credential_config(request)
+    manager_account_ref = config.get("manager_account_ref") or payload.get("manager_account_ref")
+    if manager_account_ref:
+        headers["login-customer-id"] = clean_customer_id(manager_account_ref)
     return headers
 
 
@@ -197,7 +195,6 @@ class GoogleAdsActionConnector:
             case "report.search":
                 required_str(payload, "customer_ref", issues)
                 required_str(payload, "query", issues)
-                int_range(payload, "page_size", issues, minimum=1, maximum=10_000)
             case "conversion_upload.clicks":
                 required_str(payload, "customer_ref", issues)
                 list_field(payload, "conversions", issues, required=True, max_items=2000)
@@ -250,8 +247,6 @@ class GoogleAdsActionConnector:
                 body_json: dict[str, Any] = {"query": payload["query"]}
                 if payload.get("page_token"):
                     body_json["pageToken"] = payload["page_token"]
-                if isinstance(payload.get("page_size"), int):
-                    body_json["pageSize"] = payload["page_size"]
                 status, body, response_headers = await send_json(
                     method="POST",
                     url=f"{_BASE_URL}/{version}/customers/{_customer_id(request)}/googleAds:search",

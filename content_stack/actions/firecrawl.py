@@ -13,7 +13,6 @@ from content_stack.actions.vendor_utils import (
     bool_field,
     cost_cents,
     credential_payload,
-    dict_field,
     int_range,
     optional_str,
     required_str,
@@ -45,10 +44,6 @@ class FirecrawlActionConnector:
             case "map":
                 required_str(payload, "url", issues)
                 optional_str(payload, "search", issues)
-            case "extract":
-                required_str(payload, "url", issues)
-                dict_field(payload, "schema", issues)
-                optional_str(payload, "prompt", issues)
             case _:
                 issues.extend(unknown_operation(request))
         return issues
@@ -87,12 +82,6 @@ class FirecrawlActionConnector:
                     call_result = await client.map(
                         url=str(payload["url"]),
                         search=payload.get("search"),
-                    )
-                case "extract":
-                    call_result = await client.extract(
-                        url=str(payload["url"]),
-                        schema=payload.get("schema"),
-                        prompt=payload.get("prompt"),
                     )
                 case _:
                     raise ValidationError(f"unsupported Firecrawl operation {request.operation!r}")

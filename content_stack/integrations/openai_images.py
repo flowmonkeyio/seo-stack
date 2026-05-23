@@ -12,8 +12,9 @@ The current OpenAI Image API returns base64 for GPT Image models. This
 wrapper persists those bytes into the daemon's generated-assets directory
 and returns local artifact URLs.
 
-Cost: the table below is a rough budget guardrail. The operator should
-reconcile actual invoices against OpenAI's current pricing page.
+Cost: the table below is a rough budget guardrail derived from the
+published GPT Image pricing table. The operator should reconcile actual
+invoices against OpenAI's current pricing page.
 """
 
 from __future__ import annotations
@@ -36,23 +37,55 @@ class OpenAIImagesIntegration(BaseIntegration):
     default_qps = 10.0
 
     BASE_URL = "https://api.openai.com/v1"
+    DEFAULT_MODEL = "gpt-image-2"
 
-    # Official refs: https://platform.openai.com/docs/api-reference/images and
-    # https://platform.openai.com/docs/models/gpt-image-1.5. Keep this rough
-    # guardrail in sync with pricing audits; OpenAI billing remains canonical.
-    _IMAGE_COSTS: ClassVar[dict[tuple[str, str], float]] = {
-        ("1024x1024", "low"): 0.02,
-        ("1024x1024", "medium"): 0.04,
-        ("1024x1024", "high"): 0.08,
-        ("1536x1024", "low"): 0.04,
-        ("1536x1024", "medium"): 0.08,
-        ("1536x1024", "high"): 0.16,
-        ("1024x1536", "low"): 0.04,
-        ("1024x1536", "medium"): 0.08,
-        ("1024x1536", "high"): 0.16,
-        ("1024x1024", "standard"): 0.04,
-        ("1024x1024", "hd"): 0.08,
+    # Official refs:
+    # https://developers.openai.com/api/docs/guides/image-generation
+    # https://developers.openai.com/api/reference/resources/images
+    #
+    # Values are output image-cost guardrails for the StackOS budget pre-check.
+    # Text/image input tokens and invoices remain OpenAI's source of truth.
+    _IMAGE_COSTS: ClassVar[dict[tuple[str, str, str], float]] = {
+        ("gpt-image-2", "1024x1024", "low"): 0.006,
+        ("gpt-image-2", "1024x1024", "medium"): 0.053,
+        ("gpt-image-2", "1024x1024", "high"): 0.211,
+        ("gpt-image-2", "1536x1024", "low"): 0.005,
+        ("gpt-image-2", "1536x1024", "medium"): 0.041,
+        ("gpt-image-2", "1536x1024", "high"): 0.165,
+        ("gpt-image-2", "1024x1536", "low"): 0.005,
+        ("gpt-image-2", "1024x1536", "medium"): 0.041,
+        ("gpt-image-2", "1024x1536", "high"): 0.165,
+        ("gpt-image-1.5", "1024x1024", "low"): 0.009,
+        ("gpt-image-1.5", "1024x1024", "medium"): 0.034,
+        ("gpt-image-1.5", "1024x1024", "high"): 0.133,
+        ("gpt-image-1.5", "1536x1024", "low"): 0.013,
+        ("gpt-image-1.5", "1536x1024", "medium"): 0.050,
+        ("gpt-image-1.5", "1536x1024", "high"): 0.200,
+        ("gpt-image-1.5", "1024x1536", "low"): 0.013,
+        ("gpt-image-1.5", "1024x1536", "medium"): 0.050,
+        ("gpt-image-1.5", "1024x1536", "high"): 0.200,
+        ("gpt-image-1", "1024x1024", "low"): 0.011,
+        ("gpt-image-1", "1024x1024", "medium"): 0.042,
+        ("gpt-image-1", "1024x1024", "high"): 0.167,
+        ("gpt-image-1", "1536x1024", "low"): 0.016,
+        ("gpt-image-1", "1536x1024", "medium"): 0.063,
+        ("gpt-image-1", "1536x1024", "high"): 0.250,
+        ("gpt-image-1", "1024x1536", "low"): 0.016,
+        ("gpt-image-1", "1024x1536", "medium"): 0.063,
+        ("gpt-image-1", "1024x1536", "high"): 0.250,
+        ("gpt-image-1-mini", "1024x1024", "low"): 0.005,
+        ("gpt-image-1-mini", "1024x1024", "medium"): 0.011,
+        ("gpt-image-1-mini", "1024x1024", "high"): 0.036,
+        ("gpt-image-1-mini", "1536x1024", "low"): 0.006,
+        ("gpt-image-1-mini", "1536x1024", "medium"): 0.015,
+        ("gpt-image-1-mini", "1536x1024", "high"): 0.052,
+        ("gpt-image-1-mini", "1024x1536", "low"): 0.006,
+        ("gpt-image-1-mini", "1024x1536", "medium"): 0.015,
+        ("gpt-image-1-mini", "1024x1536", "high"): 0.052,
     }
+    _GPT_IMAGE_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {"gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
+    )
     _DALL_E_MODELS: ClassVar[frozenset[str]] = frozenset({"dall-e-2", "dall-e-3"})
     _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
         "jpeg": "jpg",
@@ -82,10 +115,27 @@ class OpenAIImagesIntegration(BaseIntegration):
         """Estimate cost from ``size`` + ``quality`` keyword args."""
         del op
         body = kwargs.get("json", {}) or {}
+        model = str(body.get("model", self.DEFAULT_MODEL))
         size = body.get("size", "1024x1024")
-        quality = body.get("quality", "standard")
+        quality = body.get("quality", "medium")
         n = int(body.get("n", 1))
-        per_image = self._IMAGE_COSTS.get((size, quality), 0.04)
+        return self.estimate_image_cost_usd(model=model, size=str(size), quality=str(quality), n=n)
+
+    @classmethod
+    def estimate_image_cost_usd(cls, *, model: str, size: str, quality: str, n: int = 1) -> float:
+        """Estimate output-image cost for the current StackOS-supported sizes."""
+        if model not in cls._GPT_IMAGE_MODELS:
+            return 0.04 * n
+        normalized_size = size if size != "auto" else "1024x1024"
+        normalized_quality = quality if quality != "auto" else "high"
+        per_image = cls._IMAGE_COSTS.get((model, normalized_size, normalized_quality))
+        if per_image is None:
+            model_costs = [
+                cost
+                for (cost_model, _size, cost_quality), cost in cls._IMAGE_COSTS.items()
+                if cost_model == model and cost_quality == normalized_quality
+            ]
+            per_image = max(model_costs) if model_costs else 0.04
         return per_image * n
 
     async def generate(
@@ -95,7 +145,7 @@ class OpenAIImagesIntegration(BaseIntegration):
         size: str = "1536x1024",
         quality: str = "medium",
         n: int = 1,
-        model: str = "gpt-image-1.5",
+        model: str = DEFAULT_MODEL,
         output_format: str = "webp",
     ) -> IntegrationCallResult:
         """Generate ``n`` images from ``prompt``.

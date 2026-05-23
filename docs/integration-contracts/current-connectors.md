@@ -14,7 +14,7 @@ Important consequence: provider docs should shape action schemas and connector c
 
 | Provider | Official docs used | Auth docs | Rate/error/pagination docs |
 | --- | --- | --- | --- |
-| OpenAI Images | [Images API reference](https://platform.openai.com/docs/api-reference/images), [GPT Image 1.5 model/pricing](https://developers.openai.com/api/docs/models/gpt-image-1.5/) | [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication) | [OpenAI rate limits guide](https://platform.openai.com/docs/guides/rate-limits), model pricing page above |
+| OpenAI Images | [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [Images API reference](https://developers.openai.com/api/reference/resources/images) | [OpenAI API authentication](https://platform.openai.com/docs/api-reference/authentication) | [OpenAI rate limits guide](https://platform.openai.com/docs/guides/rate-limits), image generation pricing table in the guide above |
 | Firecrawl | [v2 introduction](https://docs.firecrawl.dev/api-reference/v2-introduction), [scrape](https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape), [crawl](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post), [crawl status](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get), [map](https://docs.firecrawl.dev/api-reference/v2-endpoint/map), [extract](https://docs.firecrawl.dev/api-reference/v2-endpoint/extract) | v2 introduction and endpoint pages use bearer auth | [Errors](https://docs.firecrawl.dev/api-reference/errors), [rate limits](https://docs.firecrawl.dev/rate-limits) |
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
@@ -30,7 +30,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
 | `openai-images` | `utils.image.generate` | `content_stack/actions/openai_images.py:17`, `content_stack/integrations/openai_images.py:22` | `content_stack/plugins/manifest.py:372`, `content_stack/plugins/manifest.py:398` | API key payload; budget enforced by `openai-images` kind. |
-| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`, `utils.web.extract` | `content_stack/actions/firecrawl.py`, `content_stack/integrations/firecrawl.py:24` | `content_stack/plugins/manifest.py:378`, `content_stack/plugins/manifest.py:434`, `content_stack/plugins/manifest.py:452`, `content_stack/plugins/manifest.py:470`, `content_stack/plugins/manifest.py:488` | Bearer API key payload; budget enforced by `firecrawl`. |
+| `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `content_stack/actions/firecrawl.py`, `content_stack/integrations/firecrawl.py:24` | `content_stack/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `content_stack/actions/jina.py`, `content_stack/integrations/jina_reader.py:17` | `content_stack/plugins/manifest.py:384`, `content_stack/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `content_stack/actions/reddit.py`, `content_stack/integrations/reddit.py:29` | `content_stack/plugins/manifest.py:390`, `content_stack/plugins/manifest.py:542`, `content_stack/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
 | `sitemap` | `utils.sitemap.fetch` | `content_stack/actions/sitemap.py`, `content_stack/integrations/sitemap.py:84` | `content_stack/plugins/manifest.py:525` | No provider and no credential. |
@@ -53,30 +53,29 @@ Important consequence: provider docs should shape action schemas and connector c
 
 ### OpenAI Images
 
-Current: `utils.image.generate` maps to `OpenAIImagesActionConnector`, validates prompt, size, quality, `n`, and output format, then calls `/v1/images/generations` with default model `gpt-image-1.5`.
+Current: `utils.image.generate` maps to `OpenAIImagesActionConnector`, validates prompt, explicit GPT Image model profile, size, quality, `n`, and output format, then calls `/v1/images/generations` with default model `gpt-image-2`.
 
 Gaps/mismatches:
 
-- Pricing is stale for GPT Image 1.5. The current guardrail table in `content_stack/integrations/openai_images.py:35` and connector estimate in `content_stack/actions/openai_images.py:84` do not match the current model pricing page. The model page shows lower per-image prices for GPT Image 1.5 than the hard-coded estimates.
-- Manifest and connector disagree on allowed sizes. Manifest schema allows only `1024x1024`, `1536x1024`, and `1024x1536` in `content_stack/plugins/manifest.py:411`, while connector validation also accepts DALL-E mapped sizes `1792x1024` and `1024x1792` in `content_stack/actions/openai_images.py:43`.
-- The connector accepts legacy `standard`/`hd` quality for all models in `content_stack/actions/openai_images.py:58`, but current GPT image models use `low`/`medium`/`high`; DALL-E compatibility is handled later in `content_stack/integrations/openai_images.py:95`. That is workable but should be documented as legacy model compatibility.
+- Resolved: manifest and connector now share GPT Image profiles for `gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, and `gpt-image-1-mini`. Legacy DALL-E quality names are not accepted by the generic StackOS action.
+- Resolved: budget estimates use the current GPT Image table for the supported model/size/quality presets. `auto` quality is estimated conservatively as high for pre-check purposes.
+- Remaining: `gpt-image-2` supports broader arbitrary resolutions in OpenAI docs, but StackOS exposes only explicit presets plus `auto` until arbitrary-size budget estimates and UI affordances are modeled.
 
 Recommended corrections:
 
-- Add a short comment above `_IMAGE_COSTS` linking to the GPT Image 1.5 model/pricing page and mark the table as an estimate requiring scheduled refresh.
-- Either align manifest size enum with connector-supported DALL-E sizes or make the connector reject DALL-E-only sizes unless `model` is a DALL-E model.
+- Add a scheduled provider-doc audit for OpenAI image pricing and model profile changes.
 - Keep persisted output URL behavior documented in the manifest or action docs, because consumers should not expect raw base64.
 
 ### Firecrawl
 
-Current: four utility actions map to v2 `scrape`, `crawl`, `map`, and `extract`. The wrapper uses `Authorization: Bearer`, v2 base URL, and estimated costs.
+Current: three executable utility actions map to v2 `scrape`, `crawl`, and `map`. `utils.web.extract` is a manifest-deferred contract because Firecrawl extract is async and needs status polling before StackOS can present it as an executable workflow action. The wrapper uses `Authorization: Bearer`, v2 base URL, and estimated costs for executable actions.
 
 Gaps/mismatches:
 
 - `web.crawl` only starts the crawl job. Official v2 crawl returns `id`/`url`; result retrieval requires `GET /v2/crawl/{id}` and may return `next` for large results. There is no `utils.web.crawl-status` action yet.
 - Current `scrape.formats` validation only accepts string arrays in `content_stack/actions/firecrawl.py`, while Firecrawl v2 documents string and object format entries such as JSON extraction and screenshot objects.
 - `map` does not expose documented `limit`, `sitemap`, `includeSubdomains`, `ignoreQueryParameters`, or location options.
-- `extract` accepts only one `url` and wraps it as `urls: [url]` in `content_stack/integrations/firecrawl.py:113`; official docs accept an array/glob-style URL list and have options like `ignoreInvalidURLs`, `includeSubdomains`, `showSources`, and `scrapeOptions`.
+- Resolved for agent safety: `extract` is no longer wired as executable. The wrapper implementation remains a daemon helper until a status action and output artifact contract exist.
 
 Recommended corrections:
 
@@ -109,13 +108,12 @@ Gaps/mismatches:
 - Resolved in the manifest: Reddit now declares `auth_type="oauth-client-credentials"` with credential payload metadata for `client_id`, `client_secret`, and `user_agent`. The wrapper still needs richer pagination and enum validation.
 - Reddit listing pagination uses `after`/`before`, `limit`, `count`, and `show`; actions expose only `limit`, so callers cannot page beyond the first listing slice.
 - `sort` and `time_filter` are unbounded strings in `content_stack/actions/reddit.py`, so invalid provider enum values reach Reddit.
-- `top_questions` is described as question-shaped in manifests, but the connector returns raw top listing data; the wrapper doc says the caller filters for question-shaped titles in `content_stack/integrations/reddit.py:121`.
+- Resolved in the manifest: `top_questions` is described as raw top Reddit posts, and the executing agent owns any question-shaped filtering.
 
 Recommended corrections:
 
 - Add safe auth method fields for `client_id` and `user_agent`, with `client_secret` in encrypted payload. Do not store the OAuth access token in agent-visible state.
 - Constrain `sort` and `time_filter` enums and add optional `after` pagination input/output.
-- Rewrite the `top_questions` description or implement deterministic filtering in the wrapper; current wording over-promises.
 
 ### DataForSEO
 
@@ -123,14 +121,14 @@ Current: SEO actions call DataForSEO live endpoints via Basic auth. `login` live
 
 Gaps/mismatches:
 
-- Keyword volume docs allow up to 1000 keywords per request and only 12 requests per minute for Google Ads Live endpoints. Current connector does not cap keyword count in `content_stack/actions/dataforseo.py`, and the wrapper default QPS is 5.0 in `content_stack/integrations/dataforseo.py:28`, which could exceed endpoint-specific limits if many calls are made.
-- SERP live advanced docs describe top 100 live results; connector allows `depth` up to 700 in `content_stack/actions/dataforseo.py`. Confirm whether that is still accepted for the exact endpoint or lower the max.
+- Resolved: keyword volume now caps requests at 1000 keywords and the wrapper default QPS is 0.2, matching the Google Ads Live 12 requests/minute contract.
+- Resolved: SERP live depth is capped at 100 for the exposed `seo.serp.analyze` action.
 - DataForSEO docs distinguish current and legacy Labs routes. The wrapper uses `/dataforseo_labs/google/.../live` in `content_stack/integrations/dataforseo.py:127` and `content_stack/integrations/dataforseo.py:145`; comments should link current route docs so maintainers do not accidentally follow legacy pages.
 - `domain_intersection` and `keywords_for_site` are implemented in the connector but not exposed as plugin actions, except Ahrefs equivalents. That is okay, but undocumented dormant operations can confuse future action expansion.
 
 Recommended corrections:
 
-- Add endpoint-specific validation: keyword count max, SERP depth max from the exact docs page, and optional `limit`/`offset` where Labs endpoints support them.
+- Add optional `limit`/`offset` where Labs endpoints support them before exposing more Labs actions.
 - Add comments linking each wrapper method to the exact DataForSEO endpoint doc.
 - Keep current exposed actions narrow until schemas cover provider limits and pagination.
 
@@ -140,14 +138,14 @@ Current: two SEO actions call Site Explorer organic keywords and all backlinks u
 
 Gaps/mismatches:
 
-- Ahrefs API v3 consumes API units, with minimum/request and per-row/field cost headers. Current connector estimates zero cost in `content_stack/actions/ahrefs.py`, while the manifest enforces budget in `plugins/seo/plugin.yaml:141` and `plugins/seo/plugin.yaml:167`. This makes StackOS budget availability mostly ceremonial for Ahrefs execution.
+- Resolved for agent safety: Ahrefs actions no longer claim StackOS budget enforcement while the connector does not read API-unit headers.
 - Wrapper does not read Ahrefs cost headers such as `x-api-units-cost-total-actual`, even though official docs say those headers are the source of unit consumption.
 - API v3 docs emphasize eligible paid plans and API key limits. Manifest has no setup note for plan eligibility or key-level limits.
 - `mode` for backlinks is a free string in `content_stack/actions/ahrefs.py`; constrain to documented modes before expanding.
 
 Recommended corrections:
 
-- Add API-unit accounting: record unit headers in `metadata_json`, map units to budget policy, or stop claiming monetary budget enforcement for Ahrefs until a conversion exists.
+- Add API-unit accounting: record unit headers in `metadata_json` and map units to budget policy before re-enabling StackOS budget gates for Ahrefs.
 - Link wrapper methods to organic keywords and all backlinks docs.
 - Add provider setup guidance for eligible paid plans and key limits.
 
@@ -237,8 +235,8 @@ Recommended corrections:
 
 ## Recommended Manifest/Template/Code Comments
 
-- `content_stack/integrations/openai_images.py`: add links to OpenAI Images API reference and GPT Image 1.5 pricing beside `_IMAGE_COSTS`; document legacy DALL-E compatibility.
-- `content_stack/plugins/manifest.py`: align `utils.image.generate` size/quality enums with connector behavior or model-gate legacy options.
+- `content_stack/integrations/openai_images.py`: keep links to the Image generation guide and Images API reference beside `_IMAGE_COSTS`; refresh GPT Image pricing on provider-doc audits.
+- `content_stack/plugins/manifest.py`: add new GPT Image model profiles only when their size, quality, format, and cost semantics are documented.
 - `content_stack/integrations/firecrawl.py`: link each method to Firecrawl v2 endpoint docs; add a comment that `crawl()` submits a job only.
 - `content_stack/plugins/manifest.py`: rename/describe `utils.web.crawl` as submit-only unless a crawl-status action is added.
 - `content_stack/integrations/jina_reader.py`: link Reader API and validate absolute target URL shape before path concatenation.

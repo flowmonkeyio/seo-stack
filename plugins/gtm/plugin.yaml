@@ -148,6 +148,7 @@ providers:
       - key: api_key
         label: API key
         auth_type: api-key
+        description: People API Search requires an Apollo master API key; enrichment can use endpoint-specific keys when Apollo allows them.
         payload_format: json
         fields:
         - key: api_key
@@ -155,6 +156,17 @@ providers:
           type: secret
           secret: true
           required: true
+        - key: access_scope
+          label: Access Scope
+          type: select
+          secret: false
+          required: true
+          description: Select master only when this credential is allowed to call Apollo People API Search.
+          options:
+          - label: Master API key
+            value: master
+          - label: Endpoint-specific key
+            value: endpoint
         - key: workspace_ref
           label: Workspace Ref
           type: text
@@ -173,6 +185,8 @@ providers:
           secret: false
           required: false
           placeholder: safe API plan reference
+    config:
+      setup_note: Store the Apollo key daemon-side. Mark access_scope=master only for keys that are allowed to call People API Search; agents receive only credential refs and safe scope labels.
   - key: clay
     name: Clay
     description: Clay enrichment and workflow provider contract.
@@ -667,7 +681,7 @@ actions:
       requires_credential: true
   - key: apollo.people.search
     name: Search Apollo People
-    description: Search Apollo people from explicit criteria and source refs.
+    description: Search Apollo people from explicit criteria and source refs; requires an Apollo credential profile marked as a master API key.
     provider: apollo
     capability: lead-management
     risk_level: cost

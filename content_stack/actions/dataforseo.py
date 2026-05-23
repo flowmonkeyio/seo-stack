@@ -28,6 +28,8 @@ class DataForSeoActionConnector:
     key = "dataforseo"
 
     _OP_COSTS = DataForSeoIntegration._PRE_EMPT_COSTS
+    _MAX_GOOGLE_ADS_KEYWORDS = 1000
+    _MAX_LIVE_SERP_DEPTH = 100
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         payload = request.input_json
@@ -35,13 +37,26 @@ class DataForSeoActionConnector:
         match request.operation:
             case "keyword.research" | "keyword_volume":
                 str_list(payload, "keywords", issues, required=True)
+                keywords = payload.get("keywords")
+                if isinstance(keywords, list) and len(keywords) > self._MAX_GOOGLE_ADS_KEYWORDS:
+                    issues.append(
+                        ActionValidationIssue(
+                            path="$.keywords",
+                            message=(
+                                "keywords must contain at most "
+                                f"{self._MAX_GOOGLE_ADS_KEYWORDS} items for DataForSEO "
+                                "Google Ads Live search volume"
+                            ),
+                            code="length",
+                        )
+                    )
                 optional_str(payload, "location", issues)
                 optional_str(payload, "language", issues)
             case "serp.analyze" | "serp":
                 required_str(payload, "keyword", issues)
                 optional_str(payload, "location", issues)
                 optional_str(payload, "language", issues)
-                int_range(payload, "depth", issues, minimum=1, maximum=700)
+                int_range(payload, "depth", issues, minimum=1, maximum=self._MAX_LIVE_SERP_DEPTH)
             case "domain_intersection":
                 str_list(payload, "domains", issues, required=True, length=2)
                 optional_str(payload, "location", issues)

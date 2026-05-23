@@ -60,7 +60,7 @@ providers:
 actions:
   - key: keyword.research
     name: Research Keywords
-    description: Collect keyword ideas, volume, and SERP evidence from a configured SEO data provider.
+    description: Collect keyword ideas, volume, and CPC evidence from DataForSEO Google Ads Live search volume; max 1000 keywords per request.
     provider: dataforseo
     capability: seo-research
     risk_level: cost
@@ -72,6 +72,7 @@ actions:
       properties:
         keywords:
           type: array
+          maxItems: 1000
           items:
             type: string
         location:
@@ -90,7 +91,7 @@ actions:
       enforce_budget: true
   - key: serp.analyze
     name: Analyze SERP
-    description: Fetch and normalize SERP result evidence for an agent-selected query.
+    description: Fetch live SERP result evidence for an agent-selected query through DataForSEO; depth is capped at the documented top 100 results.
     provider: dataforseo
     capability: seo-research
     risk_level: cost
@@ -108,6 +109,8 @@ actions:
           type: string
         depth:
           type: integer
+          minimum: 1
+          maximum: 100
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1
@@ -144,7 +147,7 @@ actions:
       enforce_budget: true
   - key: competitor.keywords
     name: Competitor Keywords
-    description: Pull competitor organic keyword evidence for agent analysis.
+    description: Pull competitor organic keyword evidence for agent analysis; Ahrefs API-unit budget reconciliation is provider-side until unit headers are captured.
     provider: ahrefs
     capability: seo-research
     risk_level: cost
@@ -169,10 +172,10 @@ actions:
       operation: competitor.keywords
       requires_credential: true
       budget_kind: ahrefs
-      enforce_budget: true
+      enforce_budget: false
   - key: backlink.research
     name: Backlink Research
-    description: Pull backlink evidence for an agent-defined SEO investigation.
+    description: Pull backlink evidence for an agent-defined SEO investigation; Ahrefs API-unit budget reconciliation is provider-side until unit headers are captured.
     provider: ahrefs
     capability: seo-research
     risk_level: cost
@@ -195,7 +198,7 @@ actions:
       operation: backlink.research
       requires_credential: true
       budget_kind: ahrefs
-      enforce_budget: true
+      enforce_budget: false
 resources:
   - key: keyword-opportunity
     name: Keyword Opportunity

@@ -106,8 +106,7 @@ Registered first-party connectors are one provider per connector file and now
 cover the migrated clean path for:
 
 - `openai-images`: `utils.image.generate`
-- `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`,
-  `utils.web.extract`
+- `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
@@ -122,9 +121,11 @@ cover the migrated clean path for:
 - `meta-ads`, `google-ads`, and `taboola`: first paid media provider actions
 
 Actions that are intentionally not executable use explicit `execution_mode`
-metadata, such as `deferred-partner-api`, `deferred-inbound`, or
-`project-local-http`. Catalog availability reports those modes directly instead
-of treating them as missing connectors. Outbrain and user-owned webhook actions
+metadata, such as `deferred-partner-api`, `deferred-inbound`,
+`deferred-firecrawl-async-extract`, or `project-local-http`. `utils.web.extract`
+is intentionally deferred until StackOS has an explicit Firecrawl status-poll
+action and output artifact contract. Catalog availability reports those modes
+directly instead of treating them as missing connectors. Outbrain and user-owned webhook actions
 remain deferred until endpoint-level contracts or project-local static HTTP
 config are supplied.
 

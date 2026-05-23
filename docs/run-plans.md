@@ -11,8 +11,9 @@ goal, context, and approval requirements at hand.
 2. Discover or describe a template with `workflowTemplate.*`.
 3. Create a concrete plan with `runPlan.create`.
 4. Validate it with `runPlan.validate`.
-5. Start it with `runPlan.start`.
-6. Claim and record steps through run-plan controller tools.
+5. Start it with `runPlan.start` and keep the returned `run_token`.
+6. Claim and record steps through run-plan controller tools using that
+   `run_token`.
 7. Inspect execution through `runPlan.get`, `run.get`, and `run.list`.
 
 ## Grants
@@ -21,7 +22,7 @@ Run-plan grants are frozen in `run_plans.grant_snapshot_json`.
 
 The daemon dispatcher requires:
 
-- a `stackos/run-plan-controller` token
+- the `run_token` returned by `runPlan.start`
 - a started plan
 - exactly one running step
 - matching `project_id`

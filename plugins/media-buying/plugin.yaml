@@ -851,8 +851,6 @@ actions:
           type: string
         page_token:
           type: string
-        page_size:
-          type: integer
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1

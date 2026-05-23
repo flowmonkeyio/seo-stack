@@ -20,6 +20,7 @@ from content_stack.actions import (
 from content_stack.db.models import (
     Action,
     ActionCall,
+    Credential,
     CredentialUsageEvent,
     Plugin,
     PluginSource,
@@ -312,6 +313,36 @@ def test_action_execute_resolves_secret_internally_and_redacts_audit(
     assert "daemon-only-secret" not in json.dumps(call.response_json)
 
 
+def test_action_execute_rejects_failed_credential_profile(
+    session: Session,
+    project_id: int,
+) -> None:
+    _seed_action(session)
+    credential_ref = _credential_ref(session, project_id)
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == credential_ref)
+    ).one()
+    credential.status = "failed"
+    session.add(credential)
+    session.commit()
+    fake = _FakeConnector()
+    registry = ActionConnectorRegistry()
+    registry.register(fake)
+
+    with pytest.raises(ValidationError) as excinfo:
+        asyncio.run(
+            ActionRepository(session, connectors=registry).execute(
+                project_id=project_id,
+                action_ref="test-actions.echo.run",
+                input_json={"name": "Ada"},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert fake.calls == 0
+    assert excinfo.value.data["issues"][0]["code"] == "credential_not_connected"
+
+
 def test_action_execute_idempotency_replays_without_second_connector_call(
     session: Session,
     project_id: int,
@@ -351,6 +382,7 @@ def test_action_execute_idempotency_replays_without_second_connector_call(
 
 def test_builtin_action_connectors_describe_availability(session: Session) -> None:
     action_refs = {
+        "utils.image.generate": ("openai-images", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -373,6 +405,35 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         assert described.execution_available is (status == "ready")
         assert described.manifest.connector_key == connector
         assert described.manifest.requires_credential is requires_credential
+
+
+def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="openai-images",
+        secret_payload=b"sk-openai",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "openai-images")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.image.generate",
+        input_json={
+            "prompt": "asset prompt",
+            "model": "gpt-image-2",
+            "quality": "hd",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.quality" and issue.code == "enum_mismatch"
+        for issue in validation.issues
+    )
 
 
 def test_action_describe_reports_project_readiness_and_provider_disabled(
@@ -722,7 +783,7 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
         ).encode("utf-8"),
         config_json={
             "api_version": "v22",
-            "login_customer_id": "111-222-3333",
+            "manager_account_ref": "111-222-3333",
             "customers": {"main": "444-555-6666"},
         },
     )
@@ -751,7 +812,6 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
             input_json={
                 "customer_ref": "main",
                 "query": "SELECT campaign.id FROM campaign LIMIT 1",
-                "page_size": 50,
             },
             credential_ref=credential_ref,
         )
@@ -764,7 +824,6 @@ def test_google_ads_builtin_report_search_sets_required_headers_and_body(
     assert request.headers["login-customer-id"] == "1112223333"
     assert json.loads(request.content.decode("utf-8")) == {
         "query": "SELECT campaign.id FROM campaign LIMIT 1",
-        "pageSize": 50,
     }
     assert out.metadata_json["request_id"] == "req-1"
     assert "google-access" not in rendered
@@ -849,6 +908,27 @@ def test_deferred_action_validation_reports_execution_mode(
     assert described.availability.execution_mode == "deferred-partner-api"
 
 
+def test_firecrawl_extract_is_manifest_deferred_until_status_action_exists(
+    session: Session,
+    project_id: int,
+) -> None:
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.web.extract",
+        input_json={"url": "https://example.com", "schema": {"type": "object"}},
+    )
+    described = ActionRepository(session).describe(
+        project_id=project_id,
+        action_ref="utils.web.extract",
+    )
+
+    assert validation.valid is False
+    assert validation.issues[0].code == "execution_deferred"
+    assert described.manifest.connector_key is None
+    assert described.availability.status == "deferred"
+    assert described.availability.execution_mode == "deferred-firecrawl-async-extract"
+
+
 def test_salesforce_builtin_account_upsert_uses_external_id_endpoint(
     session: Session,
     project_id: int,
@@ -924,6 +1004,59 @@ def test_apollo_builtin_people_enrich_sends_single_record_params(
     assert request.headers["authorization"] == "Bearer apollo-secret"
     assert out.action_call.connector_key == "apollo"
     assert "apollo-secret" not in rendered
+
+
+def test_apollo_phone_reveal_requires_webhook_url(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="apollo",
+        secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
+        config_json={"access_scope": "endpoint"},
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "apollo")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="gtm.apollo.people.enrich",
+        input_json={"record": {"email": "ada@example.com"}, "reveal_phone_number": True},
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.webhook_url" and issue.code == "validation_error"
+        for issue in validation.issues
+    )
+
+
+def test_apollo_people_search_requires_master_key_scope(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="apollo",
+        secret_payload=json.dumps({"api_key": "apollo-secret"}).encode("utf-8"),
+        config_json={"access_scope": "endpoint"},
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "apollo")
+
+    with pytest.raises(ConflictError) as exc_info:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="gtm.apollo.people.search",
+                input_json={"filters": {"person_titles": ["Founder"]}},
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert "master" in exc_info.value.data["error"]
+    assert httpx_mock.get_requests() == []
 
 
 def test_pipedrive_builtin_deal_search_uses_search_whitelist(
@@ -1230,6 +1363,43 @@ def test_dataforseo_action_executes_with_daemon_side_login_config(
     assert out.output_json["tasks"][0]["result"][0]["title"] == "Example"
     assert "password" not in rendered
     assert "login@example.com" not in rendered
+
+
+def test_dataforseo_keyword_and_serp_limits_match_live_contracts(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="dataforseo",
+        secret_payload=b"password",
+        config_json={"login": "login@example.com"},
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "dataforseo")
+    repo = ActionRepository(session)
+
+    keyword_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.keyword.research",
+        input_json={"keywords": [f"keyword-{idx}" for idx in range(1001)]},
+        credential_ref=credential_ref,
+    )
+    serp_validation = repo.validate(
+        project_id=project_id,
+        action_ref="seo.serp.analyze",
+        input_json={"keyword": "stackos", "depth": 101},
+        credential_ref=credential_ref,
+    )
+
+    assert keyword_validation.valid is False
+    assert any(
+        issue.path == "$.keywords" and issue.code == "length"
+        for issue in keyword_validation.issues
+    )
+    assert serp_validation.valid is False
+    assert any(
+        issue.path == "$.depth" and issue.code == "range" for issue in serp_validation.issues
+    )
 
 
 def test_dataforseo_paa_action_uses_explicit_action_contract(

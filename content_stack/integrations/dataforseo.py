@@ -38,8 +38,9 @@ class DataForSeoIntegration(BaseIntegration):
     vendor = "dataforseo"
     # Official rate note: Google Ads Live endpoints allow 12 requests/minute;
     # see https://docs.dataforseo.com/v3/keywords_data-google_ads-overview/.
-    # TODO: add endpoint-specific throttles before expanding batch actions.
-    default_qps = 5.0
+    # StackOS uses the lowest documented live endpoint limit as the provider
+    # default; project budgets may lower it further.
+    default_qps = 0.2
 
     BASE_URL = "https://api.dataforseo.com/v3"
 

@@ -43,8 +43,10 @@ The MCP bridge advertises only `auth.status` and `auth.test`.
 
 1. The agent inspects required providers through plugin/catalog metadata.
 2. The agent calls `auth.status` for the project and provider key.
-3. If setup is missing, the agent points the operator to the local setup URL
-   returned by REST or the UI integration screen.
+3. If setup is missing, the agent points the operator to
+   `/projects/{project_id}/connections?provider_key={provider_key}` in the local
+   UI. Only the operator/local admin uses setup routes or interactive OAuth
+   starts.
 4. The operator chooses the provider auth method and enters the fields required
    by that method, or starts the provider OAuth flow when one is configured.
 5. The agent calls `auth.test` with the selected `credential_ref`.

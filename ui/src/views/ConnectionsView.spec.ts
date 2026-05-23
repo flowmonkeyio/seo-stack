@@ -232,6 +232,39 @@ describe('ConnectionsView', () => {
     })
     expect(wrapper.text()).not.toContain('app pass')
   })
+
+  it('does not report failed credentials as connected and keeps operator actions available', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/auth/providers') {
+        return json([authProvider('firecrawl', 'Firecrawl', 'api-key', apiKeyMethod('fc-...'))])
+      }
+      if (url === '/api/v1/projects/1/auth/status') {
+        return json({
+          project_id: 1,
+          provider_key: null,
+          providers: [],
+          connections: [authConnection({ revokedAt: null, status: 'failed' })],
+        })
+      }
+      return json({})
+    }) as typeof fetch
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/connections', component: ConnectionsView }],
+    })
+    await router.push('/projects/1/connections')
+    await router.isReady()
+
+    const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Firecrawl'))
+
+    expect(wrapper.text()).toContain('failed')
+    expect(wrapper.text()).not.toContain('1 connected')
+    expect(wrapper.findAll('button').map((button) => button.text().trim())).toContain('Test')
+    expect(wrapper.findAll('button').map((button) => button.text().trim())).toContain('Revoke')
+  })
 })
 
 function authProvider(
@@ -254,7 +287,13 @@ function authProvider(
   }
 }
 
-function authConnection({ revokedAt }: { revokedAt: string | null }) {
+function authConnection({
+  revokedAt,
+  status,
+}: {
+  revokedAt: string | null
+  status?: string
+}) {
   return {
     credential_ref: 'cred_firecrawl',
     project_id: 1,
@@ -263,13 +302,13 @@ function authConnection({ revokedAt }: { revokedAt: string | null }) {
     auth_method_key: 'api_key',
     profile_key: 'default',
     label: 'Primary Firecrawl',
-    status: revokedAt ? 'revoked' : 'connected',
+    status: status ?? (revokedAt ? 'revoked' : 'connected'),
     expires_at: null,
     last_tested_at: null,
     revoked_at: revokedAt,
     scopes: [],
     account: null,
-    setup_required: revokedAt !== null,
+    setup_required: revokedAt !== null || status === 'failed',
   }
 }
 

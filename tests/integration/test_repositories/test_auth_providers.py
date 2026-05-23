@@ -47,6 +47,57 @@ def test_status_wraps_existing_credentials_with_opaque_refs(
     assert credential.config_json == {"label": "Primary Firecrawl"}
 
 
+def test_failed_credential_requires_operator_setup(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        secret_payload=b"fc-secret",
+    )
+    repo = AuthRepository(session)
+    status = repo.status(project_id=project_id, provider_key="firecrawl")
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == status.connections[0].credential_ref)
+    ).one()
+    credential.status = "failed"
+    session.add(credential)
+    session.commit()
+
+    status = repo.status(project_id=project_id, provider_key="firecrawl")
+
+    assert status.connections[0].status == "failed"
+    assert status.connections[0].setup_required is True
+
+
+def test_failed_credential_profile_can_be_revoked(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="firecrawl",
+        secret_payload=b"fc-secret",
+    )
+    repo = AuthRepository(session)
+    status = repo.status(project_id=project_id, provider_key="firecrawl")
+    credential = session.exec(
+        select(Credential).where(Credential.credential_ref == status.connections[0].credential_ref)
+    ).one()
+    credential.status = "failed"
+    session.add(credential)
+    session.commit()
+
+    revoked = repo.revoke(
+        project_id=project_id,
+        credential_ref=credential.credential_ref,
+    ).data
+
+    assert revoked.status == "revoked"
+    assert revoked.credential_ref == credential.credential_ref
+
+
 def test_usage_and_refresh_events_redact_secret_metadata(
     session: Session,
     project_id: int,
