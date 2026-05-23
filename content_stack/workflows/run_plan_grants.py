@@ -21,6 +21,7 @@ RUN_PLAN_CONTROLLER_TOOL_NAMES: frozenset[str] = frozenset(
 RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "action.execute",
+        "agentRequest.create",
         "artifact.create",
         "context.query",
         "context.snapshot",

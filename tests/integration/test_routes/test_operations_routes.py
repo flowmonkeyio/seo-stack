@@ -58,6 +58,23 @@ def _mock_action_plan_json() -> dict:
     }
 
 
+def _agent_request_ingest_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "agent-request-ingest.run",
+        "title": "Agent request ingest",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "ingest",
+                    "tool": "agentRequest.create",
+                }
+            ]
+        },
+        "steps": [{"id": "ingest", "title": "Ingest request"}],
+    }
+
+
 def _store_mock_credential(
     api: TestClient, project_id: int, secret: str = "mock-secret-token"
 ) -> str:
@@ -350,6 +367,143 @@ def test_operation_rest_mock_provider_vertical_slice(
         [row.metadata_json for row in usage],
         default=str,
     )
+
+
+def test_operation_rest_agent_request_vertical_slice(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    direct_create = api.post(
+        "/api/v1/operations/agentRequest.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "request_key": "telegram:update:blocked",
+                "title": "Blocked direct create",
+            }
+        },
+    )
+    assert direct_create.status_code == 403
+
+    created_plan = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": _agent_request_ingest_plan_json(),
+            }
+        },
+    )
+    assert created_plan.status_code == 200, created_plan.text
+    run_plan_id = created_plan.json()["data"]["id"]
+    started_plan = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": run_plan_id}},
+    )
+    assert started_plan.status_code == 200, started_plan.text
+    run_token = started_plan.json()["data"]["run_token"]
+    claim_step = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "step_id": "ingest",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert claim_step.status_code == 200, claim_step.text
+
+    created_request = api.post(
+        "/api/v1/operations/agentRequest.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_token": run_token,
+                "request_key": "telegram:update:agent-request-slice",
+                "title": "Authorization: Bearer secret",
+                "body_preview": "api_key=hidden",
+                "source_provider": "telegram-bot",
+                "source_kind": "telegram-message",
+                "metadata_json": {"access_token": "hidden"},
+            }
+        },
+    )
+    assert created_request.status_code == 200, created_request.text
+    request = created_request.json()["data"]
+    assert request["title"] == "Authorization: Bearer [redacted]"
+    assert request["body_preview"] == "api_key=[redacted]"
+    assert request["metadata_json"] == {"access_token": "[redacted]"}
+
+    listed = api.post(
+        "/api/v1/operations/agentRequest.list/call",
+        json={"arguments": {"project_id": project_id, "claimable": True}},
+    )
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["items"]] == [request["id"]]
+
+    missing_idempotency = api.post(
+        "/api/v1/operations/agentRequest.claim/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "request_id": request["id"],
+                "claimed_by": "codex",
+            }
+        },
+    )
+    assert missing_idempotency.status_code == 422
+
+    claim_args = {
+        "project_id": project_id,
+        "request_id": request["id"],
+        "claimed_by": "codex",
+        "idempotency_key": f"claim-agent-request-{request['id']}",
+    }
+    claimed = api.post(
+        "/api/v1/operations/agentRequest.claim/call",
+        json={"arguments": claim_args},
+    )
+    assert claimed.status_code == 200, claimed.text
+    claim_token = claimed.json()["data"]["claim_token"]
+    assert claim_token
+
+    replayed = api.post(
+        "/api/v1/operations/agentRequest.claim/call",
+        json={"arguments": claim_args},
+    )
+    assert replayed.status_code == 200, replayed.text
+    assert replayed.json()["data"]["claim_token"] == claim_token
+
+    linked = api.post(
+        "/api/v1/operations/agentRequest.linkRunPlan/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "request_id": request["id"],
+                "run_plan_id": run_plan_id,
+                "claim_token": claim_token,
+            }
+        },
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["data"]["run_plan_id"] == run_plan_id
+
+    completed = api.post(
+        "/api/v1/operations/agentRequest.complete/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "request_id": request["id"],
+                "claim_token": claim_token,
+                "status": "resolved",
+                "metadata_json": {"summary": "done"},
+            }
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["data"]["status"] == "resolved"
+    assert completed.json()["data"]["metadata_json"]["summary"] == "done"
 
 
 def test_operation_rest_mock_provider_failure_records_redacted_audit(

@@ -46,9 +46,11 @@ class OperationRegistry:
 
 
 def build_operation_registry() -> OperationRegistry:
-    from content_stack.operations import actions, run_plans
+    from content_stack.operations import actions, agent_requests, run_plans
 
     registry = OperationRegistry()
+    for spec in agent_requests.operation_specs():
+        registry.register(spec)
     for spec in actions.operation_specs():
         registry.register(spec)
     for spec in run_plans.operation_specs():

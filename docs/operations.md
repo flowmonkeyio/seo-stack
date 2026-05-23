@@ -132,6 +132,19 @@ content-stack run-plans record-step 42 \
   --status success \
   --result step-result.json \
   --run-token "$RUN_TOKEN"
+
+content-stack agent-requests list --project 1 --claimable
+content-stack agent-requests claim 42 \
+  --project 1 \
+  --claimed-by codex \
+  --idempotency-key claim-agent-request-42
+content-stack agent-requests link-run-plan 42 99 \
+  --project 1 \
+  --claim-token "$CLAIM_TOKEN"
+content-stack agent-requests complete 42 \
+  --project 1 \
+  --claim-token "$CLAIM_TOKEN" \
+  --status resolved
 ```
 
 ## Registered Core Operations
@@ -141,6 +154,14 @@ The current core operation registry includes:
 - `action.describe`
 - `action.validate`
 - `action.execute`
+- `agentRequest.list`
+- `agentRequest.get`
+- `agentRequest.create`
+- `agentRequest.claim`
+- `agentRequest.release`
+- `agentRequest.linkRunPlan`
+- `agentRequest.complete`
+- `agentRequest.ignore`
 - `runPlan.validate`
 - `runPlan.create`
 - `runPlan.start`
@@ -175,6 +196,19 @@ The current core operation registry includes:
    when the last step finishes.
 5. `runPlan.update` remains an admin-only MCP operation and is intentionally not
    exposed through REST or CLI.
+
+`agentRequest.*` keeps the same boundary everywhere:
+
+1. `agentRequest.list` and `agentRequest.get` read sanitized queue state.
+2. `agentRequest.claim` is a bootstrap work-queue mutation and requires
+   `claimed_by` plus `idempotency_key`; the raw `claim_token` is returned only
+   in the claim response or its idempotency replay.
+3. `agentRequest.release`, `agentRequest.linkRunPlan`, `agentRequest.complete`,
+   and `agentRequest.ignore` require the active `claim_token`.
+4. `agentRequest.create` is registered for REST/CLI/MCP parity, but it is not a
+   bootstrap/system write. Normal callers need a `run_token` whose active
+   run-plan step explicitly grants `agentRequest.create`.
+5. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
 
 No operation adapter should bypass repository/connector auth, grant, idempotency,
 or audit code.

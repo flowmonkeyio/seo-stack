@@ -68,6 +68,13 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
         "action.describe",
         "action.validate",
+        "agentRequest.claim",
+        "agentRequest.complete",
+        "agentRequest.get",
+        "agentRequest.ignore",
+        "agentRequest.linkRunPlan",
+        "agentRequest.list",
+        "agentRequest.release",
         "artifact.get",
         "artifact.query",
         "auth.status",

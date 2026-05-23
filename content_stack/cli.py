@@ -57,6 +57,13 @@ run_plans_app = typer.Typer(
 )
 app.add_typer(run_plans_app, name="run-plans")
 
+agent_requests_app = typer.Typer(
+    name="agent-requests",
+    help="List, claim, and resolve generic StackOS agent request queue items.",
+    no_args_is_help=True,
+)
+app.add_typer(agent_requests_app, name="agent-requests")
+
 autostart_app = typer.Typer(
     name="autostart",
     help="Install, inspect, or remove local daemon autostart.",
@@ -178,6 +185,13 @@ def _load_operation_arguments(input_path: str | None) -> dict[str, Any]:
     if set(payload) == {"arguments"} and isinstance(payload["arguments"], dict):
         return dict(payload["arguments"])
     return dict(payload)
+
+
+def _split_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
 
 
 def _echo_json(payload: Any) -> None:
@@ -583,6 +597,225 @@ def run_plans_record_step(
         run_token=run_token,
     )
     _echo_json(_operation_call("runPlan.recordStep", arguments))
+
+
+# ---- agent-request operation aliases -------------------------------------
+
+
+@agent_requests_app.command(name="list")
+def agent_requests_list(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    statuses: Annotated[
+        str | None,
+        typer.Option("--statuses", help="Comma-separated request statuses."),
+    ] = None,
+    attention_status: Annotated[
+        str | None,
+        typer.Option("--attention-status", help="unread, read, or archived."),
+    ] = None,
+    claimed_by: Annotated[str | None, typer.Option("--claimed-by", help="Claimer label.")] = None,
+    claimable: Annotated[
+        bool,
+        typer.Option("--claimable", help="Return new requests and expired claims only."),
+    ] = False,
+    limit: Annotated[int | None, typer.Option("--limit", help="Page size.")] = None,
+    after_id: Annotated[int | None, typer.Option("--after-id", help="Cursor id.")] = None,
+) -> None:
+    """List generic agent request queue items."""
+    arguments = _merge_common_arguments(
+        {
+            "statuses": _split_csv(statuses),
+            "attention_status": attention_status,
+            "claimed_by": claimed_by,
+            "claimable": claimable,
+            "limit": limit,
+            "after_id": after_id,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("agentRequest.list", arguments))
+
+
+@agent_requests_app.command(name="get")
+def agent_requests_get(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+) -> None:
+    """Fetch one generic agent request."""
+    arguments = _merge_common_arguments({"request_id": request_id}, project_id=project_id)
+    _echo_json(_operation_call("agentRequest.get", arguments))
+
+
+@agent_requests_app.command(name="create")
+def agent_requests_create(
+    request_key: Annotated[str, typer.Argument(help="Stable project-scoped request key.")],
+    title: Annotated[str, typer.Argument(help="Request title.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    run_token: Annotated[
+        str,
+        typer.Option("--run-token", help="Run token whose active step grants agentRequest.create."),
+    ],
+    body_preview: Annotated[
+        str, typer.Option("--body-preview", help="Sanitized body preview.")
+    ] = "",
+    source_provider: Annotated[
+        str | None,
+        typer.Option("--source-provider", help="Source provider key."),
+    ] = None,
+    source_kind: Annotated[
+        str | None, typer.Option("--source-kind", help="Source event kind.")
+    ] = None,
+    source_resource_key: Annotated[
+        str | None,
+        typer.Option("--source-resource-key", help="Source resource key."),
+    ] = None,
+    source_resource_record_id: Annotated[
+        int | None,
+        typer.Option("--source-resource-record-id", help="Source resource record id."),
+    ] = None,
+    source_message_ref: Annotated[
+        str | None,
+        typer.Option("--source-message-ref", help="Provider-safe source message reference."),
+    ] = None,
+    priority: Annotated[int, typer.Option("--priority", help="Higher values are more urgent.")] = 0,
+    metadata_path: Annotated[
+        str | None,
+        typer.Option("--metadata", help="JSON metadata object, or '-' for stdin."),
+    ] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for create."),
+    ] = None,
+) -> None:
+    """Create a request from a granted ingestion/run-plan step."""
+    arguments = _merge_common_arguments(
+        {
+            "request_key": request_key,
+            "title": title,
+            "body_preview": body_preview,
+            "source_provider": source_provider,
+            "source_kind": source_kind,
+            "source_resource_key": source_resource_key,
+            "source_resource_record_id": source_resource_record_id,
+            "source_message_ref": source_message_ref,
+            "priority": priority,
+            "metadata_json": _load_operation_arguments(metadata_path) if metadata_path else None,
+        },
+        project_id=project_id,
+        run_token=run_token,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("agentRequest.create", arguments))
+
+
+@agent_requests_app.command(name="claim")
+def agent_requests_claim(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    claimed_by: Annotated[str, typer.Option("--claimed-by", help="Stable claimer label.")],
+    idempotency_key: Annotated[
+        str,
+        typer.Option("--idempotency-key", help="Required replay key for retry-safe claims."),
+    ],
+    lease_seconds: Annotated[
+        int, typer.Option("--lease-seconds", help="Claim lease seconds.")
+    ] = 600,
+) -> None:
+    """Claim one request and return a one-time claim token."""
+    arguments = _merge_common_arguments(
+        {
+            "request_id": request_id,
+            "claimed_by": claimed_by,
+            "lease_seconds": lease_seconds,
+        },
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("agentRequest.claim", arguments))
+
+
+@agent_requests_app.command(name="release")
+def agent_requests_release(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    claim_token: Annotated[str, typer.Option("--claim-token", help="Token returned by claim.")],
+) -> None:
+    """Release a claimed request."""
+    arguments = _merge_common_arguments(
+        {"request_id": request_id, "claim_token": claim_token},
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("agentRequest.release", arguments))
+
+
+@agent_requests_app.command(name="link-run-plan")
+def agent_requests_link_run_plan(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    claim_token: Annotated[str, typer.Option("--claim-token", help="Token returned by claim.")],
+) -> None:
+    """Attach a claimed request to a run plan."""
+    arguments = _merge_common_arguments(
+        {
+            "request_id": request_id,
+            "run_plan_id": run_plan_id,
+            "claim_token": claim_token,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("agentRequest.linkRunPlan", arguments))
+
+
+@agent_requests_app.command(name="complete")
+def agent_requests_complete(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    claim_token: Annotated[str, typer.Option("--claim-token", help="Token returned by claim.")],
+    status: Annotated[str, typer.Option("--status", help="resolved or failed.")] = "resolved",
+    metadata_path: Annotated[
+        str | None,
+        typer.Option("--metadata", help="JSON metadata object, or '-' for stdin."),
+    ] = None,
+) -> None:
+    """Resolve or fail a claimed request."""
+    arguments = _merge_common_arguments(
+        {
+            "request_id": request_id,
+            "claim_token": claim_token,
+            "status": status,
+            "metadata_json": _load_operation_arguments(metadata_path) if metadata_path else None,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("agentRequest.complete", arguments))
+
+
+@agent_requests_app.command(name="ignore")
+def agent_requests_ignore(
+    request_id: Annotated[int, typer.Argument(help="Agent request id.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    ignored_by: Annotated[str, typer.Option("--ignored-by", help="Stable actor label.")],
+    claim_token: Annotated[
+        str | None,
+        typer.Option("--claim-token", help="Required when the request is claimed."),
+    ] = None,
+    metadata_path: Annotated[
+        str | None,
+        typer.Option("--metadata", help="JSON metadata object, or '-' for stdin."),
+    ] = None,
+) -> None:
+    """Archive a request without creating work."""
+    arguments = _merge_common_arguments(
+        {
+            "request_id": request_id,
+            "ignored_by": ignored_by,
+            "claim_token": claim_token,
+            "metadata_json": _load_operation_arguments(metadata_path) if metadata_path else None,
+        },
+        project_id=project_id,
+    )
+    _echo_json(_operation_call("agentRequest.ignore", arguments))
 
 
 # ---- serve ----------------------------------------------------------------

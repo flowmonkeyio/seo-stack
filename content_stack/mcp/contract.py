@@ -64,6 +64,11 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "bulkRecord",
         # Lifecycle / orchestration verbs.
         "run",
+        "claim",
+        "release",
+        "link",
+        "complete",
+        "ignore",
         "snapshot",
         "ingest",
         "bulkIngest",

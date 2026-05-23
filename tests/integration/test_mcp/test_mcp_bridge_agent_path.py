@@ -103,6 +103,9 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "toolbox.call" in names
     assert "schedule.remove" not in names
     assert "integration.set" not in names
+    assert "agentRequest.list" in names
+    assert "agentRequest.claim" in names
+    assert "agentRequest.create" not in names
     assert "context.query" in names
     assert "learning.query" in names
     assert "workflowTemplate.list" in names

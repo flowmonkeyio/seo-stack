@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_
 from sqlmodel import Session, col, select
 
 from content_stack.artifacts import redact_secret_text, redact_secrets
@@ -163,6 +164,38 @@ class AgentRequestRepository:
             stmt = stmt.where(AgentRequest.attention_status == attention_status)
         if claimed_by is not None:
             stmt = stmt.where(AgentRequest.claimed_by == claimed_by)
+        return cursor_paginate(
+            self._s,
+            stmt,
+            id_col=AgentRequest.id,
+            limit=limit,
+            after_id=after_id,
+            converter=self._out,
+        )
+
+    def list_claimable(
+        self,
+        *,
+        project_id: int,
+        attention_status: AgentRequestAttentionStatus | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[AgentRequestOut]:
+        """List requests an agent can claim now, including expired leases."""
+        self._require_project(project_id)
+        now = _utcnow()
+        stmt = select(AgentRequest).where(
+            AgentRequest.project_id == project_id,
+            or_(
+                AgentRequest.status == AgentRequestStatus.NEW,
+                (
+                    (AgentRequest.status == AgentRequestStatus.CLAIMED)
+                    & (AgentRequest.claim_expires_at <= now)
+                ),
+            ),
+        )
+        if attention_status is not None:
+            stmt = stmt.where(AgentRequest.attention_status == attention_status)
         return cursor_paginate(
             self._s,
             stmt,

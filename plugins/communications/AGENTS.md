@@ -31,9 +31,16 @@ does not run an assistant, classify intent, or decide workflows.
 
 ## Current Status
 
-The manifest is catalog metadata only. The actions are intentionally deferred
-until provider connectors, mocked provider tests, redaction tests, and run-plan
-grant coverage are delivered.
+The manifest is catalog metadata only. Telegram, SMTP, and IMAP actions are
+intentionally deferred until provider connectors, mocked provider tests,
+redaction tests, and run-plan grant coverage are delivered.
+
+The core `agentRequest.*` operations are executable through the shared
+operation registry. Use `agentRequest.list`, `agentRequest.get`,
+`agentRequest.claim`, `agentRequest.release`, `agentRequest.linkRunPlan`,
+`agentRequest.complete`, and `agentRequest.ignore` for queue lifecycle.
+`agentRequest.create` is not bootstrap granted; it requires a run token whose
+active step explicitly grants `agentRequest.create`.
 
 ## Implementation Checklist
 

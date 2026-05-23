@@ -114,6 +114,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
         _tool("auth.start"),
         _tool("plugin.enable"),
         _tool("resource.upsert"),
+        _tool("agentRequest.create"),
         _tool("artifact.create"),
         _tool("cost.queryProject"),
         _tool("learning.update"),
@@ -129,6 +130,7 @@ def test_bridge_tools_list_hides_daemon_internals() -> None:
     assert "auth.start" not in names
     assert "plugin.enable" not in names
     assert "resource.upsert" not in names
+    assert "agentRequest.create" not in names
     assert "artifact.create" not in names
     assert "cost.queryProject" not in names
     assert "learning.update" not in names
@@ -282,6 +284,13 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "plugin.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.get" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.claim" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.release" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.linkRunPlan" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.complete" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentRequest.ignore" in _AGENT_VISIBLE_TOOL_NAMES
     assert "catalog.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "capability.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "provider.describe" in _AGENT_VISIBLE_TOOL_NAMES
@@ -306,6 +315,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.recordStep" in _AGENT_STEP_GATED_TOOL_NAMES
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
     assert "action.execute" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "agentRequest.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "context.query" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "resource.upsert" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "artifact.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
@@ -318,6 +328,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "plugin.disable" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "resource.upsert" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
+    assert "agentRequest.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.start" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "auth.revoke" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.create" not in _AGENT_BASE_TOOLBOX_NAMES
@@ -336,6 +347,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     } == _AGENT_ADMIN_GATED_TOOL_NAMES
     assert {
         "action.execute",
+        "agentRequest.create",
         "artifact.create",
         "context.query",
         "context.snapshot",

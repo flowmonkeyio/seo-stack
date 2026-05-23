@@ -133,6 +133,51 @@ def test_agent_request_claim_release_and_expired_lease(
     assert reclaimed.claimed_by == "agent-b"
 
 
+def test_agent_request_claimable_list_includes_expired_leases(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = AgentRequestRepository(session)
+    open_request = repo.create(
+        project_id=project_id,
+        request_key="claimable-open",
+        title="Open",
+    ).data
+    fresh_request = repo.create(
+        project_id=project_id,
+        request_key="claimable-fresh-lease",
+        title="Fresh lease",
+    ).data
+    expired_request = repo.create(
+        project_id=project_id,
+        request_key="claimable-expired-lease",
+        title="Expired lease",
+    ).data
+
+    repo.claim(
+        project_id=project_id,
+        request_id=fresh_request.id,
+        claimed_by="agent-a",
+        lease_seconds=600,
+    )
+    expired_claim = repo.claim(
+        project_id=project_id,
+        request_id=expired_request.id,
+        claimed_by="agent-a",
+        lease_seconds=60,
+    ).data
+    row = session.get(AgentRequest, expired_request.id)
+    assert row is not None and row.claim_expires_at is not None
+    row.claim_expires_at = row.claim_expires_at - timedelta(seconds=120)
+    session.add(row)
+    session.commit()
+
+    claimable = repo.list_claimable(project_id=project_id).items
+
+    assert [item.id for item in claimable] == [open_request.id, expired_request.id]
+    assert expired_claim.id == expired_request.id
+
+
 def test_agent_request_link_complete_and_project_invariants(
     session: Session,
     project_id: int,

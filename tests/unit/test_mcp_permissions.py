@@ -29,6 +29,13 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("project.create", SYSTEM_SKILL)
     check_grant("auth.status", SYSTEM_SKILL)
     check_grant("auth.test", SYSTEM_SKILL)
+    check_grant("agentRequest.list", SYSTEM_SKILL)
+    check_grant("agentRequest.get", SYSTEM_SKILL)
+    check_grant("agentRequest.claim", SYSTEM_SKILL)
+    check_grant("agentRequest.release", SYSTEM_SKILL)
+    check_grant("agentRequest.linkRunPlan", SYSTEM_SKILL)
+    check_grant("agentRequest.complete", SYSTEM_SKILL)
+    check_grant("agentRequest.ignore", SYSTEM_SKILL)
     check_grant("context.query", SYSTEM_SKILL)
     check_grant("learning.query", SYSTEM_SKILL)
     check_grant("experiment.query", SYSTEM_SKILL)
@@ -59,6 +66,8 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     with pytest.raises(ToolNotGrantedError):
         check_grant("action.execute", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
+        check_grant("agentRequest.create", SYSTEM_SKILL)
+    with pytest.raises(ToolNotGrantedError):
         check_grant("integration.set", SYSTEM_SKILL)
     with pytest.raises(ToolNotGrantedError):
         check_grant("integration.test", SYSTEM_SKILL)
@@ -74,6 +83,7 @@ def test_run_plan_controller_has_dynamic_step_tools() -> None:
     check_grant("runPlan.claimStep", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("runPlan.recordStep", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("action.execute", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("agentRequest.create", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("resource.upsert", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("context.query", RUN_PLAN_CONTROLLER_SKILL)
 

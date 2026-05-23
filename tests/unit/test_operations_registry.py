@@ -11,6 +11,14 @@ def test_operation_registry_documents_core_operations() -> None:
         "action.describe",
         "action.execute",
         "action.validate",
+        "agentRequest.claim",
+        "agentRequest.complete",
+        "agentRequest.create",
+        "agentRequest.get",
+        "agentRequest.ignore",
+        "agentRequest.linkRunPlan",
+        "agentRequest.list",
+        "agentRequest.release",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",
@@ -35,6 +43,17 @@ def test_operation_registry_documents_core_operations() -> None:
     assert any("run_token" in item for item in described.prerequisites)
     assert described.examples[0].arguments["action_ref"] == "utils.sitemap.fetch"
 
+    agent_request = registry.get("agentRequest.claim").describe_out()
+    assert agent_request.surfaces["mcp"].enabled is True
+    assert agent_request.surfaces["rest"].enabled is True
+    assert agent_request.surfaces["cli"].command == "agent-requests claim"
+    assert agent_request.grant_policy == "direct-work-queue-write"
+    assert any("idempotency_key" in item for item in agent_request.prerequisites)
+
+    create_request = registry.get("agentRequest.create").describe_out()
+    assert create_request.grant_policy == "run-plan-step-grant"
+    assert any("run_token" in item for item in create_request.prerequisites)
+
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True
     assert run_plan.surfaces["rest"].enabled is True
@@ -50,6 +69,14 @@ def test_operation_registry_surface_filter() -> None:
         "action.describe",
         "action.execute",
         "action.validate",
+        "agentRequest.claim",
+        "agentRequest.complete",
+        "agentRequest.create",
+        "agentRequest.get",
+        "agentRequest.ignore",
+        "agentRequest.linkRunPlan",
+        "agentRequest.list",
+        "agentRequest.release",
         "runPlan.claimStep",
         "runPlan.create",
         "runPlan.get",

@@ -26,7 +26,9 @@ deferred until provider connectors and tests are implemented.
 - `agent-request-source`
 
 The generic `agent_requests` queue belongs to core StackOS, not this plugin.
-Communications can feed it after the core queue is delivered.
+Its `agentRequest.*` operations are executable through REST, CLI, and MCP.
+Communications can feed it only through trusted daemon ingestion or a run-plan
+step that explicitly grants `agentRequest.create`.
 
 ## Architecture Boundary
 

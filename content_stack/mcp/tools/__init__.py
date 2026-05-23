@@ -5,6 +5,7 @@ from __future__ import annotations
 from content_stack.mcp.server import ToolRegistry
 from content_stack.mcp.tools import (
     actions,
+    agent_requests,
     artifacts,
     auth,
     context,
@@ -22,6 +23,7 @@ from content_stack.mcp.tools import (
 
 def register_all(registry: ToolRegistry) -> None:
     """Populate ``registry`` with the core StackOS tool catalog."""
+    agent_requests.register(registry)
     actions.register(registry)
     projects.register(registry)
     auth.register(registry)
