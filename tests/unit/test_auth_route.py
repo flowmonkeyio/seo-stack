@@ -71,6 +71,42 @@ def test_ui_token_can_read_rest_data(client: TestClient, auth_token: str) -> Non
     assert resp.json()["items"] == []
 
 
+def test_ui_token_can_call_read_only_operations(client: TestClient, auth_token: str) -> None:
+    """POST is only a transport detail when the operation spec is read-only."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    resp = client.post(
+        "/api/v1/operations/agentRequest.list/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={"arguments": {"project_id": project_id, "claimable": True}},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["items"] == []
+    assert body["total_estimate"] == 0
+
+
+def test_ui_token_cannot_call_mutating_operations(client: TestClient, auth_token: str) -> None:
+    """Operation POST access stays limited by the operation spec, not URL shape."""
+    project_id = _create_project(client, auth_token)
+    ui_token = derive_ui_token(auth_token)
+
+    resp = client.post(
+        "/api/v1/operations/agentRequest.create/call",
+        headers={"authorization": f"Bearer {ui_token}"},
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "request_key": "blocked-ui-create",
+                "title": "Blocked UI create",
+            }
+        },
+    )
+    assert resp.status_code == 403
+    assert "read-only operations" in resp.json()["detail"]
+
+
 def test_ui_token_can_manage_provider_auth_setup(client: TestClient, auth_token: str) -> None:
     """The browser token can only perform narrow local-admin credential setup."""
     project_id = _create_project(client, auth_token)

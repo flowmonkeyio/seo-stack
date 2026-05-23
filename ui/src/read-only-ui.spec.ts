@@ -8,7 +8,8 @@ const SCOPES = ['components', 'lib', 'stores', 'views']
 const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
-const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE])
+const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
+const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -59,6 +60,14 @@ describe('restricted UI write contract', () => {
 
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
+    expect(text).toContain("method: 'POST'")
+  })
+
+  it('limits operation transport writes to the generic operation-call helper', () => {
+    const text = readFileSync(OPERATIONS_CLIENT, 'utf8')
+
+    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
+    expect(text).toContain('`/api/v1/operations/${operationName}/call`')
     expect(text).toContain("method: 'POST'")
   })
 })

@@ -25,9 +25,9 @@ The residual exposure is *another local process on the same machine* that
 can connect to ``127.0.0.1:5180`` — those processes can fetch the token
 just by GETting this endpoint. This is a regression from the file-mode-0600
 posture in that narrow case, accepted as the cost of admitting a browser
-client. The token returned here is REST-only and limited to reads plus
-provider-auth setup writes; the disk-backed daemon token remains the agent/MCP
-token for all other mutations.
+client. The token returned here is REST-only and limited to reads, read-only
+operation calls, and provider-auth setup writes; the disk-backed daemon token
+remains the agent/MCP token for all other mutations.
 """
 
 from __future__ import annotations
