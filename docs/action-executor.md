@@ -1,8 +1,7 @@
 # StackOS Action Executor
 
-D08 added the internal action execution foundation. D10 exposes it through
-run-plan-scoped grants for the first utility action. It is intentionally a
-daemon substrate, not an agent decision layer.
+The action executor is the daemon-side foundation for provider and utility
+calls. It is intentionally a substrate, not an agent decision layer.
 
 Agents and humans still decide what to do. StackOS only describes action
 contracts, validates explicit payloads, resolves daemon-held credentials, calls
@@ -69,8 +68,8 @@ this as the project-level **Action Calls** ledger, while run detail continues to
 show the calls scoped to a specific run/step.
 
 The table is part of the clean StackOS core. Domain plugins store their durable
-objects in resources/artifacts; the core action executor does not preserve
-legacy workflow tables for compatibility.
+objects in resources/artifacts; removed workflow-specific storage is not part
+of the current execution model.
 
 ## Availability
 

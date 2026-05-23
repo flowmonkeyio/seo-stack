@@ -1,5 +1,5 @@
 /**
- * Design Tokens — Operations Console Design System
+ * Design Tokens — StackOS Console Design System
  *
  * Semantic tokens are the contract. Raw color/space values are the implementation.
  * Components MUST consume semantic tokens (e.g. `color.fg.default`) — never raw

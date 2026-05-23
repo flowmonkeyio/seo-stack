@@ -1,16 +1,14 @@
 """MCP server initialization, tool registry, and Streamable HTTP mount.
 
-Per PLAN.md L646-L763 and the M3 deliverables in this milestone's brief,
-this module:
+This module:
 
 1. Builds a single ``mcp.server.Server`` instance.
-2. Registers a ``ToolSpec`` for every tool the M3 catalog ships (the
-   ``tools/`` package supplies the per-tool handlers).
+2. Registers ``ToolSpec`` entries for the current generic StackOS tool catalog
+   (the ``tools/`` package supplies the per-tool handlers).
 3. Wires the lowlevel ``list_tools`` / ``call_tool`` decorators onto the
    server, dispatching to the registered handlers.
 4. Mounts the SDK's Streamable HTTP ASGI sub-app at ``/mcp`` on the
-   FastAPI app so the existing bearer-token middleware (PROTECTED_PREFIXES
-   in ``content_stack.auth``) gates every call.
+   FastAPI app so the existing bearer-token middleware gates every call.
 
 The dispatcher is **single-purpose**: parse → enforce → call →
 re-envelope → log. It is deliberately not parameterised by HTTP method
@@ -602,9 +600,9 @@ class MCPDispatcher:
     ) -> _CallResult | None:
         """Look up an idempotency key; return cached envelope on hit.
 
-        Per audit M-20 we re-use ``IdempotencyKeyRepository.check_or_create``
-        which raises ``IdempotencyReplayError`` on hit. We catch it
-        here, return the cached envelope, and short-circuit.
+        Re-use ``IdempotencyKeyRepository.check_or_create``, which raises
+        ``IdempotencyReplayError`` on hit. We catch it here, return the cached
+        envelope, and short-circuit.
         """
         repo = IdempotencyKeyRepository(ctx.session)
         # We don't pre-populate response_json — the dispatcher will write
@@ -696,15 +694,13 @@ class MCPDispatcher:
 async def _mcp_lifespan(_server: Server[Any, Any]) -> AsyncIterator[dict[str, Any]]:
     """Lifespan for the lowlevel ``Server`` instance.
 
-    Per the M3 deliverable we want a ``tools_changed`` notification on
-    startup, but the lowlevel ``Server.run`` builds + tears down its
-    session per call (in stateless mode), so emitting from here happens
-    on every transport connection — that's fine, clients de-dup.
+    The lowlevel ``Server.run`` builds and tears down its session per call in
+    stateless mode, so emitting from here happens on every transport
+    connection; clients de-dup that notification.
 
-    The yielded dict is the ``lifespan_context`` passed into every
-    handler via ``request_ctx.lifespan_context``; we don't need any
-    cross-handler state at M3 (the dispatcher reads its engine from
-    ``app.state`` directly, not from lifespan), so the context is empty.
+    The yielded dict is the ``lifespan_context`` passed into every handler via
+    ``request_ctx.lifespan_context``. The dispatcher reads its engine from
+    ``app.state`` directly, not from lifespan, so the context is empty.
     """
     _log.info("mcp.server.lifespan.start")
     try:
@@ -809,10 +805,9 @@ def register_mcp(app: FastAPI) -> None:
     # Build the streamable HTTP manager. ``json_response=True`` returns
     # JSON for non-streaming POSTs (the dominant Codex / Claude Code
     # case); streaming tools fall back to SSE automatically. ``stateless``
-    # skips session-id correlation between calls — every JSON-RPC
-    # POST creates a fresh transport. M3 doesn't need cross-call
-    # resumption (the run-token correlates context, not the transport
-    # session-id), so stateless keeps the surface simple.
+    # skips session-id correlation between calls — every JSON-RPC POST creates a
+    # fresh transport. The run token correlates execution context, not the
+    # transport session id, so stateless keeps the surface simple.
     session_manager = StreamableHTTPSessionManager(
         app=server,
         stateless=True,

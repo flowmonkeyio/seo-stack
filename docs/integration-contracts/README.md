@@ -22,6 +22,21 @@ StackOS provider work has three states:
 | [GTM Prospecting And Outbound](gtm-prospecting-outbound.md) | Apollo, Clay, Clearbit/Clearbit by HubSpot, Outreach, Salesloft, Google Workspace, Microsoft 365 | First executable connector pass delivered except explicit deferred actions. |
 | [Media Buying](media-buying.md) | Meta Marketing API, Google Ads API, Outbrain, Taboola, custom media tool contracts | Meta, Google Ads, and Taboola first pass executable; Outbrain and custom media tool actions deferred until provider docs or project-local HTTP connector config exist. |
 
+## Current Integration Status
+
+| Domain | Status |
+| --- | --- |
+| `core` | Generic project memory, context, learnings, experiments, decisions, and local daemon primitives are the stable foundation. |
+| `utils` | OpenAI Images, Firecrawl scrape/crawl/map, Jina Reader, Reddit, sitemap, and static HTTP connector paths are executable through `action.execute`; async extract/status-depth remains deferred until status and artifact contracts exist. |
+| `seo` | DataForSEO keyword/SERP/PAA and Ahrefs competitor/backlink actions are executable. GSC, GA4, crawl imports, and broader DataForSEO/Ahrefs breadth still require explicit action contracts. |
+| `publishing` | WordPress and Ghost post-create actions are executable. Media upload, update, scheduling, taxonomy, and richer CMS operations still need contracts. |
+| `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |
+| `gtm` | First CRM, enrichment, outbound, and workspace actions are executable where provider contracts are documented. Clearbit/inbound/custom project-local actions remain explicit deferred modes. |
+
+Provider-specific direct MCP tools are not part of the current architecture.
+Provider calls should enter through plugin action manifests, daemon connectors,
+run-plan grants, and `action.execute`.
+
 ## Delivery Gate
 
 Before adding or changing `config.connector` on any action:
@@ -38,3 +53,11 @@ Before adding or changing `config.connector` on any action:
 
 If any item is missing, use an explicit deferred execution mode rather than an
 empty or misleading connector config.
+
+## Integration Completion Rule
+
+An integration is complete only when it has a provider manifest, typed auth
+setup or explicit no-auth state, daemon-only credential resolution, executable
+actions with meaningful schemas, decision-free connector code, run-plan grant
+coverage, redacted action-call audit, generic UI visibility, tests, and docs
+for setup and limitations.

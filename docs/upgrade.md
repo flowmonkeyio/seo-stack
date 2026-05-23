@@ -1,8 +1,8 @@
-# Upgrading content-stack
+# Upgrading StackOS
 
-Per audit P-G2, both install paths upgrade through a single command.
-Re-running the install pipeline is **idempotent** (audit B-24): the
-end state after one run matches the end state after ten.
+The package and CLI remain named `content-stack` for distribution
+compatibility. Re-running the install pipeline is idempotent: the end state
+after one run matches the end state after ten.
 
 ## pipx mode
 
@@ -47,8 +47,9 @@ Bump major version. Release notes call out manual migrations:
   step deletes them automatically via `rsync --delete`.
 - Auth token format change: would require an explicit `rotate-token`
   call; surfaced in release notes if it ever happens.
-- `content-stack` CLI subcommand removal: blocked by a deprecation
-  cycle (warn for one minor, then remove on the next major).
+- `content-stack` CLI subcommand removal: documented as a breaking change and
+  removed cleanly from commands, docs, tests, and install assets. Do not keep
+  compatibility shims for replaced execution paths.
 
 ## Rollback
 

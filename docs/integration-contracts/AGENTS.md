@@ -2,6 +2,9 @@
 
 This directory is the review gate for StackOS integration contracts.
 
+Use [`../README.md`](../README.md) for the broader documentation map. This file
+is the local gate for provider-specific contract work.
+
 ## Expectations
 
 - Use official provider documentation as the primary source.

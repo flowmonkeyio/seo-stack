@@ -1,18 +1,19 @@
-# content-stack — security notes
+# StackOS Security Notes
 
 This document records security trade-offs and threat-model decisions that
 deviate from the simplest "lock everything down" posture. Each section
 explains *what* is loosened, *why*, and *what* still defends the surface.
 
-## Auth posture (PLAN.md §D5)
+## Local Daemon Auth Posture
 
 The daemon binds to `127.0.0.1:5180` only and serves the committed StackOS UI
 bundle from the same origin. The Vue/Vite development UI, when used, runs on
 `127.0.0.1:5173` and proxies `/api` and `/mcp` to the daemon on `5180`. Every
 direct `/api/v1/*` and `/mcp/*` call must carry `Authorization: Bearer <token>`
 where the token is the contents of `~/.local/state/content-stack/auth.token`
-(32 bytes, mode 0600, generated atomically at first boot, rotated on
-`make install`).
+(32 bytes, mode 0600, generated atomically when missing). Installs and upgrades
+do not rotate an existing token; operators rotate explicitly with
+`content-stack rotate-token --yes` or `make rotate-token`.
 
 Three middlewares form the request gauntlet, applied in this order
 (outermost first):
@@ -78,7 +79,7 @@ workflow writes and external action execution go through MCP run-plan grants
 raw daemon token is therefore treated as local administrator authority, not as a
 normal agent credential.
 
-## Token-bootstrap trade-off (M5.A)
+## UI Token Bootstrap Trade-Off
 
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 
@@ -125,24 +126,22 @@ machines and want browser bootstrap removed can:
 1. **Run the UI in a separate browser profile** that has no other tabs.
    This eliminates same-origin script attacks against the SPA itself.
 2. **Disable the bootstrap and paste a UI token by hand.** A future
-   hardening flag (out of scope for M5) will let operators turn the
-   bootstrap off; the SPA will then prompt for a token at first load
-   and store it in `sessionStorage` for the tab's lifetime. Operators
-   who need this today can `chmod 0400` the token file and short-circuit
-   the bootstrap by editing `content_stack/auth.py`'s
-   `WHITELIST_PREFIXES`. This is intentionally a code change, not a
-   runtime flag, to make sure any operator going down that path has read
-   the implications.
+   hardening flag could let operators turn the bootstrap off; the SPA would
+   then prompt for a token at first load and store it in `sessionStorage` for
+   the tab's lifetime. Operators who need this today can `chmod 0400` the
+   token file and short-circuit the bootstrap by editing `content_stack/auth.py`
+   `WHITELIST_PREFIXES`. This is intentionally a code change, not a runtime
+   flag, to make sure any operator going down that path has read the
+   implications.
 
-## Per-tool rate limits (PLAN.md §828)
+## Rate-Limit Posture
 
-Middleware enforces 100 calls/min per MCP tool and 1000 calls/min
-aggregate per `Authorization: Bearer` token. Breach returns 429 with
-`retry_after` seconds and JSON-RPC code -32011. Bulk tools count as N
-calls. This caps blast radius if a token is exfiltrated and an attacker
-tries to drive a tight loop against a paid integration.
+StackOS does not currently advertise a global per-tool request-rate middleware.
+Provider wrappers may apply provider-specific pacing, retries, and budget
+pre-checks where those contracts are implemented. Do not document hard
+per-tool daemon rate limits until enforcement exists in middleware and tests.
 
-## Distribution + install posture (M9)
+## Distribution And Install Posture
 
 Both the clone-mode `make install` and the pipx-mode
 `content-stack install` paths share the same install code:
@@ -163,15 +162,14 @@ Both the clone-mode `make install` and the pipx-mode
 - **Wheel layout (pipx)**: skills and plugins are bundled under
   `content_stack/_assets/`. The console script hydrates the user-local plugin
   from those assets via `importlib.resources` so users without the repo on disk
-  get the same install. The committed `ui_dist/` ships inside the package
-  (D8) — no `pnpm` needed at user install time.
+  get the same install. The committed `ui_dist/` ships inside the package, so
+  no `pnpm` is needed at user install time.
 - **launchd plist**: optional. The plist runs the daemon as the
   invoking user; never as root. `make install-launchd` writes the
   plist with mode 0644 (world-readable, owner-writable). The plist
   itself does not store the auth token; the daemon reads it from
   `~/.local/state/content-stack/auth.token` at startup.
 
-The M9 pipx + launchd path does not change the threat model: the
-daemon binds loopback only, the bearer token gates every call, and
-the seed encrypts integration credentials at rest. The only delta is
-installation ergonomics.
+The pipx + launchd path does not change the threat model: the daemon binds
+loopback only, the bearer token gates every call, and the seed encrypts
+integration credentials at rest. The only delta is installation ergonomics.

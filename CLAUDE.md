@@ -6,10 +6,11 @@ agent-operated projects.
 ## Read First
 
 - `AGENTS.md`: current repo instructions and change checklist.
-- `README.md`: product overview and repository map.
+- `README.md`: business/product overview.
+- `docs/README.md`: documentation router.
 - `docs/architecture.md`: core architecture.
-- `docs/workflow-templates.md`: reusable workflow setup.
-- `docs/run-plans.md`: concrete execution instances.
+- `docs/operations.md`: operation registry and MCP/REST/CLI surfaces.
+- `docs/action-executor.md`: daemon-side action execution.
 - `docs/auth-providers.md`: no-secret auth boundary.
 - `docs/plugins.md`: plugin manifest and extension model.
 
@@ -17,9 +18,12 @@ agent-operated projects.
 
 - Keep core domain-agnostic.
 - Put domain behavior in plugins.
-- Keep tools static and explicit.
+- Keep tools static, explicit, and decision-free.
+- Register callable behavior once as an operation or plugin action contract.
 - Never expose secrets to agents.
 - Use workflow templates and run plans for execution state.
+- Use `action.execute` for provider/vendor calls; direct MCP tools are only for
+  generic StackOS primitives.
 - Render generic UI surfaces where possible.
 - Delete removed flows from code, tests, docs, generated API types, and install
   assets in the same delivery.

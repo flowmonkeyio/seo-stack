@@ -1,5 +1,9 @@
 # StackOS Plan
 
+Status: product vision note. This file is not the implementation source of
+truth. Use `README.md` for the business overview and `docs/README.md` for the
+current technical documentation map.
+
 StackOS is the clean product boundary for this repository.
 
 ## Mission

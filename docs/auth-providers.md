@@ -73,15 +73,19 @@ untyped secret blob route is not part of the public contract.
 
 ## OAuth Providers
 
-OAuth providers use the generic auth provider boundary:
+OAuth providers use the same no-secret boundary, but OAuth execution is
+provider-specific:
 
-- setup creates an encrypted placeholder credential and an `oauth_states` row
-- the provider callback consumes the state once and exchanges the code server-side
-- refresh/callback audit metadata is redacted before persistence
+- provider manifests can declare an interactive OAuth-style auth method
+- provider code owns the authorization URL, callback validation, token exchange,
+  refresh, scopes, and safe account metadata
+- `oauth_states` is generic infrastructure for provider flows, not a complete
+  provider-neutral OAuth implementation by itself
+- callback and refresh audit metadata must be redacted before persistence
 
-Provider-specific OAuth callbacks must be added deliberately by the provider
-plugin/integration. The generic model can describe the flow, but provider code
-owns the token exchange, refresh, scopes, and callback validation.
+If a provider does not implement a full start/callback/refresh path, its
+manifest should say so through setup notes or an explicit deferred state rather
+than implying OAuth is ready.
 
 ## Connections UI Contract
 

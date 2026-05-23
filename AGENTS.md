@@ -5,109 +5,45 @@ context, workflow templates, run plans, resources, artifacts, auth references,
 and audit records. The agent decides what to do; StackOS persists the setup and
 executes explicit tool calls.
 
-## Product Boundaries
+## Read First
 
-- **Core**: projects, plugins, capabilities, providers, auth provider refs,
-  resources, artifacts, workflow templates, run plans, context, learnings,
-  experiments, decisions, action calls, and audit runs.
-- **Plugins**: domain packages such as SEO, media buying, GTM, and shared utils.
-  Domain-specific resources and actions belong in plugin manifests and plugin
-  workflow templates.
-- **Tools**: static callable operations. Tools validate input, resolve auth
-  server-side, call local or external systems, and return structured output.
-  Tools must not decide strategy or invent workflow logic.
-- **Operations**: protocol-neutral callable contracts registered once and then
-  exposed through enabled MCP, REST, and CLI adapters. New callables should
-  define input/output schemas, surface policy, grant policy, examples, and
-  agent-facing guidance in the operation registry.
-- **Agents**: plan, choose templates, create run plans, request context, select
-  tools, interpret results, and record learnings.
+Use [`docs/README.md`](./docs/README.md) as the documentation router. For common
+work, start here:
 
-## Execution Model
+| Work | Read |
+| --- | --- |
+| Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md) |
+| Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
+| Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
+| Plugins, resources, templates, runs | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md) |
+| Provider contract reviews | [`docs/integration-contracts/AGENTS.md`](./docs/integration-contracts/AGENTS.md), [`docs/integration-contracts/`](./docs/integration-contracts/) |
+| UI work | [`docs/ui-design-system.md`](./docs/ui-design-system.md), [`docs/ui-component-inventory.md`](./docs/ui-component-inventory.md) |
 
-The runtime layers are:
+## Core Rules
 
-1. **Project**: durable workspace, plugin enablement, credentials, resources,
-   artifacts, history, learnings, experiments, and decisions.
-2. **Workflow template**: reusable setup for a class of work. A template may
-   include instructions, inputs, context requirements, policy boundaries,
-   approval gates, tool/action requirements, expected outputs, and default run
-   plan steps.
-3. **Run plan**: a concrete execution instance created from a template or by an
-   agent. It has ordered steps, scoped tool grants, status, output, and audit
-   history.
-
-Context retrieval is filtered. Templates and run plans should ask for the
-minimum useful history, for example recent runs with selected fields, active
-experiments for the same domain, accepted learnings by tag, and relevant
-artifacts by resource key.
-
-## Auth Boundary
-
-Agents never receive secrets. Each provider owns its auth methods and
-credential storage:
-
-- API keys, OAuth tokens, SMTP passwords, app passwords, and account metadata
-  are stored server-side through typed provider auth methods.
-- Agents receive provider/account ids, profile keys, auth method keys, status,
-  scopes, and safe diagnostics.
-- `action.execute` resolves credentials inside the daemon process.
-- Credential usage events should be recorded for auditability.
-
-## MCP Surface
-
-The agent-visible MCP surface should stay small and generic:
-
-- bootstrap/setup: workspace/project selection and project config
-- plugin/catalog/capability/provider/resource/artifact discovery
-- safe auth status/test by reference
-- workflow template list/describe/validate
-- run plan create/validate/start/get/list
-- context/query/timeline and learning/experiment/decision reads
-- action describe/validate
-
-Bootstrap/setup calls may exist before a run token so an agent can create a
-project and start the first run plan. Workflow execution writes are different:
-`resource.upsert`, `artifact.create`, `learning.create`, `experiment.*`,
-`decision.record`, and `action.execute` require a started run plan, one running
-step, and an explicit grant in the run-plan snapshot.
-
-Vendor operations should be modeled as plugin actions and executed through
-`action.execute`. Do not add provider-specific MCP tools for normal agents; if
-a provider needs a new callable operation, add a provider manifest entry, action
-manifest, connector, grant tests, and docs.
-
-## Operation Surface
-
-MCP is an adapter, not the core abstraction. Registered StackOS operations should
-be inspectable by agents and scripts before they are called:
-
-- REST docs: `GET /api/v1/operations` and
-  `GET /api/v1/operations/{operation_name}`
-- REST calls: `POST /api/v1/operations/{operation_name}/call`
-- CLI docs/calls: `content-stack ops list`, `content-stack ops describe`, and
-  `content-stack ops call`
-- MCP tools: generated from the same operation specs when the MCP surface is
-  enabled
-
-Do not register the same callable manually in MCP, REST, and CLI. Add or migrate
-the operation spec, then let adapters expose the enabled surfaces.
-
-## UI Direction
-
-The UI should render generic StackOS objects rather than one bespoke screen per
-workflow:
-
-- project dashboard
-- plugin catalog and enabled plugins
-- workflow template list/detail
-- run plan list/detail with generic step rendering
-- resource and artifact browsers
-- auth providers and credential status
-- action call history
-- context, learnings, experiments, and decisions
-
-SEO remains a first-party plugin domain, not the core product shape.
+- The runtime layers are project -> workflow template -> run plan. Projects
+  store durable state, templates define reusable setup, and run plans are
+  concrete execution instances with scoped grants and audit history.
+- Core stays domain-agnostic. SEO, media buying, GTM, publishing, and utilities
+  belong in plugins through manifests, resources, actions, and templates.
+- Agents decide strategy. StackOS stores, validates, resolves daemon-held auth,
+  executes explicit calls, and records audit. Tools/connectors must not invent
+  workflow logic or business decisions.
+- Agents never receive secrets. They receive safe provider/account refs,
+  auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
+  values. `action.execute` resolves credentials inside the daemon process.
+- MCP is an adapter, not the core abstraction. Register callable behavior once
+  as a StackOS operation, then expose it through allowed MCP, REST, CLI, and UI
+  surfaces from that spec.
+- Direct MCP tools are only for generic StackOS primitives. Provider/vendor
+  operations must be plugin actions executed through `action.execute`, with
+  manifest entries, connector tests, grants, and docs updated together.
+- Workflow execution writes such as `resource.upsert`, `artifact.create`,
+  `learning.create`, `experiment.*`, `decision.record`, and `action.execute`
+  require a started run plan, one running step, and an explicit grant snapshot.
+- The UI should render generic StackOS objects: projects, plugins, workflow
+  templates, run plans, resources, artifacts, auth status, action calls,
+  context, learnings, experiments, and decisions.
 
 ## Local Ports
 

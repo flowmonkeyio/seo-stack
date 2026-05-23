@@ -142,19 +142,28 @@ outputs:
 Templates should define the reusable setup and constraints. Concrete action
 items belong in the run plan created by the agent.
 
-## Add MCP Tools
+## Add A Callable Operation
 
-Add direct MCP tools only for generic StackOS primitives. Domain operations
-should be plugin actions executed through `action.execute`. For every tool
-change, update:
+Register callable behavior once as a StackOS operation, then expose it through
+allowed MCP, REST, CLI, and UI operation-catalog surfaces from that spec.
 
-- input/output model
-- repository invariant
-- bridge visibility
-- permission grant
-- tests for grant and visibility
-- generated UI API types when REST changes
-- docs
+An operation change should define or update:
+
+- input/output models
+- handler and repository invariant
+- mutating/read-only classification
+- surface policy for MCP, REST, CLI, and UI docs
+- grant policy and no-secret behavior
+- examples and agent-facing guidance
+- tests for visibility, grants, validation, and audit
+- generated UI API types when REST/resource routes change
+- documentation
+
+Direct MCP tools are only for generic StackOS primitives. Provider/vendor
+operations should be plugin actions executed through `action.execute`. If a
+provider needs a new callable operation, add the provider manifest entry, action
+manifest, connector, grant tests, integration-contract docs, and operation
+visibility together.
 
 ## Add UI
 

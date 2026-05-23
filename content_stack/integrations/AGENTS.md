@@ -5,6 +5,11 @@ and auth tests.
 
 ## Expectations
 
+- Read [`../../docs/auth-providers.md`](../../docs/auth-providers.md),
+  [`../../docs/action-executor.md`](../../docs/action-executor.md), and the
+  relevant contract review in
+  [`../../docs/integration-contracts/`](../../docs/integration-contracts/)
+  before changing vendor clients.
 - Keep wrappers thin: auth headers, endpoint calls, rate limits, retries, cost
   extraction, and response persistence only.
 - Link official provider docs beside each endpoint method or pricing table.
@@ -17,6 +22,8 @@ and auth tests.
   refs or local URLs instead of raw payloads.
 - Do not keep dormant wrapper operations agent-executable without a plugin
   action manifest, schema, grants, docs, and tests.
+- A wrapper method is infrastructure. It is not a supported tool until a plugin
+  action and operation/action tests expose it through the clean StackOS path.
 
 ## Cost And Auth
 

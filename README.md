@@ -1,167 +1,136 @@
 # StackOS
 
-StackOS is a local tool and plugin runtime for agent-operated work. It lets a
-project install the domains it needs, such as SEO, media buying, GTM, or shared
-utility tooling, then gives agents a consistent way to read context, create run
-plans, call tools, and write durable results.
+StackOS is a local operating layer for agent-run business work. It lets a
+project install the tools it needs, connect provider accounts safely, reuse
+workflow templates, and give agents a consistent way to execute work without
+handing them secrets.
 
-The core rule is simple: StackOS stores state and executes explicit calls. The
-agent decides what to do.
+The core idea is simple: StackOS stores the setup and executes explicit calls.
+The agent or operator decides what to do.
 
-## What StackOS Owns
+## Why It Exists
 
-- Projects, plugins, capabilities, providers, and action definitions
-- Auth provider references and encrypted credential storage
-- Generic resources and artifacts
-- Workflow templates and concrete run plans
-- Context snapshots, learnings, experiments, and decisions
-- Action call records, run audit trails, and cost/status metadata
-- A generic UI for templates, run plans, resources, artifacts, auth, and plugins
+Most businesses do not run one isolated workflow. They run SEO, media buying,
+GTM, publishing, research, reporting, creative production, and internal tooling
+at the same time. Each area needs its own providers, credentials, records,
+templates, and history.
 
-StackOS does not contain strategy engines. A tool can validate configuration,
-resolve credentials, call an external service, and persist structured output.
-It should not decide campaign structure, SEO strategy, media-buying direction,
-GTM sequencing, or creative variants. Those decisions belong to the agent.
+StackOS turns that into a project-scoped tool library:
 
-## Runtime Layers
+- install only the plugins a project needs
+- connect each provider with the right auth flow
+- reuse templates for repeated work
+- create concrete run plans for actual execution
+- keep resources, artifacts, decisions, experiments, and learnings in one place
+- audit every tool call without exposing secrets to the agent
 
-| Layer | Purpose |
+## What It Is
+
+StackOS is not an SEO app, a media-buying app, or a GTM app. Those are plugin
+domains. The core product is the runtime underneath them.
+
+| Layer | Business Role |
 | --- | --- |
-| Project | Durable workspace with plugin enablement, auth refs, history, context, resources, and artifacts. |
-| Workflow template | Reusable setup for a class of work: inputs, instructions, context filters, gates, actions, expected outputs, and default steps. |
-| Run plan | A specific execution instance with ordered steps, scoped grants, status, outputs, approvals, and audit history. |
-| Action call | A concrete tool invocation with validated input, server-side auth resolution, response, error, and cost metadata. |
+| Project | The workspace for a company, site, product, or client. |
+| Plugin | A domain package such as SEO, media buying, GTM, publishing, or utilities. |
+| Connection | A safe provider credential profile, such as an API key, OAuth account, SMTP setup, CMS account, or internal webhook credential. |
+| Workflow template | Reusable setup for repeated work, including inputs, context needs, gates, expected outputs, and default steps. |
+| Run plan | One concrete execution instance with scoped permissions, steps, outputs, and audit history. |
+| Action call | A validated provider/tool call executed by the daemon and recorded for review. |
 
-Most work should start from a reusable workflow template. The agent can fork or
-extend templates for a project, create a run plan for the current goal, retrieve
-bounded context, execute actions, and record learnings.
+## Current Domains
 
-## Plugins
+First-party plugin coverage currently includes:
 
-Plugins package domain-specific capabilities without changing the core product:
+- **SEO**: keyword research, SERP analysis, PAA extraction, competitor/backlink
+  research, SEO resources, and reusable SEO templates.
+- **Media buying**: paid media providers, campaign and creative resources,
+  launch/review templates, and first provider connectors.
+- **GTM and RevOps**: CRM, enrichment, outbound, workspace, and pipeline
+  provider contracts with reusable GTM templates.
+- **Publishing**: WordPress and Ghost publishing actions.
+- **Utilities**: image generation, web retrieval, sitemap fetching, Reddit
+  research, and generic configured HTTP tools.
 
-- resources such as `landing-page`, `campaign`, `ad-account`, `creative`, or `lead`
-- providers such as Google Search Console, Meta Ads, Outbrain, Taboola, OpenAI
-  Images, Firecrawl, or internal services
-- actions such as `campaign.create`, `creative.generate`, `keyword.discover`,
-  or `web.scrape`
-- workflow templates that describe reusable work patterns
-- UI navigation contributions rendered by generic components
+The plugin model is intentionally open-ended. A project can add internal tools
+or new provider domains without changing the core runtime.
 
-The first-party plugins currently include:
+## Secret-Safe Execution
 
-- `core`: project memory, learnings, experiments, decisions, and shared context
-- `seo`: SEO content and search operations as a domain plugin
-- `utils`: reusable utility actions such as image generation and web retrieval
+Agents never receive API keys, OAuth tokens, SMTP passwords, app passwords, or
+raw encrypted payloads. Operators connect providers through typed auth methods,
+and agents receive only safe references, status, scopes, and diagnostics.
 
-## Auth
+When a run plan grants a tool call, the daemon resolves credentials inside the
+provider process, executes the explicit request, redacts sensitive output, and
+records the action call.
 
-Agents never receive secrets.
+## Operator Console
 
-Provider credentials are stored server-side and exposed to agents only as safe
-references: provider key, account id, status, scopes, last test result, and
-diagnostics. When an agent calls an action, the daemon resolves the credential in
-the tool process and records usage.
+The StackOS console is generic by design. It focuses on:
 
-This lets agents operate across vendors without copying API keys into prompts,
-run plans, or tool arguments.
-
-## MCP Surface
-
-The agent-facing MCP surface is intentionally generic:
-
-- bootstrap/setup tools for `workspace.*`, `project.*`, budgets, schedules, and
-  run-plan creation/start
-- `plugin.*`, `catalog.*`, `capability.*`, `provider.*`
-- `auth.*`
-- `workflowTemplate.*`
-- `runPlan.*`
-- `resource.*`, `artifact.*`
-- `context.*`, `learning.*`, `experiment.*`, `decision.*`
-- `action.describe`, `action.validate`, `action.execute`
-- `run.*` audit tools
-
-Operational vendor calls should be reached through action execution or scoped
-tool grants, not by expanding the direct agent surface.
-
-Bootstrap/setup writes are the only direct pre-run writes. Workflow writes such
-as resources, artifacts, learnings, experiments, decisions, and
-`action.execute` require an active run-plan step grant.
-
-## UI
-
-The UI is a generic StackOS console:
-
-- projects and plugin status
-- workflow templates
-- run plans and run detail
+- projects and enabled plugins
+- connected tools and credential status
+- workflow templates and concrete run plans
 - resources and artifacts
-- auth providers and credential status
-- context, learnings, experiments, and decisions
 - action call history
+- context, learnings, experiments, and decisions
 
 Domain plugins can contribute navigation and resource definitions, but the UI
 should render configuration and run state generically.
 
-## Development
+## Agent And Automation Access
 
-Install dependencies:
+Callable behavior is registered once as a StackOS operation or plugin action
+contract. The same contract can be exposed through MCP, REST, CLI, and the UI
+operation catalog when allowed.
+
+Agents should inspect operation/action descriptions before calling tools.
+Scripts can use the CLI or REST operation endpoint for the same execution path.
+Provider/vendor calls go through plugin actions and `action.execute`; direct
+MCP tools are reserved for generic StackOS primitives.
+
+## Running Locally
+
+Install and start the daemon:
 
 ```bash
 TPF_LLM_TOOL=codex tpf make install
-```
-
-Run the daemon:
-
-```bash
 TPF_LLM_TOOL=codex tpf make serve
 ```
 
-Open the StackOS UI:
+Open the committed StackOS UI bundle:
 
 ```text
 http://127.0.0.1:5180/
 ```
 
-`make serve` runs the FastAPI daemon on `127.0.0.1:5180` and serves the
-committed UI bundle from the same port. If you are actively developing the Vue
-app, run `make dev-ui` separately and open the Vite UI at
-`http://127.0.0.1:5173/`; it proxies `/api` and `/mcp` to the daemon on `5180`.
+For Vue UI development, run `make dev-ui` and open:
 
-Run tests:
-
-```bash
-TPF_LLM_TOOL=codex tpf make test
+```text
+http://127.0.0.1:5173/
 ```
 
-Generate UI API types after API changes:
+## Documentation
 
-```bash
-TPF_LLM_TOOL=codex tpf make gen-types
-```
+Start with [`docs/README.md`](./docs/README.md). It routes architecture,
+operations, auth, plugin, workflow, run-plan, UI, and integration-contract
+questions to the right canonical document.
 
-Build the UI bundle:
+Useful technical entrypoints:
 
-```bash
-TPF_LLM_TOOL=codex tpf make build-ui
-```
-
-## Repository Map
-
-| Path | Purpose |
-| --- | --- |
-| `content_stack/api/` | REST adapters for core StackOS resources. |
-| `content_stack/mcp/` | MCP registry, bridge, permissions, and tool schemas. |
-| `content_stack/repositories/` | Transport-agnostic business invariants. |
-| `content_stack/db/` | SQLModel models and migrations. |
-| `plugins/` | Built-in plugin manifests and workflow templates. |
-| `skills/` | Optional agent skill prompts used as domain guidance. |
-| `ui/` | Vue source for the StackOS console. |
-| `docs/` | Current architecture, security, plugin, workflow, run-plan, and delivery docs. |
+- [`docs/architecture.md`](./docs/architecture.md)
+- [`docs/operations.md`](./docs/operations.md)
+- [`docs/action-executor.md`](./docs/action-executor.md)
+- [`docs/auth-providers.md`](./docs/auth-providers.md)
+- [`docs/plugins.md`](./docs/plugins.md)
+- [`docs/workflow-templates.md`](./docs/workflow-templates.md)
+- [`docs/run-plans.md`](./docs/run-plans.md)
+- [`docs/extending.md`](./docs/extending.md)
 
 ## Clean-Cut Rule
 
 The current architecture is StackOS-first. Removed flows should not remain as
-routes, MCP tools, UI pages, tests, install assets, or docs. When replacing a
-flow, update the data model, MCP surface, plugin/template metadata, UI renderer,
-tests, and docs in the same delivery.
+routes, MCP tools, UI pages, tests, install assets, or active docs. When a flow
+is replaced, update the model, operation/action surface, plugin/template
+metadata, UI renderer, tests, and documentation in the same delivery.

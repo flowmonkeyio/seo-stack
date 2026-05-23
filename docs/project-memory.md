@@ -20,9 +20,10 @@ decide which learning is true, which experiment won, or what to do next.
 - `decisions`: explicit decisions supplied by an agent or human.
 - `metric_snapshots`: point-in-time metric values.
 
-These tables are additive sidecars. The clean-cut migration rule is that old
-Existing project data remains in place unless a signed-off schema cleanup
-explicitly removes it with backup/restore verification.
+These tables are the current StackOS memory sidecars. Removed
+workflow-specific storage should not be treated as project memory. Any schema
+cleanup that deletes stored data needs explicit signoff and backup/restore
+verification.
 
 ## Agent Retrieval
 

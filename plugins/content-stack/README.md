@@ -1,11 +1,13 @@
-# content-stack Plugin
+# content-stack Plugin Distribution
 
-This is the plugin-first distribution surface for content-stack. The plugin is
-intended to be installed once into Codex and/or Claude Code, then used from any
-website repository.
+This is the plugin-first distribution surface for StackOS. The package and
+plugin slug remain `content-stack` for installation compatibility, while the
+product/runtime documented to operators is StackOS. The plugin is intended to
+be installed once into Codex and/or Claude Code, then used from any website or
+business repository.
 
 The plugin starts a thin MCP bridge (`python -m content_stack mcp-bridge` in
-the hydrated install) that connects to the singleton local content-stack daemon.
+the hydrated install) that connects to the singleton local StackOS daemon.
 The bridge is disposable; the daemon owns the SQLite database, project
 bindings, credentials, workflow templates, run plans, resources, actions,
 context, learnings, experiments, decisions, and audit trails.

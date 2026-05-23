@@ -1,8 +1,9 @@
-"""Typer CLI surface for the daemon.
+"""Typer CLI surface for the StackOS daemon.
 
-Subcommand inventory matches PLAN.md's CLI reference. M0 implements `serve`
-and a minimal `doctor`; later subcommands deliberately raise `NotImplementedError`
-or print the milestone tag and exit, so the CLI shape is fixed from day one.
+The package command remains ``content-stack`` for distribution compatibility.
+The CLI starts and diagnoses the local daemon, manages local setup, and exposes
+shared StackOS operation/action/run-plan aliases through the daemon REST
+adapter.
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ from content_stack.mcp.bridge import AgentBridgeProxy, bridge_error
 app = typer.Typer(
     name="content-stack",
     help=(
-        "content-stack daemon CLI — `serve` runs the daemon, `doctor` diagnoses "
-        "an install. Other subcommands stub to milestone tags until implemented."
+        "StackOS daemon CLI — `serve` runs the daemon, `doctor` diagnoses an "
+        "install, and operation aliases call the shared dispatcher."
     ),
     no_args_is_help=True,
     add_completion=False,
@@ -593,9 +594,8 @@ def serve(
 ) -> None:
     """Run the daemon foreground.
 
-    Refuses non-loopback hosts at parse time per PLAN.md M-37 — `0.0.0.0`
-    exits with code 1 and a one-line explanation rather than uvicorn binding
-    publicly and the host-header middleware paper-clipping the leak.
+    Refuses non-loopback hosts at parse time so `0.0.0.0` exits with code 1
+    and a one-line explanation rather than uvicorn binding publicly.
     """
     if host not in _LOOPBACK_HOSTS:
         # Try one more parse for edge cases like 0:0:0:0:0:0:0:1.
@@ -608,9 +608,8 @@ def serve(
         except ValueError:
             ok = False
         if not ok:
-            # PLAN.md L1267 mandates exit code 1 for misuse, distinct from
-            # typer.BadParameter's default 2. We emit a one-line stderr
-            # message and exit 1 directly.
+            # Use exit code 1 for unsafe host misuse, distinct from
+            # typer.BadParameter's default 2.
             typer.echo(
                 f"error: --host {host!r} is not a loopback address; refusing to bind. "
                 "Use 127.0.0.1, ::1, or localhost.",
@@ -1198,10 +1197,9 @@ def _check_alembic_at_head(settings: Settings, db_present: bool) -> tuple[bool, 
 def _check_scheduler_jobs(settings: Settings) -> tuple[bool, int]:
     """Lightweight liveness check for APScheduler.
 
-    M8 doesn't expose an out-of-band query for scheduled jobs (the
-    daemon owns the scheduler instance), so for the doctor we fall back
-    to checking that the daemon is up — when it is, we trust the
-    lifespan registered the four ops jobs.
+    The daemon owns the scheduler instance, so the doctor falls back to checking
+    that the daemon is up. When it is, we trust the lifespan registered the
+    expected operations jobs.
     """
     daemon_up = _tcp_can_connect(settings.host, settings.port)
     return daemon_up, 4 if daemon_up else 0
@@ -1424,9 +1422,9 @@ def _check_launchd_plist(home: Path) -> tuple[bool, dict[str, object]]:
 def doctor(
     json_output: Annotated[bool, typer.Option("--json", help="Emit JSON")] = False,
 ) -> None:
-    """Diagnose the install — M8 expanded.
+    """Diagnose the local StackOS install.
 
-    Exit codes (subset of PLAN.md L1271):
+    Exit codes:
       0 all green
       1 daemon down
       4 alembic head mismatch
@@ -1448,15 +1446,13 @@ def doctor(
 
     db_present = settings.db_path.exists()
 
-    # M4: walk every integration_credentials row and confirm it
-    # decrypts cleanly. A failure here usually means the seed file was
-    # rotated outside the CLI or restored from a backup that doesn't
-    # match the DB's credentials. We surface it as an issue list rather
-    # than crashing doctor — operators want a full report, not a
-    # half-finished one.
+    # Walk every integration_credentials row and confirm it decrypts cleanly.
+    # A failure here usually means the seed file was rotated outside the CLI or
+    # restored from a backup that doesn't match the DB's credentials. Surface it
+    # as an issue list rather than crashing doctor.
     credentials_ok, credential_issues = _check_credentials_decrypt(settings, db_present)
 
-    # M8: alembic-head + scheduler-jobs probes.
+    # Alembic-head and scheduler-job probes.
     alembic_ok, alembic_version = _check_alembic_at_head(settings, db_present)
     scheduler_ok, scheduler_job_count = _check_scheduler_jobs(settings)
     home = _doctor_home()
@@ -1551,8 +1547,8 @@ def init(
 
     Idempotent: re-running on a populated state dir is a no-op (the
     seed and token are read but not regenerated). ``--force`` is
-    accepted for symmetry with PLAN.md L1268; it is rejected here as
-    too dangerous to wire blindly — operators wanting to rotate seed
+    accepted by the CLI shape; it is rejected here as too dangerous to wire
+    blindly. Operators wanting to rotate seed
     should call ``content-stack rotate-seed`` and ``rotate-token``
     explicitly so the side-effects (re-encryption, MCP re-registration)
     cannot be skipped accidentally.
@@ -1710,11 +1706,10 @@ def rotate_seed(
 ) -> None:
     """Rotate the integration-credentials seed.
 
-    Per PLAN.md L1136-L1142: writes a fresh 32-byte seed, re-encrypts
-    every credential row in a single SQLite transaction, and keeps the
-    old seed at ``seed.bin.bak`` for one daemon boot. ``--reencrypt`` is
-    mandatory because rotating without re-encrypting would orphan every
-    existing credential.
+    Writes a fresh 32-byte seed, re-encrypts every credential row in a single
+    SQLite transaction, and keeps the old seed at ``seed.bin.bak`` for one
+    daemon boot. ``--reencrypt`` is mandatory because rotating without
+    re-encrypting would orphan every existing credential.
     """
     if not reencrypt:
         typer.echo(
@@ -1833,17 +1828,17 @@ def rotate_token(
 
 @app.command()
 def backup() -> None:
-    """Atomic SQLite .backup + copy seed/auth-token (M9)."""
-    _stub("M9: jobs/scheduling", "backup")
+    """Reserved backup command placeholder."""
+    _stub("backup/restore jobs", "backup")
 
 
 @app.command()
 def restore(
     file: Annotated[Path, typer.Argument(help="Path to a .db backup")],
 ) -> None:
-    """Halt daemon, restore DB from backup, restart (M9)."""
+    """Reserved restore command placeholder."""
     _ = file
-    _stub("M9: jobs/scheduling", "restore")
+    _stub("backup/restore jobs", "restore")
 
 
 # Re-export Settings on the module so tests can `from content_stack.cli import Settings`

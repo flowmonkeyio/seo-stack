@@ -51,8 +51,9 @@ DATAFORSEO_PASSWORD=...
 
 ## Firecrawl
 
-Used by: scraping, crawl, page extraction, and any plugin action that needs
-web-page material.
+Used by: scraping, crawl/map submission, and plugin actions that need
+web-page material. Async extraction remains deferred until StackOS has a
+status/read action and artifact contract.
 
 1. Sign up at <https://firecrawl.dev>.
 2. Verify email; the dashboard issues an API key starting ``fc-...``.
@@ -90,7 +91,7 @@ Used by: ``image-generator``.
 3. Paste into Connections → OpenAI Images.
 
 This row is **separate** from the LLM key used by your external agent
-(PLAN.md L1057-L1063), so you can budget images independently from prose.
+runtime, so you can budget images independently from prose.
 
 Default path: the utility image action uses the current GPT Image API
 (``gpt-image-2`` by default). GPT Image responses return base64 image data,
