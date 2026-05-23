@@ -27,7 +27,7 @@ StackOS provider work has three states:
 | Domain | Status |
 | --- | --- |
 | `core` | Generic project memory, context, learnings, experiments, decisions, and local daemon primitives are the stable foundation. |
-| `utils` | OpenAI Images, Firecrawl scrape/crawl/map, Jina Reader, Reddit, sitemap, and static HTTP connector paths are executable through `action.execute`; async extract/status-depth remains deferred until status and artifact contracts exist. |
+| `utils` | OpenAI Images, Firecrawl scrape/crawl/map, Jina Reader, Reddit, sitemap, static HTTP connector paths, and the local [mock provider](../integration-testing.md) are executable through `action.execute`; async extract/status-depth remains deferred until status and artifact contracts exist. |
 | `seo` | DataForSEO keyword/SERP/PAA and Ahrefs competitor/backlink actions are executable. GSC, GA4, crawl imports, and broader DataForSEO/Ahrefs breadth still require explicit action contracts. |
 | `publishing` | WordPress and Ghost post-create actions are executable. Media upload, update, scheduling, taxonomy, and richer CMS operations still need contracts. |
 | `media-buying` | Meta Ads, Google Ads, and Taboola first actions are executable. Outbrain and custom media tools remain deferred or project-local until provider/project contracts are supplied. |

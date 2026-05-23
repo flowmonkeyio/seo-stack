@@ -29,6 +29,7 @@ from content_stack.actions.manifest import (
 )
 from content_stack.actions.meta_ads import MetaAdsActionConnector
 from content_stack.actions.microsoft_graph import MicrosoftGraphActionConnector
+from content_stack.actions.mock_provider import MockProviderActionConnector
 from content_stack.actions.openai_images import OpenAIImagesActionConnector
 from content_stack.actions.outreach import OutreachActionConnector
 from content_stack.actions.pipedrive import PipedriveActionConnector
@@ -69,6 +70,7 @@ DEFAULT_ACTION_CONNECTORS.register(ClayActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
 
 __all__ = [
     "ACTION_MANIFEST_SCHEMA_VERSION",
@@ -99,6 +101,7 @@ __all__ = [
     "JinaActionConnector",
     "MetaAdsActionConnector",
     "MicrosoftGraphActionConnector",
+    "MockProviderActionConnector",
     "OpenAIImagesActionConnector",
     "OutreachActionConnector",
     "PipedriveActionConnector",

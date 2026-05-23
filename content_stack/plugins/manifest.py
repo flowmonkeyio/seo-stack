@@ -319,6 +319,28 @@ _REDDIT_TOP_QUESTIONS_INPUT_SCHEMA = {
         "limit": {"type": "integer"},
     },
 }
+_MOCK_SCENARIOS = [
+    "success",
+    "partial_success",
+    "provider_error",
+    "invalid_credentials",
+    "rate_limit",
+    "timeout",
+]
+_MOCK_ECHO_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["message"],
+    "properties": {
+        "message": {"type": "string"},
+        "scenario": {
+            "type": "string",
+            "enum": _MOCK_SCENARIOS,
+        },
+        "echo": {"type": "object", "additionalProperties": True},
+        "cost_cents": {"type": "integer"},
+    },
+}
 
 _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
     PluginManifest(
@@ -417,6 +439,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 key="community-research",
                 name="Community Research",
                 description="Retrieve community discussions and question signals.",
+                kind="utility",
+            ),
+            CapabilityManifest(
+                key="integration-testing",
+                name="Integration Testing",
+                description="Exercise StackOS auth, grants, connector, and audit flow locally.",
                 kind="utility",
             ),
         ],
@@ -550,6 +578,41 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "Store the OAuth app JSON in the encrypted payload; do not "
                         "persist access tokens in agent-visible state."
                     ),
+                },
+            ),
+            ProviderManifest(
+                key="mock-provider",
+                name="Mock Provider",
+                description=(
+                    "Local fake provider for end-to-end StackOS action execution tests "
+                    "without external API accounts."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Fake API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="mock_...",
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Use any non-empty fake key. This provider never calls a vendor "
+                        "network, but it still goes through credential storage, run-plan "
+                        "grants, action execution, redaction, and audit."
+                    )
                 },
             ),
         ],
@@ -788,6 +851,28 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "connector": "reddit",
                     "operation": "top_questions",
                     "requires_credential": True,
+                },
+            ),
+            ActionManifest(
+                key="mock.echo",
+                name="Mock Provider Echo",
+                description=(
+                    "Local executable action for validating StackOS auth, grants, "
+                    "redaction, audit, and failure handling without provider accounts."
+                ),
+                provider="mock-provider",
+                capability="integration-testing",
+                risk_level="read",
+                input_schema=_MOCK_ECHO_INPUT_SCHEMA,
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "mock-provider",
+                    "operation": "echo",
+                    "requires_credential": True,
+                    "enforce_budget": False,
+                    "scenarios": _MOCK_SCENARIOS,
+                    "docs": ["docs/integration-testing.md"],
                 },
             ),
         ],

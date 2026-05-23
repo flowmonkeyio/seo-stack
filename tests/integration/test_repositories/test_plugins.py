@@ -66,9 +66,21 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     utils = catalog.plugins[0]
 
     assert utils.plugin.slug == "utils"
-    assert {cap.key for cap in utils.capabilities} >= {"image-generation", "web-retrieval"}
-    assert {provider.key for provider in utils.providers} >= {"openai-images", "firecrawl"}
-    assert {action.key for action in utils.actions} >= {"image.generate", "web.scrape"}
+    assert {cap.key for cap in utils.capabilities} >= {
+        "image-generation",
+        "web-retrieval",
+        "integration-testing",
+    }
+    assert {provider.key for provider in utils.providers} >= {
+        "openai-images",
+        "firecrawl",
+        "mock-provider",
+    }
+    assert {action.key for action in utils.actions} >= {
+        "image.generate",
+        "web.scrape",
+        "mock.echo",
+    }
     assert {resource.key for resource in utils.resources} >= {"generated-image", "web-document"}
     utils_actions = {action.key: action for action in utils.actions}
     assert utils_actions["web.scrape"].config_json["connector"] == "firecrawl"
@@ -76,6 +88,8 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert utils_actions["web.read"].config_json["requires_credential"] is False
     assert utils_actions["sitemap.fetch"].config_json["connector"] == "sitemap"
     assert utils_actions["sitemap.fetch"].config_json["requires_credential"] is False
+    assert utils_actions["mock.echo"].config_json["connector"] == "mock-provider"
+    assert utils_actions["mock.echo"].config_json["requires_credential"] is True
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
     assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
@@ -204,6 +218,8 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
     assert missing_setup["web.read"].availability.status == "ready"
     assert missing_setup["sitemap.fetch"].availability.status == "ready"
     assert missing_setup["sitemap.fetch"].availability.executable is True
+    assert missing_setup["mock.echo"].availability.status == "missing_credential"
+    assert missing_setup["mock.echo"].availability.reasons == ["credential_required"]
 
     IntegrationCredentialRepository(session).set(
         project_id=project_id,

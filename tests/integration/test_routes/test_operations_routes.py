@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 from pytest_httpx import HTTPXMock
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from content_stack.db.models import CredentialUsageEvent
 from content_stack.repositories.run_plans import RunPlanRepository
 
 
@@ -29,6 +32,77 @@ def _sitemap_action_plan_json() -> dict:
             }
         ],
     }
+
+
+def _mock_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.mock-provider.run",
+        "title": "Mock provider action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "execute-mock",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.mock.echo"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "execute-mock",
+                "title": "Execute mock provider",
+                "action_refs": ["utils.mock.echo"],
+            }
+        ],
+    }
+
+
+def _store_mock_credential(
+    api: TestClient, project_id: int, secret: str = "mock-secret-token"
+) -> str:
+    credential = api.post(
+        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        json={
+            "auth_method_key": "api_key",
+            "profile_key": "primary",
+            "label": "Mock Primary",
+            "fields": {"api_key": secret},
+        },
+    )
+    assert credential.status_code == 201, credential.text
+    return str(credential.json()["data"]["credential_ref"])
+
+
+def _start_mock_run_plan(api: TestClient, project_id: int) -> tuple[int, str, int, int]:
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={"arguments": {"project_id": project_id, "run_plan_json": _mock_action_plan_json()}},
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = int(created.json()["data"]["id"])
+
+    started = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": run_plan_id}},
+    )
+    assert started.status_code == 200, started.text
+    run_token = str(started.json()["data"]["run_token"])
+    run_id = int(started.json()["data"]["run_id"])
+
+    claimed = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "run_plan_id": run_plan_id,
+                "step_id": "execute-mock",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert claimed.status_code == 200, claimed.text
+    step_pk = int(claimed.json()["data"]["id"])
+    return run_plan_id, run_token, run_id, step_pk
 
 
 def test_operation_docs_are_agent_readable(api: TestClient) -> None:
@@ -204,6 +278,125 @@ def test_operation_rest_action_execute_uses_run_plan_boundary(
     )
     assert audit_resp.status_code == 200
     assert audit_resp.json()["total_estimate"] == 1
+
+
+def test_operation_rest_mock_provider_vertical_slice(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id)
+    run_plan_id, run_token, run_id, step_id = _start_mock_run_plan(api, project_id)
+
+    executed = api.post(
+        "/api/v1/operations/action.execute/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_token": run_token,
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "input_json": {
+                    "message": "hello from local fake provider",
+                    "echo": {"campaign": "mock-campaign"},
+                    "cost_cents": 7,
+                },
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    rendered = json.dumps(body)
+    assert body["action_call"]["run_id"] == run_id
+    assert body["action_call"]["run_plan_id"] == run_plan_id
+    assert body["action_call"]["run_plan_step_id"] == step_id
+    assert body["action_call"]["provider_key"] == "mock-provider"
+    assert body["action_call"]["connector_key"] == "mock-provider"
+    assert body["output_json"]["status"] == "success"
+    assert body["output_json"]["credential_ref"] == credential_ref
+    assert body["output_json"]["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
+    assert body["metadata_json"]["access_token"] == "[redacted]"
+    assert body["cost_cents"] == 7
+    assert "mock-secret-token" not in rendered
+
+    audit_resp = api.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={
+            "run_id": run_id,
+            "run_plan_id": run_plan_id,
+            "run_plan_step_id": step_id,
+            "status": "success",
+        },
+    )
+    assert audit_resp.status_code == 200
+    audit = audit_resp.json()
+    assert audit["total_estimate"] == 1
+    assert "mock-secret-token" not in json.dumps(audit)
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        usage = session.exec(
+            select(CredentialUsageEvent).where(
+                CredentialUsageEvent.project_id == project_id,
+                CredentialUsageEvent.provider_key == "mock-provider",
+            )
+        ).all()
+    operations = {row.operation for row in usage}
+    assert {"auth.credential.set", "action.utils.mock.echo"} <= operations
+    assert "mock-secret-token" not in json.dumps(
+        [row.metadata_json for row in usage],
+        default=str,
+    )
+
+
+def test_operation_rest_mock_provider_failure_records_redacted_audit(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id, secret="sk-mock-failure-secret")
+    run_plan_id, run_token, run_id, step_id = _start_mock_run_plan(api, project_id)
+
+    failed = api.post(
+        "/api/v1/operations/action.execute/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_token": run_token,
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "input_json": {
+                    "message": "simulate rate limit",
+                    "scenario": "rate_limit",
+                },
+            }
+        },
+    )
+
+    assert failed.status_code == 409, failed.text
+    rendered_failure = json.dumps(failed.json())
+    assert "sk-mock-failure-secret" not in rendered_failure
+    assert failed.json()["data"]["connector"] == "mock-provider"
+
+    audit_resp = api.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={
+            "run_id": run_id,
+            "run_plan_id": run_plan_id,
+            "run_plan_step_id": step_id,
+            "status": "failed",
+        },
+    )
+    assert audit_resp.status_code == 200
+    audit = audit_resp.json()
+    assert audit["total_estimate"] == 1
+    row = audit["items"][0]
+    assert row["status"] == "failed"
+    assert row["connector_key"] == "mock-provider"
+    assert "rate limited" in row["error"]
+    assert "sk-mock-failure-secret" not in json.dumps(audit)
 
 
 def test_operation_rest_run_token_cannot_spoof_project(
