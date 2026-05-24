@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<UiSidePanelProps>(), {
   description: undefined,
   side: 'right',
   size: 'md',
+  scrollBody: true,
 });
 
 const emit = defineEmits<{
