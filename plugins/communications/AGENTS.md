@@ -115,15 +115,14 @@ does not run an assistant, classify intent, or decide workflows.
   them only through trusted ingestion or granted run-plan steps.
 - All communication ingress must follow one-brain processing. Provider adapters
   verify transport auth and normalize payloads; shared communication code is
-  responsible for resource storage, stable request dedupe, and agent-request
-  creation. Button/callback click-state updates should be normalized as shared
-  processor patches, not committed directly inside provider ingress. Move
-  remaining trigger matching and user allowlist policy toward the shared
-  processor instead of adding provider-specific decision branches.
-- Slack and Telegram now use the shared inbound processor for storage/request
-  creation, but still contain transitional provider-local trigger and access
-  evaluation. Do not copy those provider-local policy paths into another
-  channel.
+  responsible for static policy evaluation, resource storage, stable request
+  dedupe, and agent-request creation. Button/callback click-state updates must
+  be normalized as shared processor patches, not committed directly inside
+  provider ingress.
+- Shared inbound policy separates visibility from activation. A bot can observe
+  configured visible channels or DMs, while only approved users may create agent
+  work or trigger responses. Do not reintroduce channel/chat allowlists as the
+  primary answer restriction in provider adapters.
 
 ## Adding A Communication Provider
 

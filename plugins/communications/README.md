@@ -150,11 +150,13 @@ validates explicit payloads, executes configured calls, and records audit.
 
 The architecture is one shared communication processor after provider-specific
 auth/normalization. Slack and Telegram HTTP ingress now use the shared inbound
-processor for resource storage, stable request dedupe, and agent-request
-creation, including button/callback click-state patches. Their remaining
-provider-local trigger/access policy is transitional; new channels should
-normalize events into provider-neutral refs and reuse shared communication
-profile, target, route, context, and agent-request infrastructure.
+processor for static policy evaluation, resource storage, stable request
+dedupe, and agent-request creation, including button/callback click-state
+patches. The policy model separates visibility from activation: channels and DMs
+can be observed as context, while only approved users may create work or trigger
+responses. New channels should normalize events into provider-neutral refs and
+reuse shared communication profile, target, route, context, and agent-request
+infrastructure.
 
 Telegram inline buttons use opaque `callback_data` only. Store the meaningful
 state in `communication-interaction` resources keyed by bot profile, provider

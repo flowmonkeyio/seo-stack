@@ -457,17 +457,8 @@ def _validate_access_policy(policy: TelegramAccessPolicy) -> None:
         mode = getattr(policy, key)
         if mode not in _ACCESS_MODES:
             raise ValidationError(f"access_policy.{key} is invalid")
-        if mode == "allowlist":
-            has_chat_allowlist = bool(policy.allowed_chat_refs)
-            has_user_allowlist = bool(policy.allowed_user_refs)
-            if key == "dm_mode" and not (has_chat_allowlist or has_user_allowlist):
-                raise ValidationError(
-                    "access_policy.dm_mode=allowlist requires allowed chats or users"
-                )
-            if key == "group_mode" and not has_chat_allowlist:
-                raise ValidationError("access_policy.group_mode=allowlist requires allowed chats")
-            if key == "user_mode" and not has_user_allowlist:
-                raise ValidationError("access_policy.user_mode=allowlist requires allowed users")
+        if key == "user_mode" and mode == "allowlist" and not policy.allowed_user_refs:
+            raise ValidationError("access_policy.user_mode=allowlist requires allowed users")
 
 
 def _validate_allowed_updates(values: list[str]) -> None:

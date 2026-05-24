@@ -673,10 +673,7 @@ def _validate_bot_profile(profile: Mapping[str, Any]) -> None:
         mode = access.get(key)
         if mode not in {"all", "allowlist", "denylist", "disabled"}:
             raise ValidationError(f"Telegram bot profile access_policy.{key} is required")
-        if mode == "allowlist":
-            has_chat_allowlist = bool(
-                _profile_refs(access, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
-            )
+        if key == "user_mode" and mode == "allowlist":
             has_user_allowlist = bool(
                 _profile_refs(
                     access,
@@ -686,16 +683,7 @@ def _validate_bot_profile(profile: Mapping[str, Any]) -> None:
                     "allowed_users",
                 )
             )
-            if key == "dm_mode" and not (has_chat_allowlist or has_user_allowlist):
-                raise ValidationError(
-                    "Telegram bot profile access_policy.dm_mode=allowlist requires "
-                    "allowed chats or users"
-                )
-            if key == "group_mode" and not has_chat_allowlist:
-                raise ValidationError(
-                    f"Telegram bot profile access_policy.{key}=allowlist requires allowed chats"
-                )
-            if key == "user_mode" and not has_user_allowlist:
+            if not has_user_allowlist:
                 raise ValidationError(
                     "Telegram bot profile access_policy.user_mode=allowlist requires allowed users"
                 )

@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -20,21 +19,27 @@ from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
 from stackos.communications import (
     CommunicationDecision,
+    CommunicationInteractionCheck,
+    CommunicationPolicyEvent,
+    CommunicationPolicyProfile,
     NormalizedInboundEvent,
     NormalizedResourcePatch,
     NormalizedResourceWrite,
+    candidate_refs,
+    communication_record_by_external_id,
+    config_policy,
+    evaluate_inbound_policy,
     process_inbound_event,
 )
-from stackos.db.models import IntegrationCredential, Plugin, Resource, ResourceRecord
+from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
-from stackos.repositories.resources import ResourceRepository
 
 router = APIRouter(prefix="/api/v1/ingress/slack", tags=["slack-ingress"])
 
@@ -79,9 +84,9 @@ async def ingest_slack_payload(
 
     This route verifies Slack's HMAC signature with the daemon-held signing
     secret, normalizes a bounded event/interactivity shape into communication
-    resources, optionally creates one generic agent request from static policy,
-    and stops. It never calls Slack, never starts a model, and never decides the
-    business workflow.
+    resources, applies shared communication policy, optionally creates one
+    generic agent request, and stops. It never calls Slack, never starts a
+    model, and never decides the business workflow.
     """
 
     profile = _require_slack_profile(session, project_id=project_id, profile_key=profile_key)
@@ -174,7 +179,7 @@ def _require_slack_profile(
     project_id: int,
     profile_key: str,
 ) -> SlackProfile:
-    record = _resource_record_by_external_id(
+    record = communication_record_by_external_id(
         session,
         project_id=project_id,
         resource_key="communication-profile",
@@ -193,30 +198,6 @@ def _require_slack_profile(
     if not auth_profile_key:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Slack signature")
     return SlackProfile(key=profile_key, auth_profile_key=auth_profile_key, data=data)
-
-
-def _resource_record_by_external_id(
-    session: Session,
-    *,
-    project_id: int,
-    resource_key: str,
-    external_id: str,
-) -> ResourceRecord | None:
-    ResourceRepository(session).list_resources(
-        plugin_slug="communications",
-        project_id=project_id,
-    )
-    return session.exec(
-        select(ResourceRecord)
-        .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
-        .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
-        .where(
-            col(ResourceRecord.project_id) == project_id,
-            col(ResourceRecord.external_id) == external_id,
-            col(Resource.key) == resource_key,
-            col(Plugin.slug) == "communications",
-        )
-    ).first()
 
 
 def _parse_payload(raw_body: bytes, *, content_type: str | None) -> dict[str, Any]:
@@ -259,19 +240,13 @@ def _store_payload(
         parsed=parsed,
         retry_num=retry_num,
         retry_reason=retry_reason,
-        mark_interaction_clicked=bool(decision["create_request"]),
+        mark_interaction_clicked=decision.create_request,
     )
     result = process_inbound_event(
         session,
         project_id=project_id,
         event=normalized,
-        decision=CommunicationDecision(
-            store=bool(decision["store"]),
-            create_request=bool(decision["create_request"]),
-            status=str(decision["status"]),
-            trigger_reason=decision.get("trigger_reason"),
-            matched_command=decision.get("matched_command"),
-        ),
+        decision=decision,
     )
     return result.to_response()
 
@@ -371,159 +346,92 @@ def _policy_decision(
     project_id: int,
     profile: SlackProfile,
     parsed: dict[str, Any],
-) -> dict[str, Any]:
-    data = profile.data
-    if data.get("enabled") is False:
-        return {"store": False, "create_request": False, "status": "profile_disabled"}
-    if not _surface_allowed(profile, parsed):
-        return {"store": False, "create_request": False, "status": "surface_blocked"}
-    trigger_match = _trigger_match(profile, parsed)
-    if trigger_match is None:
-        visibility = _policy(profile, "visibility_policy")
-        if visibility.get("store_non_trigger_messages") is not True:
-            return {"store": False, "create_request": False, "status": "not_triggered"}
-        return {"store": True, "create_request": False, "status": "observed"}
-    if not _user_allowed(profile, parsed):
-        return {"store": True, "create_request": False, "status": "invoker_blocked"}
-    if parsed["update_type"] == "block_actions" and not _known_interaction(
-        session,
-        project_id,
-        profile,
-        parsed,
-    ):
-        return {"store": True, "create_request": False, "status": "interaction_blocked"}
-    return {
-        "store": True,
-        "create_request": True,
-        "status": "request_created",
-        "trigger_reason": trigger_match["reason"],
-        "matched_command": trigger_match.get("command"),
-    }
-
-
-def _surface_allowed(profile: SlackProfile, parsed: Mapping[str, Any]) -> bool:
-    access = _policy(profile, "access_policy")
-    mode_key = "dm_mode" if parsed.get("channel_type") == "im" else "channel_mode"
-    mode = access.get(mode_key, access.get("group_mode"))
-    if mode == "disabled" or mode is None:
-        return False
-    denied = _refs(access, "denied_surface_refs", "denied_channel_refs", "denied_channels")
-    surface_ref = parsed.get("surface_ref")
-    if isinstance(surface_ref, str) and surface_ref in denied:
-        return False
-    if mode in {"all", "denylist"}:
-        return True
-    allowed = _refs(access, "allowed_surface_refs", "allowed_channel_refs", "allowed_channels")
-    if isinstance(surface_ref, str) and surface_ref in allowed:
-        return True
-    if parsed.get("channel_type") == "im":
-        allowed_users = _refs(access, "allowed_user_refs", "allowed_user_ids", "allowed_users")
-        return bool(parsed.get("user_ref") in allowed_users)
-    return False
-
-
-def _user_allowed(profile: SlackProfile, parsed: Mapping[str, Any]) -> bool:
-    access = _policy(profile, "access_policy")
-    mode = access.get("user_mode")
-    if mode == "disabled" or mode is None:
-        return False
-    denied = _refs(access, "denied_user_refs", "denied_user_ids", "denied_users")
-    user_ref = parsed.get("user_ref")
-    if isinstance(user_ref, str) and user_ref in denied:
-        return False
-    if mode in {"all", "denylist"}:
-        return True
-    allowed = _refs(access, "allowed_user_refs", "allowed_user_ids", "allowed_users")
-    return bool(isinstance(user_ref, str) and user_ref in allowed)
-
-
-def _trigger_match(profile: SlackProfile, parsed: Mapping[str, Any]) -> dict[str, Any] | None:
-    if parsed.get("update_type") == "block_actions":
-        return {"reason": "interaction"}
-    trigger = _policy(profile, "trigger_policy")
-    event_type = parsed.get("event_type")
-    allowed_events = _string_list(trigger.get("event_types") or trigger.get("allowed_events"))
-    if allowed_events and event_type not in allowed_events:
-        return None
-    text = str(parsed.get("text") or "")
-    command = _matched_command(text, trigger)
-    if command is not None:
-        return {"reason": "command", "command": command}
-    if event_type == "app_mention":
-        return {"reason": "mention"}
-    if parsed.get("channel_type") == "im" and trigger.get("dm_trigger", "always") == "always":
-        return {"reason": "dm"}
-    channel_trigger = trigger.get(
-        "channel_trigger",
-        trigger.get("group_trigger", "mention_or_command"),
-    )
-    if channel_trigger == "always":
-        return {"reason": "channel_always"}
-    if channel_trigger != "never" and _matches_mention(text, trigger, profile):
-        return {"reason": "mention"}
-    return None
-
-
-def _matched_command(text: str, trigger: Mapping[str, Any]) -> dict[str, Any] | None:
-    first_token = text.strip().split(maxsplit=1)[0] if text.strip() else ""
-    if not first_token:
-        return None
-    commands = trigger.get("commands")
-    if not isinstance(commands, list):
-        return None
-    for item in commands:
-        if not isinstance(item, Mapping) or item.get("enabled") is False:
-            continue
-        candidates = [str(item.get("command") or ""), *_string_list(item.get("aliases"))]
-        for candidate in candidates:
-            normalized = candidate if candidate.startswith("/") else f"/{candidate}"
-            if first_token == normalized:
-                return dict(item)
-    return None
-
-
-def _matches_mention(text: str, trigger: Mapping[str, Any], profile: SlackProfile) -> bool:
-    bot_user_id = _slack_facet_text(profile, "bot_user_id")
-    if bot_user_id and f"<@{bot_user_id}>" in text:
-        return True
-    for pattern in _string_list(trigger.get("mention_patterns")):
-        try:
-            if re.search(pattern, text, flags=re.IGNORECASE):
-                return True
-        except re.error:
-            continue
-    return False
-
-
-def _known_interaction(
-    session: Session,
-    project_id: int,
-    profile: SlackProfile,
-    parsed: Mapping[str, Any],
-) -> bool:
-    trigger = _policy(profile, "trigger_policy")
-    if trigger.get("allow_unknown_interactions") is True:
-        return True
-    message_ref = parsed.get("message_ref")
-    action_id = str(parsed.get("action_id") or "")
-    value = str(parsed.get("button_value") or "")
-    block_id = str(parsed.get("block_id") or "")
-    if not isinstance(message_ref, str) or not action_id:
-        return False
-    external_id = _outbound_button_external_id(
-        profile_key=profile.key,
-        message_ref=message_ref,
-        action_id=action_id,
-        value=value,
-        block_id=block_id,
-    )
-    record = _resource_record_by_external_id(
+) -> CommunicationDecision:
+    return evaluate_inbound_policy(
         session,
         project_id=project_id,
-        resource_key="communication-interaction",
-        external_id=external_id,
+        profile=CommunicationPolicyProfile(
+            provider_key="slack-bot",
+            profile_key=profile.key,
+            data=profile.data,
+            disabled_status="profile_disabled",
+            store_non_trigger_default=False,
+            visibility_blocked_status="surface_blocked",
+        ),
+        event=_slack_policy_event(profile, parsed),
     )
-    return record is not None
+
+
+def _slack_policy_event(
+    profile: SlackProfile,
+    parsed: Mapping[str, Any],
+) -> CommunicationPolicyEvent:
+    bot_user_id = _slack_facet_text(profile, "bot_user_id")
+    return CommunicationPolicyEvent(
+        update_type=str(parsed["update_type"]),
+        event_type=str(parsed.get("event_type") or parsed["update_type"]),
+        text=str(parsed.get("text") or ""),
+        is_direct=parsed.get("channel_type") == "im",
+        visibility_mode_keys=(
+            ("dm_mode",) if parsed.get("channel_type") == "im" else ("channel_mode", "group_mode")
+        ),
+        visibility_allowed_keys=(
+            "allowed_surface_refs",
+            "allowed_channel_refs",
+            "allowed_channel_ids",
+            "allowed_channels",
+        ),
+        visibility_denied_keys=(
+            "denied_surface_refs",
+            "denied_channel_refs",
+            "denied_channel_ids",
+            "denied_channels",
+        ),
+        surface_candidate_refs=candidate_refs(
+            parsed.get("surface_ref"),
+            parsed.get("channel_id"),
+            "slack-channel",
+        ),
+        user_candidate_refs=candidate_refs(
+            parsed.get("user_ref"),
+            parsed.get("user_id"),
+            "slack-user",
+        ),
+        user_allowed_keys=("allowed_user_refs", "allowed_user_ids", "allowed_users"),
+        user_denied_keys=("denied_user_refs", "denied_user_ids", "denied_users"),
+        surface_id_prefix="slack-channel",
+        user_id_prefix="slack-user",
+        group_trigger_keys=("channel_trigger", "group_trigger"),
+        group_always_reason="channel_always",
+        mention_literals=(f"<@{bot_user_id}>",) if bot_user_id else (),
+        interaction=_slack_interaction_check(profile, parsed),
+    )
+
+
+def _slack_interaction_check(
+    profile: SlackProfile,
+    parsed: Mapping[str, Any],
+) -> CommunicationInteractionCheck | None:
+    if parsed.get("update_type") != "block_actions":
+        return None
+    trigger = config_policy(profile.data, "trigger_policy")
+    message_ref = parsed.get("message_ref")
+    action_id = str(parsed.get("action_id") or "")
+    external_id = None
+    if isinstance(message_ref, str) and action_id:
+        external_id = _outbound_button_external_id(
+            profile_key=profile.key,
+            message_ref=message_ref,
+            action_id=action_id,
+            value=str(parsed.get("button_value") or ""),
+            block_id=str(parsed.get("block_id") or ""),
+        )
+    return CommunicationInteractionCheck(
+        external_id=external_id,
+        trigger_reason="interaction",
+        blocked_status="interaction_blocked",
+        allow_unknown=trigger.get("allow_unknown_interactions") is True,
+    )
 
 
 def _normalized_slack_event(
@@ -763,31 +671,6 @@ def _slack_facet_text(profile: SlackProfile, key: str) -> str | None:
         return None
     value = slack_facet.get(key)
     return str(value).strip() if value is not None and str(value).strip() else None
-
-
-def _policy(profile: SlackProfile, key: str) -> dict[str, Any]:
-    value = profile.data.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _refs(policy: Mapping[str, Any], *keys: str) -> set[str]:
-    refs: set[str] = set()
-    for key in keys:
-        for value in _string_list(policy.get(key)):
-            if key.endswith("_ids"):
-                prefix = "slack-user" if "user" in key else "slack-channel"
-                refs.add(f"{prefix}:{value}")
-            else:
-                refs.add(value)
-    return refs
-
-
-def _string_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [part.strip() for part in value.split(",") if part.strip()]
-    return []
 
 
 def _nested(payload: Mapping[str, Any], path: str) -> Any:

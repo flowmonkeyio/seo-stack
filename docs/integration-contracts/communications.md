@@ -111,10 +111,10 @@ validate and execute that explicit action.
 
 Policies are split so one concept does not silently authorize another:
 
-- `access_policy`: which users may invoke/respond and, optionally, which
-  surfaces may be observed. The normal bot stance is broad visibility with a
-  narrow user allowlist.
-- `visibility_policy`: what can be stored without creating work.
+- `access_policy`: which users may invoke/respond. The normal bot stance is
+  broad visibility with a narrow user allowlist.
+- `visibility_policy`: which surfaces may be observed and what can be stored
+  without creating work.
 - `trigger_policy`: DM, mention, command, email criteria, reaction, button, or
   provider event shapes that create agent requests.
 - `context_policy`: what stored history can be retrieved and which fields are
@@ -338,20 +338,17 @@ adds an explicit send/handoff restriction.
 
 ### One-Brain Architecture Audit
 
-Current status: the product direction is clear and the first shared processor
-foundation exists. Slack and Telegram HTTP ingress now verify provider
-transport, normalize payloads, and call the shared inbound communication
-processor for resource writes, stable request dedupe, and `agent_request`
-creation. Button/callback click-state updates are normalized as processor-owned
-resource patches so provider ingress does not mutate outbound interaction state
-before inbound event storage. Local chat, SMTP, IMAP, outbound action recording,
-route derivation, and some trigger/policy evaluation still need to converge
-before more channels are added.
+Current status: Slack and Telegram HTTP ingress now verify provider transport,
+normalize payloads, and call shared communication code for static policy
+evaluation, resource writes, stable request dedupe, click-state patches, and
+`agent_request` creation. The shared policy path splits visibility from
+activation: a bot can observe configured visible channels, but only approved
+users can create work or trigger responses. Local chat, SMTP, IMAP, outbound
+action recording, and route derivation still need to converge before more
+channels are added.
 
 Current deviations to remove:
 
-- Slack and Telegram ingress still apply provider-local trigger/user/interaction
-  policy before handing a normalized event to the shared processor.
 - Telegram still has `communicationBotProfile.*` as a separate profile/policy
   model, while Slack uses generic `communication-profile` records.
 - Slack, Telegram, SMTP, and IMAP connectors write communication resources
@@ -365,15 +362,13 @@ Current deviations to remove:
 
 Required direction:
 
-1. Move remaining trigger/user/interaction policy evaluation into the shared
-   `communications` processor now that shared storage/request creation exists.
-2. Refactor provider ingress modules to stop after auth/signature verification
-   and normalization.
-3. Collapse Telegram bot policy into provider-neutral communication profiles;
+1. Refactor provider ingress modules to keep only transport verification,
+   profile lookup, and provider-specific field mapping.
+2. Collapse Telegram bot policy into provider-neutral communication profiles;
    keep Telegram transport details in provider facets.
-4. Make connectors return normalized outbound communication effects and record
+3. Make connectors return normalized outbound communication effects and record
    them after the action call through shared lifecycle/audit code.
-5. Move ingress route capabilities into provider manifests so adding Slack,
+4. Move ingress route capabilities into provider manifests so adding Slack,
    Telegram, email, WhatsApp, Discord, or future channels does not require core
    route code for each provider.
 
@@ -521,8 +516,10 @@ setup:
   identity, not the credential identity returned by Telegram `getMe`.
 - `agent_guidance`: default instructions, boundaries, and escalation guidance
   attached to every agent request created by this bot.
-- `access_policy`: numeric Telegram user/chat ids first; usernames are metadata
-  and setup convenience because they can change.
+- `access_policy`: approved invoker refs first. Numeric Telegram user ids are
+  preferred; usernames are setup convenience because they can change. Chat refs
+  may scope issued buttons or explicit visibility, but chat membership is not
+  the primary answer restriction.
 - `trigger_policy`: DM, mention, structured slash-command intents,
   reply-to-bot, callback button, or configured wake patterns. Command intents
   may carry their own description, guidance, expected inputs, and output

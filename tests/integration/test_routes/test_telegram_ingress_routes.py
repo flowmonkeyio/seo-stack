@@ -287,7 +287,7 @@ def test_telegram_ingress_rejects_disabled_ingress_profile_without_writes(
     assert requests.total_estimate == 0
 
 
-def test_telegram_ingress_rejects_disallowed_chat_without_writes(
+def test_telegram_ingress_observes_unlisted_chat_without_creating_request(
     api: TestClient,
     project_id: int,
 ) -> None:
@@ -322,10 +322,20 @@ def test_telegram_ingress_rejects_disallowed_chat_without_writes(
             api.headers["Authorization"] = original_auth
 
     assert response.status_code == 202
-    assert response.json()["policy_status"] == "chat_blocked"
+    body = response.json()
+    assert body["policy_status"] == "observed"
+    assert body["message_record_id"] is not None
+    assert body["agent_request_id"] is None
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
         requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert messages.total_estimate == 1
+    assert messages.items[0].data_json["policy_status"] == "observed"
     assert requests.total_estimate == 0
 
 
@@ -404,6 +414,52 @@ def test_telegram_ingress_allowed_group_mention_creates_agent_request(
         requests = AgentRequestRepository(session).list(project_id=project_id)
     assert requests.total_estimate == 1
     assert requests.items[0].metadata_json["trigger_reason"] == "mention"
+    assert requests.items[0].metadata_json["chat_ref"] == "telegram-chat:999"
+
+
+def test_telegram_ingress_allows_approved_actor_in_any_visible_channel(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_telegram_bot_profile(
+        api,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "group_mode": "allowlist",
+            "allowed_chat_refs": ["telegram-chat:111"],
+            "user_mode": "allowlist",
+            "allowed_user_refs": ["telegram-user:555"],
+        },
+    )
+    original_auth = api.headers.pop("Authorization", None)
+    try:
+        response = api.post(
+            f"/api/v1/ingress/telegram/{project_id}/support-bot",
+            headers={"X-Telegram-Bot-Api-Secret-Token": "telegram-secret"},
+            json={
+                "update_id": 465,
+                "message": {
+                    "message_id": 16,
+                    "chat": {"id": 999, "type": "supergroup", "title": "Ops"},
+                    "from": {"id": 555, "username": "ada"},
+                    "text": "@support_bot summarize the last incidents",
+                },
+            },
+        )
+    finally:
+        if original_auth is not None:
+            api.headers["Authorization"] = original_auth
+
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["policy_status"] == "request_created"
+    assert body["agent_request_id"] is not None
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    assert requests.total_estimate == 1
+    assert requests.items[0].metadata_json["invoker_ref"] == "telegram-user:555"
     assert requests.items[0].metadata_json["chat_ref"] == "telegram-chat:999"
 
 

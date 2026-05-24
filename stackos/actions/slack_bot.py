@@ -34,6 +34,7 @@ from stackos.actions.provider_utils import (
 )
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import Plugin, Resource, ResourceRecord
+from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ResourceRepository
 
@@ -588,6 +589,7 @@ def _store_outbound_buttons(
         return
     profile_key = _communication_profile_key(request)
     auth_profile_key = _credential_profile_key(request)
+    source_scope = _source_button_scope(request, fallback_channel_ref=_surface_ref(channel))
     for button in _button_specs(blocks):
         action_id = str(button.get("action_id") or "")
         value = str(button.get("value") or "")
@@ -618,9 +620,36 @@ def _store_outbound_buttons(
                 "url_button": bool(button.get("url")),
                 "status": "active",
                 "source_agent_request_id": request.input_json.get("source_agent_request_id"),
+                "allowed_user_refs": source_scope.get("allowed_user_refs", []),
+                "allowed_channel_refs": source_scope.get("allowed_channel_refs", []),
             },
             provenance_json={"source": "slack-bot-action"},
         )
+
+
+def _source_button_scope(
+    request: ActionConnectorRequest,
+    *,
+    fallback_channel_ref: str,
+) -> dict[str, list[str]]:
+    scope: dict[str, list[str]] = {"allowed_channel_refs": [fallback_channel_ref]}
+    if request.session is None:
+        return scope
+    request_id = request.input_json.get("source_agent_request_id")
+    if not isinstance(request_id, int) or isinstance(request_id, bool):
+        return scope
+    source = AgentRequestRepository(request.session).get(
+        project_id=request.project_id,
+        request_id=request_id,
+    )
+    metadata = source.metadata_json or {}
+    invoker_ref = metadata.get("invoker_ref")
+    if isinstance(invoker_ref, str) and invoker_ref:
+        scope["allowed_user_refs"] = [invoker_ref]
+    surface_ref = metadata.get("surface_ref") or metadata.get("channel_ref")
+    if isinstance(surface_ref, str) and surface_ref:
+        scope["allowed_channel_refs"] = [surface_ref]
+    return scope
 
 
 def _store_conversation_from_body(request: ActionConnectorRequest, provider_body: Any) -> None:

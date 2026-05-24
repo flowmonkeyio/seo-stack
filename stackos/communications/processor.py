@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlmodel import Session, col, select
+from sqlmodel import Session
 
 from stackos.artifacts import redact_secrets
 from stackos.communications.contracts import (
@@ -18,7 +18,7 @@ from stackos.communications.contracts import (
     NormalizedResourcePatch,
     NormalizedResourceWrite,
 )
-from stackos.db.models import Plugin, Resource, ResourceRecord
+from stackos.communications.resources import communication_record_by_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -213,7 +213,7 @@ def _upsert_optional(
     if write is None:
         return None
     if deduped and write.preserve_existing_on_dedupe:
-        existing = _record_by_external_id(
+        existing = communication_record_by_external_id(
             session,
             project_id=project_id,
             resource_key=write.resource_key,
@@ -239,7 +239,7 @@ def _apply_patch(
     project_id: int,
     patch: NormalizedResourcePatch,
 ) -> None:
-    record = _record_by_external_id(
+    record = communication_record_by_external_id(
         session,
         project_id=project_id,
         resource_key=patch.resource_key,
@@ -253,27 +253,3 @@ def _apply_patch(
     }
     session.add(record)
     session.commit()
-
-
-def _record_by_external_id(
-    session: Session,
-    *,
-    project_id: int,
-    resource_key: str,
-    external_id: str,
-) -> ResourceRecord | None:
-    ResourceRepository(session).list_resources(
-        plugin_slug="communications",
-        project_id=project_id,
-    )
-    return session.exec(
-        select(ResourceRecord)
-        .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
-        .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
-        .where(
-            col(ResourceRecord.project_id) == project_id,
-            col(ResourceRecord.external_id) == external_id,
-            col(Resource.key) == resource_key,
-            col(Plugin.slug) == "communications",
-        )
-    ).first()

@@ -4,28 +4,35 @@ from __future__ import annotations
 
 import hmac
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from pydantic import BaseModel
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
 from stackos.api.deps import get_session
 from stackos.artifacts import redact_secret_text
 from stackos.communications import (
     CommunicationDecision,
+    CommunicationInteractionCheck,
+    CommunicationPolicyEvent,
+    CommunicationPolicyProfile,
     NormalizedInboundEvent,
     NormalizedResourcePatch,
     NormalizedResourceWrite,
+    candidate_refs,
+    communication_record_by_external_id,
+    config_nested,
+    config_refs,
+    config_string_list,
+    evaluate_inbound_policy,
     process_inbound_event,
 )
-from stackos.db.models import IntegrationCredential, Plugin, Resource, ResourceRecord
+from stackos.db.models import IntegrationCredential
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import IntegrationCredentialRepository
-from stackos.repositories.resources import ResourceRepository
 
 router = APIRouter(prefix="/api/v1/ingress/telegram", tags=["telegram-ingress"])
 
@@ -65,12 +72,12 @@ async def ingest_telegram_update(
     ),
     session: Session = Depends(get_session),
 ) -> TelegramIngressOut:
-    """Store a Telegram update and create one generic claimable agent request.
+    """Store a Telegram update and maybe create one claimable agent request.
 
     This endpoint is intentionally static plumbing: it validates Telegram's
-    secret-token header, normalizes the event into Communications resources,
-    creates an `agent_requests` row, and stops. It does not call a model, infer
-    intent, approve work, or choose follow-up tools.
+    secret-token header, normalizes the event, applies shared communication
+    policy, persists Communications resources, and stops. It does not call a
+    model, infer intent, approve work, or choose follow-up tools.
     """
 
     profile = _require_bot_profile(
@@ -121,7 +128,7 @@ def _require_bot_profile(
     project_id: int,
     bot_profile_key: str,
 ) -> TelegramBotProfile:
-    record = _resource_record_by_external_id(
+    record = communication_record_by_external_id(
         session,
         project_id=project_id,
         resource_key="communication-bot-profile",
@@ -142,30 +149,6 @@ def _require_bot_profile(
                 data=data,
             )
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid Telegram secret")
-
-
-def _resource_record_by_external_id(
-    session: Session,
-    *,
-    project_id: int,
-    resource_key: str,
-    external_id: str,
-) -> ResourceRecord | None:
-    ResourceRepository(session).list_resources(
-        plugin_slug="communications",
-        project_id=project_id,
-    )
-    return session.exec(
-        select(ResourceRecord)
-        .join(Resource, col(ResourceRecord.resource_id) == col(Resource.id))
-        .join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
-        .where(
-            col(ResourceRecord.project_id) == project_id,
-            col(ResourceRecord.external_id) == external_id,
-            col(Resource.key) == resource_key,
-            col(Plugin.slug) == "communications",
-        )
-    ).first()
 
 
 def _integration_credential(
@@ -200,26 +183,13 @@ def _store_update(
         profile=profile,
         parsed=parsed,
         update_id=update_id,
-        mark_interaction_clicked=bool(decision["create_request"]),
+        mark_interaction_clicked=decision.create_request,
     )
     result = process_inbound_event(
         session,
         project_id=project_id,
         event=normalized,
-        decision=CommunicationDecision(
-            store=bool(decision["store"]),
-            create_request=bool(decision["create_request"]),
-            status=str(decision["status"]),
-            trigger_reason=decision.get("trigger_reason"),
-            matched_command=decision.get("matched_command"),
-            metadata={
-                key: value
-                for key, value in {
-                    "identity_confidence": decision.get("identity_confidence")
-                }.items()
-                if value is not None
-            },
-        ),
+        decision=decision,
     )
     return result.to_response()
 
@@ -229,148 +199,108 @@ def _policy_decision(
     project_id: int,
     profile: TelegramBotProfile,
     parsed: dict[str, Any],
-) -> dict[str, Any]:
+) -> CommunicationDecision:
     data = profile.data
-    if data.get("enabled") is False:
-        return {"store": False, "create_request": False, "status": "bot_profile_disabled"}
     _validate_bot_profile(data)
-    ingress_mode = data.get("ingress_mode", "webhook")
-    if ingress_mode != "webhook":
-        return {"store": False, "create_request": False, "status": "ingress_disabled"}
-    allowed_updates = _split_config_values(data.get("allowed_updates"))
+    allowed_updates = config_string_list(data.get("allowed_updates"))
     if not allowed_updates:
-        allowed_updates = _split_config_values(_nested(data, "visibility_policy.allowed_updates"))
-    if allowed_updates and parsed["update_type"] not in allowed_updates:
-        return {"store": False, "create_request": False, "status": "update_blocked"}
-
-    if not _chat_allowed(profile, parsed):
-        return {"store": False, "create_request": False, "status": "chat_blocked"}
-
-    trigger_match = _trigger_match(profile, parsed)
-    if trigger_match is None:
-        visibility = _policy(profile, "visibility_policy")
-        if visibility.get("store_non_trigger_messages") is False:
-            return {"store": False, "create_request": False, "status": "not_triggered"}
-        return {"store": True, "create_request": False, "status": "observed"}
-    user_match = _user_match_type(profile, parsed)
-    if user_match is None:
-        return {"store": True, "create_request": False, "status": "invoker_blocked"}
-    if parsed["update_type"] == "callback_query":
-        callback_match = _callback_match_type(session, project_id, profile, parsed)
-        if callback_match is None:
-            return {"store": True, "create_request": False, "status": "callback_blocked"}
-    return {
-        "store": True,
-        "create_request": True,
-        "status": "request_created",
-        "trigger_reason": trigger_match["reason"],
-        "matched_command": trigger_match.get("command"),
-        "identity_confidence": user_match,
-    }
+        allowed_updates = config_string_list(
+            config_nested(data, "visibility_policy.allowed_updates")
+        )
+    return evaluate_inbound_policy(
+        session,
+        project_id=project_id,
+        profile=CommunicationPolicyProfile(
+            provider_key="telegram-bot",
+            profile_key=profile.key,
+            data=profile.data,
+            disabled_status="bot_profile_disabled",
+            store_non_trigger_default=True,
+            visibility_blocked_status="chat_blocked",
+            ingress_mode_key="ingress_mode",
+            ingress_required_value="webhook",
+            ingress_disabled_status="ingress_disabled",
+            allowed_update_types=tuple(allowed_updates),
+            update_blocked_status="update_blocked",
+        ),
+        event=_telegram_policy_event(profile, parsed),
+    )
 
 
-def _chat_allowed(profile: TelegramBotProfile, parsed: dict[str, Any]) -> bool:
-    access = _policy(profile, "access_policy")
-    mode_key = "dm_mode" if parsed.get("chat_type") == "private" else "group_mode"
-    mode = access.get(mode_key)
-    if mode == "disabled":
-        return False
-    denied = _refs(access, "denied_chat_refs", "denied_chat_ids", "denied_chats")
-    candidates = _candidate_refs(parsed.get("chat_ref"), parsed.get("chat_id"), "telegram-chat")
-    if denied and any(candidate in denied for candidate in candidates):
-        return False
-    if mode in {"all", "denylist"}:
-        return True
-    allowed = _refs(access, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
-    if allowed and any(candidate in allowed for candidate in candidates):
-        return True
-    if parsed.get("chat_type") == "private":
-        allowed_users = _refs(
-            access,
+def _telegram_policy_event(
+    profile: TelegramBotProfile,
+    parsed: Mapping[str, Any],
+) -> CommunicationPolicyEvent:
+    bot_username = _bot_username(profile)
+    message = parsed.get("message")
+    user_candidates = list(
+        candidate_refs(parsed.get("user_ref"), parsed.get("user_id"), "telegram-user")
+    )
+    username = parsed.get("user_username")
+    if isinstance(username, str) and username:
+        user_candidates.append(f"telegram-username:{username.lstrip('@')}")
+    return CommunicationPolicyEvent(
+        update_type=str(parsed["update_type"]),
+        event_type=str(parsed["update_type"]),
+        text=str(parsed.get("body_preview") or ""),
+        is_direct=parsed.get("chat_type") == "private",
+        visibility_mode_keys=(
+            ("dm_mode",) if parsed.get("chat_type") == "private" else ("group_mode",)
+        ),
+        visibility_allowed_keys=(
+            "allowed_surface_refs",
+            "allowed_chat_refs",
+            "allowed_chat_ids",
+            "allowed_chats",
+        ),
+        visibility_denied_keys=(
+            "denied_surface_refs",
+            "denied_chat_refs",
+            "denied_chat_ids",
+            "denied_chats",
+        ),
+        surface_candidate_refs=candidate_refs(
+            parsed.get("chat_ref"),
+            parsed.get("chat_id"),
+            "telegram-chat",
+        ),
+        user_candidate_refs=tuple(dict.fromkeys(user_candidates)),
+        user_allowed_keys=(
             "allowed_user_refs",
             "allowed_user_ids",
             "allowed_usernames",
             "allowed_users",
-        )
-        user_candidates = _candidate_refs(
-            parsed.get("user_ref"),
-            parsed.get("user_id"),
-            "telegram-user",
-        )
-        username = parsed.get("user_username")
-        if isinstance(username, str) and username:
-            user_candidates.append(f"telegram-username:{username.lstrip('@')}")
-        return bool(
-            allowed_users and any(candidate in allowed_users for candidate in user_candidates)
-        )
-    return False
-
-
-def _user_allowed(profile: TelegramBotProfile, parsed: dict[str, Any]) -> bool:
-    return _user_match_type(profile, parsed) is not None
-
-
-def _user_match_type(profile: TelegramBotProfile, parsed: dict[str, Any]) -> str | None:
-    access = _policy(profile, "access_policy")
-    mode = access.get("user_mode")
-    if mode == "disabled":
-        return None
-    denied = _refs(access, "denied_user_refs", "denied_user_ids", "denied_users")
-    candidates = _candidate_refs(parsed.get("user_ref"), parsed.get("user_id"), "telegram-user")
-    username = parsed.get("user_username")
-    if isinstance(username, str) and username:
-        candidates.append(f"telegram-username:{username.lstrip('@')}")
-    if denied and any(candidate in denied for candidate in candidates):
-        return None
-    if mode in {"all", "denylist"}:
-        return "unrestricted"
-    allowed = _refs(
-        access,
-        "allowed_user_refs",
-        "allowed_user_ids",
-        "allowed_usernames",
-        "allowed_users",
+        ),
+        user_denied_keys=("denied_user_refs", "denied_user_ids", "denied_users"),
+        surface_id_prefix="telegram-chat",
+        user_id_prefix="telegram-user",
+        username_prefix="telegram-username",
+        group_trigger_keys=("group_trigger",),
+        group_always_reason="group_always",
+        command_suffixes=(bot_username,) if bot_username else (),
+        mention_literals=(f"@{bot_username}",) if bot_username else (),
+        is_reply_to_bot=isinstance(message, Mapping) and _is_reply_to_bot(message, profile),
+        interaction=_telegram_interaction_check(profile, parsed),
     )
-    if not allowed:
-        return None
-    for candidate in candidates:
-        if candidate in allowed:
-            return "username" if candidate.startswith("telegram-username:") else "id"
-    return None
 
 
-def _callback_match_type(
-    session: Session,
-    project_id: int,
+def _telegram_interaction_check(
     profile: TelegramBotProfile,
-    parsed: dict[str, Any],
-) -> str | None:
+    parsed: Mapping[str, Any],
+) -> CommunicationInteractionCheck | None:
+    if parsed.get("update_type") != "callback_query":
+        return None
     callback = parsed.get("callback_query")
-    if not isinstance(callback, Mapping):
-        return None
-    callback_data = callback.get("data")
-    if not isinstance(callback_data, str) or not callback_data:
-        return None
+    callback_data = callback.get("data") if isinstance(callback, Mapping) else None
     message_ref = parsed.get("message_ref")
-    if not isinstance(message_ref, str) or not message_ref:
-        return None
-    target = _callback_button_external_id(profile.key, message_ref, callback_data)
-    record = _resource_record_by_external_id(
-        session,
-        project_id=project_id,
-        resource_key="communication-interaction",
-        external_id=target,
+    external_id = None
+    if isinstance(callback_data, str) and callback_data and isinstance(message_ref, str):
+        external_id = _callback_button_external_id(profile.key, message_ref, callback_data)
+    return CommunicationInteractionCheck(
+        external_id=external_id,
+        trigger_reason="callback",
+        blocked_status="callback_blocked",
     )
-    if record is None:
-        return None
-    data = record.data_json or {}
-    allowed_users = set(_split_config_values(data.get("allowed_user_refs")))
-    if allowed_users and parsed.get("user_ref") not in allowed_users:
-        return None
-    allowed_chats = set(_split_config_values(data.get("allowed_chat_refs")))
-    if allowed_chats and parsed.get("chat_ref") not in allowed_chats:
-        return None
-    return "button"
 
 
 def _callback_button_external_id(
@@ -410,113 +340,26 @@ def _validate_bot_profile(data: Mapping[str, Any]) -> None:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="invalid Telegram bot profile",
             )
-        if mode == "allowlist":
-            has_chat_allowlist = bool(
-                _refs(access, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
-            )
+        if key == "user_mode" and mode == "allowlist":
             has_user_allowlist = bool(
-                _refs(
+                config_refs(
                     access,
-                    "allowed_user_refs",
-                    "allowed_user_ids",
-                    "allowed_usernames",
-                    "allowed_users",
+                    keys=(
+                        "allowed_user_refs",
+                        "allowed_user_ids",
+                        "allowed_usernames",
+                        "allowed_users",
+                    ),
+                    surface_id_prefix="telegram-chat",
+                    user_id_prefix="telegram-user",
+                    username_prefix="telegram-username",
                 )
             )
-            if key == "dm_mode" and not (has_chat_allowlist or has_user_allowlist):
+            if not has_user_allowlist:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="invalid Telegram bot profile",
                 )
-            if key == "group_mode" and not has_chat_allowlist:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="invalid Telegram bot profile",
-                )
-            if key == "user_mode" and not has_user_allowlist:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="invalid Telegram bot profile",
-                )
-
-
-def _trigger_match(profile: TelegramBotProfile, parsed: dict[str, Any]) -> dict[str, Any] | None:
-    if parsed["update_type"] == "callback_query":
-        return {"reason": "callback"}
-    message = parsed.get("message")
-    if not isinstance(message, dict):
-        return None
-    trigger = _policy(profile, "trigger_policy")
-    text = parsed.get("body_preview") or ""
-    chat_type = parsed.get("chat_type")
-    group_trigger = trigger.get("group_trigger", "mention_or_command")
-    if chat_type != "private" and group_trigger == "never":
-        return None
-    command = _matched_command(text, trigger, profile)
-    if command is not None:
-        return {"reason": "command", "command": command}
-    if chat_type == "private" and trigger.get("dm_trigger", "always") == "always":
-        return {"reason": "dm"}
-    if group_trigger == "always":
-        return {"reason": "group_always"}
-    if _matches_mention(text, trigger, profile):
-        return {"reason": "mention"}
-    if trigger.get("reply_to_bot_triggers") is True and _is_reply_to_bot(message, profile):
-        return {"reason": "reply_to_bot"}
-    return None
-
-
-def _matched_command(
-    text: str,
-    trigger: Mapping[str, Any],
-    profile: TelegramBotProfile,
-) -> dict[str, Any] | None:
-    commands = _command_specs(trigger.get("commands"))
-    if not commands:
-        return None
-    bot_username = _bot_username(profile)
-    first_token = text.strip().split(maxsplit=1)[0] if text.strip() else ""
-    for command in commands:
-        if command.get("enabled") is False:
-            continue
-        candidates = [str(command.get("command") or ""), *command.get("aliases", [])]
-        for candidate in candidates:
-            normalized = candidate if candidate.startswith("/") else f"/{candidate}"
-            if first_token == normalized:
-                return command
-            if bot_username and first_token == f"{normalized}@{bot_username}":
-                return command
-    return None
-
-
-def _command_specs(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    specs: list[dict[str, Any]] = []
-    for item in value:
-        if not isinstance(item, Mapping):
-            continue
-        command = str(item.get("command") or "").strip()
-        if not command:
-            continue
-        spec = dict(item)
-        spec["command"] = command if command.startswith("/") else f"/{command}"
-        spec["aliases"] = _split_config_values(spec.get("aliases"))
-        specs.append(spec)
-    return specs
-
-
-def _matches_mention(text: str, trigger: Mapping[str, Any], profile: TelegramBotProfile) -> bool:
-    bot_username = _bot_username(profile)
-    if bot_username and f"@{bot_username}".lower() in text.lower():
-        return True
-    for pattern in _split_config_values(trigger.get("mention_patterns")):
-        try:
-            if re.search(pattern, text, flags=re.IGNORECASE):
-                return True
-        except re.error:
-            continue
-    return False
 
 
 def _is_reply_to_bot(message: Mapping[str, Any], profile: TelegramBotProfile) -> bool:
@@ -537,52 +380,6 @@ def _bot_username(profile: TelegramBotProfile) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip().lstrip("@")
     return None
-
-
-def _policy(profile: TelegramBotProfile, key: str) -> dict[str, Any]:
-    value = profile.data.get(key)
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _nested(data: Mapping[str, Any], path: str) -> Any:
-    current: Any = data
-    for part in path.split("."):
-        if not isinstance(current, Mapping):
-            return None
-        current = current.get(part)
-    return current
-
-
-def _refs(policy: Mapping[str, Any], *keys: str) -> set[str]:
-    refs: set[str] = set()
-    for key in keys:
-        for value in _split_config_values(policy.get(key)):
-            if key.endswith("_ids"):
-                prefix = "telegram-user" if "user" in key else "telegram-chat"
-                refs.add(f"{prefix}:{value}")
-            elif key.endswith("_usernames"):
-                refs.add(f"telegram-username:{value.lstrip('@')}")
-            else:
-                refs.add(value)
-    return refs
-
-
-def _candidate_refs(raw_ref: Any, raw_id: Any, prefix: str) -> list[str]:
-    refs: list[str] = []
-    if isinstance(raw_ref, str) and raw_ref:
-        refs.append(raw_ref)
-    if raw_id is not None:
-        refs.append(f"{prefix}:{raw_id}")
-        refs.append(str(raw_id))
-    return refs
-
-
-def _split_config_values(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [part.strip() for part in value.split(",") if part.strip()]
-    return []
 
 
 def _normalized_telegram_event(

@@ -104,30 +104,34 @@ def _store_outbound_button(
     action_id: str = "approve",
     value: str = "approve_177",
     block_id: str = "decision",
+    allowed_user_refs: list[str] | None = None,
 ) -> None:
     digest = hashlib.sha256(
         f"{message_ref}\0{block_id}\0{action_id}\0{value}".encode()
     ).hexdigest()[:24]
     engine = api.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as session:
+        data_json = {
+            "provider_key": "slack-bot",
+            "profile_key": profile_key,
+            "auth_profile_key": "support-auth",
+            "interaction_type": "outbound_block_button",
+            "surface_ref": "slack-channel:C123",
+            "message_ref": message_ref,
+            "block_id": block_id,
+            "action_id": action_id,
+            "button_value": value,
+            "status": "active",
+        }
+        if allowed_user_refs is not None:
+            data_json["allowed_user_refs"] = allowed_user_refs
         ResourceRepository(session).upsert_record(
             project_id=project_id,
             plugin_slug="communications",
             resource_key="communication-interaction",
             external_id=f"slack-button:{profile_key}:{digest}",
             title="Approve",
-            data_json={
-                "provider_key": "slack-bot",
-                "profile_key": profile_key,
-                "auth_profile_key": "support-auth",
-                "interaction_type": "outbound_block_button",
-                "surface_ref": "slack-channel:C123",
-                "message_ref": message_ref,
-                "block_id": block_id,
-                "action_id": action_id,
-                "button_value": value,
-                "status": "active",
-            },
+            data_json=data_json,
             provenance_json={"source": "test"},
         )
 
@@ -208,6 +212,97 @@ def test_slack_ingress_records_app_mention_and_creates_agent_request_without_bea
     assert (
         requests.items[0].metadata_json["agent_guidance"]["boundaries"] == "Do not expose secrets."
     )
+
+
+def test_slack_ingress_stores_disallowed_actor_mention_without_request(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(api, project_id)
+    payload = {
+        "type": "event_callback",
+        "team_id": "T123",
+        "event_id": "EvBlockedActor",
+        "event": {
+            "type": "app_mention",
+            "user": "U222",
+            "channel": "C123",
+            "channel_type": "channel",
+            "text": "<@U_BOT> do this",
+            "ts": "1770000000.000202",
+            "event_ts": "1770000000.000202",
+        },
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=raw_body,
+        headers={**_signed_headers(raw_body), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200, response.text  # type: ignore[attr-defined]
+    body = response.json()  # type: ignore[attr-defined]
+    assert body["policy_status"] == "invoker_blocked"
+    assert body["message_record_id"] is not None
+    assert body["agent_request_id"] is None
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+
+    assert messages.total_estimate == 1
+    assert messages.items[0].data_json["from_ref"] == "slack-user:U222"
+    assert messages.items[0].data_json["policy_status"] == "invoker_blocked"
+    assert requests.total_estimate == 0
+
+
+def test_slack_ingress_allows_approved_actor_in_any_visible_channel(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(
+        api,
+        project_id,
+        access_policy={
+            "dm_mode": "allowlist",
+            "channel_mode": "allowlist",
+            "allowed_channel_refs": ["slack-channel:C999"],
+            "user_mode": "allowlist",
+            "allowed_user_refs": ["slack-user:U111"],
+        },
+    )
+    payload = {
+        "type": "event_callback",
+        "team_id": "T123",
+        "event_id": "EvApprovedAnyChannel",
+        "event": {
+            "type": "app_mention",
+            "user": "U111",
+            "channel": "C123",
+            "channel_type": "channel",
+            "text": "<@U_BOT> summarize this",
+            "ts": "1770000000.000203",
+            "event_ts": "1770000000.000203",
+        },
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=raw_body,
+        headers={**_signed_headers(raw_body), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200, response.text  # type: ignore[attr-defined]
+    body = response.json()  # type: ignore[attr-defined]
+    assert body["policy_status"] == "request_created"
+    assert body["agent_request_id"] is not None
 
 
 def test_slack_ingress_dedupes_message_and_app_mention_for_same_source_message(
@@ -354,6 +449,73 @@ def test_slack_ingress_records_known_button_click_and_does_not_store_transient_s
     assert incoming[0].data_json["button_value"] == "approve_177"
     assert "hooks.slack.com/actions" not in rendered
     assert "secret-trigger" not in rendered
+
+
+def test_slack_ingress_blocks_button_click_from_unissued_user(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(
+        api,
+        project_id,
+        access_policy={
+            "dm_mode": "all",
+            "channel_mode": "all",
+            "user_mode": "all",
+        },
+    )
+    _store_outbound_button(api, project_id, allowed_user_refs=["slack-user:U111"])
+    payload = {
+        "type": "block_actions",
+        "team": {"id": "T123"},
+        "user": {"id": "U222"},
+        "channel": {"id": "C123", "type": "channel"},
+        "container": {
+            "type": "message",
+            "channel_id": "C123",
+            "message_ts": "1770000000.000100",
+        },
+        "message": {"ts": "1770000000.000100", "text": "Ready?"},
+        "actions": [
+            {
+                "type": "button",
+                "block_id": "decision",
+                "action_id": "approve",
+                "value": "approve_177",
+            }
+        ],
+    }
+    raw_body = urlencode({"payload": json.dumps(payload)}).encode("utf-8")
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=raw_body,
+        headers={
+            **_signed_headers(raw_body),
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+
+    assert response.status_code == 200, response.text  # type: ignore[attr-defined]
+    body = response.json()  # type: ignore[attr-defined]
+    assert body["policy_status"] == "interaction_blocked"
+    assert body["agent_request_id"] is None
+
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        interactions = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-interaction",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+    outbound = [
+        item
+        for item in interactions.items
+        if item.data_json.get("interaction_type") == "outbound_block_button"
+    ]
+    assert outbound[0].data_json["status"] == "active"
+    assert requests.total_estimate == 0
 
 
 def test_slack_ingress_rejects_bad_signature_before_storing(

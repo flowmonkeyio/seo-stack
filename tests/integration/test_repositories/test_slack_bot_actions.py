@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 from stackos.actions import ActionRepository
 from stackos.auth_providers import AuthRepository
+from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
@@ -161,6 +162,26 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
         json={"ok": True, "members": ["U111", "U222"], "response_metadata": {}},
     )
     repo = ActionRepository(session)
+    source = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key="slack-message-trigger:support-agent:C123:1770000000.000001",
+            title="Slack message",
+            body_preview="<@U_BOT> review",
+            source_provider="slack-bot",
+            source_kind="slack-message",
+            source_message_ref="slack-message:C123:1770000000.000001",
+            metadata_json={
+                "profile_key": "support-agent",
+                "surface_ref": "slack-channel:C123",
+                "channel_ref": "slack-channel:C123",
+                "thread_ref": "slack-thread:C123:1770000000.000001",
+                "invoker_ref": "slack-user:U111",
+            },
+        )
+        .data
+    )
 
     identity = asyncio.run(
         repo.execute(
@@ -178,6 +199,7 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
                 "profile_ref": "communication-profile:support-agent",
                 "channel_ref": "slack-channel:C123",
                 "text": "Ready?",
+                "source_agent_request_id": source.id,
                 "blocks": [
                     {
                         "type": "actions",
@@ -299,6 +321,8 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert len(buttons) == 1
     assert buttons[0].external_id.startswith("slack-button:support-agent:")
     assert buttons[0].data_json["button_value"] == "approve_177"
+    assert buttons[0].data_json["allowed_user_refs"] == ["slack-user:U111"]
+    assert buttons[0].data_json["allowed_channel_refs"] == ["slack-channel:C123"]
 
     memberships = ResourceRepository(session).query_records(
         project_id=project_id,
