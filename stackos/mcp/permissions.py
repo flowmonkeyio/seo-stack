@@ -24,7 +24,15 @@ from typing import Any, NoReturn
 
 from sqlmodel import Session, col, select
 
-from stackos.db.models import Run, RunPlan, RunPlanStatus, RunPlanStep, RunPlanStepStatus
+from stackos.db.models import (
+    AgentRequest,
+    ResourceRecord,
+    Run,
+    RunPlan,
+    RunPlanStatus,
+    RunPlanStep,
+    RunPlanStepStatus,
+)
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.workflows.run_plan_grants import (
     RUN_PLAN_GRANTABLE_TOOL_NAMES,
@@ -82,6 +90,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "auth.status",
         "auth.test",
         "localAgentChat.createMessage",
+        "communication.send",
+        "communication.reply",
         "ingressEndpoint.configure",
         "ingressEndpoint.refresh",
         "ingressEndpoint.routes",
@@ -327,6 +337,9 @@ def _check_direct_context_fields(
 def _grant_matches_arguments(
     grant: RunPlanMcpToolGrant,
     arguments: dict[str, Any],
+    *,
+    session: Session | None = None,
+    project_id: int | None = None,
 ) -> bool:
     if grant.action_refs:
         requested_action_ref = arguments.get("action_ref")
@@ -337,11 +350,32 @@ def _grant_matches_arguments(
                 requested_action_ref = f"{plugin_slug}.{action_key}"
         if requested_action_ref not in set(grant.action_refs):
             return False
+    if grant.targets:
+        requested_target = arguments.get("to")
+        if not isinstance(requested_target, str) or not requested_target.strip():
+            return False
+        raw = requested_target.strip()
+        candidates = {
+            raw,
+            raw if raw.startswith("communication-target:") else f"communication-target:{raw}",
+        }
+        if candidates.isdisjoint(set(grant.targets)):
+            return False
+    if grant.tool_name == "communication.reply" and grant.sources:
+        if session is None or project_id is None:
+            return False
+        if not _communication_reply_source_matches(
+            session=session,
+            project_id=project_id,
+            request_id=arguments.get("request_id"),
+            allowed_sources=set(grant.sources),
+        ):
+            return False
     if grant.plugin_slug is not None and arguments.get("plugin_slug") != grant.plugin_slug:
         return False
     if grant.resource_key is not None and arguments.get("resource_key") != grant.resource_key:
         return False
-    if grant.sources:
+    if grant.sources and grant.tool_name != "communication.reply":
         requested_sources = _arg_string_set(arguments, "sources")
         if requested_sources is None or not requested_sources <= set(grant.sources):
             return False
@@ -350,6 +384,48 @@ def _grant_matches_arguments(
         if requested_fields is None or not requested_fields <= set(grant.fields):
             return False
     return True
+
+
+def _communication_reply_source_matches(
+    *,
+    session: Session,
+    project_id: int,
+    request_id: Any,
+    allowed_sources: set[str],
+) -> bool:
+    if not isinstance(request_id, int) or isinstance(request_id, bool):
+        return False
+    request = session.exec(
+        select(AgentRequest).where(
+            col(AgentRequest.project_id) == project_id,
+            col(AgentRequest.id) == request_id,
+        )
+    ).first()
+    if request is None:
+        return False
+    candidates: set[str] = set()
+    for value in (
+        request.source_provider,
+        request.source_kind,
+        request.source_resource_key,
+        request.source_message_ref,
+    ):
+        if isinstance(value, str) and value:
+            candidates.add(value)
+    metadata = request.metadata_json or {}
+    for key in ("surface_ref", "channel_ref", "chat_ref", "thread_ref", "profile_ref"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            candidates.add(value)
+    if request.source_resource_record_id is not None:
+        record = session.get(ResourceRecord, request.source_resource_record_id)
+        if record is not None and record.project_id == project_id:
+            data = record.data_json or {}
+            for key in ("provider_key", "surface_ref", "channel_ref", "chat_ref", "thread_ref"):
+                value = data.get(key)
+                if isinstance(value, str) and value:
+                    candidates.add(value)
+    return bool(candidates & allowed_sources)
 
 
 def _deny_run_plan_tool(
@@ -502,7 +578,15 @@ def _check_run_plan_dynamic_grant(tool_name: str, ctx: Any, parsed_arguments: An
                 step_id=step.step_id,
                 allowed=allowed,
             )
-    if not any(_grant_matches_arguments(grant, arguments) for grant in grants):
+    if not any(
+        _grant_matches_arguments(
+            grant,
+            arguments,
+            session=ctx.session,
+            project_id=plan.project_id,
+        )
+        for grant in grants
+    ):
         _deny_run_plan_tool(
             tool_name,
             reason="tool arguments do not match the active run-plan step grant",

@@ -15,6 +15,8 @@ def _communication_operations() -> OperationRegistry:
         "ingressEndpoint.sync",
         "ingressEndpoint.status",
         "localAgentChat.createMessage",
+        "communication.send",
+        "communication.reply",
         "communicationProfile.list",
         "communicationProfile.get",
         "communicationProfile.upsert",

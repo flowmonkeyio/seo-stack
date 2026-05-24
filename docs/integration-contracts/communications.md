@@ -68,7 +68,8 @@ The aligned runtime shape is:
 ```text
 Local chat / Telegram / SMTP / IMAP / future communication providers
 -> plugin provider/action manifest
--> action.run for one explicit call or action.execute in a run plan
+-> communication.send/reply for normal delivery, or action.run/action.execute
+   for explicit provider escape hatches
 -> daemon-side credential resolution
 -> one provider connector call
 -> normalized safe output and action-call audit
@@ -107,8 +108,10 @@ The graph is configuration and state, not workflow logic. A profile can say
 "support agent may send to internal-support target"; the agent still decides
 whether sending is the right next action. A target can resolve to
 `communications.slack-bot.message.send` or
-`communications.telegram-bot.message.send`; StackOS still requires the agent to
-validate and execute that explicit action.
+`communications.telegram-bot.message.send`, but the normal agent-facing send
+path is `communication.send` or `communication.reply`. Provider actions remain
+the lower-level escape hatch when an agent intentionally needs a
+provider-specific payload.
 
 Policies are split so one concept does not silently authorize another:
 
@@ -120,7 +123,9 @@ Policies are split so one concept does not silently authorize another:
   provider event shapes that create agent requests.
 - `context_policy`: what stored history can be retrieved and which fields are
   safe.
-- `response_policy`: same-origin reply constraints.
+- `response_policy`: same-origin reply constraints. It applies when the agent
+  is replying to an inbound request, not to proactive sends that target an
+  explicit `communication-target`.
 - `send_policy`: explicit outbound/handoff constraints when the project wants
   stricter limits than "approved invoker may choose any reachable target."
 - `handoff_policy`: allowed movement from one surface to another.
@@ -242,10 +247,10 @@ inbound event creates work:
 - `thread_ref` and provider message refs when same-thread replies are expected.
 
 Same-origin replies should use the source surface/thread defaults from the
-stored request. Cross-surface replies or proactive sends should resolve a named
-target and pass `profile_ref`, `source_surface_ref`, and `invoker_ref` to
-`communicationTarget.resolve`. A target may allow broad reachable destinations,
-but it must never bypass the invoker allowlist or route/data-scope guidance.
+stored request. Cross-surface replies or proactive sends should use a named
+target through `communication.send`; same-origin answers should use
+`communication.reply`. A target may allow broad reachable destinations, but it
+must never bypass the invoker allowlist or route/data-scope guidance.
 
 ### Named Target Resolution Flow
 
@@ -254,16 +259,18 @@ about. Use names such as `internal-support`, `customer-acme-support`,
 `ops-alerts`, `roadmap`, or `operator-dm` instead of raw provider ids in
 workflow guidance.
 
-The send flow is always explicit:
+The normal agent send flow is one high-level operation:
 
-1. Resolve the named target with `communicationTarget.resolve`.
-2. Inspect `allowed`, `denial_reason`, `surface_ref`, `thread_ref`, policy, and
-   defaults.
-3. Check source surface intent/data-scope and any route field policy.
-4. Add message-specific fields to the returned `action_ref` defaults and
-   validate the final payload through `action.validate`.
-5. Execute the explicit provider action with `action.run` or granted
-   `action.execute`.
+1. Check source surface intent/data-scope and any route field policy.
+2. Call `communication.send` with `to`, optional `from`, content, and source
+   context. Use `communication.reply` with `request_id` for same-origin replies.
+3. Let StackOS resolve actor/profile, target, provider action, daemon-held
+   credential, policy, capabilities, idempotency, and action audit.
+4. If StackOS rejects, inspect `error.failed_paths`, `error.resolved`, and
+   `error.repair`. Do not retry unchanged or silently degrade semantics.
+
+`communicationTarget.resolve` is still useful for planning, debugging, or
+provider-specific escape hatches. It does not send.
 
 Example surfaces:
 
@@ -529,7 +536,9 @@ setup:
 - `context_policy`: bounded history selection from messages StackOS already
   stored, filtered by project/profile/chat/thread/lookback/fields.
 - `response_policy`: same chat/thread defaults, invoker-only behavior,
-  broadcast/DM constraints, and reply requirements.
+  broadcast/DM constraints, and reply requirements for responses tied to a
+  `source_agent_request_id`. Proactive target sends are governed by
+  `send_policy` and target policy instead.
 
 Setup is exposed through shared StackOS operations, not provider-specific MCP
 tools:
@@ -597,10 +606,11 @@ than Telegram:
   Action payloads are untrusted routing hints until the agent reads the stored
   interaction and source context.
 
-Slack-specific support lands as explicit actions and ingress routes. A generic
-target resolver may return `communications.slack-bot.message.send`, but provider
-execution still goes through `action.run` or granted `action.execute` with a
-daemon-resolved credential.
+Slack-specific support lands as explicit actions and ingress routes. Normal
+agent sends should use `communication.send`/`communication.reply`; those
+operations resolve to Slack provider actions internally and execute with a
+daemon-resolved credential. Direct `action.run`/`action.execute` is reserved for
+provider-specific Slack operations such as discovery or custom payloads.
 
 ### SMTP
 
@@ -717,17 +727,19 @@ Example fields:
 - `send_policy`
 - `metadata_json`
 
-Targets do not send messages. Agents resolve a target, inspect `allowed`, then
-call `action.validate` and `action.run` or `action.execute` with the returned
-provider action ref.
+Targets do not send messages. Agents normally pass the target key to
+`communication.send`, which resolves the target, enforces policy/capabilities,
+and executes one audited provider action. Agents use `communicationTarget.resolve`
+only for planning/debugging or before an intentional provider-action escape
+hatch.
 
 `communicationTarget.resolve` returns provider-ready `action_input_defaults`
 where StackOS can derive them safely. Slack targets include `surface_ref`,
 optional `profile_ref`, and optional `thread_ref`. Telegram targets include
 `chat_ref`, optional `thread_ref`, and `profile_key` when it is explicitly
-stored or resolvable from a `communication-profile` Telegram facet. Agents must
-still add the message body/media/callback payload and validate the final action
-input before execution.
+stored or resolvable from a `communication-profile` Telegram facet. The
+high-level delivery operation adds message body/media/callback details and
+rejects if the resolved provider cannot represent them exactly.
 
 `send_policy` may scope target use by `allowed_profile_refs`,
 `allowed_invoker_refs`, `allowed_source_surface_refs`, and
@@ -1086,14 +1098,27 @@ available through MCP, REST, and CLI:
 - `communicationRoute.upsert/list`: static handoff policy between source
   surfaces and named targets, including field/data-sharing guidance.
 - `communicationContext.query`: bounded stored-history lookup for agents.
+- `communication.send`: normal provider-neutral outbound delivery to a named
+  target.
+- `communication.reply`: normal provider-neutral reply to the origin of a
+  stored agent request.
 
-These operations do not execute provider APIs. `communicationTarget.resolve`
-returns `allowed`, `denial_reason`, `action_ref`, `surface_ref`, and
-`action_input_defaults`; the agent must still call `action.validate` and
-`action.run` or `action.execute`. `communicationContext.query` returns stored
-StackOS communication-message records only. Live Slack history, Telegram
-updates, IMAP fetches, or Gmail/Graph reads must be explicit provider actions
-with their own scopes, pagination, rate limits, and audit records.
+Setup/read operations do not execute provider APIs. `communication.send` and
+`communication.reply` execute exactly one resolved provider action through the
+same daemon-side action executor and audit ledger; agents do not receive
+secrets or raw credentials. `communicationTarget.resolve` returns `allowed`,
+`denial_reason`, `action_ref`, `surface_ref`, and `action_input_defaults` for
+planning/debugging. `communicationContext.query` returns stored StackOS
+communication-message records only. Live Slack history, Telegram updates, IMAP
+fetches, or Gmail/Graph reads must be explicit provider actions with their own
+scopes, pagination, rate limits, and audit records.
+
+High-level communication operations reject by default. Unsupported controls,
+attachments, private delivery, threading, notification flags, or provider
+action variants return a structured error with `effect: none`,
+`same_input_will_fail`, failed JSON paths, safe resolved route details, and
+repair options. This is intentional: agents are the users, and an unexpected
+mechanical degradation can leak data or create the wrong visible message.
 
 ## Status Model
 
@@ -1295,8 +1320,10 @@ Deferred auth methods:
 ## Action Contracts
 
 Provider operations must be plugin actions executed through `action.run` for one
-explicit direct call or `action.execute` inside a granted run-plan step. Do not
-add provider-specific MCP tools such as `telegram.sendMessage` or
+explicit direct call or `action.execute` inside a granted run-plan step. Normal
+agent messaging goes through `communication.send`/`communication.reply`, which
+resolve and audit one provider action internally. Do not add provider-specific
+MCP tools such as `telegram.sendMessage` or
 `smtp.sendEmail`.
 
 ### Telegram Actions
@@ -1564,8 +1591,9 @@ Flow:
    project-scoped communication profile with Slack identity, safe bot refs,
    access policy, trigger policy, context policy, response policy, send policy,
    and `provider_facets.slack-bot.auth_profile_key`.
-3. Operator configures the Slack app Events API or Interactivity Request URL to
-   the profile-specific ingress URL.
+3. Operator configures both Slack app URLs to the profile-specific ingress URL:
+   Event Subscriptions for message/mention events and Interactivity & Shortcuts
+   for Block Kit button clicks.
 4. Slack sends Events API JSON or Interactivity form payloads.
 5. The listener verifies timestamp freshness, raw-body signature, and profile
    credential binding before parsing intent-relevant fields.
@@ -1661,7 +1689,7 @@ User sends DM to bot
 -> agentRequest.list shows unread request
 -> agent calls agentRequest.prepareRunPlan with a chosen template or run plan
 -> agent executes needed actions
--> agent sends reply with communications.telegram-bot.message.send
+-> agent replies with communication.reply
 -> agent completes request
 ```
 
@@ -1685,7 +1713,7 @@ workflow.
 
 ```text
 Agent sends message with inline keyboard
--> action.run or action.execute calls communications.telegram-bot.message.send
+-> communication.send/reply resolves and calls the Telegram provider action
 -> StackOS stores outbound communication-message and interaction refs
 -> user presses button
 -> webhook ingress receives callback_query
@@ -1770,10 +1798,19 @@ Outbound reply tied to `source_agent_request_id`:
 
 ```text
 1. Agent claims agent_request 42 from communication profile support and chat telegram-chat:100.
-2. Agent calls message.send with profile_key support, chat_ref telegram-chat:100, and source_agent_request_id 42.
-3. Connector resolves support's Telegram facet `auth_profile_key` and verifies request/chat/thread origin when response_policy requires it.
-4. Telegram sendMessage executes through action.run or action.execute with daemon-held credentials.
+2. Agent calls communication.reply with request_id 42 and message content.
+3. StackOS resolves support's Telegram facet `auth_profile_key` and verifies request/chat/thread origin when response_policy requires it.
+4. Telegram sendMessage executes through the daemon action executor with daemon-held credentials.
 5. StackOS records the outbound communication-message and action-call audit.
+```
+
+Proactive target send:
+
+```text
+1. Agent calls communication.send with an explicit target such as telegram-operator-dm.
+2. StackOS verifies the target send_policy, actor profile, surface, and credential.
+3. Provider action executes without requiring source_agent_request_id, because this is not a same-origin reply.
+4. StackOS records the outbound communication-message and action-call audit.
 ```
 
 Authorized callback:
@@ -1824,9 +1861,8 @@ Local Bot API webhook:
 
 ```text
 Agent completes a run plan
--> run plan has granted SMTP send action
--> agent composes explicit recipient/subject/body payload
--> action.run or action.execute resolves smtp credential
+-> agent chooses a named email target and calls communication.send
+-> StackOS resolves the SMTP provider action and credential
 -> connector sends message
 -> StackOS records accepted/rejected status in action_calls
 ```

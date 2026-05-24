@@ -587,12 +587,18 @@ def _store_outbound_buttons(
     blocks = request.input_json.get("blocks")
     if not isinstance(blocks, list):
         return
+    control_metadata = (
+        request.input_json.get("control_metadata")
+        if isinstance(request.input_json.get("control_metadata"), Mapping)
+        else {}
+    )
     profile_key = _communication_profile_key(request)
     auth_profile_key = _credential_profile_key(request)
     source_scope = _source_button_scope(request, fallback_channel_ref=_surface_ref(channel))
     for button in _button_specs(blocks):
         action_id = str(button.get("action_id") or "")
         value = str(button.get("value") or "")
+        metadata = _button_metadata(control_metadata, action_id=action_id, value=value)
         interaction_external_id = _outbound_button_external_id(
             profile_key=profile_key,
             message_ref=message_ref,
@@ -617,6 +623,9 @@ def _store_outbound_buttons(
                 "block_id": button.get("block_id"),
                 "action_id": action_id,
                 "button_value": value or None,
+                "control_action": metadata.get("action"),
+                "control_payload": metadata.get("payload"),
+                "control_metadata": metadata or None,
                 "url_button": bool(button.get("url")),
                 "status": "active",
                 "source_agent_request_id": request.input_json.get("source_agent_request_id"),
@@ -625,6 +634,21 @@ def _store_outbound_buttons(
             },
             provenance_json={"source": "slack-bot-action"},
         )
+
+
+def _button_metadata(
+    control_metadata: Any,
+    *,
+    action_id: str,
+    value: str,
+) -> dict[str, Any]:
+    if not isinstance(control_metadata, Mapping):
+        return {}
+    for key in (value, action_id):
+        item = control_metadata.get(key)
+        if isinstance(item, Mapping):
+            return dict(item)
+    return {}
 
 
 def _source_button_scope(

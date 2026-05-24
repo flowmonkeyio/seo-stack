@@ -11,6 +11,9 @@ from sqlmodel import Session
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
+from stackos.operations.communication_delivery import (
+    operation_specs as communication_delivery_operation_specs,
+)
 from stackos.operations.communication_platform import (
     operation_specs as communication_platform_operation_specs,
 )
@@ -225,6 +228,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             grant_policy="direct-work-queue-write",
         ),
+        *communication_delivery_operation_specs(),
         *communication_platform_operation_specs(),
     ]
 

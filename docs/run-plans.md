@@ -34,14 +34,23 @@ The daemon dispatcher requires:
 - an explicit grant for the requested tool/action/resource/context fields
 
 Direct context reads use the safe field set. Advanced context fields,
-resource/artifact mutations, memory writes, and `action.execute` require
-step-scoped grants.
+resource/artifact mutations, memory writes, workflow-scoped communication sends,
+and `action.execute` require step-scoped grants.
 
 For `action.execute`, the active step must declare the target action ref and
 the matching `mcp_tool_grants` entry must include that exact ref in
 `action_refs`. A step that declares `utils.image.generate` cannot execute a
 different action, and a grant snapshot that names a different action cannot be
 used to satisfy the step.
+
+For `communication.send`, the matching `mcp_tool_grants` entry must include
+`targets` such as `communication-target:ops-alerts`. This keeps workflow
+notifications and handoffs explicit while still allowing simple non-workflow
+messages through the direct `communication.send` path.
+
+For `communication.reply`, the matching `mcp_tool_grants` entry must include
+`sources` such as `telegram-bot`, `slack-bot`, or a specific stored source
+surface. The daemon checks the request origin before allowing the reply.
 
 The run plan is not used for StackOS bootstrap itself. Creating a project,
 selecting it, setting non-secret budget/schedule configuration, and creating or

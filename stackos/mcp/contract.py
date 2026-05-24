@@ -55,6 +55,12 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "enable",
         "disable",
         "save",
+        "send",
+        "reply",
+        "forward",
+        "react",
+        "respond",
+        "continuePrivately",
         # Bulk verbs.
         "bulkCreate",
         "bulkUpdate",

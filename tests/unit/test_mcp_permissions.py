@@ -31,6 +31,8 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("auth.test", SYSTEM_SKILL)
     check_grant("action.run", SYSTEM_SKILL)
     check_grant("localAgentChat.createMessage", SYSTEM_SKILL)
+    check_grant("communication.send", SYSTEM_SKILL)
+    check_grant("communication.reply", SYSTEM_SKILL)
     check_grant("ingressEndpoint.configure", SYSTEM_SKILL)
     check_grant("ingressEndpoint.refresh", SYSTEM_SKILL)
     check_grant("ingressEndpoint.routes", SYSTEM_SKILL)
@@ -111,6 +113,8 @@ def test_run_plan_controller_has_dynamic_step_tools() -> None:
     check_grant("runPlan.recordStep", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("action.execute", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("agentRequest.create", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("communication.send", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("communication.reply", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("resource.upsert", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("context.query", RUN_PLAN_CONTROLLER_SKILL)
 

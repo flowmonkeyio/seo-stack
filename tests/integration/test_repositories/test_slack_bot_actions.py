@@ -200,6 +200,12 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
                 "channel_ref": "slack-channel:C123",
                 "text": "Ready?",
                 "source_agent_request_id": source.id,
+                "control_metadata": {
+                    "approve_177": {
+                        "action": "approve",
+                        "payload": {"decision": "approve", "ticket_id": "T-177"},
+                    }
+                },
                 "blocks": [
                     {
                         "type": "actions",
@@ -321,6 +327,11 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert len(buttons) == 1
     assert buttons[0].external_id.startswith("slack-button:support-agent:")
     assert buttons[0].data_json["button_value"] == "approve_177"
+    assert buttons[0].data_json["control_action"] == "approve"
+    assert buttons[0].data_json["control_payload"] == {
+        "decision": "approve",
+        "ticket_id": "T-177",
+    }
     assert buttons[0].data_json["allowed_user_refs"] == ["slack-user:U111"]
     assert buttons[0].data_json["allowed_channel_refs"] == ["slack-channel:C123"]
 

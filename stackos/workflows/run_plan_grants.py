@@ -23,6 +23,8 @@ RUN_PLAN_GRANTABLE_TOOL_NAMES: frozenset[str] = frozenset(
         "action.execute",
         "agentRequest.create",
         "artifact.create",
+        "communication.reply",
+        "communication.send",
         "context.query",
         "context.snapshot",
         "decision.record",
@@ -57,6 +59,7 @@ class RunPlanMcpToolGrant:
     plugin_slug: str | None = None
     resource_key: str | None = None
     action_refs: tuple[str, ...] = ()
+    targets: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     fields: tuple[str, ...] = ()
 
@@ -114,6 +117,30 @@ def _require_action_execute_refs(
         return
     if not action_refs:
         raise ValueError(f"{label} grants for 'action.execute' must include action_refs")
+
+
+def _require_communication_send_targets(
+    *,
+    tool_name: str,
+    targets: tuple[str, ...],
+    label: str,
+) -> None:
+    if tool_name != "communication.send":
+        return
+    if not targets:
+        raise ValueError(f"{label} grants for 'communication.send' must include targets")
+
+
+def _require_communication_reply_sources(
+    *,
+    tool_name: str,
+    sources: tuple[str, ...],
+    label: str,
+) -> None:
+    if tool_name != "communication.reply":
+        return
+    if not sources:
+        raise ValueError(f"{label} grants for 'communication.reply' must include sources")
 
 
 def _validate_step(step_id: str, *, step_ids: set[str] | None) -> None:
@@ -191,6 +218,12 @@ def parse_run_plan_mcp_tool_grants(
                     label=f"mcp_tool_grants[{index}].action_refs",
                 )
             )
+            targets = tuple(
+                _as_string_list(
+                    item.get("targets", item.get("target_refs", [])),
+                    label=f"mcp_tool_grants[{index}].targets",
+                )
+            )
             for tool_name in dict.fromkeys(tools):
                 _validate_grant_tool(tool_name)
                 _require_context_query_filters(
@@ -202,6 +235,16 @@ def parse_run_plan_mcp_tool_grants(
                 _require_action_execute_refs(
                     tool_name=tool_name,
                     action_refs=action_refs,
+                    label=f"mcp_tool_grants[{index}]",
+                )
+                _require_communication_send_targets(
+                    tool_name=tool_name,
+                    targets=targets,
+                    label=f"mcp_tool_grants[{index}]",
+                )
+                _require_communication_reply_sources(
+                    tool_name=tool_name,
+                    sources=sources,
                     label=f"mcp_tool_grants[{index}]",
                 )
                 grants.append(
@@ -217,6 +260,7 @@ def parse_run_plan_mcp_tool_grants(
                             label=f"mcp_tool_grants[{index}].resource_key",
                         ),
                         action_refs=action_refs,
+                        targets=targets,
                         sources=sources,
                         fields=fields,
                     )
@@ -241,6 +285,16 @@ def parse_run_plan_mcp_tool_grants(
                 _require_action_execute_refs(
                     tool_name=tool_name,
                     action_refs=(),
+                    label=f"step_tools[{step_id!r}]",
+                )
+                _require_communication_send_targets(
+                    tool_name=tool_name,
+                    targets=(),
+                    label=f"step_tools[{step_id!r}]",
+                )
+                _require_communication_reply_sources(
+                    tool_name=tool_name,
+                    sources=(),
                     label=f"step_tools[{step_id!r}]",
                 )
                 grants.append(RunPlanMcpToolGrant(step_id=step_id, tool_name=tool_name))

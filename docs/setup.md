@@ -224,6 +224,16 @@ Agents should prefer the same operations through MCP when available:
 only in `driver_config`; provider routes stay Telegram/Slack-agnostic and are
 regenerated from the stored project endpoint.
 
+Slack needs the generated Slack ingress URL in two Slack app screens:
+
+- **Event Subscriptions -> Request URL** for message and mention events.
+- **Interactivity & Shortcuts -> Request URL** for Block Kit button clicks.
+
+Use the same profile-specific URL from `ingressEndpoint.routes`, for example
+`https://public.example/api/v1/ingress/slack/{project_id}/{profile_key}`.
+If Events are verified but buttons show a warning marker in Slack, Interactivity
+is missing or failing.
+
 ## Health Checks
 
 Run:

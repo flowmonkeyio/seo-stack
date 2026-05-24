@@ -1166,8 +1166,9 @@ async def communication_target_resolve(
         allowed = False
         reason = "target_disabled"
     notes = [
-        "This resolver does not send messages. It returns the explicit provider action "
-        "reference and safe defaults an agent can validate and execute."
+        "This resolver does not send messages. It returns provider action refs and "
+        "safe defaults for planning/debugging; normal agent delivery should use "
+        "communication.send or communication.reply."
     ]
     if target.provider_key in {"slack-bot", "smtp", "imap"}:
         notes.append("Provider connector execution depends on the installed provider action.")

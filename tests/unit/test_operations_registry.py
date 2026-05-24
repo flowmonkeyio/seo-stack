@@ -21,6 +21,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
+        "communication.reply",
+        "communication.send",
         "communicationContact.list",
         "communicationContact.upsert",
         "communicationContext.query",
@@ -109,6 +111,19 @@ def test_operation_registry_documents_core_operations() -> None:
     assert context_query.grant_policy == "direct-read"
     assert any("never fetches live provider history" in item for item in [context_query.purpose])
 
+    communication_send = registry.get("communication.send").describe_out()
+    assert communication_send.surfaces["mcp"].enabled is True
+    assert communication_send.surfaces["rest"].enabled is True
+    assert communication_send.surfaces["cli"].command == "ops call communication.send"
+    assert communication_send.grant_policy == "direct-communication-send"
+    assert any("StackOS resolves profile" in item for item in [communication_send.purpose])
+
+    communication_reply = registry.get("communication.reply").describe_out()
+    assert communication_reply.surfaces["mcp"].enabled is True
+    assert communication_reply.surfaces["rest"].enabled is True
+    assert communication_reply.grant_policy == "direct-communication-send"
+    assert any("origin surface/thread" in item for item in [communication_reply.purpose])
+
     local_chat = registry.get("localAgentChat.createMessage").describe_out()
     assert local_chat.surfaces["mcp"].enabled is True
     assert local_chat.surfaces["rest"].enabled is True
@@ -155,6 +170,8 @@ def test_operation_registry_surface_filter() -> None:
         "agentRequest.list",
         "agentRequest.prepareRunPlan",
         "agentRequest.release",
+        "communication.reply",
+        "communication.send",
         "communicationContact.list",
         "communicationContact.upsert",
         "communicationContext.query",

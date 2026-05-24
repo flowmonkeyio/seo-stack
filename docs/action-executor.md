@@ -120,10 +120,14 @@ Direct/read discovery operations:
 Run-plan-scoped execution operation:
 
 - `action.execute`
+- `communication.send` when a workflow step grants explicit targets
+- `communication.reply` when a workflow step grants explicit origin sources
 
 Direct one-action execution operation:
 
 - `action.run`
+- `communication.send`
+- `communication.reply`
 
 `action.run` is direct execution for one explicit action. Non-read actions
 require `confirm_direct=true` and `intent_summary`; callers may pass

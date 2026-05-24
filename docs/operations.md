@@ -171,6 +171,8 @@ The current core operation registry includes:
 - `agentRequest.linkRunPlan`
 - `agentRequest.complete`
 - `agentRequest.ignore`
+- `communication.reply`
+- `communication.send`
 - `communicationProfile.list`
 - `communicationProfile.get`
 - `communicationProfile.upsert`
@@ -186,9 +188,6 @@ The current core operation registry includes:
 - `communicationRoute.list`
 - `communicationRoute.upsert`
 - `communicationContext.query`
-- `communicationProfile.list`
-- `communicationProfile.get`
-- `communicationProfile.upsert`
 - `ingressEndpoint.configure`
 - `ingressEndpoint.refresh`
 - `ingressEndpoint.routes`
@@ -285,16 +284,28 @@ Surfaces should carry `audience`, `intent`, `agent_guidance`, `data_scope`, and
 `external_context` when a channel/DM/mailbox can contain customer or internal
 operational context. These fields are static guidance for the operating agent:
 they do not authorize a send, choose a workflow, or fetch live provider history.
-`communicationTarget.resolve` returns an explicit provider action ref and safe
-defaults; it does not send. Pass `profile_ref`, `source_surface_ref`, and
-`invoker_ref` when the source request has them so target policy can evaluate
-the communication profile, source surface, and approved human/bot actor. Target
-`send_policy` supports `allowed_profile_refs`, `allowed_invoker_refs`,
-`allowed_source_surface_refs`, and `allowed_target_refs`; all configured
-allowlists must match. The resolver returns provider-ready defaults when it can
-derive them safely, such as Slack `surface_ref` or Telegram `chat_ref` plus
-`profile_key` from a communication profile Telegram facet. The caller still
-adds the message-specific fields and validates the final explicit action.
+
+`communication.send` and `communication.reply` are the normal delivery
+operations for agents. The agent passes a named target or request id plus
+message content; StackOS resolves actor/profile, target, provider action,
+daemon-held credential, policy, capabilities, idempotency, and action audit.
+If a requested rich feature cannot be delivered exactly, the operation rejects
+with `effect: none`, failed JSON paths, supported capabilities, and repair
+options. It does not silently convert buttons, attachments, private delivery,
+threads, or notification behavior.
+Simple one-off sends can run directly. Workflow sends can also run with a
+`run_token`; in that case the active step must grant `communication.send` with
+explicit `targets` such as `communication-target:ops-alerts`. Workflow replies
+must grant `communication.reply` with explicit origin `sources` such as
+`telegram-bot`, `slack-bot`, or a source surface ref.
+
+`communicationTarget.resolve` remains a read-only planning/debug helper. It
+returns an explicit provider action ref and safe defaults; it does not send.
+Pass `profile_ref`, `source_surface_ref`, and `invoker_ref` when the source
+request has them so target policy can evaluate the communication profile,
+source surface, and approved human/bot actor. Provider actions through
+`action.run`/`action.execute` are lower-level escape hatches for
+provider-specific work, not the default agent path.
 `communicationContext.query` returns bounded stored communication-message
 history only. Live provider history fetches must be explicit provider actions.
 

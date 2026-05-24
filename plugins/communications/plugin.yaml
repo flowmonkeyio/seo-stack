@@ -304,6 +304,9 @@ actions:
           type: string
         direct_messages_topic_ref:
           type: string
+        control_metadata:
+          type: object
+          additionalProperties: true
         reply_markup:
           type: object
           additionalProperties: false
@@ -401,6 +404,9 @@ actions:
           type: string
         direct_messages_topic_ref:
           type: string
+        control_metadata:
+          type: object
+          additionalProperties: true
         reply_markup:
           type: object
           additionalProperties: false
@@ -680,6 +686,9 @@ actions:
         source_agent_request_id:
           type: integer
           minimum: 1
+        control_metadata:
+          type: object
+          additionalProperties: true
     output_schema: *object_schema
     config:
       schema_version: stackos.action.v1

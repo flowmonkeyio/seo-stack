@@ -50,9 +50,18 @@ work, start here:
   Use `ingressEndpoint.*` for project-level public webhook setup; local tunnel
   providers such as ngrok are configured only under `driver_config`, while
   production uses a deployed HTTPS `public_base_url`.
-  `communicationTarget.resolve` does not send; it returns the explicit provider
-  action ref/defaults an agent can validate and execute through `action.run` or
-  `action.execute`.
+  Use `communication.send` and `communication.reply` as the normal agent-facing
+  delivery path. Agents provide intent-level actor/destination/content/context;
+  StackOS resolves the profile, target, provider action, credential, policy,
+  capabilities, idempotency, and audit. `communicationTarget.resolve` is a
+  read-only planning/debug helper and provider actions through `action.run` are
+  lower-level escape hatches for explicitly provider-specific work.
+  Direct sends support simple non-workflow requests. Workflow sends should pass
+  the run token and require an active step grant for `communication.send` with
+  explicit target refs.
+  Unsupported rich features or delivery options reject with model-readable
+  repair context and no side effect; StackOS must not silently degrade buttons,
+  attachments, privacy, threading, or notification semantics.
 - Communication ingress follows one-brain processing: provider adapters verify
   signatures/secrets and normalize payloads; shared communication policy owns
   visibility, trigger matching, allowlisted invokers, storage, and request

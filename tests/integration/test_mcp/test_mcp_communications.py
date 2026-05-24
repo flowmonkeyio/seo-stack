@@ -6,7 +6,9 @@ import json
 
 from sqlmodel import Session
 
+from stackos.db.models import ActionCall
 from stackos.operations import communication_platform
+from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import IntegrationCredentialRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -49,6 +51,20 @@ def _seed_smtp_credential(mcp: MCPClient, project_id: int, *, profile_key: str =
                 "username": "mailer@example.test",
                 "from_email": "mailer@example.test",
             },
+        )
+
+
+def _seed_slack_credential(
+    mcp: MCPClient, project_id: int, *, profile_key: str = "default"
+) -> None:
+    engine = mcp.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        IntegrationCredentialRepository(session).set(
+            project_id=project_id,
+            kind="slack-bot",
+            profile_key=profile_key,
+            secret_payload=json.dumps({"bot_token": "xoxb-test-token"}).encode("utf-8"),
+            config_json={"auth_method_key": "bot-token", "profile_key": profile_key},
         )
 
 
@@ -109,6 +125,8 @@ def test_communication_profile_operations_are_registered(mcp_client: MCPClient) 
         "ingressEndpoint.sync",
         "ingressEndpoint.status",
         "localAgentChat.createMessage",
+        "communication.send",
+        "communication.reply",
         "communicationProfile.list",
         "communicationProfile.get",
         "communicationProfile.upsert",
@@ -581,6 +599,719 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     )
     assert err["code"] == -32602
     assert err["data"]["fields"] == ["raw_artifact_ref"]
+
+
+def test_communication_send_executes_compact_dry_run_through_target(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_slack_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "ops-bot",
+            "identity": {"display_name": "Ops Bot"},
+            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationSurface.upsert",
+        {
+            "project_id": project_id,
+            "surface_ref": "slack-channel:CROAD",
+            "provider_key": "slack-bot",
+            "kind": "slack-channel",
+            "display_name": "roadmap",
+            "capabilities": {"can_write": True, "can_thread": True, "buttons": True},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "slack-roadmap",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CROAD",
+            "profile_ref": "communication-profile:ops-bot",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:ops-bot"],
+                "allowed_target_refs": ["communication-target:slack-roadmap"],
+            },
+        },
+    )
+
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "slack-roadmap",
+            "text": "Done. The fix shipped.",
+            "content": {"controls": [{"type": "button", "label": "Ack", "value": "ack:roadmap:1"}]},
+            "dry_run": True,
+        },
+    )
+
+    assert sent["data"]["ok"] is True
+    assert sent["data"]["status"] == "validated"
+    assert sent["data"]["action_ref"] == "communications.slack-bot.message.send"
+    assert sent["data"]["provider_key"] == "slack-bot"
+    assert sent["data"]["target_ref"] == "communication-target:slack-roadmap"
+    assert sent["data"]["actor_ref"] == "communication-profile:ops-bot"
+    assert sent["data"]["surface_ref"] == "slack-channel:CROAD"
+    assert sent["data"]["action_call_id"] > 0
+    assert "credential_ref" not in json.dumps(sent)
+
+
+def test_communication_send_rejects_ambiguous_actor_with_repair_context(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "multi-bot-roadmap",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CROAD",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": [
+                    "communication-profile:ops-bot",
+                    "communication-profile:analytics-bot",
+                ],
+                "allowed_target_refs": ["communication-target:multi-bot-roadmap"],
+            },
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "multi-bot-roadmap",
+            "text": "Done.",
+            "dry_run": True,
+        },
+    )
+
+    assert err["code"] == -32602
+    detail = err["data"]["error"]
+    assert detail["code"] == "COMM_AMBIGUOUS_ACTOR"
+    assert detail["effect"] == "none"
+    assert detail["same_input_will_fail"] is True
+    assert detail["resolved"]["candidate_actor_refs"] == [
+        "communication-profile:ops-bot",
+        "communication-profile:analytics-bot",
+    ]
+    assert detail["repair"]["options"][0]["id"] == "pass_from"
+
+
+def test_communication_send_rejects_unsupported_email_buttons(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_smtp_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-mailer",
+            "identity": {"display_name": "Support Mailer"},
+            "provider_facets": {"smtp": {"auth_profile_key": "primary"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-email",
+            "provider_key": "smtp",
+            "surface_ref": "email:customer-acme",
+            "profile_ref": "communication-profile:support-mailer",
+            "action_input_defaults": {
+                "recipients": ["customer@example.test"],
+                "subject": "Status update",
+            },
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:support-mailer"],
+                "allowed_target_refs": ["communication-target:customer-email"],
+            },
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-email",
+            "text": "Please approve.",
+            "controls": [{"type": "button", "label": "Approve", "value": "approve:1"}],
+            "dry_run": True,
+        },
+    )
+
+    detail = err["data"]["error"]
+    assert detail["code"] == "COMM_UNSUPPORTED_CAPABILITY"
+    assert detail["effect"] == "none"
+    assert detail["failed_paths"][0]["path"] == "/content/controls/0"
+    assert detail["failed_paths"][0]["required_capability"] == "control.button.callback"
+    assert detail["resolved"]["provider"] == "smtp"
+    assert "Do not change communication semantics" in detail["repair"]["do_not"][2]
+
+
+def test_communication_send_rejects_unsupported_delivery_and_content_shape(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "identity": {"display_name": "Support Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "customer-telegram",
+            "provider_key": "telegram-bot",
+            "surface_ref": "telegram-chat:12345",
+            "profile_ref": "communication-profile:support-bot",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:support-bot"],
+                "allowed_target_refs": ["communication-target:customer-telegram"],
+            },
+        },
+    )
+
+    private_err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "text": "Done.",
+            "delivery": {"visibility": "private"},
+            "dry_run": True,
+        },
+    )
+    assert private_err["data"]["error"]["code"] == "COMM_UNSUPPORTED_DELIVERY_OPTION"
+    assert private_err["data"]["error"]["failed_paths"][0]["path"] == "/delivery/visibility"
+
+    attachments_err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "text": "Images attached.",
+            "attachments": [
+                {"type": "image", "url": "https://example.test/a.png"},
+                {"type": "image", "url": "https://example.test/b.png"},
+            ],
+            "dry_run": True,
+        },
+    )
+    assert attachments_err["data"]["error"]["code"] == "COMM_UNSUPPORTED_CONTENT_SHAPE"
+    assert attachments_err["data"]["error"]["failed_paths"][0]["path"] == "/content/attachments/1"
+
+    image_variant_err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "attachments": [{"type": "image", "url": "https://example.test/a.png"}],
+            "dry_run": True,
+        },
+    )
+    assert image_variant_err["data"]["error"]["code"] == "COMM_TARGET_ACTION_VARIANT_NOT_ALLOWED"
+
+    thread_err = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "text": "Thread reply.",
+            "delivery": {"reply_mode": "same_thread"},
+            "dry_run": True,
+        },
+    )
+    assert thread_err["data"]["error"]["code"] == "COMM_DELIVERY_CONTEXT_REQUIRED"
+    assert thread_err["data"]["error"]["failed_paths"][0]["required_context"] == "thread_ref"
+
+    long_value = "approve:" + ("x" * 100)
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "customer-telegram",
+            "text": "Approve this.",
+            "controls": [
+                {
+                    "type": "button",
+                    "label": "Approve",
+                    "value": long_value,
+                    "payload": {"decision": "approve", "case_id": "case-123"},
+                }
+            ],
+            "dry_run": True,
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        call = session.get(ActionCall, sent["data"]["action_call_id"])
+        assert call is not None
+        request_json = call.request_json or {}
+    callback_data = request_json["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    assert callback_data != long_value
+    assert len(callback_data.encode("utf-8")) <= 64
+    assert request_json["control_metadata"][callback_data]["payload"] == {
+        "decision": "approve",
+        "case_id": "case-123",
+    }
+
+
+def test_communication_send_can_infer_actor_from_source_request(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_slack_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "ops-bot",
+            "identity": {"display_name": "Ops Bot"},
+            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "internal-roadmap",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CROAD",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": [
+                    "communication-profile:ops-bot",
+                    "communication-profile:analytics-bot",
+                ],
+                "allowed_target_refs": ["communication-target:internal-roadmap"],
+            },
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="manual-source:1",
+                title="Manual request",
+                body_preview="Send roadmap update",
+                source_provider="telegram-bot",
+                source_kind="telegram_message",
+                metadata_json={
+                    "profile_ref": "communication-profile:ops-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "invoker_ref": "telegram-user:555",
+                },
+            )
+            .data
+        )
+
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "internal-roadmap",
+            "text": "Done.",
+            "context": {"source_request_id": request.id},
+            "dry_run": True,
+        },
+    )
+
+    assert sent["data"]["actor_ref"] == "communication-profile:ops-bot"
+    assert sent["data"]["status"] == "validated"
+
+
+def test_communication_send_prefers_target_actor_over_cross_platform_source(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_slack_credential(mcp_client, project_id)
+    _seed_telegram_credential(mcp_client, project_id, profile_key="telegram-bot")
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "slack-ops",
+            "identity": {"display_name": "Slack Ops"},
+            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "telegram-bot",
+            "identity": {"display_name": "Telegram Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "telegram-bot"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "slack-roadmap",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CROAD",
+            "profile_ref": "communication-profile:slack-ops",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:slack-ops"],
+                "allowed_target_refs": ["communication-target:slack-roadmap"],
+            },
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="telegram-cross-platform:1",
+                title="Telegram request",
+                body_preview="Send Slack update",
+                source_provider="telegram-bot",
+                metadata_json={
+                    "profile_ref": "communication-profile:telegram-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "invoker_ref": "telegram-user:555",
+                },
+            )
+            .data
+        )
+
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "slack-roadmap",
+            "text": "Cross-platform update.",
+            "context": {"source_request_id": request.id},
+            "dry_run": True,
+        },
+    )
+
+    assert sent["data"]["actor_ref"] == "communication-profile:slack-ops"
+    assert sent["data"]["status"] == "validated"
+
+
+def test_communication_send_can_run_inside_granted_run_plan_step(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_slack_credential(mcp_client, project_id)
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "ops-bot",
+            "identity": {"display_name": "Ops Bot"},
+            "provider_facets": {"slack-bot": {"auth_profile_key": "default"}},
+        },
+    )
+    mcp_client.call_tool_structured(
+        "communicationTarget.upsert",
+        {
+            "project_id": project_id,
+            "key": "ops-alerts",
+            "provider_key": "slack-bot",
+            "surface_ref": "slack-channel:CALERTS",
+            "profile_ref": "communication-profile:ops-bot",
+            "send_policy": {
+                "mode": "explicit-target",
+                "allowed_profile_refs": ["communication-profile:ops-bot"],
+                "allowed_target_refs": ["communication-target:ops-alerts"],
+            },
+        },
+    )
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "communication-send.run",
+        "title": "Communication send",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "notify",
+                    "tool": "communication.send",
+                    "targets": ["communication-target:ops-alerts"],
+                }
+            ]
+        },
+        "steps": [{"id": "notify", "title": "Notify ops"}],
+    }
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan_json},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "notify",
+            "run_token": run_token,
+        },
+    )
+
+    sent = mcp_client.call_tool_structured(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "ops-alerts",
+            "text": "Run-plan scoped notification.",
+            "dry_run": True,
+            "run_token": run_token,
+        },
+    )
+    denied = mcp_client.call_tool_error(
+        "communication.send",
+        {
+            "project_id": project_id,
+            "to": "other-target",
+            "text": "Wrong target.",
+            "dry_run": True,
+            "run_token": run_token,
+        },
+    )
+
+    assert sent["run_id"] == started["data"]["run_id"]
+    assert sent["data"]["status"] == "validated"
+    assert denied["code"] == -32007
+    assert denied["data"]["tool"] == "communication.send"
+
+
+def test_communication_reply_requires_matching_run_plan_source_grant(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "identity": {"display_name": "Support Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="telegram-run-reply:1",
+                title="Telegram request",
+                body_preview="Reply from run",
+                source_provider="telegram-bot",
+                source_kind="telegram_message",
+                source_message_ref="telegram-message:12345:11",
+                metadata_json={
+                    "profile_key": "support-bot",
+                    "profile_ref": "communication-profile:support-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "invoker_ref": "telegram-user:555",
+                },
+            )
+            .data
+        )
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "communication-reply.run",
+        "title": "Communication reply",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "reply",
+                    "tool": "communication.reply",
+                    "sources": ["telegram-bot"],
+                }
+            ]
+        },
+        "steps": [{"id": "reply", "title": "Reply"}],
+    }
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": plan_json},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "reply",
+            "run_token": run_token,
+        },
+    )
+
+    reply = mcp_client.call_tool_structured(
+        "communication.reply",
+        {
+            "project_id": project_id,
+            "request_id": request.id,
+            "text": "Run-plan reply.",
+            "dry_run": True,
+            "run_token": run_token,
+        },
+    )
+    assert reply["run_id"] == started["data"]["run_id"]
+    assert reply["data"]["status"] == "validated"
+
+
+def test_communication_reply_enforces_profile_response_policy(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "identity": {"display_name": "Support Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+            "access_policy": {
+                "user_mode": "allowlist",
+                "allowed_user_refs": ["telegram-user:555"],
+            },
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="telegram-update:support-bot:blocked",
+                title="Telegram message",
+                body_preview="@stackos_bot check this",
+                source_provider="telegram-bot",
+                source_kind="telegram_message",
+                source_message_ref="telegram-message:12345:99",
+                metadata_json={
+                    "profile_key": "support-bot",
+                    "profile_ref": "communication-profile:support-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "invoker_ref": "telegram-user:999",
+                },
+            )
+            .data
+        )
+
+    err = mcp_client.call_tool_error(
+        "communication.reply",
+        {
+            "project_id": project_id,
+            "request_id": request.id,
+            "text": "Nope.",
+            "dry_run": True,
+        },
+    )
+    assert err["data"]["error"]["code"] == "COMM_REPLY_NOT_ALLOWED"
+    assert err["data"]["error"]["failed_paths"][0]["policy_reason"] == "invoker_not_allowed"
+
+
+def test_communication_reply_resolves_origin_without_provider_payload(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    _seed_telegram_credential(mcp_client, project_id, profile_key="support-bot")
+
+    mcp_client.call_tool_structured(
+        "communicationProfile.upsert",
+        {
+            "project_id": project_id,
+            "key": "support-bot",
+            "identity": {"display_name": "Support Bot"},
+            "provider_facets": {"telegram-bot": {"auth_profile_key": "support-bot"}},
+        },
+    )
+    engine = mcp_client.test_client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="telegram-update:support-bot:500",
+                title="Telegram message",
+                body_preview="@stackos_bot check this",
+                source_provider="telegram-bot",
+                source_kind="telegram_message",
+                source_message_ref="telegram-message:12345:77",
+                metadata_json={
+                    "profile_key": "support-bot",
+                    "profile_ref": "communication-profile:support-bot",
+                    "chat_ref": "telegram-chat:12345",
+                    "thread_ref": "telegram-thread:12345:default",
+                    "invoker_ref": "telegram-user:555",
+                },
+            )
+            .data
+        )
+
+    reply = mcp_client.call_tool_structured(
+        "communication.reply",
+        {
+            "project_id": project_id,
+            "request_id": request.id,
+            "text": "Done. I checked it.",
+            "dry_run": True,
+        },
+    )
+
+    assert reply["data"]["status"] == "validated"
+    assert reply["data"]["action_ref"] == "communications.telegram-bot.message.send"
+    assert reply["data"]["actor_ref"] == "communication-profile:support-bot"
+    assert reply["data"]["surface_ref"] == "telegram-chat:12345"
+    assert reply["data"]["resolved"]["request_id"] == request.id
 
 
 def test_local_agent_chat_mcp_creates_message_and_request(

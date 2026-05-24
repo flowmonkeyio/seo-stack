@@ -22,7 +22,9 @@ does not run an assistant, classify intent, or decide workflows.
   `communicationContact.*`, `communicationMembership.*`,
   `communicationTarget.*`, `communicationRoute.*`, and
   `communicationContext.query` for generic setup and stored-context reads.
-  Provider-specific actions still execute through explicit action refs.
+  Use `communication.send` and `communication.reply` as the normal delivery
+  path. Provider-specific actions still exist as explicit action refs, but they
+  are the lower-level escape hatch for discovery/custom payload work.
 - Set surface intent before using a channel for real work. A
   `communication-channel` should describe its `audience`, `intent`,
   `agent_guidance`, `data_scope`, and safe `external_context` when it can
@@ -30,10 +32,11 @@ does not run an assistant, classify intent, or decide workflows.
   credentials, tokens, private headers, or raw provider secrets in those fields.
 - Treat surface intent and data scope as agent guidance, not daemon business
   logic. The agent still decides the workflow and must use target/route policy
-  plus explicit action validation before sending or forwarding anything.
-- `communicationTarget.resolve` is not a send abstraction. It returns static
-  allow/deny state plus the explicit provider action ref/defaults an agent may
-  validate and execute.
+  through `communication.send`/`communication.reply` before sending or forwarding
+  anything.
+- `communicationTarget.resolve` is not a send abstraction. It is a read-only
+  planning/debug helper that returns static allow/deny state plus provider
+  defaults. Normal agents should not use it as the default delivery flow.
 - `communicationContext.query` returns stored StackOS history only. Live Slack
   history, Telegram updates, IMAP fetches, or future Gmail/Graph reads must be
   separate provider actions with scopes, pagination, rate-limit handling, and
@@ -89,6 +92,8 @@ does not run an assistant, classify intent, or decide workflows.
 - Outbound replies that are tied to inbound work should include
   `source_agent_request_id` so response policy can enforce the originating
   communication profile, chat, thread, and message.
+- Proactive sends to explicit `communication-target` records are governed by
+  target/send policy. Do not force those sends through reply-origin policy.
 - `telegram-bot.callback.answer` may clear Telegram's client-side loading state
   with static acknowledgement text. It must not claim a workflow was completed
   unless the responsible agent or granted run actually completed it.

@@ -584,18 +584,12 @@ def _enforce_profile_chat(
     profile = _enforce_telegram_profile(request)
     resolved_ref = _resolve_profile_ref(profile, raw_ref, "chats", "chat_refs")
     access = profile.get("access_policy")
-    response = profile.get("response_policy")
     access_policy = access if isinstance(access, Mapping) else {}
-    response_policy = response if isinstance(response, Mapping) else {}
     denied = _profile_refs(access_policy, "denied_chat_refs", "denied_chat_ids", "denied_chats")
     candidates = _candidate_refs(raw_ref, resolved_ref, "telegram-chat")
     if denied and any(candidate in denied for candidate in candidates):
         raise ValidationError(f"Telegram communication profile does not allow chat {raw_ref!r}")
     _enforce_response_origin(request, profile, candidates)
-    if response_policy.get("reply_to_source_message") is True and not request.input_json.get(
-        "reply_to_message_ref"
-    ):
-        raise ValidationError("Telegram communication profile requires reply_to_message_ref")
     allowed = _profile_refs(access_policy, "allowed_chat_refs", "allowed_chat_ids", "allowed_chats")
     if not allowed:
         return profile
@@ -611,13 +605,15 @@ def _enforce_response_origin(
 ) -> None:
     response = profile.get("response_policy")
     response_policy = response if isinstance(response, Mapping) else {}
-    if response_policy.get("origin_required") is not True:
+    request_id = request.input_json.get("source_agent_request_id")
+    if not isinstance(request_id, int) or isinstance(request_id, bool):
+        if response_policy.get("origin_required") is True and request.input_json.get(
+            "reply_to_message_ref"
+        ):
+            raise ValidationError("Telegram response requires source_agent_request_id")
         return
     if request.session is None:
         raise ValidationError("Telegram response origin enforcement requires a repository session")
-    request_id = request.input_json.get("source_agent_request_id")
-    if not isinstance(request_id, int) or isinstance(request_id, bool):
-        raise ValidationError("Telegram response requires source_agent_request_id")
     source = AgentRequestRepository(request.session).get(
         project_id=request.project_id,
         request_id=request_id,
@@ -816,6 +812,11 @@ def _store_callback_buttons(
     inline_keyboard = reply_markup.get("inline_keyboard")
     if not isinstance(inline_keyboard, list):
         return
+    control_metadata = (
+        request.input_json.get("control_metadata")
+        if isinstance(request.input_json.get("control_metadata"), Mapping)
+        else {}
+    )
     result_body = provider_body.get("result") if isinstance(provider_body, Mapping) else None
     message_ref = _provider_message_ref(result_body)
     if message_ref is None:
@@ -831,6 +832,7 @@ def _store_callback_buttons(
             callback_data = button.get("callback_data")
             if not isinstance(callback_data, str) or not callback_data:
                 continue
+            metadata = _button_metadata(control_metadata, callback_data=callback_data)
             allowed_user_refs = _split_config_values(button.get("allowed_user_refs"))
             if not allowed_user_refs:
                 allowed_user_refs = source_scope.get("allowed_user_refs", [])
@@ -855,6 +857,9 @@ def _store_callback_buttons(
                     "profile_ref": profile_ref,
                     "interaction_type": "outbound_inline_button",
                     "callback_data": callback_data,
+                    "control_action": metadata.get("action"),
+                    "control_payload": metadata.get("payload"),
+                    "control_metadata": metadata or None,
                     "message_ref": message_ref,
                     "chat_ref": request.input_json.get("chat_ref"),
                     "allowed_user_refs": allowed_user_refs,
@@ -864,6 +869,13 @@ def _store_callback_buttons(
                 },
                 provenance_json={"source": "telegram-bot-action"},
             )
+
+
+def _button_metadata(control_metadata: Any, *, callback_data: str) -> dict[str, Any]:
+    if not isinstance(control_metadata, Mapping):
+        return {}
+    item = control_metadata.get(callback_data)
+    return dict(item) if isinstance(item, Mapping) else {}
 
 
 def _source_button_scope(request: ActionConnectorRequest) -> dict[str, list[str]]:

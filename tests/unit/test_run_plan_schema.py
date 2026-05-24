@@ -116,6 +116,64 @@ def test_run_plan_schema_accepts_action_execute_with_refs(action_ref: str) -> No
     assert result.valid is True
 
 
+def test_run_plan_schema_requires_communication_send_targets() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "communication.send"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "targets" in result.errors[0].message
+
+
+def test_run_plan_schema_accepts_communication_send_with_targets() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [
+            {
+                "step_id": "create-campaign",
+                "tool": "communication.send",
+                "targets": ["communication-target:ops-alerts"],
+            }
+        ],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is True
+
+
+def test_run_plan_schema_requires_communication_reply_sources() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [{"step_id": "create-campaign", "tool": "communication.reply"}],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is False
+    assert "sources" in result.errors[0].message
+
+
+def test_run_plan_schema_accepts_communication_reply_with_sources() -> None:
+    data = _plan_dict()
+    data["grants"] = {
+        "mcp_tool_grants": [
+            {
+                "step_id": "create-campaign",
+                "tool": "communication.reply",
+                "sources": ["telegram-bot", "slack-bot"],
+            }
+        ],
+    }
+
+    result = validate_run_plan_obj(data)
+
+    assert result.valid is True
+
+
 def test_run_plan_schema_requires_context_query_grant_filters() -> None:
     data = _plan_dict()
     data["grants"] = {

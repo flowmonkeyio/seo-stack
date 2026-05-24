@@ -304,6 +304,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "communicationProfile.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationProfile.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationProfile.upsert" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communication.send" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "communication.reply" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationSurface.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationSurface.upsert" in _AGENT_VISIBLE_TOOL_NAMES
     assert "communicationContact.list" in _AGENT_VISIBLE_TOOL_NAMES
@@ -339,6 +341,8 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "runPlan.update" not in _AGENT_STEP_GATED_TOOL_NAMES
     assert "action.execute" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
     assert "agentRequest.create" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "communication.send" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
+    assert "communication.reply" in _AGENT_RUN_PLAN_GATED_TOOL_NAMES
 
 
 def test_bridge_compacts_communication_profile_without_flat_provider_fields() -> None:
@@ -414,6 +418,8 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "action.execute",
         "agentRequest.create",
         "artifact.create",
+        "communication.reply",
+        "communication.send",
         "context.query",
         "context.snapshot",
         "decision.record",
@@ -455,8 +461,8 @@ def test_bridge_agent_operation_surface_matches_registered_daemon_tools() -> Non
 def test_bridge_system_grant_matches_agent_operation_surface() -> None:
     system_tools = SKILL_TOOL_GRANTS[SYSTEM_SKILL]
     assert system_tools >= _AGENT_BASE_TOOLBOX_NAMES
-    direct_safe_reads = {"context.query"}
-    assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_reads).isdisjoint(system_tools)
+    direct_safe_tools = {"context.query", "communication.reply", "communication.send"}
+    assert (_AGENT_RUN_PLAN_GATED_TOOL_NAMES - direct_safe_tools).isdisjoint(system_tools)
     assert _AGENT_ADMIN_GATED_TOOL_NAMES.isdisjoint(system_tools)
 
 

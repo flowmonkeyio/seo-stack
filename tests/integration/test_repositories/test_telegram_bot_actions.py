@@ -624,6 +624,12 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
                 "reply_to_message_ref": "telegram-message:12345:77",
                 "thread_ref": "telegram-thread:12345:default",
                 "text": "Queued the review.",
+                "control_metadata": {
+                    "done_78": {
+                        "action": "mark_done",
+                        "payload": {"request_id": source.id, "status": "done"},
+                    }
+                },
                 "reply_markup": {
                     "inline_keyboard": [[{"text": "Done", "callback_data": "done_78"}]]
                 },
@@ -648,6 +654,11 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
     )
     assert button.data_json["allowed_user_refs"] == ["telegram-user:555"]
     assert button.data_json["allowed_chat_refs"] == ["telegram-chat:12345"]
+    assert button.data_json["control_action"] == "mark_done"
+    assert button.data_json["control_payload"] == {
+        "request_id": source.id,
+        "status": "done",
+    }
 
     with pytest.raises(ConflictError, match="action connector failed") as exc:
         asyncio.run(
@@ -666,6 +677,58 @@ def test_telegram_response_policy_requires_source_origin_and_exact_reply(
             )
         )
     assert "must reply to the source message" in exc.value.data["error"]
+
+
+def test_telegram_origin_required_allows_proactive_target_send_without_source(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    credential_ref = _telegram_credential_ref(session, project_id)
+    _telegram_profile(
+        session,
+        project_id,
+        response_policy={"origin_required": True, "reply_to_source_message": True},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/sendMessage",
+        json={"ok": True, "result": {"message_id": 79, "chat": {"id": 12345}}},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.message.send",
+            input_json={
+                "profile_key": "support-bot",
+                "chat_ref": "main",
+                "text": "Proactive update.",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    request_body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+
+    assert out.output_json["body"]["result"]["message_id"] == 79
+    assert request_body["chat_id"] == "12345"
+    assert "reply_to_message_id" not in request_body
+
+    with pytest.raises(ConflictError, match="action connector failed") as exc:
+        asyncio.run(
+            ActionRepository(session).execute(
+                project_id=project_id,
+                action_ref="communications.telegram-bot.message.send",
+                input_json={
+                    "profile_key": "support-bot",
+                    "chat_ref": "main",
+                    "reply_to_message_ref": "telegram-message:12345:77",
+                    "text": "Malformed reply.",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+    assert "requires source_agent_request_id" in exc.value.data["error"]
 
 
 def test_telegram_response_policy_rejects_malformed_non_telegram_source(
