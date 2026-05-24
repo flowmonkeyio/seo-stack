@@ -129,7 +129,7 @@ stackos actions run communications.telegram-bot.message.send \
   --credential-ref cred_123 \
   --confirm-direct \
   --intent-summary "User asked to send one status message." \
-  --idempotency-key telegram-send-status-1 \
+  --intent-id telegram-send-status-1 \
   --input telegram-message.json
 
 stackos run-plans validate --project 1 --template-key core.project-memory-review
@@ -191,14 +191,20 @@ The current core operation registry includes:
 1. The current bridge workspace must resolve to a project, or scripts must pass
    `project_id`.
 2. The caller must pass an explicit action ref or plugin/action pair.
-3. Non-read actions require `confirm_direct=true`, `intent_summary`, and
-   `idempotency_key`.
+3. Non-read actions require `confirm_direct=true` and `intent_summary`.
+   Callers may pass `intent_id` or `idempotency_key` for stable retries; when
+   absent, StackOS derives a safe key before connector execution.
 4. Credentials are resolved inside the daemon; callers pass only
    `credential_ref`.
-5. The response is compact by default. Use `verbose=true` only when the full
-   redacted action call and output payload are needed.
+5. Direct action responses are compact by default. Use `verbose=true` only when
+   the full redacted action call and output payload are needed.
 6. The execution writes the same `action_calls` audit row as workflow
    execution, but without run-plan linkage.
+
+Agent-facing MCP setup/discovery tools also default to compact bridge-shaped
+responses. Use `response_mode=standard` for the normal daemon payload and
+`response_mode=verbose` for tools that support expanded diagnostics. REST and UI
+surfaces keep their full contracts.
 
 Use `action.execute` when the action belongs to a workflow:
 

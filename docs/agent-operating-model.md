@@ -68,13 +68,20 @@ Direct non-read actions require:
 
 - `confirm_direct=true`
 - `intent_summary`
-- `idempotency_key`
 - an explicit `action_ref` or plugin/action pair
 - only safe refs, such as `credential_ref`, never secret values
 
-Responses are compact by default. Agents should request `verbose=true` only
-when they need the full redacted action call and output payload for debugging or
-handoff. This keeps simple MCP calls from flooding the context window.
+Agents may pass `intent_id` or `idempotency_key` when they need stable retry
+semantics. If neither is supplied, StackOS derives a request-scoped
+idempotency key so the agent does not have to invent dedupe strings for ordinary
+single calls. Workflow `action.execute` derives a stable key from the active
+run, step, action, input, and credential when the plan did not provide one.
+
+Agent-facing MCP responses are compact by default for noisy discovery/setup
+tools. Pass `response_mode=standard` when the full normal daemon payload is
+needed, or `response_mode=verbose`/`verbose=true` for diagnostics on tools that
+support it. This keeps simple MCP calls from flooding the context window while
+preserving the richer REST/UI contracts.
 
 ## Project Scope
 

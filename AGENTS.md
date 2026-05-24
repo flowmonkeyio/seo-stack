@@ -52,6 +52,11 @@ work, start here:
   StackOS bridge. The bridge injects the resolved `project_id`, refuses
   cross-project calls, and blocks project-scoped tools until the workspace is
   bound.
+- Agent-facing MCP setup/discovery responses are compact by default. Use
+  `response_mode=standard` or `response_mode=verbose` only when full daemon
+  payloads are needed. For direct write actions, pass `intent_id` when stable
+  retry semantics matter; StackOS can derive a request-scoped idempotency key
+  otherwise.
 - The UI should render generic StackOS objects: projects, plugins, workflow
   templates, run plans, resources, artifacts, auth status, action calls,
   context, learnings, experiments, and decisions.

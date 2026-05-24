@@ -73,6 +73,19 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "run.abort",
 )
 _AGENT_VISIBLE_TOOL_NAMES = frozenset(_AGENT_VISIBLE_TOOL_ORDER)
+_AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "workspace.startSession",
+        "workspace.resolve",
+        "workspace.connect",
+        "auth.status",
+        "communicationBotProfile.list",
+        "communicationBotProfile.get",
+        "action.describe",
+        "catalog.describe",
+    }
+)
+_AGENT_RESPONSE_MODE_FIELD = "response_mode"
 _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "workspace.startSession",
@@ -288,13 +301,23 @@ def _bridge_filter_tool_list_response(
     injected = set(injected_fields or ())
     if scoped_project_id is not None:
         injected.add("project_id")
-    if injected:
-        filtered = [
-            _bridge_relax_injected_schema(tool, injected_fields=injected) for tool in filtered
-        ]
+    filtered = [
+        _bridge_agent_tool_schema(tool, injected_fields=injected) for tool in filtered
+    ]
     filtered.extend(_bridge_toolbox_specs())
     result["tools"] = filtered
     return json.dumps(envelope, default=str)
+
+
+def _bridge_agent_tool_schema(
+    tool: dict[str, Any],
+    *,
+    injected_fields: set[str],
+) -> dict[str, Any]:
+    clone = _bridge_relax_injected_schema(tool, injected_fields=injected_fields)
+    if clone.get("name") in _AGENT_COMPACT_DEFAULT_TOOL_NAMES:
+        clone = _bridge_add_response_mode_schema(clone)
+    return clone
 
 
 def _bridge_relax_injected_schema(
@@ -322,6 +345,29 @@ def _bridge_relax_injected_schema(
             description = prop.get("description")
             suffix = "Injected from the current workspace by the StackOS bridge."
             prop["description"] = f"{description} {suffix}".strip() if description else suffix
+    return clone
+
+
+def _bridge_add_response_mode_schema(tool: dict[str, Any]) -> dict[str, Any]:
+    clone = json.loads(json.dumps(tool, default=str))
+    schema = clone.get("inputSchema")
+    if not isinstance(schema, dict):
+        return clone
+    properties = schema.setdefault("properties", {})
+    if not isinstance(properties, dict):
+        return clone
+    properties.setdefault(
+        _AGENT_RESPONSE_MODE_FIELD,
+        {
+            "type": "string",
+            "enum": ["compact", "standard", "verbose"],
+            "default": "compact",
+            "description": (
+                "Agent response shape. compact is default; standard/verbose returns "
+                "the full daemon payload for diagnostics."
+            ),
+        },
+    )
     return clone
 
 
@@ -533,11 +579,19 @@ def _bridge_extract_project_id(response_text: str) -> int | None:
 
 
 def _bridge_tool_accepts_project_id(catalog: dict[str, dict[str, Any]], tool_name: str) -> bool:
+    return _bridge_tool_accepts_field(catalog, tool_name, "project_id")
+
+
+def _bridge_tool_accepts_field(
+    catalog: dict[str, dict[str, Any]],
+    tool_name: str,
+    field: str,
+) -> bool:
     schema = catalog.get(tool_name, {}).get("inputSchema")
     if not isinstance(schema, dict):
         return False
     properties = schema.get("properties")
-    return isinstance(properties, dict) and "project_id" in properties
+    return isinstance(properties, dict) and field in properties
 
 
 def _bridge_scoped_arguments(
@@ -703,6 +757,313 @@ def _bridge_replace_tool_call_arguments(
     return json.dumps(cloned, default=str)
 
 
+def _bridge_response_mode(arguments: dict[str, Any]) -> str:
+    raw = arguments.get(_AGENT_RESPONSE_MODE_FIELD)
+    if raw in {"compact", "standard", "verbose"}:
+        return str(raw)
+    return "compact"
+
+
+def _bridge_forward_arguments(
+    *,
+    catalog: dict[str, dict[str, Any]],
+    tool_name: str,
+    arguments: dict[str, Any],
+    response_mode: str,
+) -> dict[str, Any]:
+    forwarded = dict(arguments)
+    forwarded.pop(_AGENT_RESPONSE_MODE_FIELD, None)
+    if (
+        response_mode == "verbose"
+        and _bridge_tool_accepts_field(catalog, tool_name, "verbose")
+        and "verbose" not in forwarded
+    ):
+        forwarded["verbose"] = True
+    return forwarded
+
+
+def _bridge_compact_tool_response(
+    *,
+    tool_name: str,
+    response_text: str,
+    response_mode: str,
+) -> str:
+    if response_mode != "compact" or tool_name not in _AGENT_COMPACT_DEFAULT_TOOL_NAMES:
+        return response_text
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return response_text
+    if not isinstance(envelope, dict):
+        return response_text
+    result = envelope.get("result")
+    if not isinstance(result, dict) or result.get("isError") is True:
+        return response_text
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        return response_text
+    compact = _bridge_compact_structured(tool_name, structured)
+    if compact is None:
+        return response_text
+    text = json.dumps(compact, default=str, sort_keys=True)
+    result["structuredContent"] = compact
+    result["content"] = [{"type": "text", "text": text}]
+    return json.dumps(envelope, default=str)
+
+
+def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> dict[str, Any] | None:
+    if tool_name in {"workspace.startSession", "workspace.resolve", "workspace.connect"}:
+        return _bridge_compact_workspace(structured)
+    if tool_name == "auth.status":
+        return _bridge_compact_auth_status(structured)
+    if tool_name == "communicationBotProfile.list":
+        return _bridge_compact_profile_page(structured)
+    if tool_name == "communicationBotProfile.get":
+        return _bridge_compact_profile(structured)
+    if tool_name == "action.describe":
+        return _bridge_compact_action_describe(structured)
+    if tool_name == "catalog.describe":
+        return _bridge_compact_catalog_describe(structured)
+    return None
+
+
+def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
+    data = structured.get("data") if isinstance(structured.get("data"), dict) else structured
+    assert isinstance(data, dict)
+    project_id = _bridge_as_int(structured.get("project_id")) or _bridge_as_int(
+        data.get("project_id")
+    )
+    binding_id = _bridge_as_int(data.get("workspace_binding_id")) or _bridge_as_int(data.get("id"))
+    compact_data = {
+        "workspace_bound": project_id is not None,
+        "project_id": project_id,
+        "workspace_binding_id": binding_id,
+    }
+    if isinstance(data.get("runtime"), str):
+        compact_data["runtime"] = data["runtime"]
+    if isinstance(data.get("client_session_id"), str):
+        compact_data["client_session_id"] = data["client_session_id"]
+    if "data" in structured:
+        return {
+            "data": compact_data,
+            "project_id": project_id,
+            "run_id": structured.get("run_id"),
+        }
+    return compact_data
+
+
+def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
+    connections = [
+        _bridge_compact_connection(item)
+        for item in structured.get("connections", [])
+        if isinstance(item, dict)
+    ]
+    by_provider: dict[str, list[dict[str, Any]]] = {}
+    for connection in connections:
+        key = str(connection.get("provider_key") or "")
+        by_provider.setdefault(key, []).append(connection)
+    providers: list[dict[str, Any]] = []
+    for provider in structured.get("providers", []):
+        if not isinstance(provider, dict):
+            continue
+        key = str(provider.get("key") or "")
+        provider_connections = by_provider.get(key, [])
+        providers.append(
+            {
+                "key": key,
+                "name": provider.get("name"),
+                "auth_type": provider.get("auth_type"),
+                "status": "connected" if provider_connections else "missing",
+                "credential_refs": [
+                    item["credential_ref"]
+                    for item in provider_connections
+                    if isinstance(item.get("credential_ref"), str)
+                ],
+                "profile_keys": [
+                    item["profile_key"]
+                    for item in provider_connections
+                    if isinstance(item.get("profile_key"), str)
+                ],
+                "setup_required": not bool(provider_connections),
+            }
+        )
+    return {
+        "project_id": structured.get("project_id"),
+        "provider_key": structured.get("provider_key"),
+        "providers": providers,
+        "connections": connections,
+    }
+
+
+def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
+    account = connection.get("account") if isinstance(connection.get("account"), dict) else {}
+    return {
+        "credential_ref": connection.get("credential_ref"),
+        "provider_key": connection.get("provider_key"),
+        "profile_key": connection.get("profile_key"),
+        "status": connection.get("status"),
+        "auth_type": connection.get("auth_type"),
+        "display_name": account.get("display_name"),
+        "provider_account_id": account.get("provider_account_id"),
+        "setup_required": bool(connection.get("setup_required", False)),
+    }
+
+
+def _bridge_compact_profile_page(structured: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "items": [
+            _bridge_compact_profile(item)
+            for item in structured.get("items", [])
+            if isinstance(item, dict)
+        ],
+        "next_cursor": structured.get("next_cursor"),
+        "total_estimate": structured.get("total_estimate"),
+    }
+
+
+def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    access = profile.get("access_policy") if isinstance(profile.get("access_policy"), dict) else {}
+    trigger = (
+        profile.get("trigger_policy") if isinstance(profile.get("trigger_policy"), dict) else {}
+    )
+    identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
+    response = (
+        profile.get("response_policy") if isinstance(profile.get("response_policy"), dict) else {}
+    )
+    commands = [
+        {
+            "command": item.get("command"),
+            "enabled": item.get("enabled", True),
+            "description": item.get("description"),
+        }
+        for item in trigger.get("commands", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        "record_id": profile.get("record_id"),
+        "project_id": profile.get("project_id"),
+        "profile_ref": profile.get("external_id"),
+        "key": profile.get("key"),
+        "provider_key": profile.get("provider_key"),
+        "auth_profile_key": profile.get("auth_profile_key"),
+        "enabled": profile.get("enabled"),
+        "bot_username": profile.get("bot_username"),
+        "ingress_mode": profile.get("ingress_mode"),
+        "allowed_updates": profile.get("allowed_updates", []),
+        "identity": {
+            "display_name": identity.get("display_name"),
+            "purpose": identity.get("purpose"),
+            "voice": identity.get("voice"),
+        },
+        "access": {
+            "dm_mode": access.get("dm_mode"),
+            "group_mode": access.get("group_mode"),
+            "user_mode": access.get("user_mode"),
+            "allowed_chat_refs": access.get("allowed_chat_refs", []),
+            "allowed_user_refs": access.get("allowed_user_refs", []),
+            "denied_chat_refs_count": len(access.get("denied_chat_refs", []) or []),
+            "denied_user_refs_count": len(access.get("denied_user_refs", []) or []),
+        },
+        "trigger": {
+            "dm_trigger": trigger.get("dm_trigger"),
+            "group_trigger": trigger.get("group_trigger"),
+            "mention_patterns": trigger.get("mention_patterns", []),
+            "reply_to_bot_triggers": trigger.get("reply_to_bot_triggers"),
+            "commands": commands,
+        },
+        "response_policy": response,
+        "refs": profile.get("refs", {}),
+    }
+
+
+def _bridge_compact_action_describe(structured: dict[str, Any]) -> dict[str, Any]:
+    manifest = structured.get("manifest") if isinstance(structured.get("manifest"), dict) else {}
+    availability = (
+        structured.get("availability") if isinstance(structured.get("availability"), dict) else {}
+    )
+    input_schema = (
+        manifest.get("input_schema_json")
+        if isinstance(manifest.get("input_schema_json"), dict)
+        else {}
+    )
+    properties = input_schema.get("properties") if isinstance(input_schema, dict) else {}
+    required = input_schema.get("required") if isinstance(input_schema, dict) else []
+    compact_properties: dict[str, Any] = {}
+    if isinstance(properties, dict):
+        for key, prop in properties.items():
+            if not isinstance(prop, dict):
+                continue
+            compact_properties[str(key)] = {
+                name: prop.get(name)
+                for name in ("type", "enum", "description")
+                if prop.get(name) is not None
+            }
+    return {
+        "action_ref": manifest.get("action_ref"),
+        "plugin_slug": manifest.get("plugin_slug"),
+        "action_key": manifest.get("action_key"),
+        "provider_key": manifest.get("provider_key"),
+        "capability_key": manifest.get("capability_key"),
+        "risk_level": manifest.get("risk_level"),
+        "operation": manifest.get("operation"),
+        "requires_credential": manifest.get("requires_credential"),
+        "connector_registered": structured.get("connector_registered"),
+        "execution_available": structured.get("execution_available"),
+        "availability": {
+            "status": availability.get("status"),
+            "executable": availability.get("executable"),
+            "reasons": availability.get("reasons", []),
+            "credential_refs": availability.get("credential_refs", []),
+            "budget_state": availability.get("budget_state"),
+        },
+        "input": {
+            "required": required if isinstance(required, list) else [],
+            "properties": compact_properties,
+        },
+        "docs": (manifest.get("config_json") or {}).get("docs", [])
+        if isinstance(manifest.get("config_json"), dict)
+        else [],
+    }
+
+
+def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, Any]:
+    plugins = []
+    for item in structured.get("plugins", []):
+        if not isinstance(item, dict):
+            continue
+        plugin = item.get("plugin") if isinstance(item.get("plugin"), dict) else {}
+        actions = item.get("actions") if isinstance(item.get("actions"), list) else []
+        resources = item.get("resources") if isinstance(item.get("resources"), list) else []
+        providers = item.get("providers") if isinstance(item.get("providers"), list) else []
+        plugins.append(
+            {
+                "slug": plugin.get("slug"),
+                "name": plugin.get("name"),
+                "version": plugin.get("version"),
+                "enabled_for_project": plugin.get("enabled_for_project"),
+                "providers": [
+                    provider.get("key") for provider in providers if isinstance(provider, dict)
+                ],
+                "actions": [
+                    {
+                        "action_ref": action.get("action_ref"),
+                        "risk_level": action.get("risk_level"),
+                        "provider_key": action.get("provider_key"),
+                        "status": (action.get("availability") or {}).get("status")
+                        if isinstance(action.get("availability"), dict)
+                        else None,
+                    }
+                    for action in actions
+                    if isinstance(action, dict)
+                ],
+                "resources": [
+                    resource.get("key") for resource in resources if isinstance(resource, dict)
+                ],
+            }
+        )
+    return {"plugins": plugins}
+
+
 class AgentBridgeProxy:
     """Stateful bridge adapter for one plugin stdio session."""
 
@@ -761,6 +1122,7 @@ class AgentBridgeProxy:
             return self._handle_toolbox_call(client, request_id, arguments)
         if tool_name in _AGENT_VISIBLE_TOOL_NAMES:
             self._ensure_tool_catalog(client)
+            response_mode = _bridge_response_mode(arguments)
             visibility_error = self._scope_visibility_error(tool_name, arguments)
             if visibility_error is not None:
                 return _bridge_call_error(
@@ -795,14 +1157,24 @@ class AgentBridgeProxy:
                     scope_error,
                 )
             assert scoped_args is not None
+            forwarded_args = _bridge_forward_arguments(
+                catalog=self.tool_catalog,
+                tool_name=tool_name,
+                arguments=scoped_args,
+                response_mode=response_mode,
+            )
             out = self.request_daemon(
                 client,
-                _bridge_replace_tool_call_arguments(payload, arguments=scoped_args),
+                _bridge_replace_tool_call_arguments(payload, arguments=forwarded_args),
             )
             if tool_name in {"workspace.connect", "workspace.resolve", "workspace.startSession"}:
                 self._update_workspace_scope(out)
             self._cache_step_context(out)
-            return out
+            return _bridge_compact_tool_response(
+                tool_name=tool_name,
+                response_text=out,
+                response_mode=response_mode,
+            )
         return _bridge_call_error(
             request_id,
             -32007,
@@ -1014,6 +1386,7 @@ class AgentBridgeProxy:
                 "toolbox.call arguments must be an object.",
                 {"tool": target_name},
             )
+        response_mode = _bridge_response_mode(target_args)
         visibility_error = self._scope_visibility_error(target_name, target_args)
         if visibility_error is not None:
             return _bridge_call_error(
@@ -1049,7 +1422,12 @@ class AgentBridgeProxy:
             )
 
         assert scoped_args is not None
-        forwarded_args = dict(scoped_args)
+        forwarded_args = _bridge_forward_arguments(
+            catalog=self.tool_catalog,
+            tool_name=target_name,
+            arguments=scoped_args,
+            response_mode=response_mode,
+        )
         step_allowed = self.allowed_by_run.get(run_id, set()) if run_id is not None else set()
         if (
             run_id is not None
@@ -1067,7 +1445,11 @@ class AgentBridgeProxy:
             ),
         )
         self._cache_step_context(out)
-        return out
+        return _bridge_compact_tool_response(
+            tool_name=target_name,
+            response_text=out,
+            response_mode=response_mode,
+        )
 
 
 __all__ = [

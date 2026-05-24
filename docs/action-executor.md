@@ -61,7 +61,11 @@ Every internal execution writes an `action_calls` sidecar row with:
 `action.run` returns a compact direct-action result by default and includes the
 full redacted action call only when `verbose=true`. Internal database
 identifiers such as `credential_id`, `action_id`, and replay-only
-`idempotency_key` stay in storage and are not returned to agents.
+`idempotency_key` stay in storage and are not returned to agents. For write
+actions, callers may pass `idempotency_key` or the more agent-friendly
+`intent_id`; when neither is supplied, direct calls derive a request-scoped key
+and workflow calls derive a stable run/step/action key before reaching the
+connector.
 
 The read API exposes the same public audit shape at
 `GET /api/v1/projects/{project_id}/action-calls`. It can be filtered by run,
@@ -120,10 +124,10 @@ Direct one-action execution operation:
 - `action.run`
 
 `action.run` is direct execution for one explicit action. Non-read actions
-require `confirm_direct=true`, `intent_summary`, and `idempotency_key`; the
-result is compact unless the caller passes `verbose=true`. It is not a
-substitute for workflow memory, approval gates, artifacts, learnings,
-experiments, or decisions.
+require `confirm_direct=true` and `intent_summary`; callers may pass
+`intent_id` or `idempotency_key` for stable retries. The result is compact
+unless the caller passes `verbose=true`. It is not a substitute for workflow
+memory, approval gates, artifacts, learnings, experiments, or decisions.
 
 `action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit

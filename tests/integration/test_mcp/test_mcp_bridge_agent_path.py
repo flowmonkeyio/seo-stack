@@ -164,6 +164,63 @@ def test_bridge_lists_only_agent_surface(mcp_client: MCPClient) -> None:
     assert "runPlan.claimStep" not in names
     assert "action.execute" not in names
     assert "dataforseo.serp" not in names
+    auth_tool = next(tool for tool in envelope["result"]["tools"] if tool["name"] == "auth.status")
+    assert "response_mode" in auth_tool["inputSchema"]["properties"]
+
+
+def test_bridge_compacts_noisy_agent_responses_by_default(mcp_client: MCPClient) -> None:
+    project_id = _create_project(mcp_client, "bridge-compact-project")
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": "path:bridge-compact",
+            "last_known_root": "/tmp/bridge-compact-project",
+        },
+    )
+    credential = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/mock-provider/credentials",
+        json={
+            "auth_method_key": "api_key",
+            "profile_key": "primary",
+            "fields": {"api_key": "mock-secret"},
+        },
+        headers=mcp_client._headers(),
+    )
+    credential.raise_for_status()
+    proxy, client = _scoped_bridge(
+        mcp_client,
+        cwd="/tmp/bridge-compact-project",
+        repo_fingerprint="path:bridge-compact",
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list", request_id="tools")
+
+    compact = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "auth.status",
+            {"provider_key": "mock-provider"},
+            request_id="auth-compact",
+        )
+    )
+    standard = _structured(
+        _tool_call(
+            proxy,
+            client,
+            "auth.status",
+            {"provider_key": "mock-provider", "response_mode": "standard"},
+            request_id="auth-standard",
+        )
+    )
+
+    assert compact["project_id"] == project_id
+    assert compact["connections"][0]["credential_ref"].startswith("cred_")
+    assert compact["providers"][0]["status"] == "connected"
+    assert "auth_methods" not in compact["providers"][0]
+    assert "auth_methods" in standard["providers"][0]
+    assert "mock-secret" not in json.dumps(compact)
 
 
 def test_bridge_scopes_project_from_workspace_and_injects_project_id(
@@ -270,7 +327,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             proxy,
             client,
             "workspace.connect",
-            {},
+            {"response_mode": "standard"},
             request_id="workspace-connect",
         )
     )

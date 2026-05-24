@@ -455,6 +455,13 @@ def actions_run(
         str | None,
         typer.Option("--idempotency-key", help="24h dedupe token for the direct action."),
     ] = None,
+    intent_id: Annotated[
+        str | None,
+        typer.Option(
+            "--intent-id",
+            help="Stable caller intent id used to derive retry-safe writes.",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Ask the connector to dry-run."),
@@ -483,6 +490,7 @@ def actions_run(
             "dry_run": dry_run,
             "confirm_direct": confirm_direct,
             "intent_summary": intent_summary,
+            "intent_id": intent_id,
             "verbose": verbose,
         },
         project_id=project_id,

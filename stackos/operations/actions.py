@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -108,6 +110,7 @@ class ActionRunInput(MCPInput):
     input_json: dict[str, Any] | None = None
     credential_ref: str | None = None
     idempotency_key: str | None = None
+    intent_id: str | None = None
     dry_run: bool = False
     metadata_json: dict[str, Any] | None = None
     intent_summary: str | None = None
@@ -166,6 +169,20 @@ async def action_execute(
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[ActionExecutionOut]:
     plan, step = active_run_plan_step(ctx, "action.execute")
+    action_ref = inp.action_ref
+    if action_ref is None and inp.plugin_slug and inp.action_key:
+        action_ref = f"{inp.plugin_slug}.{inp.action_key}"
+    idempotency_key = inp.idempotency_key or _derive_workflow_idempotency_key(
+        project_id=inp.project_id,
+        run_id=ctx.run_id,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        step_id=step.step_id,
+        action_ref=action_ref,
+        input_json=inp.input_json,
+        credential_ref=inp.credential_ref,
+        dry_run=inp.dry_run,
+    )
     settings = ctx.extras.get("settings")
     asset_dir = getattr(settings, "generated_assets_dir", None)
     env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
@@ -178,9 +195,12 @@ async def action_execute(
         run_id=ctx.run_id,
         run_plan_id=plan.id,
         run_plan_step_id=step.id,
-        idempotency_key=inp.idempotency_key,
+        idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
-        metadata_json=inp.metadata_json,
+        metadata_json={
+            **(inp.metadata_json or {}),
+            "dedupe_source": "caller" if inp.idempotency_key else "workflow-step",
+        },
     )
     return WriteEnvelope[ActionExecutionOut](
         data=env.data,
@@ -215,14 +235,28 @@ async def action_run(
         dry_run=inp.dry_run,
         confirm_direct=inp.confirm_direct,
         intent_summary=inp.intent_summary,
-        idempotency_key=inp.idempotency_key,
     )
+    idempotency_key = inp.idempotency_key
+    idempotency_key_source = "caller" if idempotency_key else None
+    if not inp.dry_run and described.manifest.risk_level != "read" and idempotency_key is None:
+        idempotency_key = _derive_direct_idempotency_key(
+            project_id=project_id,
+            action_ref=described.manifest.action_ref,
+            input_json=inp.input_json,
+            credential_ref=inp.credential_ref,
+            intent_id=inp.intent_id,
+            intent_summary=inp.intent_summary,
+            request_id=ctx.request_id,
+        )
+        idempotency_key_source = "intent_id" if inp.intent_id else "request"
     settings = ctx.extras.get("settings")
     asset_dir = getattr(settings, "generated_assets_dir", None)
     metadata = {
         **(inp.metadata_json or {}),
         "direct_action": True,
     }
+    if idempotency_key_source:
+        metadata["dedupe_source"] = idempotency_key_source
     if inp.intent_summary:
         metadata["intent_summary"] = inp.intent_summary
     env = await ActionRepository(ctx.session, asset_dir=asset_dir).execute(
@@ -231,7 +265,7 @@ async def action_run(
         input_json=inp.input_json,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
-        idempotency_key=inp.idempotency_key,
+        idempotency_key=idempotency_key,
         dry_run=inp.dry_run,
         metadata_json=metadata,
     )
@@ -250,7 +284,6 @@ def _check_direct_action_policy(
     dry_run: bool,
     confirm_direct: bool,
     intent_summary: str | None,
-    idempotency_key: str | None,
 ) -> None:
     from stackos.repositories.base import ValidationError
 
@@ -264,11 +297,63 @@ def _check_direct_action_policy(
             "direct non-read actions require confirm_direct=true and intent_summary",
             data={"risk_level": risk_level},
         )
-    if not (idempotency_key or "").strip():
-        raise ValidationError(
-            "direct non-read actions require idempotency_key to prevent duplicate side effects",
-            data={"risk_level": risk_level},
-        )
+
+
+def _derive_direct_idempotency_key(
+    *,
+    project_id: int,
+    action_ref: str,
+    input_json: dict[str, Any] | None,
+    credential_ref: str | None,
+    intent_id: str | None,
+    intent_summary: str | None,
+    request_id: str,
+) -> str:
+    source = {
+        "scope": "direct-action",
+        "project_id": project_id,
+        "action_ref": action_ref,
+        "credential_ref": credential_ref,
+        "input_json": input_json or {},
+        "intent_id": (intent_id or "").strip() or None,
+        "intent_summary": (intent_summary or "").strip(),
+        "request_id": None if intent_id else request_id,
+    }
+    return f"direct:{_stable_digest(source)}"
+
+
+def _derive_workflow_idempotency_key(
+    *,
+    project_id: int,
+    run_id: int | None,
+    run_plan_id: int | None,
+    run_plan_step_id: int | None,
+    step_id: str,
+    action_ref: str | None,
+    input_json: dict[str, Any] | None,
+    credential_ref: str | None,
+    dry_run: bool,
+) -> str:
+    source = {
+        "scope": "workflow-step-action",
+        "project_id": project_id,
+        "run_id": run_id,
+        "run_plan_id": run_plan_id,
+        "run_plan_step_id": run_plan_step_id,
+        "step_id": step_id,
+        "action_ref": action_ref,
+        "credential_ref": credential_ref,
+        "input_json": input_json or {},
+        "dry_run": dry_run,
+    }
+    return f"workflow:{_stable_digest(source)}"
+
+
+def _stable_digest(value: dict[str, Any]) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
 
 
 def _action_run_out(execution: ActionExecutionOut, *, verbose: bool) -> ActionRunOut:

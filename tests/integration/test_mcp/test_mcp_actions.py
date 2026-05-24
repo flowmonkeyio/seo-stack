@@ -609,23 +609,35 @@ def test_action_run_rejects_non_read_without_direct_confirmation(
     assert "confirm_direct=true" in err["data"]["detail"]
 
 
-def test_action_run_rejects_non_read_without_idempotency_key(
+def test_action_run_derives_idempotency_for_confirmed_non_read(
     mcp_client: MCPClient,
     seeded_project: dict,
+    httpx_mock: HTTPXMock,
 ) -> None:
-    err = mcp_client.call_tool_error(
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_wordpress_credential(mcp_client, project_id)
+    httpx_mock.add_response(
+        method="POST",
+        url="https://wp.example/wp-json/wp/v2/posts",
+        json={"id": 55, "link": "https://wp.example/direct/"},
+    )
+
+    out = mcp_client.call_tool_structured(
         "action.run",
         {
-            "project_id": seeded_project["data"]["id"],
+            "project_id": project_id,
             "action_ref": "publishing.wordpress.post.create",
-            "input_json": {"post": {"title": "x", "content": "x"}},
+            "input_json": {"post": {"title": "x", "content": "x", "status": "draft"}},
+            "credential_ref": credential_ref,
             "confirm_direct": True,
             "intent_summary": "User asked to create one post directly.",
         },
     )
 
-    assert err["code"] == -32602
-    assert "idempotency_key" in err["data"]["detail"]
+    data = out["data"]
+    assert data["status"] == "success"
+    assert data["compact"]["id"] == 55
+    assert data["action_call"] is None
 
 
 def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
