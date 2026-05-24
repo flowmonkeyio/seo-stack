@@ -98,6 +98,24 @@ mocked Bot API responses, while still exercising the real StackOS credential
 boundary, project-scoped bot profile, local webhook route, run-plan grant, and
 redacted action-call/resource audit.
 
+## Slack Local Slice
+
+Slack communication setup has mocked provider coverage for the Web API action
+edge and signed HTTP ingress:
+
+```bash
+TPF_LLM_TOOL=codex tpf uv run pytest \
+  tests/integration/test_repositories/test_slack_bot_actions.py \
+  tests/integration/test_routes/test_slack_ingress_routes.py \
+  -q
+```
+
+This does not require a live Slack workspace. It uses fake bot token/signing
+secret values and mocked Slack Web API responses, while still exercising the
+real StackOS credential boundary, communication-profile binding, raw-body HMAC
+verification, Block Kit interaction state, generic agent requests, and redacted
+action-call/resource audit.
+
 ## Rule
 
 Do not bypass StackOS internals during local integration testing. Mock only the

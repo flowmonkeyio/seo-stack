@@ -25,6 +25,7 @@ from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.integrations.reddit import RedditIntegration
+from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
 from stackos.integrations.wordpress import WordPressIntegration
@@ -44,6 +45,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "wordpress": WordPressIntegration,
     "ghost": GhostIntegration,
     "telegram-bot": TelegramBotIntegration,
+    "slack-bot": SlackBotIntegration,
     "smtp": SmtpIntegration,
     "imap": ImapIntegration,
 }
@@ -72,6 +74,7 @@ __all__ = [
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
     "RedditIntegration",
+    "SlackBotIntegration",
     "SmtpIntegration",
     "TelegramBotIntegration",
     "WordPressIntegration",

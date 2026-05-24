@@ -76,9 +76,20 @@ does not run an assistant, classify intent, or decide workflows.
   with static acknowledgement text. It must not claim a workflow was completed
   unless the responsible agent or granted run actually completed it.
 - Telegram `read` and `unread` are StackOS-local attention states only.
-- Slack support must model request verification, Socket Mode ACKs,
-  Events API retries, scopes, conversations, memberships, threads, and block
-  actions before any Slack action is marked executable.
+- Slack Web API identity, message send, conversation discovery, membership sync,
+  and signed HTTP Events API/Interactivity ingress are executable through the
+  `slack-bot` connector and `/api/v1/ingress/slack/{project_id}/{profile_key}`.
+- When Slack actions include `profile_ref`, the connector must resolve the
+  `communication-profile` server-side and reject mismatches between
+  `provider_facets.slack-bot.auth_profile_key` and the daemon-resolved
+  credential profile.
+- Slack Socket Mode remains deferred until a daemon runner owns app-token
+  connection lifecycle, reconnects, and envelope ACKs.
+- Slack Block Kit buttons must use opaque non-secret values only. Store button
+  state as `communication-interaction` resources keyed by communication profile,
+  message ref, block id, action id, and value.
+- Slack `response_url`, `trigger_id`, bearer tokens, and signing secrets must
+  never be persisted or returned to agents.
 - SMTP acceptance is not delivery, inbox placement, read, open, click, or reply.
 - IMAP message operations must use UIDs and UIDVALIDITY; do not model
   sequence-number-only actions.
@@ -108,10 +119,12 @@ SMTP send and IMAP mailbox/message lifecycle actions are executable through
 `action.run` or `action.execute` with daemon-held credentials. SMTP covers
 explicit outbound message send only and never claims delivery/read/open/click/
 reply state. IMAP covers mailbox list, bounded UID search, selected message
-fetch, and mark seen/unseen. Automatic background callback ACK jobs, Slack
-connectors/ingress, richer Telegram media/admin operations, broader chat/mail
-providers, and SMTP/IMAP OAuth or XOAUTH2 remain deferred until their
-provider-specific contracts, tests, and safe auth diagnostics are delivered.
+fetch, and mark seen/unseen. Slack Web API actions and signed HTTP ingress are
+executable. Automatic background callback ACK jobs, Slack Socket Mode, Slack
+history/files/reactions/admin actions, richer Telegram media/admin operations,
+broader chat/mail providers, and SMTP/IMAP OAuth or XOAUTH2 remain deferred
+until their provider-specific contracts, tests, and safe auth diagnostics are
+delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,

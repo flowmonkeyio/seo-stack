@@ -6,11 +6,13 @@ import asyncio
 import json
 
 import pytest
+from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from stackos.auth_providers import AuthRepository
 from stackos.db.models import (
     Credential,
+    CredentialAccount,
     CredentialRefreshEvent,
     CredentialUsageEvent,
     IntegrationCredential,
@@ -140,6 +142,62 @@ def test_telegram_bot_token_can_only_claim_one_active_connection(
     assert exc.value.data["existing_profile_key"] == "support"
 
 
+def test_slack_bot_auth_test_syncs_safe_workspace_account(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="slack-bot",
+        auth_method_key="bot-token",
+        profile_key="support",
+        fields={
+            "bot_token": "xoxb-1234567890-safe-test-token",
+            "signing_secret": "slack-signing-secret",
+        },
+    ).data
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "slack-bot",
+        )
+    ).one()
+    assert row.id is not None
+    payload = json.loads(IntegrationCredentialRepository(session).get_decrypted(row.id).decode())
+    assert payload["bot_token"] == "xoxb-1234567890-safe-test-token"
+    assert payload["signing_secret"] == "slack-signing-secret"
+    assert "bot_token" not in (row.config_json or {})
+    assert "signing_secret" not in (row.config_json or {})
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://slack.com/api/auth.test",
+        json={
+            "ok": True,
+            "team_id": "T123",
+            "team": "Acme",
+            "user_id": "U_BOT",
+            "user": "stackos",
+            "bot_id": "B123",
+            "url": "https://acme.slack.com/",
+        },
+    )
+    tested = asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+    account = session.exec(select(CredentialAccount)).one()
+    rendered = json.dumps(tested.data.model_dump(mode="json"))
+
+    assert tested.data.ok is True
+    assert tested.data.metadata["team_id"] == "T123"
+    assert account.provider_account_id == "T123"
+    assert account.display_name == "Acme"
+    assert account.metadata_json["bot_id"] == "B123"
+    assert "xoxb-1234567890-safe-test-token" not in rendered
+    assert "slack-signing-secret" not in rendered
+
+
 def test_failed_credential_profile_can_be_revoked(
     session: Session,
     project_id: int,
@@ -197,15 +255,37 @@ def test_telegram_status_excludes_global_credentials(
         )
         .data
     )
+    IntegrationCredentialRepository(session).set(
+        project_id=None,
+        kind="slack-bot",
+        secret_payload=b'{"bot_token":"global-slack-secret","signing_secret":"global"}',
+        profile_key="global",
+    )
+    project_slack = (
+        IntegrationCredentialRepository(session)
+        .set(
+            project_id=project_id,
+            kind="slack-bot",
+            secret_payload=b'{"bot_token":"project-slack-secret","signing_secret":"project"}',
+            profile_key="support-slack",
+        )
+        .data
+    )
 
     repo = AuthRepository(session)
     telegram = repo.status(project_id=project_id, provider_key="telegram-bot")
+    slack = repo.status(project_id=project_id, provider_key="slack-bot")
     all_status = repo.status(project_id=project_id)
 
     assert [connection.profile_key for connection in telegram.connections] == ["support"]
+    assert [connection.profile_key for connection in slack.connections] == ["support-slack"]
     assert {
         (connection.provider_key, connection.profile_key) for connection in all_status.connections
-    } == {("firecrawl", "global"), ("telegram-bot", "support")}
+    } == {
+        ("firecrawl", "global"),
+        ("slack-bot", "support-slack"),
+        ("telegram-bot", "support"),
+    }
 
     global_credential = repo.sync_credential_for_integration(global_telegram.id)
     with pytest.raises(NotFoundError):
@@ -224,6 +304,15 @@ def test_telegram_status_excludes_global_credentials(
         operation="communications.telegram-bot.message.send",
     )
     assert resolved.integration.profile_key == "support"
+
+    slack_credential = repo.sync_credential_for_integration(project_slack.id)
+    resolved_slack = repo.resolve_for_execution(
+        project_id=project_id,
+        provider_key="slack-bot",
+        credential_ref=slack_credential.credential_ref,
+        operation="communications.slack-bot.message.send",
+    )
+    assert resolved_slack.integration.profile_key == "support-slack"
 
 
 def test_usage_and_refresh_events_redact_secret_metadata(

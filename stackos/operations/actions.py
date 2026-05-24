@@ -354,8 +354,6 @@ def _stable_digest(value: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
-
-
 def _action_run_out(execution: ActionExecutionOut, *, verbose: bool) -> ActionRunOut:
     call = execution.action_call
     action_ref = f"{call.plugin_slug}.{call.action_key}"

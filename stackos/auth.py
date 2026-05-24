@@ -47,10 +47,16 @@ PROTECTED_PREFIXES: tuple[str, ...] = ("/api/v1", "/mcp")
 #   credential before it writes resources or agent requests. HostHeaderMiddleware
 #   still keeps the default daemon loopback-only; public ingress requires an
 #   explicit relay/deployment boundary.
+# - ``/api/v1/ingress/slack``: Slack Events API and Interactivity requests
+#   cannot carry the daemon bearer token. The route verifies Slack's
+#   `X-Slack-Signature` HMAC against the encrypted Slack signing secret and
+#   checks the replay-window timestamp before it writes communication resources
+#   or agent requests.
 WHITELIST_PREFIXES: tuple[str, ...] = (
     "/api/v1/health",
     "/api/v1/auth/ui-token",
     "/api/v1/ingress/telegram",
+    "/api/v1/ingress/slack",
 )
 
 _TOKEN_BYTES = 32

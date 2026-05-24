@@ -11,11 +11,13 @@ sends, callback answers, bounded diagnostic `updates.poll`, and webhook
 set/delete/info are executable through the generic action registry. Telegram
 secret-token ingress resolves project-scoped bot profiles, stores
 callback/message events as resources, and creates generic agent requests only
-when trigger/access policy allows it. SMTP send and IMAP mailbox/message
-lifecycle actions are executable through daemon-side credentials and mocked
-contract tests. Generic communication profile/surface/membership/target/context
-operations are executable setup/read operations; they do not call providers or
-models.
+when trigger/access policy allows it. Slack bot identity, message send,
+conversation discovery, membership sync, and signed HTTP Events
+API/Interactivity ingress are executable through the same action/resource
+model. SMTP send and IMAP mailbox/message lifecycle actions are executable
+through daemon-side credentials and mocked contract tests. Generic communication
+profile/surface/membership/target/context operations are executable setup/read
+operations; they do not call providers or models.
 
 ## Providers
 
@@ -24,14 +26,13 @@ models.
 - `telegram-bot`: bot token auth for identity checks, text/photo sends, inline
   button callback answers, local-webhook setup through Telegram Bot API, and
   bounded diagnostics.
+- `slack-bot`: bot token and signing-secret auth for identity checks, text or
+  Block Kit sends, conversation discovery, membership sync, and signed HTTP
+  Events API/Interactivity ingress. Socket Mode is deferred.
 - `smtp`: password/app-password SMTP send. SMTP acceptance is not delivery or
   read confirmation.
 - `imap`: password/app-password mailbox listing, search, fetch, and `Seen` flag
   lifecycle using UIDs.
-- `slack-bot`: planned provider. It requires a Slack-specific contract for
-  Events API/Socket Mode ingress, request verification, scopes, conversations,
-  memberships, threads, Block Kit actions, and `chat.postMessage` before any
-  Slack connector action is marked executable.
 
 ## Resources
 
@@ -66,6 +67,15 @@ response policy, and ingress mode. Visibility is
 not activation: allowed group messages may be stored as bounded context without
 creating an agent request. `local-webhook` is the normal local listener path;
 `updates.poll` is diagnostic/bootstrap-only.
+
+Slack communication profiles are project scoped. Each profile binds to a
+project-scoped `slack-bot` credential profile through
+`provider_facets.slack-bot.auth_profile_key`. Credentials store Slack token
+material and the signing secret only; communication profiles store identity,
+agent guidance, access policy, trigger policy, context policy, response policy,
+and send/handoff policy. HTTP ingress verifies Slack signatures before storing
+events or creating agent requests. `response_url` and `trigger_id` are transient
+sensitive values and are not persisted.
 
 SMTP and IMAP are project-scoped typed auth profiles. Agents see safe status and
 opaque credential refs; host, username, password, TLS mode, and mailbox mapping

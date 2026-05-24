@@ -462,9 +462,7 @@ def test_tool_profile_resolve_mcp_resolves_telegram_profile_and_credential(
     assert resolved["provider"]["setup_required"] is False
     assert resolved["tool_profile"]["key"] == "support-bot"
     assert resolved["tool_profile"]["auth_profile_key"] == "support"
-    assert resolved["tool_profile"]["access_policy"]["allowed_user_refs"] == [
-        "telegram-user:555"
-    ]
+    assert resolved["tool_profile"]["access_policy"]["allowed_user_refs"] == ["telegram-user:555"]
     assert resolved["credential"]["credential_ref"].startswith("cred_")
     assert resolved["credential"]["profile_key"] == "support"
     assert resolved["missing"] == []
@@ -577,8 +575,7 @@ def test_tool_profile_resolve_mcp_redacts_profile_sections(
     assert "nested-secret" not in rendered
     assert "ref-secret" not in rendered
     assert (
-        resolved["tool_profile"]["identity"]["purpose"]
-        == "Handle support with api_key=[redacted]"
+        resolved["tool_profile"]["identity"]["purpose"] == "Handle support with api_key=[redacted]"
     )
     assert resolved["tool_profile"]["context_policy"]["nested"]["password"] == "[redacted]"
     assert resolved["tool_profile"]["refs"]["api_key"] == "[redacted]"

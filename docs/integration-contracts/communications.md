@@ -2,10 +2,12 @@
 
 Status: implementation in progress. Generic agent request operations, Telegram
 Bot API messaging, Telegram webhook set/delete/info, project-scoped Telegram bot
-profiles, Telegram secret-token ingress, SMTP send, and IMAP mailbox/message
-lifecycle actions are executable. This document owns the contract for the first
-StackOS communications layer and the generic agent request inbox that lets
-external agents treat messages as triggers.
+profiles, Telegram secret-token ingress, Slack Web API actions, Slack signed
+HTTP ingress, SMTP send, and IMAP mailbox/message lifecycle actions are
+executable. Slack Socket Mode remains deferred until StackOS has a daemon runner
+contract. This document owns the contract for the first StackOS communications
+layer and the generic agent request inbox that lets external agents treat
+messages as triggers.
 
 Plan review status: signed off with minor implementation notes by sub-agent
 review on 2026-05-23.
@@ -129,7 +131,7 @@ audit.
 
 StackOS owns:
 
-- Provider catalog entries for Telegram Bot API, SMTP, and IMAP.
+- Provider catalog entries for Telegram Bot API, Slack Web API, SMTP, and IMAP.
 - Typed auth setup methods and daemon-held credential storage.
 - Static action contracts and connector execution.
 - Generic communication resources and artifacts.
@@ -322,7 +324,9 @@ the click.
 Slack must use the same communication graph, but its provider contract is richer
 than Telegram:
 
-- Events can arrive through HTTP Events API or Socket Mode. HTTP ingress must
+- Events can arrive through HTTP Events API or Socket Mode. Current StackOS
+  support implements signed HTTP ingress; Socket Mode is deferred until a
+  long-running daemon runner owns reconnect and ACK state. HTTP ingress must
   verify Slack's signing secret using the raw body, request timestamp,
   `X-Slack-Signature`, replay-window checks, and constant-time comparison.
 - Socket Mode requires an app-level token, `apps.connections.open`,
@@ -341,10 +345,10 @@ than Telegram:
   Action payloads are untrusted routing hints until the agent reads the stored
   interaction and source context.
 
-Slack-specific support must land as explicit actions and ingress routes. A
-generic target resolver may return `communications.slack-bot.message.send`, but
-it must not pretend Slack execution exists before the connector, auth, mocked
-contract tests, and docs are delivered.
+Slack-specific support lands as explicit actions and ingress routes. A generic
+target resolver may return `communications.slack-bot.message.send`, but provider
+execution still goes through `action.run` or granted `action.execute` with a
+daemon-resolved credential.
 
 ### SMTP
 
@@ -381,6 +385,7 @@ Providers:
 
 - `local-agent-chat`
 - `telegram-bot`
+- `slack-bot`
 - `smtp`
 - `imap`
 
@@ -388,14 +393,15 @@ Providers:
 user who wants to talk directly to an agent through StackOS. Telegram is a
 remote transport adapter, not the only agent conversation channel.
 
-The plugin may later add Slack, Discord, WhatsApp Business, Twilio, Gmail API,
+The plugin may later add Discord, WhatsApp Business, Twilio, Gmail API,
 Microsoft Graph mail, or project-local communication connectors, but those
 providers need their own contract review before execution.
 
-`slack-bot` is the next expected chat provider. Slack support must not be
-claimed executable until its provider contract covers app credentials, HTTP or
-Socket Mode ingress, event ACK/retry/idempotency, conversation membership,
-scopes, message send, threads, block actions, and no-secret audit.
+`slack-bot` is executable for Web API identity, message send, conversation
+discovery, membership sync, and signed HTTP Events API/Interactivity ingress.
+Socket Mode, live history reads, files, reactions, and administration remain
+deferred until their provider contracts, runner lifecycle, tests, and safe audit
+paths are delivered.
 
 ## Resource Model
 
@@ -415,7 +421,7 @@ Example fields:
 - `identity`
 - `agent_guidance`
 - `provider_facets`: safe provider refs such as Telegram `bot_profile_key` or
-  Slack `bot_user_id`; never token material
+  Slack `auth_profile_key`/`bot_user_id`; never token material
 - `access_policy`
 - `visibility_policy`
 - `trigger_policy`
@@ -874,6 +880,41 @@ Credential tests:
 - `getMe` should verify token validity and return safe bot identity.
 - Do not include the token-bearing request URL in diagnostics.
 
+### Slack Bot Auth
+
+Provider key: `slack-bot`
+
+Auth method: `bot-token`
+
+Slack credentials are project-scoped credential profiles bound from
+`communication-profile.provider_facets.slack-bot.auth_profile_key`. Agents and
+action payloads name the communication profile, surface, channel, user, thread,
+or target refs; they never receive Slack tokens or signing secrets.
+
+Safe config fields:
+
+- `team_id`
+- `app_id`
+- `bot_user_id`
+- `profile_key`
+
+Secret fields:
+
+- `bot_token`
+- `signing_secret`
+- `app_token` for future Socket Mode only
+
+Credential tests:
+
+- `auth.test` verifies the bot token and returns safe team/user/bot metadata.
+- Do not include bearer tokens, signing secrets, `response_url`, `trigger_id`,
+  or raw Slack payload secrets in diagnostics or resources.
+
+Profile behavior fields such as identity, agent guidance, access policy,
+trigger rules, context windows, response policy, send policy, and handoff policy
+belong to `communication-profile` records. The credential only stores Slack app
+credential material and safe account metadata.
+
 ### SMTP Auth
 
 Provider key: `smtp`
@@ -1020,6 +1061,58 @@ Validation rules:
   `getWebhookInfo` through the same profile-bound credential.
 - Returned provider error metadata must redact token-bearing URLs.
 
+### Slack Actions
+
+Connector file: `stackos/actions/slack_bot.py`
+
+Action refs:
+
+- `communications.slack-bot.identity.get`
+- `communications.slack-bot.message.send`
+- `communications.slack-bot.conversation.open`
+- `communications.slack-bot.conversation.info`
+- `communications.slack-bot.conversation.list`
+- `communications.slack-bot.conversation.members`
+
+Executable in the current Slack connector:
+
+- `identity.get` through Slack `auth.test`
+- `message.send` through Slack `chat.postMessage`
+- `conversation.open` through Slack `conversations.open`
+- `conversation.info` through Slack `conversations.info`
+- `conversation.list` through Slack `conversations.list`
+- `conversation.members` through Slack `conversations.members`
+
+Validation rules:
+
+- `message.send` requires `channel_ref` or `surface_ref` plus `text` or
+  `blocks`. It may include optional `profile_ref` to bind outbound message,
+  channel, and interaction state to a communication profile; the connector
+  resolves that profile server-side and rejects the call unless
+  `provider_facets.slack-bot.auth_profile_key` matches the daemon-resolved
+  credential profile. If omitted, the credential profile key is used as the
+  state owner.
+- Slack Block Kit button values are opaque routing tokens only. They must not
+  contain credentials, bearer strings, prompts, secrets, or business decisions.
+- `message.send` stores outbound `communication-message` records and stores
+  outbound button `communication-interaction` records scoped by communication
+  profile, message ref, block id, action id, and value.
+- `conversation.open`, `conversation.info`, and `conversation.list` store safe
+  communication-profile-scoped `communication-channel` metadata.
+  `conversation.members` stores safe communication-profile-scoped
+  `communication-membership` refs.
+- List/member operations expose bounded limits and Slack cursors in safe output
+  metadata. They do not fetch live history.
+- Provider errors redact Slack token-shaped strings and authorization material.
+
+Deferred until separate tests/contracts:
+
+- Socket Mode listener and `apps.connections.open` runtime.
+- Slack history reads, reactions, file uploads, user/profile lookup, channel
+  administration, and message update/delete.
+- Automatic response URL usage. Slack `response_url` is transient sensitive
+  material and is not persisted by ingress.
+
 ### SMTP Actions
 
 Connector file: `stackos/actions/smtp.py`
@@ -1124,6 +1217,67 @@ Rules:
   `communications.telegram-bot.webhook.set`,
   `communications.telegram-bot.webhook.delete`, and
   `communications.telegram-bot.webhook.info`.
+
+### Normal Slack Listener: Signed HTTP Ingress
+
+Current Slack HTTP ingress endpoint:
+
+```text
+POST /api/v1/ingress/slack/{project_id}/{profile_key}
+Headers:
+  X-Slack-Request-Timestamp: <unix seconds>
+  X-Slack-Signature: v0=<hmac>
+```
+
+This endpoint is bearer-token whitelisted because Slack cannot send the daemon
+bearer token. It resolves a `communication-profile`, reads the profile's
+`provider_facets.slack-bot.auth_profile_key`, verifies Slack's raw-body HMAC
+signature against the encrypted Slack signing secret, and then applies static
+profile policy. Invalid profile, credential, timestamp, or signature failures
+all return the same invalid-signature class of response.
+
+Flow:
+
+1. Operator creates a project-scoped `slack-bot` credential profile with
+   `bot_token` and `signing_secret`.
+2. Operator or setup agent calls `communicationProfile.upsert` to create a
+   project-scoped communication profile with Slack identity, safe bot refs,
+   access policy, trigger policy, context policy, response policy, send policy,
+   and `provider_facets.slack-bot.auth_profile_key`.
+3. Operator configures the Slack app Events API or Interactivity Request URL to
+   the profile-specific ingress URL.
+4. Slack sends Events API JSON or Interactivity form payloads.
+5. The listener verifies timestamp freshness, raw-body signature, and profile
+   credential binding before parsing intent-relevant fields.
+6. URL verification returns the challenge without storing resources.
+7. The listener applies surface visibility policy first, then trigger policy,
+   then invoker access policy. Blocked surfaces can write nothing; allowed
+   observed messages can become context without creating work.
+8. The listener upserts `communication-event`, `communication-message`, and
+   `communication-interaction` records by communication-profile-scoped provider
+   ids.
+9. Block action clicks create agent requests only when the click matches a
+   stored outbound `communication-interaction`, unless the profile explicitly
+   allows unknown interactions for a setup/debug case.
+10. The listener creates or replays one idempotent generic `agent_requests` row
+    only when trigger policy matches and invoker access policy allows it.
+11. The listener copies safe identity, agent guidance, context policy, response
+    policy, matched command guidance, surface refs, and invoker refs into
+    request metadata for the operating agent.
+12. The listener does not call Slack, does not call a model, does not use
+    `response_url`, and does not infer business intent.
+
+Rules:
+
+- Slack signing verification must use the raw request body and constant-time
+  compare with a five-minute replay window.
+- Retry headers and duplicate event ids must not create duplicate agent work.
+- Interactivity payloads must be acknowledged quickly by returning from ingress;
+  provider follow-up work stays in explicit agent actions.
+- `response_url` and `trigger_id` are transient sensitive values and must not be
+  persisted.
+- Slack HTTP ingress is the current normal listener. Socket Mode remains
+  deferred until a daemon runner owns app-token connection lifecycle.
 
 ### Diagnostic Telegram Poll
 
@@ -1388,12 +1542,12 @@ choice and action refs.
 Keep UI generic and object-driven:
 
 - Plugin catalog shows `communications` with provider setup status.
-- Connections page renders typed Telegram, SMTP, and IMAP auth methods.
+- Connections page renders typed Telegram, Slack, SMTP, and IMAP auth methods.
 - Resources browser renders communication channels, threads, messages, events,
   interactions, and cursors by schema.
 - A generic Agent Requests view can list claimable work across providers.
-- Action Calls ledger shows Telegram/SMTP/IMAP calls through the existing audit
-  path.
+- Action Calls ledger shows Telegram/Slack/SMTP/IMAP calls through the existing
+  audit path.
 
 Do not build bespoke workflow screens such as "Telegram Command Runner" or
 "Email Assistant" in the first pass. If a specialized operator screen is needed
@@ -1405,6 +1559,10 @@ later, it must still render the same resources and queue records.
 - Telegram bot tokens must never appear in URLs returned to agents or stored in
   audit metadata.
 - Telegram callback data is untrusted input and must not contain secrets.
+- Slack bearer tokens, signing secrets, `response_url`, and `trigger_id` must
+  never be returned to agents or persisted in resources/audit metadata.
+- Slack HTTP ingress must verify raw-body HMAC signatures and reject stale
+  timestamps before storing payload-derived records.
 - Public webhook exposure is opt-in only. The default StackOS daemon remains
   loopback-only; production ingress needs secret-token verification and host
   allowlisting or a relay.
@@ -1430,16 +1588,17 @@ Before a communications action is marked executable:
   combinations.
 - Connector tests use mocked providers for success, validation failures, auth
   failures, rate/temporary failures, and provider error bodies.
-- Redaction tests prove Telegram token-bearing URLs are never persisted or
-  returned.
+- Redaction tests prove Telegram token-bearing URLs and Slack token/transient
+  callback fields are never persisted or returned.
 - Run-plan grant tests prove `action.execute` is required for workflow provider calls.
 - REST/CLI/MCP parity tests cover generic `agentRequest.*` operations.
 - Queue-to-plan tests cover `agentRequest.prepareRunPlan` idempotent replay,
   rollback on invalid plans, and run-plan metadata linkage.
 - Resource tests cover idempotent upsert by `external_id`/provider ref.
 - Cursor tests cover Telegram update offsets and IMAP UID/UIDVALIDITY behavior.
-- Interaction tests cover inline keyboard payload validation, callback query
-  normalization, idempotency, and optional static ACK audit.
+- Interaction tests cover inline keyboard payload validation, Slack Block Kit
+  button validation, callback/action normalization, idempotency, and optional
+  static ACK audit.
 - UI smoke tests show provider connections, plugin catalog, resources, agent
   requests, and action calls render with generic components.
 - Docs update this file, [README](README.md), [Connector Quality Gate](connector-quality.md),
@@ -1468,6 +1627,8 @@ when the blast radius is meaningful, and a detailed commit message after signoff
 | C12 | Add static scheduled ingestion runner. | C03, C04, C06, C08, C10. | Scheduler tests; system run-plan audit; idempotent cursor and optional callback ACK tests. | Runner stores events/requests only; no model invocation. |
 | C13 | Delivered: add Telegram secret-token local-webhook ingress for message/callback storage and generic agent-request creation through project-scoped bot profiles. | C03, C04, C06, C08. | Route tests for missing/wrong secret, auth_profile_key binding, callback/message resource writes, idempotent request creation, and no secret leakage. | Ingress does not invoke a model, does not bypass queue state, and uses server-side secrets only. |
 | C14 | Update connector quality matrix and release signoff docs for executable communications actions. | First executable connector tasks. | `make signoff` or targeted signoff set. | Docs and tests agree on executable/deferred state. |
+| C15 | Delivered: implement Slack connector file for `identity.get`, `message.send`, `conversation.open`, `conversation.info`, `conversation.list`, and `conversation.members`. | C01, C03, C04. | Mocked Slack Web API tests; validation tests; Block Kit button, membership, cursor, resource-write, and no-secret redaction tests. | Connector has official docs links near provider calls and no bearer-token output. |
+| C16 | Delivered: add Slack signed HTTP ingress for Events API and Interactivity payload storage plus generic agent-request creation through project-scoped communication profiles. | C03, C04, C15. | Route tests for missing/wrong signature, URL verification, app mention, Block Kit click lifecycle, duplicate-safe request keys, and no transient secret persistence. | Ingress does not call Slack, does not invoke a model, and verifies daemon-held signing secrets only. |
 
 ## Dependency Graph
 
@@ -1478,9 +1639,11 @@ C00
    -> C06 -> C07 -> C08 -> C13
    -> C09
    -> C10
+   -> C15 -> C16
 -> C03 -> C04 -> C05
    -> C08
    -> C13
+   -> C16
    -> C11
    -> C12
 C06/C09/C10 -> C14

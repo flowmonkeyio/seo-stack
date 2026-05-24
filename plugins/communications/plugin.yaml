@@ -63,6 +63,77 @@ providers:
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api
+  - key: slack-bot
+    name: Slack Bot
+    description: Slack Web API provider for bot identity, message sends, conversation discovery, membership sync, and signed HTTP ingress.
+    auth_type: bot-token
+    auth_methods:
+      - key: bot-token
+        label: Bot token and signing secret
+        auth_type: bot-token
+        payload_format: json
+        fields:
+          - key: bot_token
+            label: Bot Token
+            type: secret
+            secret: true
+            required: true
+            placeholder: xoxb-...
+          - key: signing_secret
+            label: Signing Secret
+            type: secret
+            secret: true
+            required: true
+            description: Used only by daemon-side Slack HTTP ingress verification.
+          - key: app_token
+            label: App-Level Token
+            type: secret
+            secret: true
+            required: false
+            placeholder: xapp-...
+            description: Reserved for Socket Mode; listener execution is deferred until the daemon runner is implemented.
+          - key: team_id
+            label: Team ID
+            type: text
+            secret: false
+            required: false
+            placeholder: T0123ABC
+          - key: app_id
+            label: App ID
+            type: text
+            secret: false
+            required: false
+            placeholder: A0123ABC
+          - key: bot_user_id
+            label: Bot User ID
+            type: text
+            secret: false
+            required: false
+            placeholder: U0123ABC
+    config:
+      setup_note: Store only Slack app credential material here. Agent identity, access, trigger, context, response, send, and handoff policy belong to project-scoped communication-profile records with slack-bot provider facets.
+      scopes:
+        - chat:write
+        - app_mentions:read
+        - channels:history
+        - groups:history
+        - im:history
+        - mpim:history
+        - channels:read
+        - groups:read
+        - im:read
+        - mpim:read
+        - im:write
+        - mpim:write
+      deferred_auth_methods:
+        - oauth2-install
+      deferred_runtime:
+        - socket-mode-listener
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/chat.postMessage/
+        - https://docs.slack.dev/authentication/verifying-requests-from-slack/
+        - https://docs.slack.dev/apis/events-api/
   - key: smtp
     name: SMTP
     description: SMTP provider for send-only email. Acceptance by the SMTP server is not delivery or read confirmation.
@@ -571,6 +642,232 @@ actions:
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api#getwebhookinfo
+  - key: slack-bot.identity.get
+    name: Get Slack Bot Identity
+    description: Verify a Slack bot token and return safe workspace/bot identity metadata.
+    provider: slack-bot
+    capability: messaging
+    risk_level: read
+    input_schema: *empty_input
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: identity.get
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/auth.test/
+  - key: slack-bot.message.send
+    name: Send Slack Message
+    description: Send a Slack bot message to an explicit channel/DM surface, with optional Block Kit buttons and thread reply.
+    provider: slack-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - channel_ref
+        - required:
+            - surface_ref
+      oneOf:
+        - required:
+            - text
+        - required:
+            - blocks
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns outbound interaction state. Defaults to the credential profile key when omitted.
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        text:
+          type: string
+        blocks:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: true
+        thread_ref:
+          type: string
+        reply_broadcast:
+          type: boolean
+        unfurl_links:
+          type: boolean
+        unfurl_media:
+          type: boolean
+        source_agent_request_id:
+          type: integer
+          minimum: 1
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: message.send
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/chat.postMessage/
+        - https://docs.slack.dev/reference/block-kit/block-elements/button-element/
+  - key: slack-bot.conversation.open
+    name: Open Slack Conversation
+    description: Open or resume a Slack DM or MPIM using explicit Slack user refs, or resume an existing IM/MPIM channel.
+    provider: slack-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - users
+        - required:
+            - channel_ref
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns discovered conversation state. Defaults to the credential profile key when omitted.
+        users:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            type: string
+        channel_ref:
+          type: string
+        return_im:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: conversation.open
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/conversations.open/
+  - key: slack-bot.conversation.info
+    name: Get Slack Conversation Info
+    description: Fetch safe metadata for one Slack conversation by channel/surface ref.
+    provider: slack-bot
+    capability: messaging
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - channel_ref
+        - required:
+            - surface_ref
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns discovered conversation state. Defaults to the credential profile key when omitted.
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        include_num_members:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: conversation.info
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/conversations.info/
+  - key: slack-bot.conversation.list
+    name: List Slack Conversations
+    description: List Slack conversations with explicit type filters and cursor pagination.
+    provider: slack-bot
+    capability: messaging
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns discovered conversation state. Defaults to the credential profile key when omitted.
+        types:
+          type: array
+          items:
+            type: string
+            enum:
+              - public_channel
+              - private_channel
+              - mpim
+              - im
+        cursor:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        exclude_archived:
+          type: boolean
+        team_id:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: conversation.list
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/conversations.list/
+  - key: slack-bot.conversation.members
+    name: List Slack Conversation Members
+    description: List member refs for one Slack conversation with cursor pagination.
+    provider: slack-bot
+    capability: messaging
+    risk_level: read
+    input_schema:
+      type: object
+      additionalProperties: false
+      anyOf:
+        - required:
+            - channel_ref
+        - required:
+            - surface_ref
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns discovered conversation state. Defaults to the credential profile key when omitted.
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        cursor:
+          type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: conversation.members
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/conversations.members/
   - key: smtp.email.send
     name: Send SMTP Email
     description: Send email through SMTP from an explicit agent-supplied message payload.
@@ -884,6 +1181,12 @@ config:
       - telegram-bot.webhook.set
       - telegram-bot.webhook.delete
       - telegram-bot.webhook.info
+      - slack-bot.identity.get
+      - slack-bot.message.send
+      - slack-bot.conversation.open
+      - slack-bot.conversation.info
+      - slack-bot.conversation.list
+      - slack-bot.conversation.members
       - smtp.email.send
       - imap.mailbox.list
       - imap.messages.search

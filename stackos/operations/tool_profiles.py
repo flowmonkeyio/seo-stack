@@ -41,9 +41,7 @@ class ToolProfileResolveInput(MCPInput):
     provider_key: str = Field(min_length=1, max_length=160)
     tool_profile_key: str | None = Field(
         default=None,
-        description=(
-            "Provider-specific project profile key, such as a Telegram bot profile key."
-        ),
+        description=("Provider-specific project profile key, such as a Telegram bot profile key."),
     )
     auth_profile_key: str | None = Field(
         default=None,
@@ -294,9 +292,7 @@ def _resolve_credential(
         return None
 
     connections = [
-        connection
-        for connection in status.connections
-        if connection.provider_key == provider_key
+        connection for connection in status.connections if connection.provider_key == provider_key
     ]
     if credential_ref is not None:
         for connection in connections:
@@ -376,8 +372,7 @@ def _next_action(
         return f"Create a project-scoped {provider_key} tool profile before executing actions"
     if "tool_profile_key" in missing_set:
         return (
-            "Pass tool_profile_key; available profile resolution is ambiguous "
-            f"for {provider_key}"
+            f"Pass tool_profile_key; available profile resolution is ambiguous for {provider_key}"
         )
     if profile is not None and not profile.enabled:
         return f"Enable tool profile {profile.key!r} before executing actions"

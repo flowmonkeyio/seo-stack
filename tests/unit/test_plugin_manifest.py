@@ -106,6 +106,7 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     }
     assert {provider.key for provider in manifest.providers} == {
         "local-agent-chat",
+        "slack-bot",
         "telegram-bot",
         "smtp",
         "imap",
@@ -115,6 +116,10 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert _auth_field_keys(providers["telegram-bot"], "bot-token")[:2] == [
         "bot_token",
         "webhook_secret_token",
+    ]
+    assert _auth_field_keys(providers["slack-bot"], "bot-token")[:2] == [
+        "bot_token",
+        "signing_secret",
     ]
     assert (
         providers["telegram-bot"]
@@ -162,6 +167,13 @@ def test_communications_plugin_yaml_facade_validates() -> None:
     assert actions["telegram-bot.identity.get"].config["connector"] == "telegram-bot"
     assert actions["telegram-bot.webhook.set"].config["connector"] == "telegram-bot"
     assert actions["telegram-bot.webhook.set"].config["operation"] == "webhook.set"
+    assert actions["slack-bot.identity.get"].provider == "slack-bot"
+    assert actions["slack-bot.identity.get"].config["operation"] == "identity.get"
+    assert actions["slack-bot.message.send"].risk_level == "write"
+    assert actions["slack-bot.message.send"].input_schema["properties"]["profile_ref"]["type"] == (
+        "string"
+    )
+    assert actions["slack-bot.conversation.members"].config["connector"] == "slack-bot"
     assert actions["smtp.email.send"].config["connector"] == "smtp"
     assert actions["smtp.email.send"].config["operation"] == "email.send"
     assert "body_artifact_ref" not in actions["smtp.email.send"].input_schema["properties"]

@@ -322,9 +322,7 @@ def _bridge_filter_tool_list_response(
     injected = set(injected_fields or ())
     if scoped_project_id is not None:
         injected.add("project_id")
-    filtered = [
-        _bridge_agent_tool_schema(tool, injected_fields=injected) for tool in filtered
-    ]
+    filtered = [_bridge_agent_tool_schema(tool, injected_fields=injected) for tool in filtered]
     filtered.extend(_bridge_toolbox_specs())
     result["tools"] = filtered
     return json.dumps(envelope, default=str)
@@ -918,8 +916,12 @@ def _bridge_compact_auth_status(structured: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bridge_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
-    account = connection.get("account") if isinstance(connection.get("account"), dict) else {}
+    account = _bridge_dict(connection.get("account"))
     return {
         "credential_ref": connection.get("credential_ref"),
         "provider_key": connection.get("provider_key"),
@@ -933,19 +935,13 @@ def _bridge_compact_connection(connection: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bridge_compact_tool_profile_resolve(structured: dict[str, Any]) -> dict[str, Any]:
-    provider = structured.get("provider") if isinstance(structured.get("provider"), dict) else {}
-    credential = (
-        structured.get("credential") if isinstance(structured.get("credential"), dict) else {}
-    )
-    profile = (
-        structured.get("tool_profile") if isinstance(structured.get("tool_profile"), dict) else {}
-    )
-    identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
-    access = profile.get("access_policy") if isinstance(profile.get("access_policy"), dict) else {}
-    trigger = (
-        profile.get("trigger_policy") if isinstance(profile.get("trigger_policy"), dict) else {}
-    )
-    account = credential.get("account") if isinstance(credential.get("account"), dict) else {}
+    provider = _bridge_dict(structured.get("provider"))
+    credential = _bridge_dict(structured.get("credential"))
+    profile = _bridge_dict(structured.get("tool_profile"))
+    identity = _bridge_dict(profile.get("identity"))
+    access = _bridge_dict(profile.get("access_policy"))
+    trigger = _bridge_dict(profile.get("trigger_policy"))
+    account = _bridge_dict(credential.get("account"))
     return {
         "project_id": structured.get("project_id"),
         "provider_key": structured.get("provider_key"),
@@ -1013,14 +1009,10 @@ def _bridge_compact_profile_page(structured: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
-    access = profile.get("access_policy") if isinstance(profile.get("access_policy"), dict) else {}
-    trigger = (
-        profile.get("trigger_policy") if isinstance(profile.get("trigger_policy"), dict) else {}
-    )
-    identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
-    response = (
-        profile.get("response_policy") if isinstance(profile.get("response_policy"), dict) else {}
-    )
+    access = _bridge_dict(profile.get("access_policy"))
+    trigger = _bridge_dict(profile.get("trigger_policy"))
+    identity = _bridge_dict(profile.get("identity"))
+    response = _bridge_dict(profile.get("response_policy"))
     commands = [
         {
             "command": item.get("command"),
@@ -1068,17 +1060,13 @@ def _bridge_compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def _bridge_compact_action_describe(structured: dict[str, Any]) -> dict[str, Any]:
-    manifest = structured.get("manifest") if isinstance(structured.get("manifest"), dict) else {}
-    availability = (
-        structured.get("availability") if isinstance(structured.get("availability"), dict) else {}
-    )
-    input_schema = (
-        manifest.get("input_schema_json")
-        if isinstance(manifest.get("input_schema_json"), dict)
-        else {}
-    )
-    properties = input_schema.get("properties") if isinstance(input_schema, dict) else {}
-    required = input_schema.get("required") if isinstance(input_schema, dict) else []
+    manifest = _bridge_dict(structured.get("manifest"))
+    availability = _bridge_dict(structured.get("availability"))
+    input_schema = _bridge_dict(manifest.get("input_schema_json"))
+    properties = _bridge_dict(input_schema.get("properties"))
+    raw_required = input_schema.get("required")
+    required = raw_required if isinstance(raw_required, list) else []
+    manifest_config = _bridge_dict(manifest.get("config_json"))
     compact_properties: dict[str, Any] = {}
     if isinstance(properties, dict):
         for key, prop in properties.items():
@@ -1111,21 +1099,24 @@ def _bridge_compact_action_describe(structured: dict[str, Any]) -> dict[str, Any
             "required": required if isinstance(required, list) else [],
             "properties": compact_properties,
         },
-        "docs": (manifest.get("config_json") or {}).get("docs", [])
-        if isinstance(manifest.get("config_json"), dict)
-        else [],
+        "docs": manifest_config.get("docs", []),
     }
 
 
 def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, Any]:
     plugins = []
-    for item in structured.get("plugins", []):
+    raw_plugins = structured.get("plugins")
+    plugin_items: list[Any] = raw_plugins if isinstance(raw_plugins, list) else []
+    for item in plugin_items:
         if not isinstance(item, dict):
             continue
-        plugin = item.get("plugin") if isinstance(item.get("plugin"), dict) else {}
-        actions = item.get("actions") if isinstance(item.get("actions"), list) else []
-        resources = item.get("resources") if isinstance(item.get("resources"), list) else []
-        providers = item.get("providers") if isinstance(item.get("providers"), list) else []
+        plugin = _bridge_dict(item.get("plugin"))
+        raw_actions = item.get("actions")
+        raw_resources = item.get("resources")
+        raw_providers = item.get("providers")
+        actions: list[Any] = raw_actions if isinstance(raw_actions, list) else []
+        resources: list[Any] = raw_resources if isinstance(raw_resources, list) else []
+        providers: list[Any] = raw_providers if isinstance(raw_providers, list) else []
         plugins.append(
             {
                 "slug": plugin.get("slug"),
@@ -1137,15 +1128,14 @@ def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, An
                 ],
                 "actions": [
                     {
-                        "action_ref": action.get("action_ref"),
-                        "risk_level": action.get("risk_level"),
-                        "provider_key": action.get("provider_key"),
-                        "status": (action.get("availability") or {}).get("status")
-                        if isinstance(action.get("availability"), dict)
-                        else None,
+                        "action_ref": action_item.get("action_ref"),
+                        "risk_level": action_item.get("risk_level"),
+                        "provider_key": action_item.get("provider_key"),
+                        "status": _bridge_dict(action_item.get("availability")).get("status"),
                     }
                     for action in actions
                     if isinstance(action, dict)
+                    for action_item in [_bridge_dict(action)]
                 ],
                 "resources": [
                     resource.get("key") for resource in resources if isinstance(resource, dict)

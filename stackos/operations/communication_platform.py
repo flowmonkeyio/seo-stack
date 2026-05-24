@@ -976,17 +976,13 @@ async def communication_context_query(
     )
 
 
-
-
 def _require_project(session: Session, project_id: int) -> None:
     ProjectRepository(session).get(project_id)
 
 
 def _validate_profile_key(value: str) -> None:
     if not _PROFILE_KEY_RE.fullmatch(value.strip()):
-        raise ValidationError(
-            "communication keys must be 1-80 chars of letters, numbers, _, or -"
-        )
+        raise ValidationError("communication keys must be 1-80 chars of letters, numbers, _, or -")
 
 
 def _validate_provider_key(value: str) -> None:
@@ -1281,8 +1277,6 @@ _CONTEXT_ALLOWED_FIELDS = {
 
 def _select_context_fields(data: dict[str, Any], fields: list[str]) -> dict[str, Any]:
     return {field: data.get(field) for field in fields if field in _CONTEXT_ALLOWED_FIELDS}
-
-
 
 
 def _surfaces(name: str, command: str) -> OperationSurfaces:

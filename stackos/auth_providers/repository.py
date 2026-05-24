@@ -37,6 +37,7 @@ from stackos.repositories.projects import IntegrationCredentialRepository
 
 _PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,119}$")
 _TELEGRAM_BOT_TOKEN_RE = re.compile(r"^(?P<bot_id>\d+):\S+$")
+_PROJECT_SCOPED_PROVIDER_KEYS = frozenset({"telegram-bot", "slack-bot"})
 
 
 def _utcnow() -> datetime:
@@ -441,7 +442,12 @@ class AuthRepository:
         ok: bool,
         metadata: Mapping[str, Any],
     ) -> None:
-        if not ok or provider_key != "telegram-bot" or credential.id is None:
+        if not ok or credential.id is None:
+            return
+        if provider_key == "slack-bot":
+            self._sync_slack_account_from_test_result(credential=credential, metadata=metadata)
+            return
+        if provider_key != "telegram-bot":
             return
         bot_id = metadata.get("bot_id")
         bot_account_id = str(bot_id) if bot_id is not None else ""
@@ -470,6 +476,38 @@ class AuthRepository:
             "username": username or None,
             "first_name": first_name or None,
             "is_bot": metadata.get("is_bot"),
+        }
+        account.updated_at = now
+        self._s.add(account)
+
+    def _sync_slack_account_from_test_result(
+        self,
+        *,
+        credential: Credential,
+        metadata: Mapping[str, Any],
+    ) -> None:
+        assert credential.id is not None
+        team_id = str(metadata.get("team_id") or "").strip()
+        team = str(metadata.get("team") or "").strip()
+        user_id = str(metadata.get("user_id") or "").strip()
+        user = str(metadata.get("user") or "").strip()
+        bot_id = str(metadata.get("bot_id") or "").strip()
+        if not team_id and not user_id and not bot_id:
+            return
+        account = self._s.exec(
+            select(CredentialAccount).where(CredentialAccount.credential_id == credential.id)
+        ).first()
+        now = _utcnow()
+        if account is None:
+            account = CredentialAccount(credential_id=credential.id)
+        account.provider_account_id = team_id or user_id or bot_id or None
+        account.display_name = team or user or team_id or user_id or None
+        account.metadata_json = {
+            "team_id": team_id or None,
+            "team": team or None,
+            "user_id": user_id or None,
+            "user": user or None,
+            "bot_id": bot_id or None,
         }
         account.updated_at = now
         self._s.add(account)
@@ -701,7 +739,7 @@ class AuthRepository:
         project_id: int | None,
         provider_key: str | None,
     ) -> list[IntegrationCredential]:
-        if provider_key == "telegram-bot" and project_id is None:
+        if provider_key in _PROJECT_SCOPED_PROVIDER_KEYS and project_id is None:
             return []
         stmt = select(IntegrationCredential)
         if provider_key is not None:
@@ -709,8 +747,10 @@ class AuthRepository:
         if project_id is None:
             stmt = stmt.where(col(IntegrationCredential.project_id).is_(None))
             if provider_key is None:
-                stmt = stmt.where(col(IntegrationCredential.kind) != "telegram-bot")
-        elif provider_key == "telegram-bot":
+                stmt = stmt.where(
+                    col(IntegrationCredential.kind).not_in(_PROJECT_SCOPED_PROVIDER_KEYS)
+                )
+        elif provider_key in _PROJECT_SCOPED_PROVIDER_KEYS:
             stmt = stmt.where(col(IntegrationCredential.project_id) == project_id)
         else:
             stmt = stmt.where(
@@ -723,7 +763,7 @@ class AuthRepository:
                 stmt = stmt.where(
                     or_(
                         col(IntegrationCredential.project_id).is_not(None),
-                        col(IntegrationCredential.kind) != "telegram-bot",
+                        col(IntegrationCredential.kind).not_in(_PROJECT_SCOPED_PROVIDER_KEYS),
                     )
                 )
         return list(
@@ -742,7 +782,7 @@ class AuthRepository:
         project_id: int | None,
         provider_key: str | None,
     ) -> list[Credential]:
-        if provider_key == "telegram-bot" and project_id is None:
+        if provider_key in _PROJECT_SCOPED_PROVIDER_KEYS and project_id is None:
             return []
         stmt = select(Credential)
         if provider_key is not None:
@@ -750,8 +790,10 @@ class AuthRepository:
         if project_id is None:
             stmt = stmt.where(col(Credential.project_id).is_(None))
             if provider_key is None:
-                stmt = stmt.where(col(Credential.provider_key) != "telegram-bot")
-        elif provider_key == "telegram-bot":
+                stmt = stmt.where(
+                    col(Credential.provider_key).not_in(_PROJECT_SCOPED_PROVIDER_KEYS)
+                )
+        elif provider_key in _PROJECT_SCOPED_PROVIDER_KEYS:
             stmt = stmt.where(col(Credential.project_id) == project_id)
         else:
             stmt = stmt.where(
@@ -764,7 +806,7 @@ class AuthRepository:
                 stmt = stmt.where(
                     or_(
                         col(Credential.project_id).is_not(None),
-                        col(Credential.provider_key) != "telegram-bot",
+                        col(Credential.provider_key).not_in(_PROJECT_SCOPED_PROVIDER_KEYS),
                     )
                 )
         return list(self._s.exec(stmt.order_by(col(Credential.id).asc())).all())
@@ -918,7 +960,7 @@ class AuthRepository:
                 "backing credential not found",
                 data={"credential_ref": credential.credential_ref},
             )
-        if row.kind == "telegram-bot" and row.project_id is None:
+        if row.kind in _PROJECT_SCOPED_PROVIDER_KEYS and row.project_id is None:
             raise NotFoundError(
                 f"credential {credential.credential_ref!r} not in project {project_id}",
                 data={"project_id": project_id, "credential_ref": credential.credential_ref},
@@ -959,7 +1001,7 @@ class AuthRepository:
             extra["site_url"] = str(site_url)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
-        elif row.kind == "telegram-bot" and config.get("api_base_url"):
+        elif row.kind in {"telegram-bot", "slack-bot"} and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
         elif row.kind in {"smtp", "imap"}:
             for key in ("host", "port", "tls_mode", "username", "timeout_s"):

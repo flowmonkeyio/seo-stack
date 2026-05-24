@@ -46,6 +46,7 @@ from stackos.actions.repository import (
 from stackos.actions.salesforce import SalesforceActionConnector
 from stackos.actions.salesloft import SalesloftActionConnector
 from stackos.actions.sitemap import SitemapActionConnector
+from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
 from stackos.actions.taboola import TaboolaActionConnector
 from stackos.actions.telegram_bot import TelegramBotActionConnector
@@ -74,6 +75,7 @@ DEFAULT_ACTION_CONNECTORS.register(MetaAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleAdsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TaboolaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(TelegramBotActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SlackBotActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SmtpActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ImapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(MockProviderActionConnector())
@@ -116,6 +118,7 @@ __all__ = [
     "SalesforceActionConnector",
     "SalesloftActionConnector",
     "SitemapActionConnector",
+    "SlackBotActionConnector",
     "SmtpActionConnector",
     "TaboolaActionConnector",
     "TelegramBotActionConnector",
