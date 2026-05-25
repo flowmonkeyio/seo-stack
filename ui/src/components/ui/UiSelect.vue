@@ -2,7 +2,7 @@
   UiSelect — custom listbox select styled to match UiInput.
 
   Use for short, bounded option sets. Options can be strings or
-  { value, label, disabled?, group? } objects.
+  { value, label, disabled?, group?, rightLabel?, rightMeta? } objects.
 -->
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId } from 'vue'
@@ -10,9 +10,19 @@ import type { ComputedRef } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
+export type UiSelectTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
+
 export type UiSelectOption =
   | string
-  | { value: string | number; label: string; disabled?: boolean; group?: string }
+  | {
+      value: string | number
+      label: string
+      disabled?: boolean
+      group?: string
+      rightLabel?: string
+      rightMeta?: string
+      rightTone?: UiSelectTone
+    }
 
 export interface UiSelectProps {
   modelValue?: string | number | null
@@ -32,6 +42,9 @@ interface NormalizedOption {
   label: string
   disabled?: boolean
   group?: string
+  rightLabel?: string
+  rightMeta?: string
+  rightTone?: UiSelectTone
 }
 
 const props = withDefaults(defineProps<UiSelectProps>(), {
@@ -100,6 +113,23 @@ const sizeClass = computed(
       lg: 'h-10 text-base pl-3 pr-9',
     })[props.size],
 )
+
+const RIGHT_TONE_CLASSES: Record<UiSelectTone, string> = {
+  neutral: 'bg-neutral-subtle text-neutral-fg',
+  info: 'bg-info-subtle text-info-fg',
+  success: 'bg-success-subtle text-success-fg',
+  warning: 'bg-warning-subtle text-warning-fg',
+  danger: 'bg-danger-subtle text-danger-fg',
+  accent: 'bg-accent-subtle text-accent-fg',
+}
+
+function hasRightContent(option: NormalizedOption | undefined): boolean {
+  return Boolean(option?.rightLabel || option?.rightMeta)
+}
+
+function rightToneClass(option: NormalizedOption): string {
+  return RIGHT_TONE_CLASSES[option.rightTone ?? 'neutral']
+}
 
 function firstEnabledIndex(): number {
   return Math.max(
@@ -205,6 +235,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
         {{ selectedLabel }}
       </span>
       <span
+        v-if="hasRightContent(selectedOption)"
+        class="pointer-events-none ml-2 flex shrink-0 items-center gap-1.5 pr-3"
+      >
+        <span
+          v-if="selectedOption?.rightLabel"
+          :class="['ui-select__right-chip', rightToneClass(selectedOption)]"
+        >
+          {{ selectedOption.rightLabel }}
+        </span>
+        <span
+          v-if="selectedOption?.rightMeta"
+          class="ui-select__right-meta text-fg-muted"
+        >
+          {{ selectedOption.rightMeta }}
+        </span>
+      </span>
+      <span
         class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle transition-transform duration-fast"
         :class="open && 'rotate-180'"
         aria-hidden="true"
@@ -263,27 +310,71 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
           "
           @click="selectOption(option)"
         >
-          <span class="truncate">{{ option.label }}</span>
-          <span
-            v-if="String(option.value) === String(modelValue ?? '')"
-            aria-hidden="true"
-            class="shrink-0"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+          <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+          <span class="ml-auto flex shrink-0 items-center gap-1.5">
+            <span
+              v-if="option.rightLabel"
+              :class="['ui-select__right-chip', rightToneClass(option)]"
             >
-              <path d="m5 12 5 5 9-12" />
-            </svg>
+              {{ option.rightLabel }}
+            </span>
+            <span
+              v-if="option.rightMeta"
+              :class="[
+                'ui-select__right-meta',
+                String(option.value) === String(modelValue ?? '')
+                  ? 'text-fg-on-accent'
+                  : 'text-fg-muted',
+              ]"
+            >
+              {{ option.rightMeta }}
+            </span>
+            <span
+              v-if="String(option.value) === String(modelValue ?? '')"
+              aria-hidden="true"
+              class="shrink-0"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m5 12 5 5 9-12" />
+              </svg>
+            </span>
           </span>
         </button>
       </template>
     </div>
   </div>
 </template>
+
+<style scoped>
+.ui-select__right-chip {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 8.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+.ui-select__right-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+</style>

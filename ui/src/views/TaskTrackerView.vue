@@ -48,6 +48,7 @@ import '@vue-flow/minimap/dist/style.css'
 type ViewMode = 'graph' | 'tickets'
 type StatusFilter = 'all' | TrackerStatus
 type GraphBlockFilter = 'blocked' | 'open'
+type SelectMetaTone = 'neutral' | 'info' | 'success' | 'warning'
 type TrackerGraphShape = NonNullable<TrackerSnapshot['graph']>
 
 interface GraphFocus {
@@ -100,6 +101,19 @@ const statusOptions: Array<{ key: StatusFilter; label: string }> = [
   { key: 'complete', label: 'Complete' },
   { key: 'deferred', label: 'Deferred' },
 ]
+
+function trackerStatusTone(status: TrackerStatus): SelectMetaTone {
+  switch (status) {
+    case 'complete':
+      return 'success'
+    case 'in-progress':
+      return 'info'
+    case 'deferred':
+      return 'warning'
+    default:
+      return 'neutral'
+  }
+}
 
 const viewOptions: Array<{ key: ViewMode; label: string }> = [
   { key: 'graph', label: 'Graph' },
@@ -192,7 +206,10 @@ const taskRows = computed<TaskProgressRow[]>(() =>
 const taskSelectOptions = computed(() =>
   taskRows.value.map((row) => ({
     value: row.key,
-    label: `${row.task.title} · ${row.doneCount}/${row.totalCount} · ${row.task.status}`,
+    label: row.task.title,
+    rightLabel: row.task.status.replace(/-/g, ' '),
+    rightMeta: `${row.doneCount}/${row.totalCount} tasks`,
+    rightTone: trackerStatusTone(row.task.status),
   })),
 )
 

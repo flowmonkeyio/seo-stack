@@ -27,6 +27,43 @@ describe('UiSelect', () => {
     wrapper.unmount()
   })
 
+  it('renders right-aligned option metadata in the button and menu', async () => {
+    const wrapper = mount(UiSelect, {
+      props: {
+        modelValue: 'reporting',
+        options: [
+          {
+            value: 'reporting',
+            label: 'Reporting module',
+            rightLabel: 'complete',
+            rightMeta: '2/2 tasks',
+            rightTone: 'success',
+          },
+          {
+            value: 'setup',
+            label: 'Setup',
+            rightLabel: 'not started',
+            rightMeta: '0/3 tasks',
+            rightTone: 'neutral',
+          },
+        ],
+      },
+      attachTo: document.body,
+    })
+
+    const button = wrapper.get('[role="combobox"]')
+    expect(button.text()).toContain('Reporting module')
+    expect(button.text()).toContain('complete')
+    expect(button.text()).toContain('2/2 tasks')
+
+    await button.trigger('click')
+    const option = wrapper.findAll('[role="option"]')[1]
+    expect(option.text()).toContain('Setup')
+    expect(option.text()).toContain('not started')
+    expect(option.text()).toContain('0/3 tasks')
+    wrapper.unmount()
+  })
+
   it('supports keyboard open, movement, selection, and Escape close', async () => {
     const wrapper = mount(UiSelect, {
       props: {
