@@ -240,4 +240,19 @@ describe('buildTrackerFlowModel', () => {
     )
     expect(model.edges.map((edge) => edge.id)).toEqual(['dependency:prepare:deliver'])
   })
+
+  it('marks the focused dependency relation for the graph renderer', () => {
+    const model = buildTrackerFlowModel(snapshot, {
+      activeEdgeId: 'dependency:prepare:deliver',
+      highlightedEdgeIds: new Set(['dependency:prepare:deliver']),
+      highlightedNodeIds: new Set(['ticket:prepare', 'ticket:deliver']),
+      spotlight: true,
+    })
+
+    expect(model.edges[0]?.class).toContain('tracker-edge-active')
+    expect(model.edges[0]?.class).toContain('tracker-edge-highlighted')
+    expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.class).toContain(
+      'tracker-node-highlighted',
+    )
+  })
 })

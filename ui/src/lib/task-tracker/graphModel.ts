@@ -29,6 +29,7 @@ export interface BuildTrackerFlowOptions {
   showContainment?: boolean
   highlightedNodeIds?: Set<string>
   highlightedEdgeIds?: Set<string>
+  activeEdgeId?: string | null
   spotlight?: boolean
 }
 
@@ -699,6 +700,9 @@ function nodeClass(options: BuildTrackerFlowOptions, graphNodeId: string): strin
 
 function edgeClass(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): string {
   const classes = ['tracker-edge', `tracker-edge-${edge.type}`]
+  if (options.activeEdgeId === edge.id) {
+    classes.push('tracker-edge-active')
+  }
   if (options.spotlight) {
     classes.push(
       options.highlightedEdgeIds?.has(edge.id) ? 'tracker-edge-highlighted' : 'tracker-edge-muted',

@@ -27,6 +27,8 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 
+HEAD_REVISION = "0015_stackos_task_tracker"
+
 
 @pytest.fixture
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -254,7 +256,7 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
     assert (sandbox / ".codex" / "plugins" / "stackos" / ".codex-plugin" / "plugin.json").is_file()
     assert not (sandbox / ".codex" / "skills" / "stackos").exists()
     assert (sandbox / ".local" / "share" / "stackos" / "stackos.db").is_file()
-    assert current_alembic_version(Settings()) == "0014_stackos_agent_requests"
+    assert current_alembic_version(Settings()) == HEAD_REVISION
 
 
 def test_cli_install_tolerates_daemon_down_doctor(
@@ -346,7 +348,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
     finally:
         engine.dispose()
-    assert version == "0014_stackos_agent_requests"
+    assert version == HEAD_REVISION
 
 
 def test_upgrade_to_head_works_outside_repo_cwd(
@@ -359,7 +361,7 @@ def test_upgrade_to_head_works_outside_repo_cwd(
     result = upgrade_to_head(settings)
 
     assert result.stamped_existing_schema is False
-    assert current_alembic_version(settings) == "0014_stackos_agent_requests"
+    assert current_alembic_version(settings) == HEAD_REVISION
 
 
 def test_cli_rotate_token_requires_yes(sandbox: Path) -> None:

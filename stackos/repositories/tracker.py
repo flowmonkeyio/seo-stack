@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, overload
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_
@@ -100,6 +100,12 @@ def _status_value(value: TrackerItemStatus | str) -> TrackerItemStatus:
     if isinstance(value, TrackerItemStatus):
         return value
     return TrackerItemStatus(value)
+
+
+def _required_id(value: int | None, entity: str) -> int:
+    if value is None:
+        raise RuntimeError(f"{entity} id is required after the row has been flushed")
+    return value
 
 
 class TrackerLaneOut(BaseModel):
@@ -520,7 +526,7 @@ class TrackerRepository:
                 if (task.source_json or {}).get("template_key") == workflow_key
                 or (task.source_json or {}).get("run_plan_key") == workflow_key
             ]
-            task_ids = {task.id for task in tasks}
+            task_ids = {task.id for task in tasks if task.id is not None}
             tickets = [ticket for ticket in tickets if ticket.task_id in task_ids]
         if run_plan_id is not None:
             tickets = [ticket for ticket in tickets if ticket.run_plan_id == run_plan_id]
@@ -540,9 +546,7 @@ class TrackerRepository:
             {ticket.id for ticket in tickets},
         )
         graph = (
-            self._graph_out(task_out, ticket_out, dependencies, links)
-            if include_graph
-            else None
+            self._graph_out(task_out, ticket_out, dependencies, links) if include_graph else None
         )
         return TrackerSnapshotOut(
             tracker=self._tracker_out(tracker),
@@ -888,13 +892,13 @@ class TrackerRepository:
                 if not isinstance(ticket_patch, dict):
                     raise ValidationError("ticket patch entries must be objects")
                 ticket = self._ticket_by_key(tracker.id, str(ticket_key))
-                task = self._s.get(TrackerTask, ticket.task_id)
-                if task is None:
+                ticket_task = self._s.get(TrackerTask, ticket.task_id)
+                if ticket_task is None:
                     raise NotFoundError("ticket task not found", data={"ticket_key": ticket.key})
                 before = self._ticket_snapshot(ticket)
                 self._apply_ticket_patch(tracker, ticket, ticket_patch)
-                self._sync_task_status(task, now=_utcnow())
-                changed_task = task
+                self._sync_task_status(ticket_task, now=_utcnow())
+                changed_task = ticket_task
                 changed_tickets.append(ticket)
                 self._record_revision(
                     tracker,
@@ -1021,8 +1025,7 @@ class TrackerRepository:
             tickets=[],
             blocked=self._ticket_out_many(tickets),
             explanation=(
-                "Blocked tickets have an explicit blocker_reason or incomplete "
-                "dependencies."
+                "Blocked tickets have an explicit blocker_reason or incomplete dependencies."
             ),
         )
 
@@ -1052,8 +1055,7 @@ class TrackerRepository:
                 for row in self._reference_rows_for_ticket(ticket.id)
             ],
             links=[
-                TrackerLinkOut.model_validate(row)
-                for row in self._link_rows_for_ticket(ticket.id)
+                TrackerLinkOut.model_validate(row) for row in self._link_rows_for_ticket(ticket.id)
             ],
             suggested_next_actions=self._suggest_next_actions(ticket),
         )
@@ -1508,7 +1510,8 @@ class TrackerRepository:
     def _tracker_out(self, row: TaskTracker) -> TrackerSummaryOut:
         return TrackerSummaryOut.model_validate(row)
 
-    def _lane_out(self, tracker_id: int) -> list[TrackerLaneOut]:
+    def _lane_out(self, tracker_id: int | None) -> list[TrackerLaneOut]:
+        tracker_id = _required_id(tracker_id, "tracker")
         return [
             TrackerLaneOut.model_validate(row)
             for row in self._s.exec(
@@ -1518,7 +1521,8 @@ class TrackerRepository:
             )
         ]
 
-    def _priority_out(self, tracker_id: int) -> list[TrackerPriorityOut]:
+    def _priority_out(self, tracker_id: int | None) -> list[TrackerPriorityOut]:
+        tracker_id = _required_id(tracker_id, "tracker")
         return [
             TrackerPriorityOut.model_validate(row)
             for row in self._s.exec(
@@ -1572,7 +1576,8 @@ class TrackerRepository:
     def _ticket_out_many(self, rows: list[TrackerTicket]) -> list[TrackerTicketOut]:
         return [self._ticket_out(row) for row in rows]
 
-    def _task_rows(self, tracker_id: int) -> list[TrackerTask]:
+    def _task_rows(self, tracker_id: int | None) -> list[TrackerTask]:
+        tracker_id = _required_id(tracker_id, "tracker")
         return list(
             self._s.exec(
                 select(TrackerTask)
@@ -1581,7 +1586,8 @@ class TrackerRepository:
             )
         )
 
-    def _ticket_rows(self, tracker_id: int) -> list[TrackerTicket]:
+    def _ticket_rows(self, tracker_id: int | None) -> list[TrackerTicket]:
+        tracker_id = _required_id(tracker_id, "tracker")
         return list(
             self._s.exec(
                 select(TrackerTicket)
@@ -1590,7 +1596,10 @@ class TrackerRepository:
             )
         )
 
-    def _ticket_rows_for_run_plan(self, tracker_id: int, run_plan_id: int) -> list[TrackerTicket]:
+    def _ticket_rows_for_run_plan(
+        self, tracker_id: int | None, run_plan_id: int
+    ) -> list[TrackerTicket]:
+        tracker_id = _required_id(tracker_id, "tracker")
         return list(
             self._s.exec(
                 select(TrackerTicket).where(
@@ -1600,13 +1609,32 @@ class TrackerRepository:
             )
         )
 
+    @overload
     def _task_by_key(
         self,
-        tracker_id: int,
+        tracker_id: int | None,
+        key: str,
+        *,
+        missing_ok: Literal[False] = False,
+    ) -> TrackerTask: ...
+
+    @overload
+    def _task_by_key(
+        self,
+        tracker_id: int | None,
+        key: str,
+        *,
+        missing_ok: Literal[True],
+    ) -> TrackerTask | None: ...
+
+    def _task_by_key(
+        self,
+        tracker_id: int | None,
         key: str,
         *,
         missing_ok: bool = False,
     ) -> TrackerTask | None:
+        tracker_id = _required_id(tracker_id, "tracker")
         row = self._s.exec(
             select(TrackerTask).where(TrackerTask.tracker_id == tracker_id, TrackerTask.key == key)
         ).first()
@@ -1614,13 +1642,32 @@ class TrackerRepository:
             raise NotFoundError("tracker task not found", data={"task_key": key})
         return row
 
+    @overload
     def _ticket_by_key(
         self,
-        tracker_id: int,
+        tracker_id: int | None,
+        key: str | None,
+        *,
+        missing_ok: Literal[False] = False,
+    ) -> TrackerTicket: ...
+
+    @overload
+    def _ticket_by_key(
+        self,
+        tracker_id: int | None,
+        key: str | None,
+        *,
+        missing_ok: Literal[True],
+    ) -> TrackerTicket | None: ...
+
+    def _ticket_by_key(
+        self,
+        tracker_id: int | None,
         key: str | None,
         *,
         missing_ok: bool = False,
     ) -> TrackerTicket | None:
+        tracker_id = _required_id(tracker_id, "tracker")
         if key is None:
             if missing_ok:
                 return None
@@ -1637,10 +1684,11 @@ class TrackerRepository:
 
     def _ticket_for_step(
         self,
-        tracker_id: int,
+        tracker_id: int | None,
         run_plan_id: int,
         step_id: str,
     ) -> TrackerTicket | None:
+        tracker_id = _required_id(tracker_id, "tracker")
         step = self._s.exec(
             select(RunPlanStep).where(
                 RunPlanStep.run_plan_id == run_plan_id,
@@ -1697,10 +1745,11 @@ class TrackerRepository:
 
     def _link_out_for_scope(
         self,
-        tracker_id: int,
+        tracker_id: int | None,
         task_ids: set[int | None],
         ticket_ids: set[int | None],
     ) -> list[TrackerLinkOut]:
+        tracker_id = _required_id(tracker_id, "tracker")
         rows = list(
             self._s.exec(
                 select(TrackerTicketLink).where(TrackerTicketLink.tracker_id == tracker_id)
@@ -1812,14 +1861,14 @@ class TrackerRepository:
                 continue
             if link.link_kind in {TrackerLinkKind.RUN_PLAN, TrackerLinkKind.RUN_PLAN_STEP}:
                 continue
-            target = None
+            link_target: str | None = None
             if link.ticket_id is not None:
-                ticket = next((item for item in tickets if item.id == link.ticket_id), None)
-                target = f"ticket:{ticket.key}" if ticket is not None else None
-            if target is None and link.task_id is not None:
-                task = next((item for item in tasks if item.id == link.task_id), None)
-                target = f"task:{task.key}" if task is not None else None
-            if target is not None:
+                linked_ticket = next((item for item in tickets if item.id == link.ticket_id), None)
+                link_target = f"ticket:{linked_ticket.key}" if linked_ticket is not None else None
+            if link_target is None and link.task_id is not None:
+                linked_task = next((item for item in tasks if item.id == link.task_id), None)
+                link_target = f"task:{linked_task.key}" if linked_task is not None else None
+            if link_target is not None:
                 source = f"link:{link.id}"
                 nodes.append(
                     TrackerGraphNodeOut(
@@ -1834,10 +1883,10 @@ class TrackerRepository:
                 )
                 edges.append(
                     TrackerGraphEdgeOut(
-                        id=f"link:{link.id}:{target}",
+                        id=f"link:{link.id}:{link_target}",
                         type="link",
                         source=source,
-                        target=target,
+                        target=link_target,
                         label=link.link_kind.value,
                     )
                 )
@@ -2159,9 +2208,7 @@ class TrackerRepository:
         self._s.add(ticket)
 
     def _sync_task_status(self, task: TrackerTask, *, now: datetime) -> None:
-        tickets = list(
-            self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id))
-        )
+        tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))
         if not tickets:
             return
         old = task.status
@@ -2192,7 +2239,7 @@ class TrackerRepository:
 
     def _ready_ticket_rows(
         self,
-        tracker_id: int,
+        tracker_id: int | None,
         *,
         tickets: list[TrackerTicket] | None = None,
     ) -> list[TrackerTicket]:
@@ -2205,12 +2252,12 @@ class TrackerRepository:
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
 
-    def _ticket_blocks_active_work(self, tracker_id: int, ticket: TrackerTicket) -> bool:
+    def _ticket_blocks_active_work(self, tracker_id: int | None, ticket: TrackerTicket) -> bool:
         return ticket.status not in TERMINAL_TICKET_STATUSES and bool(
             ticket.blocker_reason or self._blocked_by_incomplete(tracker_id, ticket)
         )
 
-    def _blocked_by_incomplete(self, tracker_id: int, ticket: TrackerTicket) -> list[str]:
+    def _blocked_by_incomplete(self, tracker_id: int | None, ticket: TrackerTicket) -> list[str]:
         blockers: list[str] = []
         for dep in self._dependency_rows_for_ticket(ticket.id):
             dependency = self._s.get(TrackerTicket, dep.depends_on_ticket_id)
@@ -2218,7 +2265,8 @@ class TrackerRepository:
                 blockers.append(dependency.key)
         return blockers
 
-    def _priority_rank(self, tracker_id: int, key: str) -> int:
+    def _priority_rank(self, tracker_id: int | None, key: str) -> int:
+        tracker_id = _required_id(tracker_id, "tracker")
         row = self._s.exec(
             select(TaskTrackerPriority).where(
                 TaskTrackerPriority.tracker_id == tracker_id,
@@ -2252,13 +2300,14 @@ class TrackerRepository:
             stack.extend(row.depends_on_ticket_id for row in rows)
         return False
 
-    def _next_task_position(self, tracker_id: int) -> int:
+    def _next_task_position(self, tracker_id: int | None) -> int:
         rows = self._task_rows(tracker_id)
-        return (max((row.order_index for row in rows), default=-1) + 1)
+        return max((row.order_index for row in rows), default=-1) + 1
 
-    def _next_ticket_position(self, task_id: int) -> int:
+    def _next_ticket_position(self, task_id: int | None) -> int:
+        task_id = _required_id(task_id, "task")
         rows = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task_id)))
-        return (max((row.order_index for row in rows), default=-1) + 1)
+        return max((row.order_index for row in rows), default=-1) + 1
 
     def _record_revision(
         self,

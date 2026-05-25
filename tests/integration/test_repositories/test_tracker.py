@@ -192,24 +192,28 @@ def test_tracker_patch_rejects_unsupported_shapes(
 
 
 def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -> None:
-    plan = RunPlanRepository(session).create(
-        project_id=project_id,
-        run_plan_json={
-            "schema_version": "stackos.run-plan.v1",
-            "key": "tracker.workflow.run",
-            "title": "Tracker Workflow",
-            "steps": [
-                {"id": "prepare", "title": "Prepare", "success_criteria": ["Prepared"]},
-                {
-                    "id": "deliver",
-                    "title": "Deliver",
-                    "depends_on": ["prepare"],
-                    "success_criteria": ["Delivered"],
-                },
-            ],
-        },
-        created_by="codex",
-    ).data
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow.run",
+                "title": "Tracker Workflow",
+                "steps": [
+                    {"id": "prepare", "title": "Prepare", "success_criteria": ["Prepared"]},
+                    {
+                        "id": "deliver",
+                        "title": "Deliver",
+                        "depends_on": ["prepare"],
+                        "success_criteria": ["Delivered"],
+                    },
+                ],
+            },
+            created_by="codex",
+        )
+        .data
+    )
 
     tracker = TrackerRepository(session)
     snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
@@ -222,12 +226,16 @@ def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -
     assert snapshot.dependencies[0].depends_on_ticket_key == f"workflow-{plan.id}-prepare"
 
     started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
-    claimed = RunPlanRepository(session).claim_step(
-        run_plan_id=plan.id,
-        run_id=started.run_id,
-        step_id="prepare",
-        claimed_by="codex",
-    ).data
+    claimed = (
+        RunPlanRepository(session)
+        .claim_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="prepare",
+            claimed_by="codex",
+        )
+        .data
+    )
     assert claimed.status == "running"
 
     running_ticket = tracker.brief(

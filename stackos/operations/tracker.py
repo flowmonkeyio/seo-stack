@@ -933,8 +933,7 @@ def operation_specs() -> list[OperationSpec]:
             input_model=TrackerLinkRunPlanInput,
             handler=tracker_link_run_plan,
             purpose=(
-                "Use this when a manually created task should point at workflow "
-                "execution state."
+                "Use this when a manually created task should point at workflow execution state."
             ),
         ),
     ]

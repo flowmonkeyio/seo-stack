@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -48,6 +48,13 @@ import '@vue-flow/minimap/dist/style.css'
 type ViewMode = 'graph' | 'tickets'
 type StatusFilter = 'all' | TrackerStatus
 type GraphBlockFilter = 'blocked' | 'open'
+type TrackerGraphShape = NonNullable<TrackerSnapshot['graph']>
+
+interface GraphFocus {
+  nodeIds: Set<string>
+  edgeIds: Set<string>
+  activeEdgeId: string | null
+}
 
 interface TaskProgressRow {
   id: number
@@ -66,6 +73,7 @@ interface TaskProgressRow {
 }
 
 const route = useRoute()
+const router = useRouter()
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 
 const snapshot = ref<TrackerSnapshot | null>(null)
@@ -77,9 +85,11 @@ const workflowFilter = ref('')
 const assigneeFilter = ref('')
 const search = ref('')
 const showContainment = ref(false)
-const activeTaskKey = ref('')
+const activeTaskKey = ref(routeTaskKey())
 const selected = ref<TrackerSelectedItem | null>(null)
 const selectedEdgeId = ref<string | null>(null)
+const selectedNodeFocusId = ref<string | null>(null)
+const taskIndexList = ref<HTMLElement | null>(null)
 const graphStatusFilters = ref<TrackerStatus[]>([])
 const graphBlockFilters = ref<GraphBlockFilter[]>([])
 
@@ -224,8 +234,8 @@ const graphTicketStatLabel = computed(() =>
 
 const graphEdgeStatLabel = computed(() =>
   graphFiltersActive.value
-    ? `${flow.value.edges.length} visible edges`
-    : `${flow.value.edges.length} edges`,
+    ? `${flow.value.edges.length} visible ${pluralize('relation', flow.value.edges.length)}`
+    : `${flow.value.edges.length} ${pluralize('relation', flow.value.edges.length)}`,
 )
 
 const graphMatchedTickets = computed(() => graphTickets.value.filter(graphTicketMatchesFilters))
@@ -328,18 +338,32 @@ const filteredSnapshot = computed<TrackerSnapshot | null>(() => {
   }
 })
 
-const selectedEdgeFocus = computed(() =>
-  edgeFocusFor(filteredSnapshot.value?.graph ?? null, selectedEdgeId.value),
+const relationFocus = computed(() =>
+  graphFocusFor(filteredSnapshot.value?.graph ?? null, {
+    edgeId: selectedEdgeId.value,
+    nodeId: selectedNodeFocusId.value,
+  }),
 )
+
+const relationFocusActive = computed(
+  () => relationFocus.value.edgeIds.size > 0 || relationFocus.value.nodeIds.size > 1,
+)
+
+const relationFocusLabel = computed(() => {
+  if (selectedEdgeId.value) return 'selected relation'
+  if (selectedNodeFocusId.value) return 'related dependencies'
+  return ''
+})
 
 const flow = computed(() =>
   filteredSnapshot.value
     ? buildTrackerFlowModel(filteredSnapshot.value, {
         selected: selected.value,
         showContainment: showContainment.value,
-        highlightedNodeIds: selectedEdgeFocus.value.nodeIds,
-        highlightedEdgeIds: selectedEdgeFocus.value.edgeIds,
-        spotlight: selectedEdgeFocus.value.edgeIds.size > 0,
+        highlightedNodeIds: relationFocus.value.nodeIds,
+        highlightedEdgeIds: relationFocus.value.edgeIds,
+        activeEdgeId: relationFocus.value.activeEdgeId,
+        spotlight: relationFocusActive.value,
       })
     : { nodes: [], edges: [] as Edge[], warnings: [] },
 )
@@ -489,6 +513,7 @@ function graphTicketMatchesFilters(ticket: TrackerTicket): boolean {
 
 function toggleGraphStatus(status: TrackerStatus): void {
   selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
   graphStatusFilters.value = graphStatusFilters.value.includes(status)
     ? graphStatusFilters.value.filter((item) => item !== status)
     : [...graphStatusFilters.value, status]
@@ -496,6 +521,7 @@ function toggleGraphStatus(status: TrackerStatus): void {
 
 function toggleGraphBlock(block: GraphBlockFilter): void {
   selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
   graphBlockFilters.value = graphBlockFilters.value.includes(block)
     ? graphBlockFilters.value.filter((item) => item !== block)
     : [...graphBlockFilters.value, block]
@@ -503,13 +529,16 @@ function toggleGraphBlock(block: GraphBlockFilter): void {
 
 function clearGraphFilters(): void {
   selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
   graphStatusFilters.value = []
   graphBlockFilters.value = []
 }
 
 function onTaskRow(row: TaskProgressRow): void {
   selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
   activeTaskKey.value = row.key
+  syncActiveTaskToUrl(row.key)
   selected.value = row.tickets[0]
     ? { kind: 'ticket', key: row.tickets[0].key }
     : { kind: 'task', key: row.task.key }
@@ -519,11 +548,13 @@ function onNodeClick(event: NodeMouseEvent): void {
   selectedEdgeId.value = null
   const data = event.node.data as TrackerVueNodeData
   if (!data?.itemKind || data.itemKey.startsWith('link:')) return
+  selectedNodeFocusId.value = event.node.id
   selected.value = { kind: data.itemKind, key: data.itemKey }
 }
 
 function onEdgeClick(event: EdgeMouseEvent): void {
   selectedEdgeId.value = event.edge.id
+  selectedNodeFocusId.value = null
   const target = graphItemFromNodeId(event.edge.target)
   if (target?.kind === 'ticket') {
     selected.value = { kind: 'ticket', key: target.key }
@@ -532,29 +563,40 @@ function onEdgeClick(event: EdgeMouseEvent): void {
 
 function onTicketRow(row: TrackerTicket): void {
   selectedEdgeId.value = null
+  selectedNodeFocusId.value = null
   activeTaskKey.value = row.task_key
+  syncActiveTaskToUrl(row.task_key)
   selected.value = { kind: 'ticket', key: row.key }
 }
 
 function ensureActiveTask(): void {
   if (!taskRows.value.length) {
     activeTaskKey.value = ''
+    syncActiveTaskToUrl('')
     selected.value = null
+    selectedEdgeId.value = null
+    selectedNodeFocusId.value = null
     return
   }
   const current = taskRows.value.find((row) => row.key === activeTaskKey.value)
   const nextRow = current ?? taskRows.value[0]
   activeTaskKey.value = nextRow.key
+  syncActiveTaskToUrl(nextRow.key)
+  queueActiveTaskScroll()
   if (
     selected.value?.kind === 'ticket' &&
     !nextRow.tickets.some((ticket) => ticket.key === selected.value?.key)
   ) {
+    selectedEdgeId.value = null
+    selectedNodeFocusId.value = null
     selected.value = nextRow.tickets[0]
       ? { kind: 'ticket', key: nextRow.tickets[0].key }
       : { kind: 'task', key: nextRow.task.key }
     return
   }
   if (selected.value?.kind === 'task' && selected.value.key !== nextRow.key) {
+    selectedEdgeId.value = null
+    selectedNodeFocusId.value = null
     selected.value = { kind: 'task', key: nextRow.key }
     return
   }
@@ -565,12 +607,44 @@ function ensureActiveTask(): void {
   }
 }
 
+function queueActiveTaskScroll(): void {
+  void nextTick(() => {
+    const list = taskIndexList.value
+    if (!list || !activeTaskKey.value) return
+    const activeRow = Array.from(list.querySelectorAll<HTMLElement>('[data-task-key]')).find(
+      (row) => row.dataset.taskKey === activeTaskKey.value,
+    )
+    window.requestAnimationFrame(() => activeRow?.scrollIntoView({ block: 'center' }))
+  })
+}
+
 function clearFilters(): void {
   statusFilter.value = 'all'
   workflowFilter.value = ''
   assigneeFilter.value = ''
   search.value = ''
   clearGraphFilters()
+}
+
+function routeTaskKey(): string {
+  const raw = route.query.task
+  if (Array.isArray(raw)) return typeof raw[0] === 'string' ? raw[0] : ''
+  return typeof raw === 'string' ? raw : ''
+}
+
+function syncActiveTaskToUrl(taskKey: string): void {
+  if (routeTaskKey() === taskKey) return
+  const nextQuery = { ...route.query }
+  if (taskKey) {
+    nextQuery.task = taskKey
+  } else {
+    delete nextQuery.task
+  }
+  void router.replace({ query: nextQuery })
+}
+
+function pluralize(label: string, count: number): string {
+  return count === 1 ? label : `${label}s`
 }
 
 function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number> {
@@ -583,57 +657,134 @@ function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number>
   )
 }
 
-function edgeFocusFor(
+function graphFocusFor(
   graph: TrackerSnapshot['graph'],
-  edgeId: string | null,
-): { nodeIds: Set<string>; edgeIds: Set<string> } {
-  const nodeIds = new Set<string>()
-  const edgeIds = new Set<string>()
-  if (!graph || !edgeId) return { nodeIds, edgeIds }
+  target: { edgeId: string | null; nodeId: string | null },
+): GraphFocus {
+  if (!graph) return emptyGraphFocus()
+  if (target.edgeId) return edgeFocusFor(graph, target.edgeId)
+  if (target.nodeId) return nodeFocusFor(graph, target.nodeId)
+  return emptyGraphFocus()
+}
+
+function emptyGraphFocus(activeEdgeId: string | null = null): GraphFocus {
+  return { nodeIds: new Set(), edgeIds: new Set(), activeEdgeId }
+}
+
+function edgeFocusFor(graph: TrackerGraphShape, edgeId: string): GraphFocus {
+  const focus = emptyGraphFocus(edgeId)
 
   const selectedEdge = graph.edges.find((edge) => edge.id === edgeId)
-  if (!selectedEdge) return { nodeIds, edgeIds }
+  if (!selectedEdge) return emptyGraphFocus()
 
-  const dependencyEdges = graph.edges.filter((edge) => edge.type === 'dependency')
-  const incoming = new Map<string, typeof dependencyEdges>()
-  const outgoing = new Map<string, typeof dependencyEdges>()
-  for (const edge of dependencyEdges) {
-    incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge])
-    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge])
+  if (selectedEdge.type === 'dependency') {
+    addDependencyEdgeChain(graph, focus, selectedEdge)
+  } else {
+    addGraphEdge(focus, selectedEdge)
+  }
+  return focus
+}
+
+function nodeFocusFor(graph: TrackerGraphShape, nodeId: string): GraphFocus {
+  const focus = emptyGraphFocus()
+  const graphNode = graph.nodes.find((node) => node.id === nodeId)
+  if (!graphNode || nodeId.startsWith('link:')) return focus
+
+  focus.nodeIds.add(nodeId)
+
+  if (graphNode.type === 'task') {
+    const childNodeIds = new Set(
+      graph.nodes.filter((node) => node.parent_id === nodeId).map((node) => node.id),
+    )
+    for (const edge of graph.edges) {
+      const insideTask =
+        edge.source === nodeId ||
+        edge.target === nodeId ||
+        (childNodeIds.has(edge.source) && childNodeIds.has(edge.target))
+      if (insideTask) addGraphEdge(focus, edge)
+    }
+    return focus
   }
 
-  function addEdge(edge: (typeof dependencyEdges)[number]): void {
-    edgeIds.add(edge.id)
-    nodeIds.add(edge.source)
-    nodeIds.add(edge.target)
+  const { incoming, outgoing } = dependencyMaps(graph)
+
+  function collectUpstream(currentNodeId: string): void {
+    for (const edge of incoming.get(currentNodeId) ?? []) {
+      if (focus.edgeIds.has(edge.id)) continue
+      addGraphEdge(focus, edge)
+      collectUpstream(edge.source)
+    }
   }
+
+  function collectDownstream(currentNodeId: string): void {
+    for (const edge of outgoing.get(currentNodeId) ?? []) {
+      if (focus.edgeIds.has(edge.id)) continue
+      addGraphEdge(focus, edge)
+      collectDownstream(edge.target)
+    }
+  }
+
+  collectUpstream(nodeId)
+  collectDownstream(nodeId)
+
+  for (const edge of graph.edges) {
+    if (edge.type !== 'dependency' && (edge.source === nodeId || edge.target === nodeId)) {
+      addGraphEdge(focus, edge)
+    }
+  }
+  return focus
+}
+
+function addDependencyEdgeChain(
+  graph: TrackerGraphShape,
+  focus: GraphFocus,
+  selectedEdge: TrackerGraphShape['edges'][number],
+): void {
+  const { incoming, outgoing } = dependencyMaps(graph)
 
   function collectUpstream(nodeId: string): void {
     for (const edge of incoming.get(nodeId) ?? []) {
-      if (edgeIds.has(edge.id)) continue
-      addEdge(edge)
+      if (focus.edgeIds.has(edge.id)) continue
+      addGraphEdge(focus, edge)
       collectUpstream(edge.source)
     }
   }
 
   function collectDownstream(nodeId: string): void {
     for (const edge of outgoing.get(nodeId) ?? []) {
-      if (edgeIds.has(edge.id)) continue
-      addEdge(edge)
+      if (focus.edgeIds.has(edge.id)) continue
+      addGraphEdge(focus, edge)
       collectDownstream(edge.target)
     }
   }
 
-  if (selectedEdge.type === 'dependency') {
-    addEdge(selectedEdge)
-    collectUpstream(selectedEdge.source)
-    collectDownstream(selectedEdge.target)
-  } else {
-    edgeIds.add(selectedEdge.id)
-    nodeIds.add(selectedEdge.source)
-    nodeIds.add(selectedEdge.target)
+  addGraphEdge(focus, selectedEdge)
+  collectUpstream(selectedEdge.source)
+  collectDownstream(selectedEdge.target)
+}
+
+function dependencyMaps(graph: TrackerGraphShape): {
+  incoming: Map<string, TrackerGraphShape['edges']>
+  outgoing: Map<string, TrackerGraphShape['edges']>
+} {
+  const incoming = new Map<string, TrackerGraphShape['edges']>()
+  const outgoing = new Map<string, TrackerGraphShape['edges']>()
+  for (const edge of graph.edges) {
+    if (edge.type !== 'dependency') continue
+    const incomingEdges = incoming.get(edge.target) ?? []
+    incomingEdges.push(edge)
+    incoming.set(edge.target, incomingEdges)
+    const outgoingEdges = outgoing.get(edge.source) ?? []
+    outgoingEdges.push(edge)
+    outgoing.set(edge.source, outgoingEdges)
   }
-  return { nodeIds, edgeIds }
+  return { incoming, outgoing }
+}
+
+function addGraphEdge(focus: GraphFocus, edge: TrackerGraphShape['edges'][number]): void {
+  focus.edgeIds.add(edge.id)
+  focus.nodeIds.add(edge.source)
+  focus.nodeIds.add(edge.target)
 }
 
 function graphItemFromNodeId(nodeId: string): TrackerSelectedItem | null {
@@ -646,6 +797,15 @@ function graphItemFromNodeId(nodeId: string): TrackerSelectedItem | null {
 
 onMounted(load)
 watch(projectId, load)
+watch(
+  () => route.query.task,
+  () => {
+    activeTaskKey.value = routeTaskKey()
+    selectedEdgeId.value = null
+    selectedNodeFocusId.value = null
+    ensureActiveTask()
+  },
+)
 watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActiveTask())
 </script>
 
@@ -677,8 +837,8 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
     </div>
 
     <UiPanel class="tracker-command-panel">
-      <div class="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_220px_180px_auto] xl:items-end">
-        <UiFormField label="Search">
+      <div class="tracker-command-panel__filters">
+        <UiFormField class="tracker-command-panel__search" label="Search">
           <UiInput v-model="search" placeholder="Ticket, task, owner, outcome" />
         </UiFormField>
         <UiFormField label="Workflow">
@@ -687,21 +847,31 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
         <UiFormField label="Assignee">
           <UiSelect v-model="assigneeFilter" :options="assigneeOptions" />
         </UiFormField>
-        <div class="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
-          <UiSegmentedControl
-            v-model="statusFilter"
-            label="Ticket status"
-            :options="statusOptions"
-            @select="(value) => (statusFilter = String(value) as StatusFilter)"
-          />
-          <UiSegmentedControl
-            v-model="viewMode"
-            label="Task tracker view"
-            :options="viewOptions"
-            @select="(value) => (viewMode = String(value) as ViewMode)"
-          />
-          <UiButton variant="ghost" @click="clearFilters"> Clear </UiButton>
+      </div>
+      <div class="tracker-command-panel__toolbar">
+        <div class="tracker-command-panel__segments">
+          <div class="tracker-command-panel__segment">
+            <span>Status</span>
+            <UiSegmentedControl
+              v-model="statusFilter"
+              label="Ticket status"
+              :options="statusOptions"
+              @select="(value) => (statusFilter = String(value) as StatusFilter)"
+            />
+          </div>
+          <div class="tracker-command-panel__segment">
+            <span>View</span>
+            <UiSegmentedControl
+              v-model="viewMode"
+              label="Task tracker view"
+              :options="viewOptions"
+              @select="(value) => (viewMode = String(value) as ViewMode)"
+            />
+          </div>
         </div>
+        <UiButton class="tracker-command-panel__clear" variant="ghost" @click="clearFilters">
+          Clear
+        </UiButton>
       </div>
       <div class="tracker-command-panel__meta">
         <span>{{ taskRows.length }} matching tasks</span>
@@ -735,12 +905,13 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
           </UiBadge>
         </div>
 
-        <div class="task-index__list">
+        <div ref="taskIndexList" class="task-index__list">
           <button
             v-for="row in taskRows"
             :key="row.key"
             type="button"
             class="task-index-row"
+            :data-task-key="row.key"
             :class="{ 'task-index-row--active': activeTaskRow?.key === row.key }"
             @click="onTaskRow(row)"
           >
@@ -875,11 +1046,11 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
                 </button>
               </div>
               <div class="tracker-graph-controls__tail">
-                <span v-if="selectedEdgeId" class="tracker-graph-focus-note">
-                  dependency chain highlighted
+                <span v-if="relationFocusLabel" class="tracker-graph-focus-note">
+                  {{ relationFocusLabel }}
                 </span>
                 <button
-                  v-if="graphFiltersActive || selectedEdgeId"
+                  v-if="graphFiltersActive || selectedEdgeId || selectedNodeFocusId"
                   type="button"
                   class="tracker-graph-clear"
                   @click="clearGraphFilters"
@@ -1032,7 +1203,52 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 <style scoped>
 .tracker-command-panel {
   display: grid;
-  gap: 12px;
+  gap: 14px;
+  padding-block: 16px;
+}
+
+.tracker-command-panel__filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 220px) minmax(160px, 190px);
+  gap: 14px;
+  align-items: end;
+}
+
+.tracker-command-panel__search {
+  min-width: 0;
+}
+
+.tracker-command-panel__toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 13px;
+}
+
+.tracker-command-panel__segments {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.tracker-command-panel__segment {
+  display: grid;
+  gap: 6px;
+}
+
+.tracker-command-panel__segment > span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tracker-command-panel__clear {
+  flex: none;
 }
 
 .tracker-command-panel__meta {
@@ -1040,6 +1256,8 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   flex-wrap: wrap;
   align-items: center;
   gap: 14px;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 12px;
   color: var(--color-text-muted);
   font-size: 13px;
 }
@@ -1257,18 +1475,18 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 
 .tracker-graph-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.5fr);
+  gap: 12px 16px;
   border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-bg-surface);
-  padding: 10px 14px 12px;
+  padding: 12px 14px 14px;
 }
 
 .tracker-graph-filter-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .tracker-graph-filter-group__label {
@@ -1325,13 +1543,16 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  padding-left: 52px;
+  grid-column: 1 / -1;
 }
 
 .tracker-graph-focus-note {
-  color: var(--color-accent-default);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-info-default) 10%, var(--color-bg-surface));
+  color: var(--color-info-default);
   font-size: 12px;
   font-weight: 700;
+  padding: 4px 9px;
 }
 
 .tracker-graph-clear {
@@ -1475,40 +1696,58 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 
 :deep(.tracker-node-highlighted .ticket-graph-node),
 :deep(.tracker-node-highlighted .task-graph-node) {
-  border-color: var(--color-accent-default);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-default) 20%, transparent);
+  border-color: var(--color-info-default);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-info-default) 20%, transparent);
 }
 
 :deep(.tracker-node-muted) {
   opacity: 0.24;
 }
 
-:deep(.tracker-edge-dependency path) {
-  stroke: var(--color-warning-default);
+:deep(.tracker-edge-dependency .vue-flow__edge-path) {
+  stroke: color-mix(in srgb, var(--color-warning-default) 45%, var(--color-border-strong));
   stroke-width: 1.4;
 }
 
-:deep(.tracker-edge-highlighted path) {
-  stroke: var(--color-accent-default);
+:deep(.tracker-edge-highlighted .vue-flow__edge-path) {
+  stroke: var(--color-info-default);
   stroke-width: 2.6;
 }
 
-:deep(.tracker-edge-muted path) {
+:deep(.tracker-edge-muted .vue-flow__edge-path) {
   opacity: 0.16;
 }
 
-:deep(.tracker-edge-link path) {
+:deep(.tracker-edge-active .vue-flow__edge-path),
+:deep(.tracker-edge-active.selected .vue-flow__edge-path) {
+  stroke: var(--color-success-default);
+  stroke-width: 3;
+}
+
+:deep(.tracker-edge-link .vue-flow__edge-path) {
   stroke: var(--color-info-default);
   stroke-dasharray: 5 5;
 }
 
-:deep(.tracker-edge-contains path) {
+:deep(.tracker-edge-contains .vue-flow__edge-path) {
   stroke: var(--color-border-strong);
 }
 
 @media (max-width: 1180px) {
   .tracker-workspace,
   .tracker-main {
+    grid-template-columns: 1fr;
+  }
+
+  .tracker-command-panel__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tracker-command-panel__search {
+    grid-column: 1 / -1;
+  }
+
+  .tracker-graph-controls {
     grid-template-columns: 1fr;
   }
 
@@ -1519,6 +1758,26 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 }
 
 @media (max-width: 720px) {
+  .tracker-command-panel__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .tracker-command-panel__search {
+    grid-column: auto;
+  }
+
+  .tracker-command-panel__toolbar {
+    display: grid;
+  }
+
+  .tracker-command-panel__segments {
+    gap: 12px;
+  }
+
+  .tracker-command-panel__clear {
+    justify-self: start;
+  }
+
   .tracker-flow-shell {
     min-height: 520px;
   }

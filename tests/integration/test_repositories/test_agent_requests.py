@@ -303,11 +303,17 @@ def test_agent_request_prepare_run_plan_is_atomic_and_links_request(
     assert prepared.request.claimed_by == "agent-a"
     assert prepared.request.run_plan_id == prepared.run_plan.id
     assert prepared.run_plan.status == "draft"
-    assert prepared.run_plan.metadata_json == {
-        "source": "telegram",
-        "agent_request_id": request.id,
-        "agent_request_key": "telegram:update:prepare",
-    }
+    assert prepared.run_plan.metadata_json is not None
+    assert (
+        prepared.run_plan.metadata_json.items()
+        >= {
+            "source": "telegram",
+            "agent_request_id": request.id,
+            "agent_request_key": "telegram:update:prepare",
+        }.items()
+    )
+    assert prepared.run_plan.metadata_json["tracker_task_key"] == "workflow-1"
+    assert prepared.run_plan.metadata_json["tracker_ticket_keys"] == ["workflow-1-handle"]
 
     completed = repo.complete(
         project_id=project_id,
