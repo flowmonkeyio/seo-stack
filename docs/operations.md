@@ -152,7 +152,18 @@ stackos agent-requests complete 42 \
   --project 1 \
   --claim-token "$CLAIM_TOKEN" \
   --status resolved
+
+stackos tracker next --project 1
+stackos tracker brief workflow-42-review --project 1
+stackos tracker pick --project 1 --assignee codex
+stackos tracker patch --project 1 --input tracker-patch.json
 ```
+
+Agent tracker reads such as `tracker.status`, `tracker.next`,
+`tracker.blockers`, `tracker.brief`, `tracker.why`, `tracker.execute`,
+`tracker.verify`, `tracker.history`, `tracker.changed`, and `tracker.search`
+are compact by default. Pass `response_mode: "standard"` through `ops call`,
+MCP, or REST only when the full diagnostic row payload is needed.
 
 ## Registered Core Operations
 
@@ -195,6 +206,25 @@ The current core operation registry includes:
 - `ingressEndpoint.status`
 - `localAgentChat.createMessage`
 - `toolProfile.resolve`
+- `tracker.status`
+- `tracker.get`
+- `tracker.next`
+- `tracker.blockers`
+- `tracker.brief`
+- `tracker.why`
+- `tracker.execute`
+- `tracker.verify`
+- `tracker.history`
+- `tracker.changed`
+- `tracker.search`
+- `tracker.createTask`
+- `tracker.createTicket`
+- `tracker.updateTask`
+- `tracker.updateTicket`
+- `tracker.patch`
+- `tracker.pick`
+- `tracker.release`
+- `tracker.linkRunPlan`
 - `runPlan.validate`
 - `runPlan.create`
 - `runPlan.start`

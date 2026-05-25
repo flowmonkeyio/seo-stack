@@ -12,6 +12,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from stackos.agent_responses import (
+    compact_tracker_brief,
+    compact_tracker_next,
+    compact_tracker_status,
+    compact_tracker_task,
+    compact_tracker_ticket,
+    compact_tracker_verify,
+)
 from stackos.workflows.run_plan_grants import (
     RUN_PLAN_ADMIN_ONLY_TOOL_NAMES,
     RUN_PLAN_CONTROLLER_TOOL_NAMES,
@@ -86,6 +94,25 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "runPlan.start",
     "runPlan.get",
     "runPlan.list",
+    "tracker.status",
+    "tracker.get",
+    "tracker.next",
+    "tracker.blockers",
+    "tracker.brief",
+    "tracker.why",
+    "tracker.execute",
+    "tracker.verify",
+    "tracker.history",
+    "tracker.changed",
+    "tracker.search",
+    "tracker.createTask",
+    "tracker.createTicket",
+    "tracker.updateTask",
+    "tracker.updateTicket",
+    "tracker.patch",
+    "tracker.pick",
+    "tracker.release",
+    "tracker.linkRunPlan",
     "meta.enums",
     "run.get",
     "run.list",
@@ -108,6 +135,10 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "communicationProfile.get",
         "communicationTarget.list",
         "communicationTarget.resolve",
+        "tracker.status",
+        "tracker.next",
+        "tracker.brief",
+        "tracker.verify",
         "action.describe",
         "catalog.describe",
     }
@@ -797,7 +828,8 @@ def _bridge_forward_arguments(
     response_mode: str,
 ) -> dict[str, Any]:
     forwarded = dict(arguments)
-    forwarded.pop(_AGENT_RESPONSE_MODE_FIELD, None)
+    if not _bridge_tool_accepts_field(catalog, tool_name, _AGENT_RESPONSE_MODE_FIELD):
+        forwarded.pop(_AGENT_RESPONSE_MODE_FIELD, None)
     if (
         response_mode == "verbose"
         and _bridge_tool_accepts_field(catalog, tool_name, "verbose")
@@ -851,6 +883,14 @@ def _bridge_compact_structured(tool_name: str, structured: dict[str, Any]) -> di
         return _bridge_compact_action_describe(structured)
     if tool_name == "catalog.describe":
         return _bridge_compact_catalog_describe(structured)
+    if tool_name == "tracker.status":
+        return _bridge_compact_tracker_status(structured)
+    if tool_name == "tracker.next":
+        return _bridge_compact_tracker_next(structured)
+    if tool_name == "tracker.brief":
+        return _bridge_compact_tracker_brief(structured)
+    if tool_name == "tracker.verify":
+        return _bridge_compact_tracker_verify(structured)
     return None
 
 
@@ -1152,6 +1192,30 @@ def _bridge_compact_catalog_describe(structured: dict[str, Any]) -> dict[str, An
             }
         )
     return {"plugins": plugins}
+
+
+def _bridge_compact_tracker_status(structured: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_status(structured)
+
+
+def _bridge_compact_tracker_next(structured: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_next(structured)
+
+
+def _bridge_compact_tracker_brief(structured: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_brief(structured)
+
+
+def _bridge_compact_tracker_verify(structured: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_verify(structured)
+
+
+def _bridge_compact_tracker_task(task: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_task(task)
+
+
+def _bridge_compact_tracker_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
+    return compact_tracker_ticket(ticket)
 
 
 class AgentBridgeProxy:

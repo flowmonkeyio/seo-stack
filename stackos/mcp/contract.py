@@ -61,6 +61,8 @@ MUTATING_VERBS: frozenset[str] = frozenset(
         "react",
         "respond",
         "continuePrivately",
+        "patch",
+        "pick",
         # Bulk verbs.
         "bulkCreate",
         "bulkUpdate",
@@ -137,6 +139,7 @@ READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset(
         # the separate mutating action.execute path.
         "action.validate",
         "runPlan.validate",
+        "tracker.execute",
         "workflowTemplate.validate",
     }
 )

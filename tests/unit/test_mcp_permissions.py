@@ -77,6 +77,14 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("runPlan.start", SYSTEM_SKILL)
     check_grant("runPlan.get", SYSTEM_SKILL)
     check_grant("runPlan.list", SYSTEM_SKILL)
+    check_grant("tracker.status", SYSTEM_SKILL)
+    check_grant("tracker.get", SYSTEM_SKILL)
+    check_grant("tracker.next", SYSTEM_SKILL)
+    check_grant("tracker.brief", SYSTEM_SKILL)
+    check_grant("tracker.verify", SYSTEM_SKILL)
+    check_grant("tracker.createTask", SYSTEM_SKILL)
+    check_grant("tracker.createTicket", SYSTEM_SKILL)
+    check_grant("tracker.patch", SYSTEM_SKILL)
 
     with pytest.raises(ToolNotGrantedError):
         check_grant("workflowTemplate.save", SYSTEM_SKILL)
@@ -115,6 +123,8 @@ def test_run_plan_controller_has_dynamic_step_tools() -> None:
     check_grant("agentRequest.create", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("communication.send", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("communication.reply", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("tracker.brief", RUN_PLAN_CONTROLLER_SKILL)
+    check_grant("tracker.patch", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("resource.upsert", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("context.query", RUN_PLAN_CONTROLLER_SKILL)
 

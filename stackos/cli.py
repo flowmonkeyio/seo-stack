@@ -64,6 +64,13 @@ agent_requests_app = typer.Typer(
 )
 app.add_typer(agent_requests_app, name="agent-requests")
 
+tracker_app = typer.Typer(
+    name="tracker",
+    help="Inspect and update the project task tracker through shared operations.",
+    no_args_is_help=True,
+)
+app.add_typer(tracker_app, name="tracker")
+
 autostart_app = typer.Typer(
     name="autostart",
     help="Install, inspect, or remove local daemon autostart.",
@@ -937,6 +944,188 @@ def agent_requests_ignore(
         project_id=project_id,
     )
     _echo_json(_operation_call("agentRequest.ignore", arguments))
+
+
+# ---- tracker operation aliases -------------------------------------------
+
+
+@tracker_app.command(name="status")
+def tracker_status(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+) -> None:
+    """Show compact tracker counts and revision."""
+    _echo_json(_operation_call("tracker.status", {"project_id": project_id}))
+
+
+@tracker_app.command(name="get")
+def tracker_get(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    workflow_key: Annotated[
+        str | None,
+        typer.Option("--workflow-key", help="Filter by template/run-plan key."),
+    ] = None,
+    run_plan_id: Annotated[int | None, typer.Option("--run-plan-id", help="Run plan id.")] = None,
+    assignee: Annotated[str | None, typer.Option("--assignee", help="Assignee filter.")] = None,
+    include_graph: Annotated[
+        bool,
+        typer.Option("--include-graph/--no-graph", help="Include graph projection."),
+    ] = True,
+) -> None:
+    """Fetch tasks, tickets, dependencies, links, and graph projection."""
+    _echo_json(
+        _operation_call(
+            "tracker.get",
+            {
+                "project_id": project_id,
+                "workflow_key": workflow_key,
+                "run_plan_id": run_plan_id,
+                "assignee": assignee,
+                "include_graph": include_graph,
+            },
+        )
+    )
+
+
+@tracker_app.command(name="next")
+def tracker_next(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    limit: Annotated[int, typer.Option("--limit", help="Max tickets.")] = 5,
+    assignee: Annotated[str | None, typer.Option("--assignee", help="Assignee filter.")] = None,
+) -> None:
+    """List ready tracker tickets."""
+    _echo_json(
+        _operation_call(
+            "tracker.next",
+            {"project_id": project_id, "limit": limit, "assignee": assignee},
+        )
+    )
+
+
+@tracker_app.command(name="brief")
+def tracker_brief(
+    ticket_key: Annotated[str, typer.Argument(help="Tracker ticket key.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+) -> None:
+    """Fetch one ticket's bounded execution context."""
+    _echo_json(
+        _operation_call("tracker.brief", {"project_id": project_id, "ticket_key": ticket_key})
+    )
+
+
+@tracker_app.command(name="verify")
+def tracker_verify(
+    ticket_key: Annotated[str, typer.Argument(help="Tracker ticket key.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+) -> None:
+    """Check whether one ticket is verification-ready."""
+    _echo_json(
+        _operation_call("tracker.verify", {"project_id": project_id, "ticket_key": ticket_key})
+    )
+
+
+@tracker_app.command(name="pick")
+def tracker_pick(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    assignee: Annotated[str, typer.Option("--assignee", help="Assignee label.")],
+    ticket_key: Annotated[
+        str | None,
+        typer.Option("--ticket-key", help="Explicit ticket key; defaults to next ready."),
+    ] = None,
+) -> None:
+    """Claim the next ready ticket or an explicit ticket."""
+    _echo_json(
+        _operation_call(
+            "tracker.pick",
+            {"project_id": project_id, "assignee": assignee, "ticket_key": ticket_key},
+        )
+    )
+
+
+@tracker_app.command(name="create-task")
+def tracker_create_task(
+    key: Annotated[str, typer.Argument(help="Stable task key.")],
+    title: Annotated[str, typer.Argument(help="Task title.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    goal: Annotated[str, typer.Option("--goal", help="Task goal.")] = "",
+    owner: Annotated[str | None, typer.Option("--owner", help="Owner label.")] = None,
+    priority_key: Annotated[str, typer.Option("--priority", help="Priority key.")] = "p2",
+    lane_key: Annotated[str, typer.Option("--lane", help="Lane key.")] = "implementation",
+    created_by: Annotated[str | None, typer.Option("--created-by", help="Creator label.")] = None,
+) -> None:
+    """Create a tracker task."""
+    _echo_json(
+        _operation_call(
+            "tracker.createTask",
+            {
+                "project_id": project_id,
+                "key": key,
+                "title": title,
+                "goal": goal,
+                "owner": owner,
+                "priority_key": priority_key,
+                "lane_key": lane_key,
+                "created_by": created_by,
+            },
+        )
+    )
+
+
+@tracker_app.command(name="create-ticket")
+def tracker_create_ticket(
+    task_key: Annotated[str, typer.Argument(help="Parent task key.")],
+    key: Annotated[str, typer.Argument(help="Stable ticket key.")],
+    title: Annotated[str, typer.Argument(help="Ticket title.")],
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    goal: Annotated[str, typer.Option("--goal", help="Ticket goal.")] = "",
+    assignee: Annotated[str | None, typer.Option("--assignee", help="Assignee label.")] = None,
+    priority_key: Annotated[str, typer.Option("--priority", help="Priority key.")] = "p2",
+    lane_key: Annotated[str, typer.Option("--lane", help="Lane key.")] = "implementation",
+    dependencies: Annotated[
+        str | None,
+        typer.Option("--dependencies", help="Comma-separated dependency ticket keys."),
+    ] = None,
+    created_by: Annotated[str | None, typer.Option("--created-by", help="Creator label.")] = None,
+) -> None:
+    """Create a tracker ticket under a task."""
+    _echo_json(
+        _operation_call(
+            "tracker.createTicket",
+            {
+                "project_id": project_id,
+                "task_key": task_key,
+                "key": key,
+                "title": title,
+                "goal": goal,
+                "assignee": assignee,
+                "priority_key": priority_key,
+                "lane_key": lane_key,
+                "dependency_keys": _split_csv(dependencies),
+                "created_by": created_by,
+            },
+        )
+    )
+
+
+@tracker_app.command(name="patch")
+def tracker_patch(
+    project_id: Annotated[int, typer.Option("--project", help="Project id.")],
+    input_path: Annotated[
+        str,
+        typer.Option("--input", "-i", help="Tracker patch JSON object, or '-' for stdin."),
+    ],
+    actor: Annotated[str | None, typer.Option("--actor", help="Actor label.")] = None,
+) -> None:
+    """Apply a small multi-entity tracker patch."""
+    _echo_json(
+        _operation_call(
+            "tracker.patch",
+            {
+                "project_id": project_id,
+                "patch_json": _load_operation_arguments(input_path),
+                "actor": actor,
+            },
+        )
+    )
 
 
 # ---- serve ----------------------------------------------------------------

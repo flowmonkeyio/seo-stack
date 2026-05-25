@@ -41,6 +41,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
         { key: 'operations', label: 'Operations', to: `${base}/operations` },
         { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls` },
         { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests` },
+        { key: 'tasks', label: 'Tasks', to: `${base}/tasks` },
         {
           key: 'workflow-templates',
           label: 'Workflow Templates',

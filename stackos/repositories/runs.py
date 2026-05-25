@@ -123,6 +123,7 @@ class RunRepository:
         parent_run_id: int | None = None,
         client_session_id: str | None = None,
         metadata_json: dict[str, Any] | None = None,
+        _commit: bool = True,
     ) -> Envelope[RunOut]:
         """Insert a new ``status='running'`` row."""
         now = _utcnow()
@@ -137,8 +138,11 @@ class RunRepository:
             metadata_json=metadata_json,
         )
         self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
+        if _commit:
+            self._s.commit()
+            self._s.refresh(row)
+        else:
+            self._s.flush()
         return Envelope(
             data=RunOut.model_validate(row),
             run_id=row.id,
@@ -153,6 +157,7 @@ class RunRepository:
         error: str | None = None,
         metadata_json: dict[str, Any] | None = None,
         project_id: int | None = None,
+        _commit: bool = True,
     ) -> Envelope[RunOut]:
         """Move the run to a terminal status.
 
@@ -173,8 +178,11 @@ class RunRepository:
             current.update(metadata_json)
             row.metadata_json = current
         self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
+        if _commit:
+            self._s.commit()
+            self._s.refresh(row)
+        else:
+            self._s.flush()
         return Envelope(
             data=RunOut.model_validate(row),
             run_id=row.id,

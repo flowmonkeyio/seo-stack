@@ -1,0 +1,1546 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { Background } from '@vue-flow/background'
+import { Controls } from '@vue-flow/controls'
+import { MiniMap } from '@vue-flow/minimap'
+import { VueFlow } from '@vue-flow/core'
+import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
+
+import DataTable from '@/components/DataTable.vue'
+import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import {
+  UiBadge,
+  UiButton,
+  UiCallout,
+  UiCheckbox,
+  UiEmptyState,
+  UiFormField,
+  UiInput,
+  UiMetricCard,
+  UiPageShell,
+  UiPanel,
+  UiProgressBar,
+  UiSegmentedControl,
+  UiSelect,
+} from '@/components/ui'
+import type { DataTableColumn } from '@/components/types'
+import { callOperation } from '@/lib/operations'
+import { buildTrackerFlowModel, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { formatDateTime } from '@/lib/stackos/json'
+import type {
+  TrackerSelectedItem,
+  TrackerSnapshot,
+  TrackerStatus,
+  TrackerTask,
+  TrackerTicket,
+} from '@/lib/task-tracker/types'
+
+import TaskGraphNode from './task-tracker/TaskGraphNode.vue'
+import TicketGraphNode from './task-tracker/TicketGraphNode.vue'
+import TrackerStatusBadge from './task-tracker/TrackerStatusBadge.vue'
+
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
+
+type ViewMode = 'graph' | 'tickets'
+type StatusFilter = 'all' | TrackerStatus
+type GraphBlockFilter = 'blocked' | 'open'
+
+interface TaskProgressRow {
+  id: number
+  key: string
+  task: TrackerTask
+  tickets: TrackerTicket[]
+  completedCount: number
+  deferredCount: number
+  doneCount: number
+  totalCount: number
+  inProgressCount: number
+  blockedCount: number
+  percent: number
+  workflowLabel: string
+  currentDetail: string
+}
+
+const route = useRoute()
+const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
+
+const snapshot = ref<TrackerSnapshot | null>(null)
+const loading = ref(false)
+const error = ref<string | null>(null)
+const viewMode = ref<ViewMode>('graph')
+const statusFilter = ref<StatusFilter>('all')
+const workflowFilter = ref('')
+const assigneeFilter = ref('')
+const search = ref('')
+const showContainment = ref(false)
+const activeTaskKey = ref('')
+const selected = ref<TrackerSelectedItem | null>(null)
+const selectedEdgeId = ref<string | null>(null)
+const graphStatusFilters = ref<TrackerStatus[]>([])
+const graphBlockFilters = ref<GraphBlockFilter[]>([])
+
+const statusOptions: Array<{ key: StatusFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'not-started', label: 'Not started' },
+  { key: 'in-progress', label: 'In progress' },
+  { key: 'complete', label: 'Complete' },
+  { key: 'deferred', label: 'Deferred' },
+]
+
+const viewOptions: Array<{ key: ViewMode; label: string }> = [
+  { key: 'graph', label: 'Graph' },
+  { key: 'tickets', label: 'Tickets' },
+]
+
+const tracker = computed(() => snapshot.value?.tracker ?? null)
+const tasks = computed(() => snapshot.value?.tasks ?? [])
+const tickets = computed(() => snapshot.value?.tickets ?? [])
+
+const ticketsByTask = computed(() => {
+  const groups = new Map<string, TrackerTicket[]>()
+  for (const ticket of tickets.value) {
+    const group = groups.get(ticket.task_key) ?? []
+    group.push(ticket)
+    groups.set(ticket.task_key, group)
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.order_index - b.order_index || a.id - b.id)
+  }
+  return groups
+})
+
+const workflowOptions = computed(() => {
+  const values = new Set<string>()
+  for (const task of tasks.value) {
+    const source = task.source_json ?? {}
+    for (const key of ['template_key', 'run_plan_key']) {
+      const value = source[key]
+      if (typeof value === 'string' && value) values.add(value)
+    }
+  }
+  return [
+    { value: '', label: 'All workflows' },
+    ...Array.from(values)
+      .sort()
+      .map((value) => ({ value, label: value })),
+  ]
+})
+
+const assigneeOptions = computed(() => {
+  const values = new Set<string>()
+  for (const ticket of tickets.value) {
+    if (ticket.assignee) values.add(ticket.assignee)
+  }
+  return [
+    { value: '', label: 'All assignees' },
+    ...Array.from(values)
+      .sort()
+      .map((value) => ({ value, label: value })),
+  ]
+})
+
+const taskRows = computed<TaskProgressRow[]>(() =>
+  tasks.value
+    .map((task) => {
+      const taskTickets = ticketsByTask.value.get(task.key) ?? []
+      const completedCount = taskTickets.filter((ticket) => ticket.status === 'complete').length
+      const deferredCount = taskTickets.filter((ticket) => ticket.status === 'deferred').length
+      const doneCount = completedCount + deferredCount
+      const inProgressCount = taskTickets.filter((ticket) => ticket.status === 'in-progress').length
+      const blockedCount = taskTickets.filter(
+        (ticket) => isOpenTicket(ticket) && (ticket.blocker_reason || ticket.blocked_by.length > 0),
+      ).length
+      const totalCount = taskTickets.length
+      const percent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
+      return {
+        id: task.id,
+        key: task.key,
+        task,
+        tickets: taskTickets,
+        completedCount,
+        deferredCount,
+        doneCount,
+        totalCount,
+        inProgressCount,
+        blockedCount,
+        percent,
+        workflowLabel: taskWorkflowLabel(task),
+        currentDetail: taskCurrentDetail(task, taskTickets, inProgressCount, blockedCount),
+      }
+    })
+    .filter(taskRowMatchesFilters)
+    .sort((a, b) => a.task.order_index - b.task.order_index || a.id - b.id),
+)
+
+const activeTaskRow = computed<TaskProgressRow | null>(() => {
+  if (!taskRows.value.length) return null
+  return taskRows.value.find((row) => row.key === activeTaskKey.value) ?? taskRows.value[0]
+})
+
+const graphTickets = computed(() => activeTaskRow.value?.tickets ?? [])
+
+const graphStatusCounts = computed(() =>
+  countStatuses(graphTickets.value.map((ticket) => ticket.status)),
+)
+
+const graphStatusRows = computed(() =>
+  statusOptions
+    .filter((option): option is { key: TrackerStatus; label: string } => option.key !== 'all')
+    .map((option) => ({
+      key: option.key,
+      label: option.label.toLowerCase(),
+      count: graphStatusCounts.value[option.key],
+    })),
+)
+
+const graphBlockedCount = computed(
+  () => graphTickets.value.filter((ticket) => isGraphBlockedTicket(ticket)).length,
+)
+
+const graphBlockRows = computed<Array<{ key: GraphBlockFilter; label: string; count: number }>>(
+  () => [
+    { key: 'blocked', label: 'blocked', count: graphBlockedCount.value },
+    {
+      key: 'open',
+      label: 'open',
+      count: Math.max(0, graphTickets.value.length - graphBlockedCount.value),
+    },
+  ],
+)
+
+const graphFiltersActive = computed(
+  () => graphStatusFilters.value.length > 0 || graphBlockFilters.value.length > 0,
+)
+
+const graphTicketStatLabel = computed(() =>
+  graphFiltersActive.value
+    ? `${graphVisibleTickets.value.length}/${graphTickets.value.length} tickets visible`
+    : `${graphTickets.value.length} tickets`,
+)
+
+const graphEdgeStatLabel = computed(() =>
+  graphFiltersActive.value
+    ? `${flow.value.edges.length} visible edges`
+    : `${flow.value.edges.length} edges`,
+)
+
+const graphMatchedTickets = computed(() => graphTickets.value.filter(graphTicketMatchesFilters))
+
+const graphVisibleTickets = computed(() => {
+  if (!graphFiltersActive.value) return graphTickets.value
+  const visibleKeys = new Set(graphMatchedTickets.value.map((ticket) => ticket.key))
+  if (graphBlockFilters.value.includes('blocked')) {
+    for (const ticket of graphMatchedTickets.value) {
+      for (const blockerKey of ticket.blocked_by) {
+        visibleKeys.add(blockerKey)
+      }
+    }
+  }
+  return graphTickets.value.filter((ticket) => visibleKeys.has(ticket.key))
+})
+
+const visibleTickets = computed(() => {
+  const row = activeTaskRow.value
+  if (!row) return []
+  return row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task))
+})
+
+const filteredTicketCount = computed(() =>
+  taskRows.value.reduce(
+    (sum, row) =>
+      sum + row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task)).length,
+    0,
+  ),
+)
+
+const selectedTicket = computed(() =>
+  selected.value?.kind === 'ticket'
+    ? (graphTickets.value.find((ticket) => ticket.key === selected.value?.key) ?? null)
+    : null,
+)
+
+const selectedTask = computed(() =>
+  selected.value?.kind === 'task' || selectedTicket.value
+    ? (activeTaskRow.value?.task ?? null)
+    : null,
+)
+
+const ticketCounts = computed(() => countStatuses(tickets.value.map((ticket) => ticket.status)))
+const blockedCount = computed(
+  () =>
+    tickets.value.filter(
+      (ticket) => isOpenTicket(ticket) && (ticket.blocked_by.length > 0 || ticket.blocker_reason),
+    ).length,
+)
+const workflowCount = computed(
+  () => new Set(tasks.value.map((task) => task.source_json?.run_plan_id).filter(Boolean)).size,
+)
+
+const filteredSnapshot = computed<TrackerSnapshot | null>(() => {
+  if (!snapshot.value || !activeTaskRow.value) return null
+  const activeTask = activeTaskRow.value.task
+  const activeTickets = graphVisibleTickets.value
+  const visibleTicketIds = new Set(activeTickets.map((ticket) => ticket.id))
+  const visibleTaskIds = new Set([activeTask.id])
+  const visibleGraphNodeIds = new Set([
+    `task:${activeTask.key}`,
+    ...activeTickets.map((ticket) => `ticket:${ticket.key}`),
+  ])
+  const visibleLinkNodeIds = new Set(
+    snapshot.value.graph?.nodes
+      .filter((node) => node.id.startsWith('link:'))
+      .filter((node) =>
+        snapshot.value?.graph?.edges.some(
+          (edge) => edge.source === node.id && visibleGraphNodeIds.has(edge.target),
+        ),
+      )
+      .map((node) => node.id) ?? [],
+  )
+  const graphNodeIds = new Set([...visibleGraphNodeIds, ...visibleLinkNodeIds])
+  const graph = snapshot.value.graph
+    ? {
+        ...snapshot.value.graph,
+        nodes: snapshot.value.graph.nodes.filter((node) => graphNodeIds.has(node.id)),
+        edges: snapshot.value.graph.edges.filter(
+          (edge) => graphNodeIds.has(edge.source) && graphNodeIds.has(edge.target),
+        ),
+      }
+    : null
+  return {
+    ...snapshot.value,
+    tasks: [activeTask],
+    tickets: activeTickets,
+    dependencies: snapshot.value.dependencies.filter(
+      (dependency) =>
+        activeTickets.some((ticket) => ticket.key === dependency.ticket_key) &&
+        activeTickets.some((ticket) => ticket.key === dependency.depends_on_ticket_key),
+    ),
+    links: snapshot.value.links.filter(
+      (link) =>
+        (link.ticket_id !== null && visibleTicketIds.has(link.ticket_id)) ||
+        (link.task_id !== null && visibleTaskIds.has(link.task_id)),
+    ),
+    graph,
+  }
+})
+
+const selectedEdgeFocus = computed(() =>
+  edgeFocusFor(filteredSnapshot.value?.graph ?? null, selectedEdgeId.value),
+)
+
+const flow = computed(() =>
+  filteredSnapshot.value
+    ? buildTrackerFlowModel(filteredSnapshot.value, {
+        selected: selected.value,
+        showContainment: showContainment.value,
+        highlightedNodeIds: selectedEdgeFocus.value.nodeIds,
+        highlightedEdgeIds: selectedEdgeFocus.value.edgeIds,
+        spotlight: selectedEdgeFocus.value.edgeIds.size > 0,
+      })
+    : { nodes: [], edges: [] as Edge[], warnings: [] },
+)
+
+const ticketColumns: DataTableColumn<TrackerTicket>[] = [
+  { key: 'key', label: 'Ticket' },
+  { key: 'task_key', label: 'Task' },
+  { key: 'status', label: 'Status', widthClass: 'w-32' },
+  { key: 'priority_key', label: 'Priority', widthClass: 'w-24' },
+  {
+    key: 'assignee',
+    label: 'Assignee',
+    widthClass: 'w-32',
+    format: (value) => String(value ?? '-'),
+  },
+  {
+    key: 'updated_at',
+    label: 'Updated',
+    widthClass: 'w-40',
+    format: (value) => formatDateTime(String(value)),
+  },
+]
+
+async function load(): Promise<void> {
+  if (!projectId.value || Number.isNaN(projectId.value)) return
+  loading.value = true
+  error.value = null
+  try {
+    snapshot.value = await callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value,
+      include_graph: true,
+    })
+    await nextTick()
+    ensureActiveTask()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'failed to load tracker'
+  } finally {
+    loading.value = false
+  }
+}
+
+function ticketMatchesControls(ticket: TrackerTicket, task: TrackerTask): boolean {
+  const q = search.value.trim().toLowerCase()
+  if (statusFilter.value !== 'all' && ticket.status !== statusFilter.value) return false
+  if (assigneeFilter.value && ticket.assignee !== assigneeFilter.value) return false
+  if (workflowFilter.value) {
+    const source = task.source_json ?? {}
+    if (
+      source.template_key !== workflowFilter.value &&
+      source.run_plan_key !== workflowFilter.value
+    ) {
+      return false
+    }
+  }
+  if (!q) return true
+  return [ticket.key, ticket.title, ticket.goal, ticket.outcome ?? '', ticket.assignee ?? '']
+    .join(' ')
+    .toLowerCase()
+    .includes(q)
+}
+
+function taskRowMatchesFilters(row: TaskProgressRow): boolean {
+  const task = row.task
+  const taskTickets = row.tickets
+  const q = search.value.trim().toLowerCase()
+  if (statusFilter.value !== 'all') {
+    const taskMatches = task.status === statusFilter.value
+    const ticketMatches = taskTickets.some((ticket) => ticket.status === statusFilter.value)
+    if (!taskMatches && !ticketMatches) return false
+  }
+  if (
+    assigneeFilter.value &&
+    !taskTickets.some((ticket) => ticket.assignee === assigneeFilter.value)
+  ) {
+    return false
+  }
+  if (workflowFilter.value) {
+    const source = task.source_json ?? {}
+    if (
+      source.template_key !== workflowFilter.value &&
+      source.run_plan_key !== workflowFilter.value
+    ) {
+      return false
+    }
+  }
+  if (!q) return true
+  return [
+    task.key,
+    task.title,
+    task.goal,
+    task.description,
+    task.owner ?? '',
+    row.workflowLabel,
+    ...taskTickets.flatMap((ticket) => [
+      ticket.key,
+      ticket.title,
+      ticket.goal,
+      ticket.outcome ?? '',
+      ticket.assignee ?? '',
+    ]),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .includes(q)
+}
+
+function taskWorkflowLabel(task: TrackerTask): string {
+  const source = task.source_json ?? {}
+  if (typeof source.run_plan_key === 'string' && source.run_plan_key) return source.run_plan_key
+  if (typeof source.template_key === 'string' && source.template_key) return source.template_key
+  if (typeof source.run_plan_id === 'number') return `run #${source.run_plan_id}`
+  return task.source_kind
+}
+
+function taskCurrentDetail(
+  task: TrackerTask,
+  taskTickets: TrackerTicket[],
+  inProgressCount: number,
+  blockedCount: number,
+): string {
+  const completedCount = taskTickets.filter((ticket) => ticket.status === 'complete').length
+  const deferredCount = taskTickets.filter((ticket) => ticket.status === 'deferred').length
+  if (blockedCount > 0) return `${blockedCount} blocked`
+  if (inProgressCount > 0) return `${inProgressCount} in progress`
+  if (deferredCount > 0) return `${completedCount} complete, ${deferredCount} deferred`
+  if (task.status === 'complete') return 'complete'
+  if (!taskTickets.length) return task.status
+  return `${taskTickets.length} tickets`
+}
+
+function isOpenTicket(ticket: TrackerTicket): boolean {
+  return ticket.status !== 'complete' && ticket.status !== 'deferred'
+}
+
+function isGraphBlockedTicket(ticket: TrackerTicket): boolean {
+  return ticket.blocked_by.length > 0 || (isOpenTicket(ticket) && Boolean(ticket.blocker_reason))
+}
+
+function graphTicketMatchesFilters(ticket: TrackerTicket): boolean {
+  const statusOk =
+    graphStatusFilters.value.length === 0 || graphStatusFilters.value.includes(ticket.status)
+  const blockKind: GraphBlockFilter = isGraphBlockedTicket(ticket) ? 'blocked' : 'open'
+  const blockOk =
+    graphBlockFilters.value.length === 0 || graphBlockFilters.value.includes(blockKind)
+  return statusOk && blockOk
+}
+
+function toggleGraphStatus(status: TrackerStatus): void {
+  selectedEdgeId.value = null
+  graphStatusFilters.value = graphStatusFilters.value.includes(status)
+    ? graphStatusFilters.value.filter((item) => item !== status)
+    : [...graphStatusFilters.value, status]
+}
+
+function toggleGraphBlock(block: GraphBlockFilter): void {
+  selectedEdgeId.value = null
+  graphBlockFilters.value = graphBlockFilters.value.includes(block)
+    ? graphBlockFilters.value.filter((item) => item !== block)
+    : [...graphBlockFilters.value, block]
+}
+
+function clearGraphFilters(): void {
+  selectedEdgeId.value = null
+  graphStatusFilters.value = []
+  graphBlockFilters.value = []
+}
+
+function onTaskRow(row: TaskProgressRow): void {
+  selectedEdgeId.value = null
+  activeTaskKey.value = row.key
+  selected.value = row.tickets[0]
+    ? { kind: 'ticket', key: row.tickets[0].key }
+    : { kind: 'task', key: row.task.key }
+}
+
+function onNodeClick(event: NodeMouseEvent): void {
+  selectedEdgeId.value = null
+  const data = event.node.data as TrackerVueNodeData
+  if (!data?.itemKind || data.itemKey.startsWith('link:')) return
+  selected.value = { kind: data.itemKind, key: data.itemKey }
+}
+
+function onEdgeClick(event: EdgeMouseEvent): void {
+  selectedEdgeId.value = event.edge.id
+  const target = graphItemFromNodeId(event.edge.target)
+  if (target?.kind === 'ticket') {
+    selected.value = { kind: 'ticket', key: target.key }
+  }
+}
+
+function onTicketRow(row: TrackerTicket): void {
+  selectedEdgeId.value = null
+  activeTaskKey.value = row.task_key
+  selected.value = { kind: 'ticket', key: row.key }
+}
+
+function ensureActiveTask(): void {
+  if (!taskRows.value.length) {
+    activeTaskKey.value = ''
+    selected.value = null
+    return
+  }
+  const current = taskRows.value.find((row) => row.key === activeTaskKey.value)
+  const nextRow = current ?? taskRows.value[0]
+  activeTaskKey.value = nextRow.key
+  if (
+    selected.value?.kind === 'ticket' &&
+    !nextRow.tickets.some((ticket) => ticket.key === selected.value?.key)
+  ) {
+    selected.value = nextRow.tickets[0]
+      ? { kind: 'ticket', key: nextRow.tickets[0].key }
+      : { kind: 'task', key: nextRow.task.key }
+    return
+  }
+  if (selected.value?.kind === 'task' && selected.value.key !== nextRow.key) {
+    selected.value = { kind: 'task', key: nextRow.key }
+    return
+  }
+  if (!selected.value) {
+    selected.value = nextRow.tickets[0]
+      ? { kind: 'ticket', key: nextRow.tickets[0].key }
+      : { kind: 'task', key: nextRow.task.key }
+  }
+}
+
+function clearFilters(): void {
+  statusFilter.value = 'all'
+  workflowFilter.value = ''
+  assigneeFilter.value = ''
+  search.value = ''
+  clearGraphFilters()
+}
+
+function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number> {
+  return statuses.reduce(
+    (acc, status) => {
+      acc[status] += 1
+      return acc
+    },
+    { 'not-started': 0, 'in-progress': 0, complete: 0, deferred: 0 },
+  )
+}
+
+function edgeFocusFor(
+  graph: TrackerSnapshot['graph'],
+  edgeId: string | null,
+): { nodeIds: Set<string>; edgeIds: Set<string> } {
+  const nodeIds = new Set<string>()
+  const edgeIds = new Set<string>()
+  if (!graph || !edgeId) return { nodeIds, edgeIds }
+
+  const selectedEdge = graph.edges.find((edge) => edge.id === edgeId)
+  if (!selectedEdge) return { nodeIds, edgeIds }
+
+  const dependencyEdges = graph.edges.filter((edge) => edge.type === 'dependency')
+  const incoming = new Map<string, typeof dependencyEdges>()
+  const outgoing = new Map<string, typeof dependencyEdges>()
+  for (const edge of dependencyEdges) {
+    incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge])
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge])
+  }
+
+  function addEdge(edge: (typeof dependencyEdges)[number]): void {
+    edgeIds.add(edge.id)
+    nodeIds.add(edge.source)
+    nodeIds.add(edge.target)
+  }
+
+  function collectUpstream(nodeId: string): void {
+    for (const edge of incoming.get(nodeId) ?? []) {
+      if (edgeIds.has(edge.id)) continue
+      addEdge(edge)
+      collectUpstream(edge.source)
+    }
+  }
+
+  function collectDownstream(nodeId: string): void {
+    for (const edge of outgoing.get(nodeId) ?? []) {
+      if (edgeIds.has(edge.id)) continue
+      addEdge(edge)
+      collectDownstream(edge.target)
+    }
+  }
+
+  if (selectedEdge.type === 'dependency') {
+    addEdge(selectedEdge)
+    collectUpstream(selectedEdge.source)
+    collectDownstream(selectedEdge.target)
+  } else {
+    edgeIds.add(selectedEdge.id)
+    nodeIds.add(selectedEdge.source)
+    nodeIds.add(selectedEdge.target)
+  }
+  return { nodeIds, edgeIds }
+}
+
+function graphItemFromNodeId(nodeId: string): TrackerSelectedItem | null {
+  const separatorIndex = nodeId.indexOf(':')
+  if (separatorIndex < 0) return null
+  const kind = nodeId.slice(0, separatorIndex)
+  const key = nodeId.slice(separatorIndex + 1)
+  return kind === 'task' || kind === 'ticket' ? { kind, key } : null
+}
+
+onMounted(load)
+watch(projectId, load)
+watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActiveTask())
+</script>
+
+<template>
+  <UiPageShell>
+    <ProjectPageHeader
+      :project-id="projectId"
+      title="Tasks"
+      description="Project work tracker for workflow runs, manual agent tasks, dependencies, and verification state."
+      :breadcrumbs="[{ label: 'Tasks' }]"
+    >
+      <template #actions>
+        <UiButton variant="secondary" :disabled="loading" @click="load"> Refresh </UiButton>
+      </template>
+      <template #titleMeta>
+        <UiBadge v-if="tracker" tone="neutral" variant="outline"> rev {{ tracker.rev }} </UiBadge>
+      </template>
+    </ProjectPageHeader>
+
+    <UiCallout v-if="error" tone="danger">
+      {{ error }}
+    </UiCallout>
+
+    <div class="grid gap-3 md:grid-cols-4">
+      <UiMetricCard label="Tasks" :value="tasks.length" density="compact" />
+      <UiMetricCard label="Tickets" :value="tickets.length" density="compact" />
+      <UiMetricCard label="Complete" :value="ticketCounts.complete" density="compact" />
+      <UiMetricCard label="Blocked" :value="blockedCount" density="compact" />
+    </div>
+
+    <UiPanel class="tracker-command-panel">
+      <div class="grid gap-3 xl:grid-cols-[minmax(220px,1fr)_220px_180px_auto] xl:items-end">
+        <UiFormField label="Search">
+          <UiInput v-model="search" placeholder="Ticket, task, owner, outcome" />
+        </UiFormField>
+        <UiFormField label="Workflow">
+          <UiSelect v-model="workflowFilter" :options="workflowOptions" />
+        </UiFormField>
+        <UiFormField label="Assignee">
+          <UiSelect v-model="assigneeFilter" :options="assigneeOptions" />
+        </UiFormField>
+        <div class="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
+          <UiSegmentedControl
+            v-model="statusFilter"
+            label="Ticket status"
+            :options="statusOptions"
+            @select="(value) => (statusFilter = String(value) as StatusFilter)"
+          />
+          <UiSegmentedControl
+            v-model="viewMode"
+            label="Task tracker view"
+            :options="viewOptions"
+            @select="(value) => (viewMode = String(value) as ViewMode)"
+          />
+          <UiButton variant="ghost" @click="clearFilters"> Clear </UiButton>
+        </div>
+      </div>
+      <div class="tracker-command-panel__meta">
+        <span>{{ taskRows.length }} matching tasks</span>
+        <span>{{ filteredTicketCount }} matching tickets</span>
+        <span>{{ workflowCount }} workflow-linked tasks</span>
+        <span v-if="activeTaskRow">Focused: {{ activeTaskRow.key }}</span>
+        <UiCheckbox v-model="showContainment" label="Nested task box" />
+      </div>
+    </UiPanel>
+
+    <UiCallout v-for="warning in flow.warnings" :key="warning" tone="warning">
+      {{ warning }}
+    </UiCallout>
+
+    <div v-if="!loading && taskRows.length === 0" class="min-h-[360px]">
+      <UiEmptyState
+        title="No tracker work"
+        description="Agents can create tasks and tickets through tracker operations."
+      />
+    </div>
+
+    <div v-else class="tracker-workspace">
+      <UiPanel :padded="false" class="task-index">
+        <div class="task-index__header">
+          <div>
+            <p class="task-index__eyebrow">Task index</p>
+            <h2 class="task-index__title">Select active work</h2>
+          </div>
+          <UiBadge tone="neutral" variant="outline">
+            {{ taskRows.length }}
+          </UiBadge>
+        </div>
+
+        <div class="task-index__list">
+          <button
+            v-for="row in taskRows"
+            :key="row.key"
+            type="button"
+            class="task-index-row"
+            :class="{ 'task-index-row--active': activeTaskRow?.key === row.key }"
+            @click="onTaskRow(row)"
+          >
+            <div class="task-index-row__top">
+              <div class="min-w-0">
+                <p class="task-index-row__title">{{ row.task.title }}</p>
+                <p class="task-index-row__key">{{ row.key }}</p>
+              </div>
+              <TrackerStatusBadge :status="row.task.status" />
+            </div>
+
+            <div class="task-index-row__meta">
+              <UiBadge tone="neutral" variant="outline" size="sm">
+                {{ row.workflowLabel }}
+              </UiBadge>
+              <UiBadge tone="neutral" variant="outline" size="sm">
+                {{ row.task.priority_key }}
+              </UiBadge>
+              <UiBadge v-if="row.blockedCount" tone="warning" variant="subtle" size="sm">
+                {{ row.blockedCount }} blocked
+              </UiBadge>
+              <UiBadge v-else-if="row.inProgressCount" tone="info" variant="subtle" size="sm">
+                {{ row.inProgressCount }} active
+              </UiBadge>
+            </div>
+
+            <div class="task-index-row__progress">
+              <div class="flex items-center justify-between gap-3">
+                <span>{{ row.doneCount }}/{{ row.totalCount }} done</span>
+                <span>{{ row.percent }}%</span>
+              </div>
+              <UiProgressBar
+                :value="row.percent"
+                :max="100"
+                :tone="row.percent === 100 ? 'success' : row.blockedCount ? 'warning' : 'accent'"
+                size="xs"
+                :aria-label="`${row.task.title} completion`"
+              />
+            </div>
+
+            <p class="task-index-row__detail">{{ row.currentDetail }}</p>
+          </button>
+        </div>
+      </UiPanel>
+
+      <div class="tracker-focus">
+        <UiPanel v-if="activeTaskRow" class="tracker-task-summary">
+          <div class="tracker-task-summary__main">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="tracker-task-summary__eyebrow">Focused task</p>
+                <TrackerStatusBadge :status="activeTaskRow.task.status" />
+              </div>
+              <h2 class="tracker-task-summary__title">{{ activeTaskRow.task.title }}</h2>
+              <p class="tracker-task-summary__subtitle">
+                {{ activeTaskRow.task.goal || activeTaskRow.task.description || activeTaskRow.key }}
+              </p>
+            </div>
+            <div class="tracker-task-summary__progress">
+              <span>{{ activeTaskRow.doneCount }}/{{ activeTaskRow.totalCount }}</span>
+              <span>{{ activeTaskRow.percent }}%</span>
+            </div>
+          </div>
+          <UiProgressBar
+            :value="activeTaskRow.percent"
+            :max="100"
+            :tone="
+              activeTaskRow.percent === 100
+                ? 'success'
+                : activeTaskRow.blockedCount
+                  ? 'warning'
+                  : 'accent'
+            "
+            size="sm"
+            :aria-label="`${activeTaskRow.task.title} completion`"
+          />
+          <div class="tracker-task-summary__meta">
+            <span>{{ activeTaskRow.workflowLabel }}</span>
+            <span>owner {{ activeTaskRow.task.owner ?? '-' }}</span>
+            <span>{{ activeTaskRow.currentDetail }}</span>
+          </div>
+        </UiPanel>
+
+        <div class="tracker-main">
+          <UiPanel v-if="viewMode === 'graph'" :padded="false" class="tracker-flow-shell">
+            <div class="tracker-flow-shell__bar">
+              <div>
+                <p class="tracker-flow-shell__eyebrow">
+                  {{ showContainment ? 'Containment view' : 'Dependency tree' }}
+                </p>
+                <p class="tracker-flow-shell__title">
+                  {{ activeTaskRow?.task.title ?? 'Task graph' }}
+                </p>
+              </div>
+              <div class="tracker-flow-shell__stats">
+                <span>{{ graphTicketStatLabel }}</span>
+                <span>{{ graphEdgeStatLabel }}</span>
+              </div>
+            </div>
+            <div class="tracker-graph-controls">
+              <div class="tracker-graph-filter-group">
+                <span class="tracker-graph-filter-group__label">Status</span>
+                <button
+                  v-for="item in graphStatusRows"
+                  :key="item.key"
+                  type="button"
+                  class="tracker-graph-filter"
+                  :class="{
+                    'tracker-graph-filter--active': graphStatusFilters.includes(item.key),
+                  }"
+                  @click="toggleGraphStatus(item.key)"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.count }}</strong>
+                </button>
+              </div>
+              <div class="tracker-graph-filter-group">
+                <span class="tracker-graph-filter-group__label">Block</span>
+                <button
+                  v-for="item in graphBlockRows"
+                  :key="item.key"
+                  type="button"
+                  class="tracker-graph-filter"
+                  :class="[
+                    `tracker-graph-filter--${item.key}`,
+                    { 'tracker-graph-filter--active': graphBlockFilters.includes(item.key) },
+                  ]"
+                  @click="toggleGraphBlock(item.key)"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.count }}</strong>
+                </button>
+              </div>
+              <div class="tracker-graph-controls__tail">
+                <span v-if="selectedEdgeId" class="tracker-graph-focus-note">
+                  dependency chain highlighted
+                </span>
+                <button
+                  v-if="graphFiltersActive || selectedEdgeId"
+                  type="button"
+                  class="tracker-graph-clear"
+                  @click="clearGraphFilters"
+                >
+                  Clear graph
+                </button>
+              </div>
+            </div>
+            <VueFlow
+              :key="`${activeTaskRow?.key ?? 'empty'}:${showContainment ? 'nested' : 'deps'}`"
+              class="tracker-flow"
+              :nodes="flow.nodes"
+              :edges="flow.edges"
+              :default-viewport="{ x: 32, y: 32, zoom: 0.72 }"
+              :fit-view-on-init="false"
+              :min-zoom="0.12"
+              :max-zoom="1.5"
+              pan-on-scroll
+              @node-click="onNodeClick"
+              @edge-click="onEdgeClick"
+            >
+              <template #node-task-group="props">
+                <TaskGraphNode v-bind="props" />
+              </template>
+              <template #node-tracker-ticket="props">
+                <TicketGraphNode v-bind="props" />
+              </template>
+              <Background pattern-color="var(--color-border-subtle)" />
+              <MiniMap pannable zoomable />
+              <Controls />
+            </VueFlow>
+          </UiPanel>
+
+          <UiPanel v-else :padded="false" class="overflow-hidden">
+            <DataTable
+              :items="visibleTickets"
+              :columns="ticketColumns"
+              :loading="loading"
+              interactive
+              :selected-id="selectedTicket?.id"
+              empty-message="No tickets match the current filters."
+              @row-click="onTicketRow"
+            >
+              <template #cell:status="{ row }">
+                <TrackerStatusBadge :status="(row as TrackerTicket).status" />
+              </template>
+            </DataTable>
+          </UiPanel>
+
+          <UiPanel class="tracker-detail" :padded="false">
+            <div v-if="selectedTicket" class="tracker-detail__body">
+              <div class="tracker-detail__header">
+                <div class="min-w-0">
+                  <p class="tracker-detail__eyebrow">Ticket</p>
+                  <h2 class="tracker-detail__title">{{ selectedTicket.title }}</h2>
+                  <p class="tracker-detail__key">{{ selectedTicket.key }}</p>
+                </div>
+                <TrackerStatusBadge :status="selectedTicket.status" />
+              </div>
+              <p v-if="selectedTicket.goal" class="tracker-detail__description">
+                {{ selectedTicket.goal }}
+              </p>
+              <div class="tracker-detail__facts">
+                <div class="tracker-detail-fact">
+                  <span>Task</span>
+                  <strong>{{ selectedTicket.task_key }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Assignee</span>
+                  <strong>{{ selectedTicket.assignee ?? '-' }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Priority</span>
+                  <strong>{{ selectedTicket.priority_key }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Lane</span>
+                  <strong>{{ selectedTicket.lane_key }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Run plan</span>
+                  <strong>{{ selectedTicket.run_plan_id ?? '-' }}</strong>
+                </div>
+              </div>
+              <UiCallout
+                v-if="selectedTicket.blocker_reason || selectedTicket.blocked_by.length"
+                tone="warning"
+              >
+                {{
+                  selectedTicket.blocker_reason ||
+                  `Blocked by ${selectedTicket.blocked_by.join(', ')}`
+                }}
+              </UiCallout>
+              <div
+                v-if="selectedTicket.definition_of_done_json.length"
+                class="tracker-detail-section"
+              >
+                <p class="tracker-detail-section__title">Definition of done</p>
+                <ul class="tracker-detail-list">
+                  <li v-for="item in selectedTicket.definition_of_done_json" :key="item">
+                    {{ item }}
+                  </li>
+                </ul>
+              </div>
+              <p v-if="selectedTicket.outcome" class="tracker-detail__outcome">
+                {{ selectedTicket.outcome }}
+              </p>
+            </div>
+
+            <div v-else-if="selectedTask" class="tracker-detail__body">
+              <div class="tracker-detail__header">
+                <div>
+                  <p class="tracker-detail__eyebrow">Task</p>
+                  <h2 class="tracker-detail__title">{{ selectedTask.title }}</h2>
+                  <p class="tracker-detail__key">{{ selectedTask.key }}</p>
+                </div>
+                <TrackerStatusBadge :status="selectedTask.status" />
+              </div>
+              <p class="tracker-detail__description">
+                {{ selectedTask.goal || selectedTask.description }}
+              </p>
+              <div class="tracker-detail__facts">
+                <div class="tracker-detail-fact">
+                  <span>Type</span>
+                  <strong>{{ selectedTask.task_type }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Owner</span>
+                  <strong>{{ selectedTask.owner ?? '-' }}</strong>
+                </div>
+                <div class="tracker-detail-fact">
+                  <span>Source</span>
+                  <strong>{{ selectedTask.source_kind }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <UiEmptyState
+              v-else
+              title="Select work"
+              description="Pick a task or ticket from the graph or table."
+            />
+          </UiPanel>
+        </div>
+      </div>
+    </div>
+  </UiPageShell>
+</template>
+
+<style scoped>
+.tracker-command-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.tracker-command-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.tracker-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.task-index {
+  position: sticky;
+  top: 16px;
+  overflow: hidden;
+}
+
+.task-index__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 14px 16px;
+}
+
+.task-index__eyebrow,
+.tracker-task-summary__eyebrow {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.task-index__title {
+  margin-top: 2px;
+  color: var(--color-text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.task-index__list {
+  display: grid;
+  max-height: 680px;
+  overflow-y: auto;
+}
+
+.task-index-row {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.task-index-row:hover {
+  background: var(--color-bg-surface-alt);
+}
+
+.task-index-row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.task-index-row--active {
+  background: color-mix(in srgb, var(--color-accent-default) 9%, var(--color-bg-surface));
+  box-shadow: inset 3px 0 0 var(--color-accent-default);
+}
+
+.task-index-row__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-index-row__title {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-index-row__key {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-index-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-index-row__progress {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-index-row__detail {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.tracker-focus {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.tracker-task-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.tracker-task-summary__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tracker-task-summary__title {
+  margin-top: 4px;
+  color: var(--color-text);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.tracker-task-summary__subtitle {
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.tracker-task-summary__progress {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tracker-task-summary__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.tracker-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.tracker-flow-shell {
+  min-height: 640px;
+  overflow: hidden;
+}
+
+.tracker-flow-shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  padding: 12px 14px;
+}
+
+.tracker-flow-shell__eyebrow {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tracker-flow-shell__title {
+  margin-top: 2px;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tracker-flow-shell__stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tracker-graph-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  padding: 10px 14px 12px;
+}
+
+.tracker-graph-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tracker-graph-filter-group__label {
+  min-width: 44px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tracker-graph-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-bg-surface-alt);
+  color: var(--color-text-muted);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tracker-graph-filter:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.tracker-graph-filter strong {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tracker-graph-filter--active {
+  border-color: var(--color-accent-default);
+  background: color-mix(in srgb, var(--color-accent-default) 10%, var(--color-bg-surface));
+  color: var(--color-text);
+}
+
+.tracker-graph-filter--blocked {
+  color: var(--color-danger-default);
+}
+
+.tracker-graph-filter--open {
+  color: var(--color-success-default);
+}
+
+.tracker-graph-controls__tail {
+  display: flex;
+  min-height: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-left: 52px;
+}
+
+.tracker-graph-focus-note {
+  color: var(--color-accent-default);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tracker-graph-clear {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tracker-graph-clear:hover {
+  color: var(--color-text);
+}
+
+.tracker-flow {
+  width: 100%;
+  height: 540px;
+  background: var(--color-bg-surface-alt);
+}
+
+.tracker-detail {
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.tracker-detail__body {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.tracker-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tracker-detail__eyebrow {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tracker-detail__title {
+  margin-top: 5px;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.tracker-detail__key {
+  margin-top: 5px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.tracker-detail__description {
+  max-width: 82ch;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.tracker-detail__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.tracker-detail-fact {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-bg-surface-alt);
+  padding: 10px 12px;
+}
+
+.tracker-detail-fact span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tracker-detail-fact strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tracker-detail-section {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 16px;
+}
+
+.tracker-detail-section__title {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.tracker-detail-list {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tracker-detail__outcome {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-bg-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 14px;
+}
+
+:deep(.tracker-node-selected .task-graph-node),
+:deep(.tracker-node-selected .ticket-graph-node) {
+  border-color: var(--color-accent-default);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-default) 18%, transparent);
+}
+
+:deep(.tracker-node-highlighted .ticket-graph-node),
+:deep(.tracker-node-highlighted .task-graph-node) {
+  border-color: var(--color-accent-default);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-default) 20%, transparent);
+}
+
+:deep(.tracker-node-muted) {
+  opacity: 0.24;
+}
+
+:deep(.tracker-edge-dependency path) {
+  stroke: var(--color-warning-default);
+  stroke-width: 1.4;
+}
+
+:deep(.tracker-edge-highlighted path) {
+  stroke: var(--color-accent-default);
+  stroke-width: 2.6;
+}
+
+:deep(.tracker-edge-muted path) {
+  opacity: 0.16;
+}
+
+:deep(.tracker-edge-link path) {
+  stroke: var(--color-info-default);
+  stroke-dasharray: 5 5;
+}
+
+:deep(.tracker-edge-contains path) {
+  stroke: var(--color-border-strong);
+}
+
+@media (max-width: 1180px) {
+  .tracker-workspace,
+  .tracker-main {
+    grid-template-columns: 1fr;
+  }
+
+  .task-index,
+  .task-index__list {
+    max-height: 420px;
+  }
+}
+
+@media (max-width: 720px) {
+  .tracker-flow-shell {
+    min-height: 520px;
+  }
+
+  .tracker-flow-shell__bar {
+    display: grid;
+  }
+
+  .tracker-flow-shell__stats {
+    justify-content: start;
+  }
+
+  .tracker-flow {
+    height: 476px;
+  }
+
+  .tracker-task-summary__main {
+    display: grid;
+  }
+
+  .tracker-task-summary__progress {
+    justify-items: start;
+  }
+}
+</style>

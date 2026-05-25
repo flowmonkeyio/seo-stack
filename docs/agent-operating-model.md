@@ -32,12 +32,18 @@ Use `action.run` when the user asked for one concrete action:
 When unsure, prefer a run plan. Direct action is for simple execution, not a
 shortcut around workflow memory or approval.
 
+Use the project task tracker for work navigation in both paths. Workflow plans
+mirror into tracker tasks/tickets automatically. Manual or ad hoc agent work
+should be made explicit with `tracker.createTask` and `tracker.createTicket`
+instead of living only in chat context.
+
 ## Workflow Path
 
 ```text
 agent intent
 -> workflow template or agent-authored run plan
 -> runPlan.validate/create/start
+-> tracker.brief or tracker.next for bounded work context
 -> runPlan.claimStep
 -> step-granted tools through direct MCP or toolbox.call
 -> action.execute for provider actions
@@ -48,6 +54,11 @@ agent intent
 `action.execute` remains run-plan-step gated. The active step and frozen grant
 snapshot must both allow the exact `action_ref`. It returns the full redacted
 action execution shape because workflow steps usually need complete audit data.
+
+`tracker.*` operations are not a replacement for run-plan grants. They provide
+work state, dependency readiness, and verification context. The step still
+claims and records through `runPlan.*`, and provider execution still flows
+through `action.execute`.
 
 ## Direct Action Path
 
@@ -83,6 +94,18 @@ semantics. If neither is supplied, StackOS derives a request-scoped
 idempotency key so the agent does not have to invent dedupe strings for ordinary
 single calls. Workflow `action.execute` derives a stable key from the active
 run, step, action, input, and credential when the plan did not provide one.
+
+For direct work that spans more than one update or needs visible follow-up,
+create tracker state first:
+
+```text
+tracker.createTask
+-> tracker.createTicket
+-> tracker.pick
+-> tracker.brief
+-> action.run or local work
+-> tracker.patch / tracker.updateTicket
+```
 
 Agent-facing MCP responses are compact by default for noisy discovery/setup
 tools. Pass `response_mode=standard` when the full normal daemon payload is

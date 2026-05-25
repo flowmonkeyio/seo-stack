@@ -21,6 +21,11 @@ granted actions, and recording results.
    `run_token`.
 7. Inspect execution through `runPlan.get`, `run.get`, and `run.list`.
 
+`runPlan.create` also mirrors the plan into the project task tracker: one task
+for the run plan and one ticket per concrete step. Agents can use
+`tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without
+scanning the full run-plan payload every time.
+
 ## Grants
 
 Run-plan grants are frozen in `run_plans.grant_snapshot_json`.
@@ -65,8 +70,13 @@ fine-grained audit trail for agent activity and daemon-side execution.
 Use `run.insertStep`, `run.recordStepCall`, `run.listSteps`, and
 `run.listStepCalls` for audit grain outside the run-plan controller path.
 
+Use [`task-tracker.md`](./task-tracker.md) for project work state. The tracker
+is not the grant boundary; it is the navigation and lifecycle mirror for tasks,
+tickets, dependencies, and verification.
+
 ## UI
 
-The Runs UI renders generic run and run-plan state. Workflow-specific views
-should be plugin/resource renderers unless a signed-off task scopes a bespoke
-page.
+The Runs UI renders generic run and run-plan state. The Tasks UI renders the
+project tracker with workflow filters, status filters, dependency graph, and
+ticket detail navigation. Workflow-specific views should be plugin/resource
+renderers unless a signed-off task scopes a bespoke page.

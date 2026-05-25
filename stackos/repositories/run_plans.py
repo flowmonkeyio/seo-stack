@@ -37,6 +37,7 @@ from stackos.repositories.base import (
     validate_transition,
 )
 from stackos.repositories.runs import RunOut, RunRepository
+from stackos.repositories.tracker import TrackerRepository
 from stackos.workflows.run_plan_grants import allowed_tools_for_run_plan_step
 from stackos.workflows.run_plan_schema import (
     RunPlanIssue,
@@ -409,6 +410,12 @@ class RunPlanRepository:
             )
             self._s.add(approval_row)
 
+        TrackerRepository(self._s).mirror_run_plan_created(
+            plan=row,
+            steps=list(step_rows.values()),
+            created_by=created_by,
+        )
+
         if _commit:
             self._s.commit()
             self._s.refresh(row)
@@ -444,6 +451,7 @@ class RunPlanRepository:
                 "skill_name": RUN_PLAN_CONTROLLER_SKILL,
                 "template_key": row.template_key,
             },
+            _commit=False,
         )
         run = env.data
         validate_transition(
@@ -465,6 +473,7 @@ class RunPlanRepository:
                 snapshot.run_id = run.id
                 self._s.add(snapshot)
         self._s.add(row)
+        TrackerRepository(self._s).mirror_run_plan_started(plan=row)
         self._s.commit()
         self._s.refresh(row)
         return Envelope(
@@ -606,6 +615,7 @@ class RunPlanRepository:
         plan.updated_at = now
         self._s.add(step)
         self._s.add(plan)
+        TrackerRepository(self._s).mirror_run_plan_step_claimed(plan=plan, step=step)
         self._s.commit()
         self._s.refresh(step)
         return Envelope(
@@ -667,6 +677,7 @@ class RunPlanRepository:
         plan.updated_at = now
         self._s.add(step)
         self._s.add(plan)
+        TrackerRepository(self._s).mirror_run_plan_step_recorded(plan=plan, step=step)
         self._sync_terminal_status(plan, status, now=now)
         self._s.commit()
         self._s.refresh(plan)
@@ -724,6 +735,7 @@ class RunPlanRepository:
             status=status,
             error=error,
             metadata_json={"run_plan_id": plan.id, "stackos_type": "run-plan"},
+            _commit=False,
         )
 
     def _load_template(

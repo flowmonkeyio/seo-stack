@@ -16,7 +16,7 @@ work, start here:
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
-| Plugins, resources, templates, runs | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md) |
+| Plugins, resources, templates, runs, tasks | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md), [`docs/task-tracker.md`](./docs/task-tracker.md) |
 | Provider contract reviews | [`docs/integration-contracts/AGENTS.md`](./docs/integration-contracts/AGENTS.md), [`docs/integration-contracts/`](./docs/integration-contracts/) |
 | UI work | [`docs/ui-design-system.md`](./docs/ui-design-system.md), [`docs/ui-component-inventory.md`](./docs/ui-component-inventory.md) |
 | Before-commit/release signoff | [`docs/release-signoff.md`](./docs/release-signoff.md) |
@@ -34,6 +34,10 @@ work, start here:
 - Agents are the primary users of run-plan execution mechanics. Humans and
   scripts bootstrap, inspect, approve, and administer; they should not require
   bespoke workflow UIs for each plugin domain.
+- Task tracking is project-scoped work state. Workflow run plans mirror into
+  tasks/tickets automatically; manual agent work should use `tracker.*`
+  operations. The tracker stores lifecycle, dependencies, provenance, and
+  verification context; agents still decide the work.
 - Agents never receive secrets. They receive safe provider/account refs,
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
   values. `action.run` and `action.execute` resolve credentials inside the
@@ -92,7 +96,7 @@ work, start here:
   otherwise.
 - The UI should render generic StackOS objects: projects, plugins, workflow
   templates, run plans, resources, artifacts, auth status, action calls,
-  context, learnings, experiments, and decisions.
+  context, learnings, experiments, decisions, and tracker tasks/tickets.
 
 ## Local Ports
 

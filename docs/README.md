@@ -10,6 +10,7 @@ obvious without loading every document.
 | Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
+| Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
 | Adding or changing communications, chat, email, targets, or memberships | [`integration-contracts/communications.md`](./integration-contracts/communications.md), [`operations.md`](./operations.md), [`resources-and-artifacts.md`](./resources-and-artifacts.md) |
 | Adding or changing plugins | [`plugins.md`](./plugins.md), [`extending.md`](./extending.md), [`workflow-templates.md`](./workflow-templates.md) |
@@ -37,6 +38,9 @@ obvious without loading every document.
 - Communications are provider-neutral state plus explicit provider actions. Use
   one-brain ingress, surface intent/data-scope metadata, allowlisted invokers,
   named targets, and route policy instead of provider-specific bot decisions.
+- Task tracking is project-scoped work state for agents and human navigation.
+  Workflow runs mirror into tasks/tickets automatically, and manual agent work
+  uses `tracker.*` operations. The tracker stores state; agents decide the work.
 - SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
   remains domain-agnostic.
 

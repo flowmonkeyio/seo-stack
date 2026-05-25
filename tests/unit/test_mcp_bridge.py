@@ -17,6 +17,7 @@ from stackos.mcp.bridge import (
     AgentBridgeProxy,
     _bridge_cache_step_context,
     _bridge_compact_profile,
+    _bridge_compact_structured,
     _bridge_filter_tool_list_response,
     _bridge_toolbox_describe,
 )
@@ -436,6 +437,103 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
     assert "artifact.create" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "learning.update" not in _AGENT_BASE_TOOLBOX_NAMES
     assert "action.execute" not in _AGENT_BASE_TOOLBOX_NAMES
+
+
+def test_bridge_compacts_tracker_brief_for_agent_context() -> None:
+    compact = _bridge_compact_structured(
+        "tracker.brief",
+        {
+            "ticket": {
+                "id": 7,
+                "key": "deliver",
+                "title": "Deliver",
+                "status": "in-progress",
+                "task_key": "workflow-1",
+                "priority_key": "p1",
+                "lane_key": "implementation",
+                "assignee": "codex",
+                "blocked_by": [],
+                "blocker_reason": None,
+                "dependency_keys": ["prepare"],
+                "outcome": None,
+                "run_plan_id": 4,
+                "run_plan_step_id": 12,
+                "run_id": 9,
+                "agent_request_id": None,
+                "reference_count": 2,
+                "link_count": 1,
+                "context_json": {"large": "omitted"},
+            },
+            "task": {
+                "id": 3,
+                "key": "workflow-1",
+                "title": "Workflow",
+                "status": "in-progress",
+                "priority_key": "p1",
+                "lane_key": "implementation",
+                "owner": "ops",
+                "task_type": "workflow",
+                "source_kind": "workflow",
+                "source_json": {
+                    "template_key": "demo",
+                    "run_plan_key": "demo-run",
+                    "run_plan_id": 4,
+                },
+                "metadata_json": {"large": "omitted"},
+            },
+            "dependencies": [{"key": "prepare", "title": "Prepare", "status": "complete"}],
+            "dependents": [],
+            "references": [{"id": 1, "ref_type": "file", "ref": "README.md", "title": "Readme"}],
+            "links": [{"id": 2, "link_kind": "run-plan", "ref": "run-plan:4"}],
+            "suggested_next_actions": ["finish the work"],
+        },
+    )
+
+    assert compact == {
+        "ticket": {
+            "key": "deliver",
+            "title": "Deliver",
+            "status": "in-progress",
+            "task_key": "workflow-1",
+            "priority_key": "p1",
+            "lane_key": "implementation",
+            "assignee": "codex",
+            "dependency_keys": ["prepare"],
+            "run_plan_id": 4,
+            "run_plan_step_id": 12,
+            "run_id": 9,
+            "reference_count": 2,
+            "link_count": 1,
+        },
+        "task": {
+            "key": "workflow-1",
+            "title": "Workflow",
+            "status": "in-progress",
+            "priority_key": "p1",
+            "lane_key": "implementation",
+            "owner": "ops",
+            "task_type": "workflow",
+            "source_kind": "workflow",
+            "template_key": "demo",
+            "run_plan_key": "demo-run",
+            "run_plan_id": 4,
+        },
+        "dependencies": [
+            {
+                "key": "prepare",
+                "title": "Prepare",
+                "status": "complete",
+            }
+        ],
+        "references": [{"ref_type": "file", "ref": "README.md", "title": "Readme"}],
+        "links": [
+            {
+                "link_kind": "run-plan",
+                "ref": "run-plan:4",
+            }
+        ],
+        "suggested_next_actions": ["finish the work"],
+    }
 
 
 def test_bridge_setup_surface_covers_core_setup_mutations() -> None:

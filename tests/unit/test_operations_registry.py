@@ -53,6 +53,25 @@ def test_operation_registry_documents_core_operations() -> None:
         "runPlan.update",
         "runPlan.validate",
         "toolProfile.resolve",
+        "tracker.blockers",
+        "tracker.brief",
+        "tracker.changed",
+        "tracker.createTask",
+        "tracker.createTicket",
+        "tracker.execute",
+        "tracker.get",
+        "tracker.history",
+        "tracker.linkRunPlan",
+        "tracker.next",
+        "tracker.patch",
+        "tracker.pick",
+        "tracker.release",
+        "tracker.search",
+        "tracker.status",
+        "tracker.updateTask",
+        "tracker.updateTicket",
+        "tracker.verify",
+        "tracker.why",
     ]
 
     described = registry.get("action.execute").describe_out()
@@ -152,6 +171,20 @@ def test_operation_registry_documents_core_operations() -> None:
     assert run_plan.grant_policy == "run-plan-controller"
     assert any("run_token" in item for item in run_plan.prerequisites)
 
+    tracker_next = registry.get("tracker.next").describe_out()
+    assert tracker_next.surfaces["mcp"].enabled is True
+    assert tracker_next.surfaces["rest"].enabled is True
+    assert tracker_next.surfaces["cli"].command == "tracker next"
+    assert tracker_next.grant_policy == "direct-read"
+    assert any("bounded project work context" in item for item in tracker_next.when_to_use)
+
+    tracker_patch = registry.get("tracker.patch").describe_out()
+    assert tracker_patch.surfaces["mcp"].enabled is True
+    assert tracker_patch.surfaces["rest"].enabled is True
+    assert tracker_patch.surfaces["cli"].command == "tracker patch"
+    assert tracker_patch.grant_policy == "direct-tracker-write"
+    assert "WriteEnvelope" in tracker_patch.output_schema["title"]
+
 
 def test_operation_registry_surface_filter() -> None:
     registry = build_operation_registry()
@@ -201,6 +234,25 @@ def test_operation_registry_surface_filter() -> None:
         "runPlan.start",
         "runPlan.validate",
         "toolProfile.resolve",
+        "tracker.blockers",
+        "tracker.brief",
+        "tracker.changed",
+        "tracker.createTask",
+        "tracker.createTicket",
+        "tracker.execute",
+        "tracker.get",
+        "tracker.history",
+        "tracker.linkRunPlan",
+        "tracker.next",
+        "tracker.patch",
+        "tracker.pick",
+        "tracker.release",
+        "tracker.search",
+        "tracker.status",
+        "tracker.updateTask",
+        "tracker.updateTicket",
+        "tracker.verify",
+        "tracker.why",
     ]
     assert registry.get("runPlan.update").surfaces.cli.enabled is False
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
