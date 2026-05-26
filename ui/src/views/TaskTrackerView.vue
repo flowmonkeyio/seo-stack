@@ -119,9 +119,9 @@ function trackerStatusTone(status: TrackerStatus): SelectMetaTone {
   }
 }
 
-const viewOptions: Array<{ key: ViewMode; label: string }> = [
-  { key: 'graph', label: 'Graph' },
-  { key: 'tickets', label: 'Tickets' },
+const viewOptions: Array<{ key: ViewMode; label: string; icon: string }> = [
+  { key: 'graph', label: 'Graph', icon: 'git-branch' },
+  { key: 'tickets', label: 'Tickets', icon: 'list' },
 ]
 
 const tracker = computed(() => snapshot.value?.tracker ?? null)
@@ -1046,16 +1046,11 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
                   class="tracker-task-details-button"
                   variant="secondary"
                   size="sm"
+                  icon-left="file-text"
                   :disabled="!activeTask"
                   aria-label="Open task details"
                   @click="taskDetailOpen = true"
                 >
-                  <template #iconLeft>
-                    <span
-                      class="i-lucide-file-text tracker-task-details-button__icon"
-                      aria-hidden="true"
-                    />
-                  </template>
                   Task details
                 </UiButton>
               </div>
@@ -1636,12 +1631,6 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   border-color: var(--color-border-default);
   background: var(--color-bg-surface);
   box-shadow: none;
-}
-
-.tracker-task-details-button__icon {
-  width: 14px;
-  height: 14px;
-  flex: none;
 }
 
 .tracker-graph-controls {

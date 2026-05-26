@@ -7,6 +7,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | Component | Notes |
 |---|---|
 | `UiButton` | variants: primary, secondary, ghost, danger; sizes sm/md/lg; loading; iconLeft/Right |
+| `UiIcon` | MIT Heroicons-backed icon registry for reusable control icons |
 | `UiIconButton` | square; aria-label required |
 | `UiButtonGroup` | segmented |
 | `UiInput` | label/help/error wired via UiFormField |

@@ -52,5 +52,6 @@ describe('ActionSchemaRenderer', () => {
     expect(w.text()).toContain('openai-images')
     expect(w.text()).not.toContain('secret')
     expect(w.text()).toContain('[redacted]')
+    expect(w.find('svg.ui-action-schema-renderer__chevron').exists()).toBe(true)
   })
 })

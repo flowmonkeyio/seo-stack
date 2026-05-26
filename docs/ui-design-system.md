@@ -128,7 +128,7 @@ full-screen dialogs, and breakpoint tours are intentionally out of scope.
 - ❌ Cards inside cards. Panels inside cards is fine. Cards inside panels is fine.
 - ❌ Decorative gradients, mesh, blobs, glass/blur backgrounds.
 - ❌ Emoji as status indicators.
-- ❌ Hand-rolled icon SVG when Lucide ships one.
+- ❌ Hand-rolled icon SVG when `UiIcon` / Heroicons ships one.
 - ❌ Two primary buttons in one cluster.
 - ❌ Toast for non-actionable info that belongs in the page state.
 - ❌ Spinners on synchronous transitions.
