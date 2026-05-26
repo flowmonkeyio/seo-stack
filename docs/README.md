@@ -10,6 +10,7 @@ obvious without loading every document.
 | Installing, starting, or repairing StackOS | [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md), [`security.md`](./security.md) |
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
+| Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
