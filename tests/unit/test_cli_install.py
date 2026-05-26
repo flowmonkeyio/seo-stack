@@ -19,7 +19,9 @@ from sqlalchemy import text
 from sqlmodel import SQLModel
 from typer.testing import CliRunner
 
-import stackos.cli as cli_module
+import stackos.cli.daemon_commands as daemon_cli
+import stackos.cli.doctor_commands as doctor_cli
+import stackos.cli.local_commands as local_cli
 import stackos.db.models  # noqa: F401  (populate SQLModel metadata)
 from stackos import install as installer
 from stackos.cli import app
@@ -113,11 +115,11 @@ def test_bridge_autostart_spawns_loopback_daemon(
         calls.append((args, kwargs))
         return FakeProcess()
 
-    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
-    monkeypatch.setattr(cli_module, "_wait_for_daemon", lambda *args, **kwargs: True)
-    monkeypatch.setattr(cli_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_cli, "_wait_for_daemon", lambda *args, **kwargs: True)
+    monkeypatch.setattr(daemon_cli.subprocess, "Popen", fake_popen)
 
-    ok, message = cli_module._autostart_bridge_daemon(settings, "127.0.0.1", 5180)
+    ok, message = daemon_cli._autostart_bridge_daemon(settings, "127.0.0.1", 5180)
 
     assert ok is True
     assert "auto-started daemon" in message
@@ -135,8 +137,8 @@ def test_bridge_autostart_spawns_loopback_daemon(
         "--log-level",
         settings.log_level,
     ]
-    assert kwargs["stdin"] is cli_module.subprocess.DEVNULL
-    assert kwargs["stderr"] is cli_module.subprocess.STDOUT
+    assert kwargs["stdin"] is daemon_cli.subprocess.DEVNULL
+    assert kwargs["stderr"] is daemon_cli.subprocess.STDOUT
     assert kwargs["start_new_session"] is True
 
 
@@ -152,10 +154,10 @@ def test_bridge_autostart_rejects_non_loopback(
     def fail_popen(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("Popen should not be called for non-loopback hosts")
 
-    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
-    monkeypatch.setattr(cli_module.subprocess, "Popen", fail_popen)
+    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_cli.subprocess, "Popen", fail_popen)
 
-    ok, message = cli_module._autostart_bridge_daemon(settings, "0.0.0.0", 5180)
+    ok, message = daemon_cli._autostart_bridge_daemon(settings, "0.0.0.0", 5180)
 
     assert ok is False
     assert "non-loopback" in message
@@ -265,9 +267,9 @@ def test_cli_install_tolerates_daemon_down_doctor(
 ) -> None:
     def daemon_down_doctor(json_output: bool = False) -> None:
         _ = json_output
-        raise cli_module.typer.Exit(code=1)
+        raise local_cli.typer.Exit(code=1)
 
-    monkeypatch.setattr(cli_module, "doctor", daemon_down_doctor)
+    monkeypatch.setattr(local_cli, "doctor", daemon_down_doctor)
 
     result = CliRunner().invoke(app, ["install"], catch_exceptions=False)
 
@@ -282,9 +284,9 @@ def test_cli_install_preserves_blocking_doctor_failures(
 ) -> None:
     def seed_failure_doctor(json_output: bool = False) -> None:
         _ = json_output
-        raise cli_module.typer.Exit(code=8)
+        raise local_cli.typer.Exit(code=8)
 
-    monkeypatch.setattr(cli_module, "doctor", seed_failure_doctor)
+    monkeypatch.setattr(local_cli, "doctor", seed_failure_doctor)
 
     result = CliRunner().invoke(app, ["install"])
 
@@ -376,9 +378,9 @@ def test_cli_start_spawns_background_daemon(
 ) -> None:
     calls: list[tuple[str, int, str, Path]] = []
 
-    monkeypatch.setattr(cli_module, "_discover_daemon_processes", lambda *args: ([], []))
-    monkeypatch.setattr(cli_module, "_daemon_health_ok", lambda *args, **kwargs: False)
-    monkeypatch.setattr(cli_module, "_tcp_can_connect", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *args: ([], []))
+    monkeypatch.setattr(daemon_cli, "_daemon_health_ok", lambda *args, **kwargs: False)
+    monkeypatch.setattr(daemon_cli, "_tcp_can_connect", lambda *args, **kwargs: False)
 
     def fake_spawn(
         settings: Settings,
@@ -395,7 +397,7 @@ def test_cli_start_spawns_background_daemon(
         calls.append((host, port, log_level, log_path))
         return True, "started daemon pid=42; url=http://127.0.0.1:5180"
 
-    monkeypatch.setattr(cli_module, "_spawn_detached_daemon", fake_spawn)
+    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fake_spawn)
 
     result = CliRunner().invoke(app, ["start"], catch_exceptions=False)
 
@@ -421,10 +423,10 @@ def test_launchd_autostart_install_writes_python_plist(
             return subprocess.CompletedProcess(args, 1, "", "not loaded")
         return subprocess.CompletedProcess(args, 0, "", "")
 
-    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/bin/launchctl")
-    monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(daemon_cli.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(daemon_cli.subprocess, "run", fake_run)
 
-    ok, message = cli_module._install_launchd_autostart(
+    ok, message = daemon_cli._install_launchd_autostart(
         settings,
         home=sandbox,
         force=False,
@@ -461,9 +463,9 @@ def test_launchd_autostart_requires_force_for_different_plist(
     plist.parent.mkdir(parents=True)
     plist.write_text("<plist><dict>custom</dict></plist>", encoding="utf-8")
 
-    monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/bin/launchctl")
+    monkeypatch.setattr(daemon_cli.shutil, "which", lambda name: "/bin/launchctl")
 
-    ok, message = cli_module._install_launchd_autostart(
+    ok, message = daemon_cli._install_launchd_autostart(
         settings,
         home=sandbox,
         force=False,
@@ -478,9 +480,9 @@ def test_launchd_autostart_requires_force_for_different_plist(
 
 
 def test_codex_mcp_doctor_accepts_bridge_entries_only() -> None:
-    assert cli_module._codex_mcp_line_is_bridge("stackos stdio -")
-    assert cli_module._codex_mcp_line_is_bridge("stackos /path/python -m stackos mcp-bridge")
-    assert not cli_module._codex_mcp_line_is_bridge("stackos http://127.0.0.1:5180/mcp")
-    assert not cli_module._codex_mcp_line_is_bridge(
+    assert doctor_cli._codex_mcp_line_is_bridge("stackos stdio -")
+    assert doctor_cli._codex_mcp_line_is_bridge("stackos /path/python -m stackos mcp-bridge")
+    assert not doctor_cli._codex_mcp_line_is_bridge("stackos http://127.0.0.1:5180/mcp")
+    assert not doctor_cli._codex_mcp_line_is_bridge(
         "stackos --url http://127.0.0.1:5180/mcp --bearer-token-env-var STACKOS_TOKEN"
     )

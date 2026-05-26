@@ -6,7 +6,7 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-import stackos.cli as cli_module
+import stackos.cli.operation_commands as operation_cli
 from stackos.cli import app
 
 
@@ -28,7 +28,7 @@ def test_cli_ops_list_prints_registered_operations(monkeypatch) -> None:  # type
             ]
         }
 
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(app, ["ops", "list"], catch_exceptions=False)
 
@@ -49,7 +49,7 @@ def test_cli_ops_describe_json(monkeypatch) -> None:  # type: ignore[no-untyped-
             "examples": [],
         }
 
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -87,7 +87,7 @@ def test_cli_ops_call_merges_common_arguments(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -164,7 +164,7 @@ def test_cli_ops_call_forwards_communication_profile_setup(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -222,7 +222,7 @@ def test_cli_actions_describe_alias_calls_operation(monkeypatch) -> None:  # typ
         calls.append((method, path, body))
         return {"manifest": {"action_ref": body["arguments"]["action_ref"] if body else None}}
 
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -262,7 +262,7 @@ def test_cli_actions_run_alias_calls_direct_operation(
         json.dumps({"chat_ref": "telegram-chat:123", "text": "Done."}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -336,7 +336,7 @@ def test_cli_run_plans_create_alias_calls_operation(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -382,7 +382,7 @@ def test_cli_run_plans_record_step_alias_merges_result(
 
     result_path = tmp_path / "result.json"
     result_path.write_text(json.dumps({"summary": "done"}), encoding="utf-8")
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -434,7 +434,7 @@ def test_cli_agent_requests_claim_alias_calls_operation(monkeypatch) -> None:  #
         calls.append((method, path, body))
         return {"data": {"id": body["arguments"]["request_id"], "claim_token": "claim-token"}}
 
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,
@@ -499,7 +499,7 @@ def test_cli_agent_requests_prepare_run_plan_alias_calls_operation(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
         app,

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-import stackos.cli as cli_module
+import stackos.cli.daemon_commands as daemon_cli
 from stackos.cli import app
 from stackos.config import Settings
 
@@ -65,11 +65,11 @@ def test_discover_daemon_processes_classifies_listener_pids(
         123: f"{sys.executable} -m stackos serve --port 5180",
         456: "/usr/bin/python3 -m something_else serve --port 5180",
     }
-    monkeypatch.setattr(cli_module, "_listener_pids", lambda _port: [123, 456])
-    monkeypatch.setattr(cli_module, "_pid_command", lambda pid: commands.get(pid))
-    monkeypatch.setattr(cli_module, "_pid_is_running", lambda _pid: True)
+    monkeypatch.setattr(daemon_cli, "_listener_pids", lambda _port: [123, 456])
+    monkeypatch.setattr(daemon_cli, "_pid_command", lambda pid: commands.get(pid))
+    monkeypatch.setattr(daemon_cli, "_pid_is_running", lambda _pid: True)
 
-    daemons, blockers = cli_module._discover_daemon_processes(settings, 5180)
+    daemons, blockers = daemon_cli._discover_daemon_processes(settings, 5180)
 
     assert daemons == [123]
     assert blockers == [456]
@@ -82,10 +82,10 @@ def test_wait_for_daemon_uses_health_endpoint(monkeypatch: pytest.MonkeyPatch) -
         calls.append((host, port, timeout))
         return len(calls) == 2
 
-    monkeypatch.setattr(cli_module, "_daemon_health_ok", fake_health)
-    monkeypatch.setattr(cli_module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(daemon_cli, "_daemon_health_ok", fake_health)
+    monkeypatch.setattr(daemon_cli.time, "sleep", lambda _seconds: None)
 
-    assert cli_module._wait_for_daemon("127.0.0.1", 5180, timeout=1.0) is True
+    assert daemon_cli._wait_for_daemon("127.0.0.1", 5180, timeout=1.0) is True
     assert calls == [("127.0.0.1", 5180, 0.25), ("127.0.0.1", 5180, 0.25)]
 
 
@@ -129,9 +129,9 @@ def test_cli_restart_stops_existing_daemon_and_starts_new(
         )
         return True, "started daemon pid=222; url=http://127.0.0.1:5180; log=/tmp/daemon.log"
 
-    monkeypatch.setattr(cli_module, "_discover_daemon_processes", lambda *_args: ([111], []))
-    monkeypatch.setattr(cli_module, "_terminate_daemon_processes", fake_terminate)
-    monkeypatch.setattr(cli_module, "_spawn_detached_daemon", fake_spawn)
+    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([111], []))
+    monkeypatch.setattr(daemon_cli, "_terminate_daemon_processes", fake_terminate)
+    monkeypatch.setattr(daemon_cli, "_spawn_detached_daemon", fake_spawn)
 
     result = CliRunner().invoke(
         app,
@@ -151,7 +151,7 @@ def test_cli_restart_refuses_non_stackos_listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _ = sandbox
-    monkeypatch.setattr(cli_module, "_discover_daemon_processes", lambda *_args: ([], [999]))
+    monkeypatch.setattr(daemon_cli, "_discover_daemon_processes", lambda *_args: ([], [999]))
 
     result = CliRunner().invoke(app, ["restart"])
 

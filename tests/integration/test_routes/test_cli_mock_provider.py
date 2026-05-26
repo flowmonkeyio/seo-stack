@@ -7,7 +7,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-import stackos.cli as cli_module
+import stackos.cli.operation_commands as operation_cli
 from stackos.cli import app
 
 
@@ -64,7 +64,7 @@ def _patch_cli_to_test_client(
         assert response.status_code < 400, response.text
         return response.json() if response.content else None
 
-    monkeypatch.setattr(cli_module, "_api_request", fake_api_request)
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
