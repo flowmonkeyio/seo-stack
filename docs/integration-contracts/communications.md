@@ -477,8 +477,12 @@ Outbound capabilities are still explicit actions:
 - `telegram-bot.photo.send`: image/photo message through Telegram `sendPhoto`.
 - `telegram-bot.callback.answer`: acknowledge an inline button callback through
   Telegram `answerCallbackQuery`.
-- Future actions may add edit/delete, document/video/audio sends, and media
-  group sends, but only after each provider method has its own schema and tests.
+- `telegram-bot.message.reaction.set`: set a native emoji reaction on a
+  specific Telegram message through Telegram `setMessageReaction`.
+- `telegram-bot.message.delete`: delete a specific Telegram message through
+  Telegram `deleteMessage` when Telegram permits the bot to delete it.
+- Future actions may add edit, document/video/audio sends, and media group
+  sends, but only after each provider method has its own schema and tests.
 
 Button support must be modeled as payload, not workflow logic:
 
@@ -606,6 +610,11 @@ than Telegram:
   public channels, private channels, MPIMs, and DMs have separate event/scopes.
 - `chat.postMessage` posts to public channels, private channels, MPIMs, or DMs
   only when the token/scopes and membership permit it. Threads use `thread_ts`.
+- `reactions.add` adds a native Slack emoji reaction to a specific message by
+  channel and timestamp. It requires `reactions:write` and stores reaction state
+  as a `communication-interaction` record.
+- `chat.delete` deletes a Slack message by channel and timestamp. With bot
+  tokens, Slack only permits deleting messages posted by that bot.
 - `conversations.open`, `conversations.info`, `conversations.list`, and
   `conversations.members` are provider actions for resolving Slack DMs,
   surfaces, and memberships. They must record safe surface/membership state
@@ -667,11 +676,11 @@ The plugin may later add Discord, WhatsApp Business, Twilio, Gmail API,
 Microsoft Graph mail, or project-local communication connectors, but those
 providers need their own contract review before execution.
 
-`slack-bot` is executable for Web API identity, message send, conversation
-discovery, membership sync, and signed HTTP Events API/Interactivity ingress.
-Socket Mode, live history reads, files, reactions, and administration remain
-deferred until their provider contracts, runner lifecycle, tests, and safe audit
-paths are delivered.
+`slack-bot` is executable for Web API identity, message send, native message
+reaction add, message delete, conversation discovery, membership sync, and
+signed HTTP Events API/Interactivity ingress. Socket Mode, live history reads,
+files, reaction remove, and administration remain deferred until their provider
+contracts, runner lifecycle, tests, and safe audit paths are delivered.
 
 ## Resource Model
 
@@ -1344,6 +1353,8 @@ Action refs:
 - `communications.telegram-bot.message.send`
 - `communications.telegram-bot.photo.send`
 - `communications.telegram-bot.callback.answer`
+- `communications.telegram-bot.message.reaction.set`
+- `communications.telegram-bot.message.delete`
 - `communications.telegram-bot.updates.poll`
 - `communications.telegram-bot.webhook.set`
 - `communications.telegram-bot.webhook.delete`
@@ -1355,6 +1366,8 @@ Executable in the current Telegram connector:
 - `message.send`
 - `photo.send`
 - `callback.answer`
+- `message.reaction.set`
+- `message.delete`
 - `updates.poll`
 - `webhook.set`
 - `webhook.delete`
@@ -1395,6 +1408,15 @@ Validation rules:
 - `callback.answer` requires `callback_query_id`. It may include notification
   text, alert mode, URL, and cache time, but it must not claim work was
   completed unless the agent actually completed it.
+- `message.reaction.set` requires `profile_key`, `message_ref`, and an emoji.
+  The connector resolves the project communication profile, verifies the
+  daemon-held credential profile, enforces the chat allow/deny policy derived
+  from `message_ref`, calls Telegram `setMessageReaction`, and stores a
+  `communication-interaction` audit record.
+- `message.delete` requires `profile_key` and `message_ref`. The connector
+  enforces the same project/profile/chat boundary, calls Telegram
+  `deleteMessage`, and marks the stored outbound `communication-message`
+  deleted when StackOS has that record.
 - `updates.poll` requires explicit `profile_key`, bounded `limit`,
   `timeout_s`, and `allowed_updates`. It is profile-bound diagnostic/bootstrap
   access, not a background listener.
@@ -1419,6 +1441,8 @@ Action refs:
 
 - `communications.slack-bot.identity.get`
 - `communications.slack-bot.message.send`
+- `communications.slack-bot.reaction.add`
+- `communications.slack-bot.message.delete`
 - `communications.slack-bot.conversation.open`
 - `communications.slack-bot.conversation.info`
 - `communications.slack-bot.conversation.list`
@@ -1428,6 +1452,8 @@ Executable in the current Slack connector:
 
 - `identity.get` through Slack `auth.test`
 - `message.send` through Slack `chat.postMessage`
+- `reaction.add` through Slack `reactions.add`
+- `message.delete` through Slack `chat.delete`
 - `conversation.open` through Slack `conversations.open`
 - `conversation.info` through Slack `conversations.info`
 - `conversation.list` through Slack `conversations.list`
@@ -1447,6 +1473,14 @@ Validation rules:
 - `message.send` stores outbound `communication-message` records and stores
   outbound button `communication-interaction` records scoped by communication
   profile, message ref, block id, action id, and value.
+- `reaction.add` requires a `message_ref` and Slack emoji `name`; optional
+  `channel_ref`/`surface_ref` may override the channel resolved from
+  `message_ref` when a safe profile ref map is used. It stores a
+  `communication-interaction` record scoped by profile, message ref, and
+  reaction name.
+- `message.delete` requires `message_ref`; optional `channel_ref`/`surface_ref`
+  may override the channel resolved from `message_ref`. It marks the matching
+  stored `communication-message` as deleted when StackOS has the record.
 - `conversation.open`, `conversation.info`, and `conversation.list` store safe
   communication-profile-scoped `communication-channel` metadata.
   `conversation.members` stores safe communication-profile-scoped
@@ -1458,8 +1492,8 @@ Validation rules:
 Deferred until separate tests/contracts:
 
 - Socket Mode listener and `apps.connections.open` runtime.
-- Slack history reads, reactions, file uploads, user/profile lookup, channel
-  administration, and message update/delete.
+- Slack history reads, reaction remove, file uploads, user/profile lookup,
+  channel administration, and message update.
 - Automatic response URL usage. Slack `response_url` is transient sensitive
   material and is not persisted by ingress.
 

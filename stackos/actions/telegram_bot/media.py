@@ -10,13 +10,14 @@ from typing import Any
 import httpx
 
 from stackos.actions.connectors import ActionConnectorRequest, ActionConnectorResult
-from stackos.actions.provider_utils import result, send_json
+from stackos.actions.provider_utils import send_json
 from stackos.artifacts import redact_secret_text
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 
 from .constants import _MAX_PHOTO_BYTES
 from .payloads import _copy_common_message_fields, _method_url
+from .results import _telegram_result
 from .storage import _store_callback_buttons, _store_outbound_message
 
 
@@ -45,13 +46,13 @@ async def _send_photo(
         )
         _store_outbound_message(request, profile, body, content_type="photo")
         _store_callback_buttons(request, profile, body)
-        return result(
-            provider="telegram-bot",
-            operation=request.operation,
+        return _telegram_result(
+            request,
             status_code=status,
             body=body,
             headers=headers,
-            metadata={"telegram_method": "sendPhoto", "upload_mode": "remote"},
+            telegram_method="sendPhoto",
+            metadata={"upload_mode": "remote"},
         )
 
     path = _artifact_path(request, str(photo["artifact_ref"]))
@@ -79,13 +80,13 @@ async def _send_photo(
         body = response.text
     _store_outbound_message(request, profile, body, content_type="photo")
     _store_callback_buttons(request, profile, body)
-    return result(
-        provider="telegram-bot",
-        operation=request.operation,
+    return _telegram_result(
+        request,
         status_code=response.status_code,
         body=body,
         headers=response.headers,
-        metadata={"telegram_method": "sendPhoto", "upload_mode": "multipart"},
+        telegram_method="sendPhoto",
+        metadata={"upload_mode": "multipart"},
     )
 
 

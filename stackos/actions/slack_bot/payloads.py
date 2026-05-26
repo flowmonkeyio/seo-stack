@@ -6,7 +6,7 @@ from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
 
-from .refs import _channel_id, _thread_ts, _user_id
+from .refs import _channel_id, _message_parts, _thread_ts, _user_id
 
 
 def _has_text(value: Any) -> bool:
@@ -77,3 +77,26 @@ def _conversation_members_params(request: ActionConnectorRequest) -> dict[str, A
     if payload.get("cursor"):
         params["cursor"] = payload["cursor"]
     return params
+
+
+def _reaction_add_payload(request: ActionConnectorRequest) -> dict[str, Any]:
+    payload = request.input_json
+    channel, timestamp = _message_parts(request, payload.get("message_ref"))
+    if payload.get("channel_ref") or payload.get("surface_ref"):
+        channel = _channel_id(request, payload.get("channel_ref") or payload.get("surface_ref"))
+    return {
+        "channel": channel,
+        "timestamp": timestamp,
+        "name": payload["name"],
+    }
+
+
+def _message_delete_payload(request: ActionConnectorRequest) -> dict[str, Any]:
+    payload = request.input_json
+    channel, timestamp = _message_parts(request, payload.get("message_ref"))
+    if payload.get("channel_ref") or payload.get("surface_ref"):
+        channel = _channel_id(request, payload.get("channel_ref") or payload.get("surface_ref"))
+    return {
+        "channel": channel,
+        "ts": timestamp,
+    }

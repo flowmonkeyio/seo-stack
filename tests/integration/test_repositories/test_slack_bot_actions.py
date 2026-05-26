@@ -92,6 +92,8 @@ def test_slack_builtin_actions_are_registered(session: Session) -> None:
     for action_ref, operation in {
         "communications.slack-bot.identity.get": "identity.get",
         "communications.slack-bot.message.send": "message.send",
+        "communications.slack-bot.reaction.add": "reaction.add",
+        "communications.slack-bot.message.delete": "message.delete",
         "communications.slack-bot.conversation.open": "conversation.open",
         "communications.slack-bot.conversation.info": "conversation.info",
         "communications.slack-bot.conversation.list": "conversation.list",
@@ -133,6 +135,16 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
             "ts": "1770000000.000100",
             "message": {"ts": "1770000000.000100", "text": "Ready?"},
         },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/reactions.add",
+        json={"ok": True},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/chat.delete",
+        json={"ok": True, "channel": "C123", "ts": "1770000000.000100"},
     )
     httpx_mock.add_response(
         method="POST",
@@ -224,6 +236,29 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
             credential_ref=credential_ref,
         )
     ).data
+    reaction = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.slack-bot.reaction.add",
+            input_json={
+                "profile_ref": "communication-profile:support-agent",
+                "message_ref": "slack-message:C123:1770000000.000100",
+                "name": "white_check_mark",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    deleted = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.slack-bot.message.delete",
+            input_json={
+                "profile_ref": "communication-profile:support-agent",
+                "message_ref": "slack-message:C123:1770000000.000100",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
     opened = asyncio.run(
         repo.execute(
             project_id=project_id,
@@ -274,10 +309,14 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
 
     requests = httpx_mock.get_requests()
     post_body = json.loads(requests[1].content.decode("utf-8"))
+    reaction_body = json.loads(requests[2].content.decode("utf-8"))
+    delete_body = json.loads(requests[3].content.decode("utf-8"))
     rendered = json.dumps(
         {
             "identity": identity.model_dump(mode="json"),
             "message": message.model_dump(mode="json"),
+            "reaction": reaction.model_dump(mode="json"),
+            "deleted": deleted.model_dump(mode="json"),
             "opened": opened.model_dump(mode="json"),
             "info": info.model_dump(mode="json"),
             "listed": listed.model_dump(mode="json"),
@@ -288,6 +327,8 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert [request.url.path for request in requests] == [
         "/api/auth.test",
         "/api/chat.postMessage",
+        "/api/reactions.add",
+        "/api/chat.delete",
         "/api/conversations.open",
         "/api/conversations.info",
         "/api/conversations.list",
@@ -297,7 +338,17 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert post_body["channel"] == "C123"
     assert post_body["text"] == "Ready?"
     assert "profile_ref" not in post_body
+    assert reaction_body == {
+        "channel": "C123",
+        "timestamp": "1770000000.000100",
+        "name": "white_check_mark",
+    }
+    assert delete_body == {"channel": "C123", "ts": "1770000000.000100"}
     assert message.output_json["message_ref"] == "slack-message:C123:1770000000.000100"
+    assert reaction.output_json["status"] == "reacted"
+    assert reaction.output_json["message_ref"] == "slack-message:C123:1770000000.000100"
+    assert deleted.output_json["status"] == "deleted"
+    assert deleted.output_json["message_ref"] == "slack-message:C123:1770000000.000100"
     assert listed.output_json["next_cursor"] == "cursor-2"
     assert members.output_json["member_refs"] == ["slack-user:U111", "slack-user:U222"]
     assert _TOKEN not in rendered
@@ -313,6 +364,8 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
     assert outbound[0].external_id == "slack-message:support-agent:C123:1770000000.000100"
     assert outbound[0].data_json["profile_key"] == "support-agent"
     assert outbound[0].data_json["auth_profile_key"] == "support-auth"
+    assert outbound[0].data_json["transport_status"] == "deleted"
+    assert outbound[0].data_json["attention_status"] == "deleted"
 
     interactions = ResourceRepository(session).query_records(
         project_id=project_id,
@@ -324,7 +377,17 @@ def test_slack_actions_execute_store_resources_and_redact_secrets(
         for item in interactions.items
         if item.data_json.get("interaction_type") == "outbound_block_button"
     ]
+    reactions = [
+        item
+        for item in interactions.items
+        if item.data_json.get("interaction_type") == "reaction_added"
+    ]
     assert len(buttons) == 1
+    assert len(reactions) == 1
+    assert reactions[0].external_id.startswith("slack-reaction:support-agent:")
+    assert reactions[0].data_json["message_ref"] == "slack-message:C123:1770000000.000100"
+    assert reactions[0].data_json["reaction_name"] == "white_check_mark"
+    assert reactions[0].data_json["status"] == "sent"
     assert buttons[0].external_id.startswith("slack-button:support-agent:")
     assert buttons[0].data_json["button_value"] == "approve_177"
     assert buttons[0].data_json["control_action"] == "approve"

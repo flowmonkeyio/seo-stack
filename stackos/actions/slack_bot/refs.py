@@ -41,6 +41,18 @@ def _thread_ts(request: ActionConnectorRequest, value: Any) -> str | None:
     return text
 
 
+def _message_parts(request: ActionConnectorRequest, value: Any) -> tuple[str, str]:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("Slack message_ref is required")
+    raw = _resolve_ref(request, value.strip(), "message_refs", "refs")
+    text = str(raw).strip()
+    if text.startswith("slack-message:"):
+        parts = text.split(":", 2)
+        if len(parts) == 3 and parts[1] and parts[2]:
+            return parts[1], parts[2]
+    raise ValidationError("Slack message_ref must be slack-message:<channel>:<ts>")
+
+
 def _user_id(request: ActionConnectorRequest, value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError("Slack users must be non-empty strings")

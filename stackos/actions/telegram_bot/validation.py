@@ -68,6 +68,14 @@ def validate_telegram_request(request: ActionConnectorRequest) -> list[ActionVal
             _optional_bool(payload, "show_alert", issues)
             _optional_text(payload, "url", issues)
             _optional_int(payload, "cache_time", issues, minimum=0, maximum=3600)
+        case "message.reaction.set":
+            _required_text(payload, "profile_key", issues)
+            _required_text(payload, "message_ref", issues)
+            _required_text(payload, "emoji", issues, max_chars=64)
+            _optional_bool(payload, "is_big", issues)
+        case "message.delete":
+            _required_text(payload, "profile_key", issues)
+            _required_text(payload, "message_ref", issues)
         case "updates.poll":
             _required_text(payload, "profile_key", issues)
             _optional_text(payload, "cursor_ref", issues)

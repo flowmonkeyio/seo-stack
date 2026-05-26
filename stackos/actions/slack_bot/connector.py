@@ -26,7 +26,9 @@ from .payloads import (
     _conversation_list_params,
     _conversation_members_params,
     _conversation_open_payload,
+    _message_delete_payload,
     _message_payload,
+    _reaction_add_payload,
 )
 from .profile import _communication_profile_key
 from .results import (
@@ -35,13 +37,17 @@ from .results import (
     _conversation_members_result,
     _conversation_open_result,
     _identity_result,
+    _message_delete_result,
     _message_result,
+    _reaction_add_result,
 )
 from .storage import (
+    _mark_message_deleted,
     _store_conversation_from_body,
     _store_conversation_list,
     _store_memberships_from_body,
     _store_outbound_message,
+    _store_reaction_add,
 )
 from .validation import validate_slack_request
 
@@ -77,6 +83,32 @@ class SlackBotActionConnector:
                 )
                 _store_outbound_message(request, body, body_json)
                 return _message_result(request, status, body, headers, body_json)
+            case "reaction.add":
+                _communication_profile_key(request)
+                body_json = _reaction_add_payload(request)
+                # Slack reactions.add:
+                # https://docs.slack.dev/reference/methods/reactions.add/
+                status, body, headers = await _slack_api(
+                    request,
+                    "POST",
+                    "reactions.add",
+                    json_body=body_json,
+                )
+                _store_reaction_add(request, body_json)
+                return _reaction_add_result(request, status, body, headers, body_json)
+            case "message.delete":
+                _communication_profile_key(request)
+                body_json = _message_delete_payload(request)
+                # Slack chat.delete:
+                # https://docs.slack.dev/reference/methods/chat.delete/
+                status, body, headers = await _slack_api(
+                    request,
+                    "POST",
+                    "chat.delete",
+                    json_body=body_json,
+                )
+                _mark_message_deleted(request, body_json)
+                return _message_delete_result(request, status, body, headers, body_json)
             case "conversation.open":
                 _communication_profile_key(request)
                 # Slack conversations.open:

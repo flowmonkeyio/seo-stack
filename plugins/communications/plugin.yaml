@@ -100,6 +100,7 @@ providers:
         - mpim:read
         - im:write
         - mpim:write
+        - reactions:write
       deferred_auth_methods:
         - oauth2-install
       deferred_runtime:
@@ -491,6 +492,67 @@ actions:
       docs:
         - docs/integration-contracts/communications.md
         - https://core.telegram.org/bots/api#answercallbackquery
+  - key: telegram-bot.message.reaction.set
+    name: Set Telegram Message Reaction
+    description: Set a native Telegram emoji reaction on an explicit Telegram message reference.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_key
+        - message_ref
+        - emoji
+      properties:
+        profile_key:
+          type: string
+        message_ref:
+          type: string
+        emoji:
+          type: string
+          minLength: 1
+          maxLength: 64
+        is_big:
+          type: boolean
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: message.reaction.set
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#setmessagereaction
+  - key: telegram-bot.message.delete
+    name: Delete Telegram Message
+    description: Delete an explicit Telegram message reference when Telegram permits the bot to delete it.
+    provider: telegram-bot
+    capability: messaging
+    risk_level: destructive
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - profile_key
+        - message_ref
+      properties:
+        profile_key:
+          type: string
+        message_ref:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: telegram-bot
+      operation: message.delete
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://core.telegram.org/bots/api#deletemessage
   - key: telegram-bot.updates.poll
     name: Inspect Telegram Updates
     description: Bounded diagnostic getUpdates call for setup/debugging only; it does not normalize updates, store resources, or create agent requests.
@@ -700,6 +762,73 @@ actions:
         - docs/integration-contracts/communications.md
         - https://docs.slack.dev/reference/methods/chat.postMessage/
         - https://docs.slack.dev/reference/block-kit/block-elements/button-element/
+  - key: slack-bot.reaction.add
+    name: Add Slack Message Reaction
+    description: Add a native Slack emoji reaction to an explicit Slack message reference.
+    provider: slack-bot
+    capability: messaging
+    risk_level: write
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - message_ref
+        - name
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns reaction state. Defaults to the credential profile key when omitted.
+        message_ref:
+          type: string
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: reaction.add
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/reactions.add/
+  - key: slack-bot.message.delete
+    name: Delete Slack Message
+    description: Delete an explicit Slack message reference when Slack permits the bot to delete it.
+    provider: slack-bot
+    capability: messaging
+    risk_level: destructive
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - message_ref
+      properties:
+        profile_ref:
+          type: string
+          description: Optional communication-profile key/ref that owns message state. Defaults to the credential profile key when omitted.
+        message_ref:
+          type: string
+        channel_ref:
+          type: string
+        surface_ref:
+          type: string
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: slack-bot
+      operation: message.delete
+      requires_credential: true
+      enforce_budget: false
+      docs:
+        - docs/integration-contracts/communications.md
+        - https://docs.slack.dev/reference/methods/chat.delete/
   - key: slack-bot.conversation.open
     name: Open Slack Conversation
     description: Open or resume a Slack DM or MPIM using explicit Slack user refs, or resume an existing IM/MPIM channel.
@@ -1161,12 +1290,16 @@ config:
       - telegram-bot.message.send
       - telegram-bot.photo.send
       - telegram-bot.callback.answer
+      - telegram-bot.message.reaction.set
+      - telegram-bot.message.delete
       - telegram-bot.updates.poll
       - telegram-bot.webhook.set
       - telegram-bot.webhook.delete
       - telegram-bot.webhook.info
       - slack-bot.identity.get
       - slack-bot.message.send
+      - slack-bot.reaction.add
+      - slack-bot.message.delete
       - slack-bot.conversation.open
       - slack-bot.conversation.info
       - slack-bot.conversation.list

@@ -22,6 +22,8 @@ from .constants import (
     _SECRETISH_BUTTON_RE,
 )
 
+_MAX_REACTION_NAME_CHARS = 128
+
 
 def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValidationIssue]:
     payload = request.input_json
@@ -43,6 +45,17 @@ def validate_slack_request(request: ActionConnectorRequest) -> list[ActionValida
             _blocks(payload.get("blocks"), issues)
             if not _has_text(payload.get("text")) and not isinstance(payload.get("blocks"), list):
                 issues.append(issue("$", "text or blocks is required", "required"))
+        case "reaction.add":
+            _required_text(payload, "message_ref", issues)
+            _required_text(payload, "name", issues, max_chars=_MAX_REACTION_NAME_CHARS)
+            _optional_text(payload, "profile_ref", issues)
+            _optional_text(payload, "channel_ref", issues)
+            _optional_text(payload, "surface_ref", issues)
+        case "message.delete":
+            _required_text(payload, "message_ref", issues)
+            _optional_text(payload, "profile_ref", issues)
+            _optional_text(payload, "channel_ref", issues)
+            _optional_text(payload, "surface_ref", issues)
         case "conversation.open":
             if "users" not in payload and "channel_ref" not in payload:
                 issues.append(issue("$", "users or channel_ref is required", "required"))
@@ -95,6 +108,21 @@ def _required_any(
     if any(_has_text(payload.get(key)) for key in keys):
         return
     issues.append(issue("$", f"one of {', '.join(keys)} is required", "required"))
+
+
+def _required_text(
+    payload: Mapping[str, Any],
+    key: str,
+    issues: list[ActionValidationIssue],
+    *,
+    max_chars: int | None = None,
+) -> None:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        issues.append(issue(f"$.{key}", f"{key} is required", "required"))
+        return
+    if max_chars is not None and len(value) > max_chars:
+        issues.append(issue(f"$.{key}", f"{key} must be at most {max_chars} characters", "length"))
 
 
 def _optional_text(

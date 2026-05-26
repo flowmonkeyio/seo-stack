@@ -12,6 +12,7 @@ from stackos.repositories.base import ValidationError
 
 from .constants import _BASE_URL
 from .policy import _request_profile_key, _resolve_profile_ref, _split_config_values
+from .refs import _message_ref_parts, _resolve_message_ref
 
 
 def _method_url(request: ActionConnectorRequest, method: str) -> str:
@@ -41,6 +42,35 @@ def _callback_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         if key in payload:
             body[key] = payload[key]
     return body
+
+
+def _reaction_payload(
+    request: ActionConnectorRequest,
+    profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload = request.input_json
+    raw_message_ref = _resolve_message_ref(profile, payload["message_ref"])
+    chat_id, message_id = _message_ref_parts(raw_message_ref)
+    body: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "reaction": [{"type": "emoji", "emoji": payload["emoji"]}],
+    }
+    if "is_big" in payload:
+        body["is_big"] = payload["is_big"]
+    return body
+
+
+def _delete_payload(
+    request: ActionConnectorRequest,
+    profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_message_ref = _resolve_message_ref(profile, request.input_json["message_ref"])
+    chat_id, message_id = _message_ref_parts(raw_message_ref)
+    return {
+        "chat_id": chat_id,
+        "message_id": message_id,
+    }
 
 
 def _webhook_set_payload(

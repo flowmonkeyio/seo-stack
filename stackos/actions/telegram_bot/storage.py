@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
-from stackos.communications import telegram_callback_button_external_id
+from stackos.communications import (
+    communication_record_by_external_id,
+    telegram_callback_button_external_id,
+)
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
 from .policy import _request_profile_key, _split_config_values
+from .refs import _provider_message_ref, _resolve_message_ref
 
 
 def _store_outbound_message(
@@ -150,6 +156,69 @@ def _store_callback_buttons(
             )
 
 
+def _store_reaction(
+    request: ActionConnectorRequest,
+    profile: Mapping[str, Any],
+) -> None:
+    if request.session is None:
+        return
+    message_ref = request.input_json.get("message_ref")
+    emoji = request.input_json.get("emoji")
+    if not isinstance(message_ref, str) or not isinstance(emoji, str):
+        return
+    profile_key = _request_profile_key(request)
+    profile_ref = str(profile.get("profile_ref") or f"communication-profile:{profile_key}")
+    digest = hashlib.sha256(f"{message_ref}\0{emoji}".encode()).hexdigest()[:24]
+    ResourceRepository(request.session).upsert_record(
+        project_id=request.project_id,
+        plugin_slug="communications",
+        resource_key="communication-interaction",
+        external_id=f"telegram-reaction:{profile_key}:{digest}",
+        title=f"Telegram reaction {emoji}",
+        data_json={
+            "provider_key": "telegram-bot",
+            "profile_key": profile_key,
+            "profile_ref": profile_ref,
+            "interaction_type": "reaction_set",
+            "message_ref": message_ref,
+            "reaction_emoji": emoji,
+            "status": "sent",
+            "action_ref": request.action_ref,
+        },
+        provenance_json={"source": "telegram-bot-action"},
+    )
+
+
+def _mark_message_deleted(request: ActionConnectorRequest, profile: Mapping[str, Any]) -> None:
+    if request.session is None:
+        return
+    message_ref = _resolve_message_ref(profile, request.input_json.get("message_ref"))
+    if not isinstance(message_ref, str):
+        return
+    profile_key = _request_profile_key(request)
+    provider_ref = message_ref.removeprefix("telegram-message:")
+    record = communication_record_by_external_id(
+        request.session,
+        project_id=request.project_id,
+        resource_key="communication-message",
+        external_id=f"telegram-message:{profile_key}:{provider_ref}",
+    )
+    if record is None:
+        return
+    data = dict(record.data_json or {})
+    data.update(
+        {
+            "transport_status": "deleted",
+            "attention_status": "deleted",
+            "deleted_at": datetime.now(tz=UTC).isoformat(),
+            "deleted_by_action_ref": request.action_ref,
+        }
+    )
+    record.data_json = data
+    request.session.add(record)
+    request.session.commit()
+
+
 def _button_metadata(control_metadata: Any, *, callback_data: str) -> dict[str, Any]:
     if not isinstance(control_metadata, Mapping):
         return {}
@@ -176,14 +245,3 @@ def _source_button_scope(request: ActionConnectorRequest) -> dict[str, list[str]
     if isinstance(chat_ref, str) and chat_ref:
         scope["allowed_chat_refs"] = [chat_ref]
     return scope
-
-
-def _provider_message_ref(result_body: Any) -> str | None:
-    if not isinstance(result_body, Mapping):
-        return None
-    chat = result_body.get("chat")
-    chat_id = chat.get("id") if isinstance(chat, Mapping) else None
-    message_id = result_body.get("message_id")
-    if chat_id is None or message_id is None:
-        return None
-    return f"telegram-message:{chat_id}:{message_id}"

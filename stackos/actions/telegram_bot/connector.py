@@ -24,14 +24,27 @@ from .media import _send_photo
 from .payloads import (
     _callback_payload,
     _chat_id,
+    _delete_payload,
     _message_payload,
     _method_url,
+    _reaction_payload,
     _updates_payload,
     _webhook_delete_payload,
     _webhook_set_payload,
 )
-from .policy import _enforce_allowed_updates, _enforce_profile_chat, _enforce_telegram_profile
-from .storage import _store_callback_buttons, _store_outbound_message
+from .policy import (
+    _enforce_allowed_updates,
+    _enforce_profile_chat,
+    _enforce_telegram_profile,
+)
+from .refs import _message_ref_parts, _resolve_message_ref
+from .results import _telegram_delete_result, _telegram_reaction_result, _telegram_result
+from .storage import (
+    _mark_message_deleted,
+    _store_callback_buttons,
+    _store_outbound_message,
+    _store_reaction,
+)
 from .validation import validate_telegram_request
 
 
@@ -78,13 +91,12 @@ class TelegramBotActionConnector:
                 )
                 _store_outbound_message(request, profile, body, content_type="text")
                 _store_callback_buttons(request, profile, body)
-                return result(
-                    provider="telegram-bot",
-                    operation=request.operation,
+                return _telegram_result(
+                    request,
                     status_code=status,
                     body=body,
                     headers=headers,
-                    metadata={"telegram_method": "sendMessage"},
+                    telegram_method="sendMessage",
                 )
             case "photo.send":
                 profile = _enforce_profile_chat(
@@ -109,6 +121,48 @@ class TelegramBotActionConnector:
                     body=body,
                     headers=headers,
                     metadata={"telegram_method": "answerCallbackQuery"},
+                )
+            case "message.reaction.set":
+                profile = _enforce_telegram_profile(request)
+                raw_message_ref = _resolve_message_ref(
+                    profile, request.input_json.get("message_ref")
+                )
+                chat_id, _message_id = _message_ref_parts(raw_message_ref)
+                _enforce_profile_chat(request, f"telegram-chat:{chat_id}")
+                # Telegram setMessageReaction:
+                # https://core.telegram.org/bots/api#setmessagereaction
+                status, body, headers = await send_json(
+                    method="POST",
+                    url=_method_url(request, "setMessageReaction"),
+                    json_body=_reaction_payload(request, profile),
+                )
+                _store_reaction(request, profile)
+                return _telegram_reaction_result(
+                    request,
+                    status_code=status,
+                    body=body,
+                    headers=headers,
+                )
+            case "message.delete":
+                profile = _enforce_telegram_profile(request)
+                raw_message_ref = _resolve_message_ref(
+                    profile, request.input_json.get("message_ref")
+                )
+                chat_id, _message_id = _message_ref_parts(raw_message_ref)
+                _enforce_profile_chat(request, f"telegram-chat:{chat_id}")
+                # Telegram deleteMessage:
+                # https://core.telegram.org/bots/api#deletemessage
+                status, body, headers = await send_json(
+                    method="POST",
+                    url=_method_url(request, "deleteMessage"),
+                    json_body=_delete_payload(request, profile),
+                )
+                _mark_message_deleted(request, profile)
+                return _telegram_delete_result(
+                    request,
+                    status_code=status,
+                    body=body,
+                    headers=headers,
                 )
             case "updates.poll":
                 profile = _enforce_telegram_profile(request)

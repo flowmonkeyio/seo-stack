@@ -269,6 +269,8 @@ def _parse_slack_event(
         thread_ts = _safe_text(event.get("thread_ts") or message_ts)
         text = _safe_text(event.get("text"))
         user_id = _safe_text(event.get("user") or event.get("bot_id"))
+        bot_id = _safe_text(event.get("bot_id"))
+        subtype = _safe_text(event.get("subtype"))
         event_key = _safe_text(payload.get("event_id")) or body_hash
         return {
             "payload": payload,
@@ -293,6 +295,15 @@ def _parse_slack_event(
             "channel_type": _safe_text(event.get("channel_type")),
             "user_id": user_id or None,
             "user_ref": f"slack-user:{user_id}" if user_id else None,
+            "bot_id": bot_id or None,
+            "subtype": subtype or None,
+            "is_self_message": _is_self_message_event(
+                profile,
+                event_type=event_type,
+                user_id=user_id,
+                bot_id=bot_id,
+                subtype=subtype,
+            ),
             "text": text,
             "content_type": "text",
         }
@@ -404,6 +415,7 @@ def _slack_policy_event(
         group_trigger_keys=("channel_trigger", "group_trigger"),
         group_always_reason="channel_always",
         mention_literals=(f"<@{bot_user_id}>",) if bot_user_id else (),
+        is_self=bool(parsed.get("is_self_message")),
         interaction=_slack_interaction_check(profile, parsed),
     )
 
@@ -508,6 +520,8 @@ def _slack_message_write(
     parsed: dict[str, Any],
 ) -> NormalizedResourceWrite | None:
     if parsed["source_kind"] != "slack-message":
+        return None
+    if parsed.get("is_self_message") is True:
         return None
     channel_id = parsed.get("channel_id")
     message_ts = parsed.get("message_ts")
@@ -671,6 +685,25 @@ def _slack_facet_text(profile: SlackProfile, key: str) -> str | None:
         return None
     value = slack_facet.get(key)
     return str(value).strip() if value is not None and str(value).strip() else None
+
+
+def _is_self_message_event(
+    profile: SlackProfile,
+    *,
+    event_type: str,
+    user_id: str,
+    bot_id: str,
+    subtype: str,
+) -> bool:
+    if event_type != "message":
+        return False
+    profile_bot_user_id = _slack_facet_text(profile, "bot_user_id")
+    if profile_bot_user_id and user_id == profile_bot_user_id:
+        return True
+    profile_bot_id = _slack_facet_text(profile, "bot_id")
+    if profile_bot_id and bot_id == profile_bot_id:
+        return True
+    return subtype == "bot_message" and bool(profile_bot_user_id or profile_bot_id)
 
 
 def _nested(payload: Mapping[str, Any], path: str) -> Any:

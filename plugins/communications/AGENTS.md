@@ -98,9 +98,10 @@ does not run an assistant, classify intent, or decide workflows.
   with static acknowledgement text. It must not claim a workflow was completed
   unless the responsible agent or granted run actually completed it.
 - Telegram `read` and `unread` are StackOS-local attention states only.
-- Slack Web API identity, message send, conversation discovery, membership sync,
-  and signed HTTP Events API/Interactivity ingress are executable through the
-  `slack-bot` connector and `/api/v1/ingress/slack/{project_id}/{profile_key}`.
+- Slack Web API identity, message send/delete, conversation discovery,
+  membership sync, native message reactions, and signed HTTP Events
+  API/Interactivity ingress are executable through the `slack-bot` connector and
+  `/api/v1/ingress/slack/{project_id}/{profile_key}`.
 - When Slack actions include `profile_ref`, the connector must resolve the
   `communication-profile` server-side and reject mismatches between
   `provider_facets.slack-bot.auth_profile_key` and the daemon-resolved
@@ -152,11 +153,12 @@ For Slack-like, Telegram-like, email, or future chat providers:
 
 ## Current Status
 
-Telegram bot identity checks, text messages, photo sends, callback answers,
-bounded diagnostic `updates.poll`, webhook set/delete/info, and
-communication-profile-scoped secret-token ingress are executable through `action.run` for
-one explicit direct call or `action.execute` inside granted run-plan steps, via
-the `telegram-bot` connector. Communication-profile setup is executable through
+Telegram bot identity checks, text messages, photo sends, native message
+reaction set, message delete, callback answers, bounded diagnostic
+`updates.poll`, webhook set/delete/info, and communication-profile-scoped
+secret-token ingress are executable through `action.run` for one explicit direct call or
+`action.execute` inside granted run-plan steps, via the `telegram-bot`
+connector. Communication-profile setup is executable through
 `communicationProfile.*` across REST, CLI, and MCP. Webhook ingress stores
 communication resources and creates generic agent requests only after
 communication-profile trigger and access policy allow it.
@@ -171,10 +173,10 @@ explicit outbound message send only and never claims delivery/read/open/click/
 reply state. IMAP covers mailbox list, bounded UID search, selected message
 fetch, and mark seen/unseen. Slack Web API actions and signed HTTP ingress are
 executable. Automatic background callback ACK jobs, Slack Socket Mode, Slack
-history/files/reactions/admin actions, richer Telegram media/admin operations,
-broader chat/mail providers, and SMTP/IMAP OAuth or XOAUTH2 remain deferred
-until their provider-specific contracts, tests, and safe auth diagnostics are
-delivered.
+history/files/admin actions, Slack reaction remove, richer Telegram
+media/admin operations, broader chat/mail providers, and SMTP/IMAP OAuth or
+XOAUTH2 remain deferred until their provider-specific contracts, tests, and
+safe auth diagnostics are delivered.
 
 The core `agentRequest.*` operations are executable through the shared
 operation registry. Use `agentRequest.list`, `agentRequest.get`,

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from stackos.actions.connectors import ActionConnectorRequest
+from stackos.communications import communication_record_by_external_id
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
 
@@ -140,6 +143,81 @@ def _store_outbound_buttons(
             },
             provenance_json={"source": "slack-bot-action"},
         )
+
+
+def _store_reaction_add(
+    request: ActionConnectorRequest,
+    sent_payload: Mapping[str, Any],
+) -> None:
+    if request.session is None:
+        return
+    channel = str(sent_payload.get("channel") or "")
+    timestamp = str(sent_payload.get("timestamp") or "")
+    reaction_name = str(sent_payload.get("name") or "")
+    if not channel or not timestamp or not reaction_name:
+        return
+    profile_key = _communication_profile_key(request)
+    auth_profile_key = _credential_profile_key(request)
+    message_ref = _message_ref(channel, timestamp)
+    digest = _reaction_digest(message_ref=message_ref, reaction_name=reaction_name)
+    ResourceRepository(request.session).upsert_record(
+        project_id=request.project_id,
+        plugin_slug="communications",
+        resource_key="communication-interaction",
+        external_id=f"slack-reaction:{profile_key}:{digest}",
+        title=f"Slack reaction {reaction_name}",
+        data_json={
+            "provider_key": "slack-bot",
+            "profile_key": profile_key,
+            "auth_profile_key": auth_profile_key,
+            "interaction_type": "reaction_added",
+            "surface_ref": _surface_ref(channel),
+            "channel_ref": _surface_ref(channel),
+            "message_ref": message_ref,
+            "reaction_name": reaction_name,
+            "status": "sent",
+            "action_ref": request.action_ref,
+        },
+        provenance_json={"source": "slack-bot-action"},
+    )
+
+
+def _mark_message_deleted(
+    request: ActionConnectorRequest,
+    sent_payload: Mapping[str, Any],
+) -> None:
+    if request.session is None:
+        return
+    channel = str(sent_payload.get("channel") or "")
+    timestamp = str(sent_payload.get("ts") or "")
+    if not channel or not timestamp:
+        return
+    profile_key = _communication_profile_key(request)
+    external_id = f"slack-message:{profile_key}:{channel}:{timestamp}"
+    record = communication_record_by_external_id(
+        request.session,
+        project_id=request.project_id,
+        resource_key="communication-message",
+        external_id=external_id,
+    )
+    if record is None:
+        return
+    data = dict(record.data_json or {})
+    data.update(
+        {
+            "transport_status": "deleted",
+            "attention_status": "deleted",
+            "deleted_at": datetime.now(tz=UTC).isoformat(),
+            "deleted_by_action_ref": request.action_ref,
+        }
+    )
+    record.data_json = data
+    request.session.add(record)
+    request.session.commit()
+
+
+def _reaction_digest(*, message_ref: str, reaction_name: str) -> str:
+    return hashlib.sha256(f"{message_ref}\0{reaction_name}".encode()).hexdigest()[:24]
 
 
 def _button_metadata(

@@ -69,6 +69,51 @@ def _message_result(
     )
 
 
+def _reaction_add_result(
+    request: ActionConnectorRequest,
+    status: int,
+    body: Any,
+    headers: httpx.Headers,
+    sent_payload: Mapping[str, Any],
+) -> ActionConnectorResult:
+    channel = str(sent_payload.get("channel") or "")
+    timestamp = str(sent_payload.get("timestamp") or "")
+    return ActionConnectorResult(
+        output_json={
+            "provider": "slack-bot",
+            "operation": request.operation,
+            "status": "reacted",
+            "channel_ref": _surface_ref(channel) if channel else None,
+            "message_ref": _message_ref(channel, timestamp) if channel and timestamp else None,
+            "reaction_name": sent_payload.get("name"),
+        },
+        metadata_json=_metadata("reactions.add", request.operation, status, body, headers),
+    )
+
+
+def _message_delete_result(
+    request: ActionConnectorRequest,
+    status: int,
+    body: Any,
+    headers: httpx.Headers,
+    sent_payload: Mapping[str, Any],
+) -> ActionConnectorResult:
+    data = body if isinstance(body, Mapping) else {}
+    channel = str(data.get("channel") or sent_payload.get("channel") or "")
+    timestamp = str(data.get("ts") or sent_payload.get("ts") or "")
+    return ActionConnectorResult(
+        output_json={
+            "provider": "slack-bot",
+            "operation": request.operation,
+            "status": "deleted",
+            "channel_ref": _surface_ref(channel) if channel else None,
+            "message_ref": _message_ref(channel, timestamp) if channel and timestamp else None,
+            "provider_message_ts": timestamp or None,
+        },
+        metadata_json=_metadata("chat.delete", request.operation, status, body, headers),
+    )
+
+
 def _conversation_open_result(
     request: ActionConnectorRequest,
     status: int,

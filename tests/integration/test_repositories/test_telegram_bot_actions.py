@@ -117,6 +117,8 @@ def test_telegram_builtin_actions_are_registered(session: Session) -> None:
         "communications.telegram-bot.message.send": "message.send",
         "communications.telegram-bot.photo.send": "photo.send",
         "communications.telegram-bot.callback.answer": "callback.answer",
+        "communications.telegram-bot.message.reaction.set": "message.reaction.set",
+        "communications.telegram-bot.message.delete": "message.delete",
         "communications.telegram-bot.updates.poll": "updates.poll",
         "communications.telegram-bot.webhook.set": "webhook.set",
         "communications.telegram-bot.webhook.delete": "webhook.delete",
@@ -148,6 +150,16 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
         method="POST",
         url=f"{_BASE}/sendMessage",
         json={"ok": True, "result": {"message_id": 7, "chat": {"id": 12345}}},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/setMessageReaction",
+        json={"ok": True, "result": True},
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=f"{_BASE}/deleteMessage",
+        json={"ok": True, "result": True},
     )
     httpx_mock.add_response(
         method="POST",
@@ -206,6 +218,30 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
             credential_ref=credential_ref,
         )
     ).data
+    reaction = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.message.reaction.set",
+            input_json={
+                "profile_key": "support-bot",
+                "message_ref": "telegram-message:12345:7",
+                "emoji": "\U0001f44d",
+                "is_big": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+    deleted = asyncio.run(
+        repo.execute(
+            project_id=project_id,
+            action_ref="communications.telegram-bot.message.delete",
+            input_json={
+                "profile_key": "support-bot",
+                "message_ref": "telegram-message:12345:7",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
     callback = asyncio.run(
         repo.execute(
             project_id=project_id,
@@ -235,12 +271,16 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
 
     requests = httpx_mock.get_requests()
     message_body = json.loads(requests[1].content.decode("utf-8"))
-    callback_body = json.loads(requests[2].content.decode("utf-8"))
-    updates_body = json.loads(requests[3].content.decode("utf-8"))
+    reaction_body = json.loads(requests[2].content.decode("utf-8"))
+    delete_body = json.loads(requests[3].content.decode("utf-8"))
+    callback_body = json.loads(requests[4].content.decode("utf-8"))
+    updates_body = json.loads(requests[5].content.decode("utf-8"))
     rendered = json.dumps(
         {
             "identity": identity.model_dump(mode="json"),
             "message": message.model_dump(mode="json"),
+            "reaction": reaction.model_dump(mode="json"),
+            "deleted": deleted.model_dump(mode="json"),
             "callback": callback.model_dump(mode="json"),
             "updates": updates.model_dump(mode="json"),
         }
@@ -253,7 +293,22 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
     assert "allowed_chat_refs" not in sent_button
     assert callback_body == {"callback_query_id": "cbq_1", "text": "Queued"}
     assert updates_body["allowed_updates"] == ["message", "callback_query"]
+    assert reaction_body == {
+        "chat_id": 12345,
+        "message_id": 7,
+        "reaction": [{"type": "emoji", "emoji": "\U0001f44d"}],
+        "is_big": True,
+    }
+    assert delete_body == {"chat_id": 12345, "message_id": 7}
     assert message.action_call.connector_key == "telegram-bot"
+    assert message.output_json["status"] == "sent"
+    assert message.output_json["chat_ref"] == "telegram-chat:12345"
+    assert message.output_json["channel_ref"] == "telegram-chat:12345"
+    assert message.output_json["message_ref"] == "telegram-message:12345:7"
+    assert reaction.output_json["status"] == "reacted"
+    assert reaction.output_json["message_ref"] == "telegram-message:12345:7"
+    assert deleted.output_json["status"] == "deleted"
+    assert deleted.output_json["message_ref"] == "telegram-message:12345:7"
     assert callback.output_json["body"]["result"] is True
     assert updates.output_json["body"]["result"][0]["callback_query"]["data"] == "ixn_123"
     assert _TOKEN not in rendered
@@ -284,6 +339,17 @@ def test_telegram_identity_send_message_callback_and_poll_execute_without_secret
     outbound = [item for item in messages.items if item.data_json.get("direction") == "outbound"]
     assert len(outbound) == 1
     assert outbound[0].data_json["message_ref"] == "telegram-message:12345:7"
+    assert outbound[0].data_json["transport_status"] == "deleted"
+    assert outbound[0].data_json["attention_status"] == "deleted"
+    reactions = [
+        item
+        for item in interactions.items
+        if item.data_json.get("interaction_type") == "reaction_set"
+    ]
+    assert len(reactions) == 1
+    assert reactions[0].external_id.startswith("telegram-reaction:support-bot:")
+    assert reactions[0].data_json["message_ref"] == "telegram-message:12345:7"
+    assert reactions[0].data_json["reaction_emoji"] == "\U0001f44d"
 
 
 def test_telegram_photo_uploads_generated_asset_ref(

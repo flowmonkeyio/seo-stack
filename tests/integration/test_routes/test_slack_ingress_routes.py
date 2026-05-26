@@ -214,6 +214,80 @@ def test_slack_ingress_records_app_mention_and_creates_agent_request_without_bea
     )
 
 
+def test_slack_ingress_self_message_echo_does_not_overwrite_outbound_history(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    _store_slack_profile(api, project_id)
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        ResourceRepository(session).upsert_record(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+            external_id="slack-message:support-agent:C123:1770000000.000400",
+            title="Slack outbound message",
+            data_json={
+                "provider_key": "slack-bot",
+                "profile_key": "support-agent",
+                "auth_profile_key": "support-auth",
+                "direction": "outbound",
+                "surface_ref": "slack-channel:C123",
+                "channel_ref": "slack-channel:C123",
+                "thread_ref": "slack-thread:C123:1770000000.000400",
+                "message_ref": "slack-message:C123:1770000000.000400",
+                "provider_message_ts": "1770000000.000400",
+                "content_type": "text",
+                "text_preview": "StackOS sent this.",
+                "transport_status": "accepted",
+                "attention_status": "sent",
+            },
+            provenance_json={"source": "slack-bot-action"},
+        )
+    payload = {
+        "type": "event_callback",
+        "team_id": "T123",
+        "event_id": "EvSelfEcho",
+        "event": {
+            "type": "message",
+            "user": "U_BOT",
+            "channel": "C123",
+            "channel_type": "channel",
+            "text": "StackOS sent this.",
+            "ts": "1770000000.000400",
+            "event_ts": "1770000000.000400",
+        },
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    response = _post_without_bearer(
+        api,
+        f"/api/v1/ingress/slack/{project_id}/support-agent",
+        raw_body=raw_body,
+        headers={**_signed_headers(raw_body), "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 200, response.text  # type: ignore[attr-defined]
+    body = response.json()  # type: ignore[attr-defined]
+    assert body["policy_status"] == "self_message_ignored"
+    assert body["event_record_id"] is not None
+    assert body["message_record_id"] is None
+    assert body["agent_request_id"] is None
+
+    with Session(engine) as session:
+        messages = ResourceRepository(session).query_records(
+            project_id=project_id,
+            plugin_slug="communications",
+            resource_key="communication-message",
+        )
+        requests = AgentRequestRepository(session).list(project_id=project_id)
+
+    assert messages.total_estimate == 1
+    assert messages.items[0].data_json["direction"] == "outbound"
+    assert messages.items[0].data_json["attention_status"] == "sent"
+    assert messages.items[0].provenance_json == {"source": "slack-bot-action"}
+    assert requests.total_estimate == 0
+
+
 def test_slack_ingress_stores_disallowed_actor_mention_without_request(
     api: TestClient,
     project_id: int,

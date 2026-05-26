@@ -95,8 +95,8 @@ uv run pytest \
 
 This does not require a live Telegram account. It uses a fake bot token and
 mocked Bot API responses, while still exercising the real StackOS credential
-boundary, project-scoped communication profile, webhook ingress route, run-plan grant, and
-redacted action-call/resource audit.
+boundary, project-scoped communication profile, webhook ingress route, message
+reaction/delete actions, run-plan grant, and redacted action-call/resource audit.
 
 ## Slack Local Slice
 
@@ -113,8 +113,9 @@ uv run pytest \
 This does not require a live Slack workspace. It uses fake bot token/signing
 secret values and mocked Slack Web API responses, while still exercising the
 real StackOS credential boundary, communication-profile binding, raw-body HMAC
-verification, Block Kit interaction state, generic agent requests, and redacted
-action-call/resource audit.
+verification, Block Kit interaction state, native message reaction actions,
+message delete actions, generic agent requests, and redacted action-call/resource
+audit.
 
 ## Rule
 

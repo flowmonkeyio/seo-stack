@@ -63,6 +63,7 @@ class CommunicationPolicyEvent:
     group_always_reason: str = "group_always"
     command_suffixes: tuple[str, ...] = ()
     mention_literals: tuple[str, ...] = ()
+    is_self: bool = False
     is_reply_to_bot: bool = False
     interaction: CommunicationInteractionCheck | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -103,6 +104,12 @@ def evaluate_inbound_policy(
             store=False,
             create_request=False,
             status=profile.update_blocked_status,
+        )
+    if event.is_self:
+        return CommunicationDecision(
+            store=True,
+            create_request=False,
+            status="self_message_ignored",
         )
     if not _visibility_allowed(profile, event):
         return CommunicationDecision(
