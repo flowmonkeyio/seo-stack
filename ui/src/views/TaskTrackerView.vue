@@ -883,7 +883,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 </script>
 
 <template>
-  <UiPageShell>
+  <UiPageShell class="tracker-page-shell">
     <ProjectPageHeader
       :project-id="projectId"
       title="Tasks"
@@ -1208,8 +1208,15 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 <style scoped>
 .tracker-command-panel {
   display: grid;
+  flex: none;
   gap: 8px;
   padding: 10px 12px;
+}
+
+.tracker-page-shell {
+  display: flex;
+  min-height: calc(100vh - 40px);
+  flex-direction: column;
 }
 
 .tracker-command-panel__primary {
@@ -1340,25 +1347,30 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 }
 
 .tracker-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: stretch;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .tracker-focus {
-  display: grid;
-  gap: 12px;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .tracker-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .tracker-flow-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 560px;
   overflow: hidden;
 }
 
@@ -1556,8 +1568,9 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
 
 .tracker-flow {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
-  height: 640px;
+  min-height: 520px;
   background: var(--color-bg-surface-alt);
 }
 
@@ -1771,10 +1784,6 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
     justify-self: start;
   }
 
-  .tracker-flow-shell {
-    min-height: 520px;
-  }
-
   .tracker-flow-shell__bar {
     display: grid;
   }
@@ -1796,7 +1805,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   }
 
   .tracker-flow {
-    height: 520px;
+    min-height: 520px;
   }
 }
 </style>
