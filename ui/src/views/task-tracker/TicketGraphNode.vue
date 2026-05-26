@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Handle, Position } from '@vue-flow/core'
 
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 
@@ -13,6 +14,21 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
 
 <template>
   <div class="ticket-graph-node" :class="{ 'ticket-graph-node--blocked': isBlocked }">
+    <Handle
+      id="in"
+      type="target"
+      :position="Position.Left"
+      :connectable="false"
+      class="ticket-graph-node__handle ticket-graph-node__handle--target"
+    />
+    <Handle
+      id="out"
+      type="source"
+      :position="Position.Right"
+      :connectable="false"
+      class="ticket-graph-node__handle ticket-graph-node__handle--source"
+    />
+
     <div class="ticket-graph-node__top">
       <p class="ticket-graph-node__title">{{ data.label }}</p>
       <span class="ticket-graph-node__status" :class="statusClass" :title="data.status" />
@@ -38,6 +54,7 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
 
 <style scoped>
 .ticket-graph-node {
+  position: relative;
   width: 236px;
   min-height: 84px;
   border: 1px solid var(--color-border-subtle);
@@ -45,6 +62,21 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
   background: var(--color-bg-surface);
   box-shadow: 0 1px 2px rgb(15 23 42 / 7%);
   padding: 9px 10px;
+}
+
+.ticket-graph-node__handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+}
+
+.ticket-graph-node__handle--target {
+  left: -1px;
+}
+
+.ticket-graph-node__handle--source {
+  right: -1px;
 }
 
 .ticket-graph-node--blocked {
@@ -61,7 +93,7 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
 .ticket-graph-node__title {
   display: -webkit-box;
   overflow: hidden;
-  color: var(--color-text);
+  color: var(--color-fg-default);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.25;
@@ -94,7 +126,7 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
 .ticket-graph-node__subtitle {
   overflow: hidden;
   margin-top: 4px;
-  color: var(--color-text-muted);
+  color: var(--color-fg-muted);
   font-size: 10px;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -106,7 +138,7 @@ const statusClass = computed(() => `ticket-graph-node__status--${props.data.stat
   gap: 7px;
   overflow: hidden;
   margin-top: 7px;
-  color: var(--color-text-muted);
+  color: var(--color-fg-muted);
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;

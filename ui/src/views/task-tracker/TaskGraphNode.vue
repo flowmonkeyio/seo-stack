@@ -77,7 +77,7 @@ const initials = computed(() =>
   place-items: center;
   border-radius: 8px;
   background: var(--color-bg-surface-alt);
-  color: var(--color-text-muted);
+  color: var(--color-fg-muted);
   font-size: 11px;
   font-weight: 700;
 }

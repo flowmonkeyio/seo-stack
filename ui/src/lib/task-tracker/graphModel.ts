@@ -29,6 +29,11 @@ export interface BuildTrackerFlowOptions {
   showContainment?: boolean
   highlightedNodeIds?: Set<string>
   highlightedEdgeIds?: Set<string>
+  selectedNodeId?: string | null
+  upstreamNodeIds?: Set<string>
+  upstreamEdgeIds?: Set<string>
+  downstreamNodeIds?: Set<string>
+  downstreamEdgeIds?: Set<string>
   activeEdgeId?: string | null
   spotlight?: boolean
 }
@@ -39,6 +44,8 @@ export interface TrackerFlowModel {
   warnings: string[]
 }
 
+type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
+
 const TASK_WIDTH = 336
 const TICKET_WIDTH = 236
 const TICKET_HEIGHT = 88
@@ -46,10 +53,8 @@ const TASK_GAP_X = 386
 const TASK_GAP_Y = 322
 const CHILD_GAP_X = 22
 const CHILD_GAP_Y = 14
-const DEPENDENCY_TASK_WIDTH = 520
 const DEPENDENCY_LAYER_GAP_X = 308
 const DEPENDENCY_ROW_GAP_Y = 116
-const DEPENDENCY_HEADER_GAP_Y = 168
 const DEPENDENCY_GROUP_GAP_Y = 320
 const LINK_GAP_X = 176
 
@@ -101,6 +106,7 @@ export function buildTrackerFlowModel(
       },
       data: vueNodeData(graphNode, snapshot),
       class: nodeClass(options, graphNode.id),
+      zIndex: nodeZIndex(options, graphNode.id),
     })
   })
 
@@ -128,6 +134,7 @@ export function buildTrackerFlowModel(
         targetPosition: Position.Left,
         data: vueNodeData(graphNode, snapshot),
         class: nodeClass(options, graphNode.id),
+        zIndex: nodeZIndex(options, graphNode.id),
       })
     })
 
@@ -170,34 +177,8 @@ function buildDependencyTreeFlow(
     const taskChildren = (childrenByParent.get(taskNode.id) ?? [])
       .filter((node) => !node.id.startsWith('link:'))
       .sort((a, b) => graphNodeOrder(a) - graphNodeOrder(b) || a.id.localeCompare(b.id))
-    const layout = dependencyLayerLayout(
-      taskChildren,
-      graph.edges,
-      nextGroupY + DEPENDENCY_HEADER_GAP_Y,
-      warnings,
-    )
+    const layout = dependencyLayerLayout(taskChildren, graph.edges, nextGroupY, warnings)
     const bounds = layoutBounds(layout.positions)
-    const taskWidth = Math.max(
-      DEPENDENCY_TASK_WIDTH,
-      Math.min(920, bounds.width || DEPENDENCY_TASK_WIDTH),
-    )
-    const taskPosition = { x: 0, y: nextGroupY }
-    positions.set(taskNode.id, taskPosition)
-    nodes.push({
-      id: taskNode.id,
-      type: 'task-group',
-      position: taskPosition,
-      draggable: true,
-      selectable: true,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      style: {
-        width: `${taskWidth}px`,
-        height: '118px',
-      },
-      data: vueNodeData(taskNode, snapshot),
-      class: nodeClass(options, taskNode.id),
-    })
 
     for (const graphNode of orderedLayoutNodes(taskChildren, layout.layers)) {
       const position =
@@ -213,11 +194,11 @@ function buildDependencyTreeFlow(
         targetPosition: Position.Left,
         data: vueNodeData(graphNode, snapshot),
         class: nodeClass(options, graphNode.id),
+        zIndex: nodeZIndex(options, graphNode.id),
       })
     }
 
-    nextGroupY =
-      Math.max(bounds.bottom, nextGroupY + DEPENDENCY_HEADER_GAP_Y) + DEPENDENCY_GROUP_GAP_Y
+    nextGroupY = Math.max(bounds.bottom, nextGroupY) + DEPENDENCY_GROUP_GAP_Y
   }
 
   const placedNodeIds = new Set(nodes.map((node) => node.id))
@@ -241,6 +222,7 @@ function buildDependencyTreeFlow(
       targetPosition: Position.Left,
       data: vueNodeData(graphNode, snapshot),
       class: nodeClass(options, graphNode.id),
+      zIndex: nodeZIndex(options, graphNode.id),
     })
   }
 
@@ -261,6 +243,7 @@ function buildDependencyTreeFlow(
       targetPosition: Position.Left,
       data: vueNodeData(graphNode, snapshot),
       class: nodeClass(options, graphNode.id),
+      zIndex: nodeZIndex(options, graphNode.id),
     })
   }
 
@@ -643,15 +626,21 @@ function vueNodeData(graphNode: TrackerGraphNode, snapshot: TrackerSnapshot): Tr
 }
 
 function vueEdge(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): Edge {
+  const edgeTone = edgeFocusTone(edge, options)
   return {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: 'smoothstep',
+    sourceHandle: 'out',
+    targetHandle: 'in',
+    type: 'default',
     animated: false,
     label: edge.type === 'link' ? (edge.label ?? undefined) : undefined,
     class: edgeClass(edge, options),
-    data: { kind: edge.type },
+    style: edgeStyle(edgeTone),
+    interactionWidth: edgeTone === 'muted' ? 8 : 18,
+    zIndex: edgeZIndex(edgeTone),
+    data: { kind: edge.type, tone: edgeTone },
   }
 }
 
@@ -685,30 +674,125 @@ function nodeClass(options: BuildTrackerFlowOptions, graphNodeId: string): strin
   const kind = itemKindForNodeId(graphNodeId)
   const key = itemKeyForNodeId(graphNodeId)
   const classes = []
-  if (kind && key && options.selected?.kind === kind && options.selected.key === key) {
-    classes.push('tracker-node-selected')
-  }
+  const selectedByItem = Boolean(
+    kind && key && options.selected?.kind === kind && options.selected.key === key,
+  )
+  const selectedByGraph = options.selectedNodeId === graphNodeId
+  const selected = selectedByItem || selectedByGraph
+  const upstream = options.upstreamNodeIds?.has(graphNodeId) === true
+  const downstream = options.downstreamNodeIds?.has(graphNodeId) === true
+  const highlighted =
+    selected || upstream || downstream || options.highlightedNodeIds?.has(graphNodeId) === true
   if (options.spotlight) {
-    classes.push(
-      options.highlightedNodeIds?.has(graphNodeId)
-        ? 'tracker-node-highlighted'
-        : 'tracker-node-muted',
-    )
+    classes.push(highlighted ? 'tracker-node-highlighted' : 'tracker-node-muted')
   }
+  if (upstream) classes.push('tracker-node-upstream')
+  if (downstream) classes.push('tracker-node-downstream')
+  if (selected) classes.push('tracker-node-selected')
   return classes.join(' ')
+}
+
+function nodeZIndex(options: BuildTrackerFlowOptions, graphNodeId: string): number {
+  const kind = itemKindForNodeId(graphNodeId)
+  const key = itemKeyForNodeId(graphNodeId)
+  const selectedByItem = Boolean(
+    kind && key && options.selected?.kind === kind && options.selected.key === key,
+  )
+  const selected = selectedByItem || options.selectedNodeId === graphNodeId
+  if (selected) return 30
+  if (
+    options.upstreamNodeIds?.has(graphNodeId) === true ||
+    options.downstreamNodeIds?.has(graphNodeId) === true ||
+    options.highlightedNodeIds?.has(graphNodeId) === true
+  ) {
+    return 24
+  }
+  return 10
 }
 
 function edgeClass(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): string {
   const classes = ['tracker-edge', `tracker-edge-${edge.type}`]
-  if (options.activeEdgeId === edge.id) {
-    classes.push('tracker-edge-active')
-  }
+  const upstream = options.upstreamEdgeIds?.has(edge.id) === true
+  const downstream = options.downstreamEdgeIds?.has(edge.id) === true
+  const highlighted = upstream || downstream || options.highlightedEdgeIds?.has(edge.id) === true
   if (options.spotlight) {
-    classes.push(
-      options.highlightedEdgeIds?.has(edge.id) ? 'tracker-edge-highlighted' : 'tracker-edge-muted',
-    )
+    classes.push(highlighted ? 'tracker-edge-highlighted' : 'tracker-edge-muted')
   }
+  if (upstream) classes.push('tracker-edge-upstream')
+  if (downstream) classes.push('tracker-edge-downstream')
+  if (options.activeEdgeId === edge.id) classes.push('tracker-edge-active')
   return classes.join(' ')
+}
+
+function edgeFocusTone(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): EdgeFocusTone {
+  if (options.activeEdgeId === edge.id) return 'active'
+  if (options.upstreamEdgeIds?.has(edge.id)) return 'upstream'
+  if (options.downstreamEdgeIds?.has(edge.id)) return 'downstream'
+  if (!options.spotlight) return 'default'
+  if (options.highlightedEdgeIds?.has(edge.id)) return 'highlighted'
+  return 'muted'
+}
+
+function edgeStyle(tone: EdgeFocusTone): Record<string, string | number> | undefined {
+  switch (tone) {
+    case 'active':
+      return {
+        stroke: 'var(--color-accent-primary)',
+        strokeWidth: 4.5,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        opacity: 1,
+        filter: 'drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent-primary) 35%, transparent))',
+      }
+    case 'upstream':
+      return {
+        stroke: 'var(--color-warning-default)',
+        strokeWidth: 4,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        opacity: 1,
+      }
+    case 'downstream':
+      return {
+        stroke: 'var(--color-success-default)',
+        strokeWidth: 4,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        opacity: 1,
+      }
+    case 'highlighted':
+      return {
+        stroke: 'var(--color-border-strong)',
+        strokeWidth: 3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        opacity: 1,
+      }
+    case 'muted':
+      return {
+        stroke: 'color-mix(in srgb, var(--color-border-strong) 42%, var(--color-bg-surface))',
+        strokeWidth: 1,
+        opacity: 0.24,
+      }
+    default:
+      return undefined
+  }
+}
+
+function edgeZIndex(tone: EdgeFocusTone): number {
+  switch (tone) {
+    case 'active':
+      return 6
+    case 'upstream':
+    case 'downstream':
+      return 5
+    case 'highlighted':
+      return 4
+    case 'muted':
+      return 0
+    default:
+      return 1
+  }
 }
 
 function linkSubtitle(graphNode: TrackerGraphNode): string | undefined {

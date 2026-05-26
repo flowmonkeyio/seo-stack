@@ -208,26 +208,24 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
-  it('composes task, ticket, and dependency nodes as a dependency tree by default', () => {
+  it('composes ticket nodes as a dependency tree by default', () => {
     const model = buildTrackerFlowModel(snapshot)
 
-    expect(model.nodes.map((node) => node.id)).toEqual([
-      'task:workflow-1',
-      'ticket:prepare',
-      'ticket:deliver',
-    ])
+    expect(model.nodes.map((node) => node.id)).toEqual(['ticket:prepare', 'ticket:deliver'])
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.parentNode).toBeUndefined()
     expect(model.nodes.find((node) => node.id === 'ticket:deliver')?.position.x).toBeGreaterThan(
       model.nodes.find((node) => node.id === 'ticket:prepare')?.position.x ?? 0,
     )
-    expect(model.nodes.find((node) => node.id === 'task:workflow-1')?.position.y).toBeLessThan(
-      model.nodes.find((node) => node.id === 'ticket:prepare')?.position.y ?? 0,
-    )
+    expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.sourcePosition).toBe('right')
+    expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.targetPosition).toBe('left')
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',
         source: 'ticket:prepare',
         target: 'ticket:deliver',
+        sourceHandle: 'out',
+        targetHandle: 'in',
+        type: 'default',
       }),
     ])
   })
@@ -244,6 +242,9 @@ describe('buildTrackerFlowModel', () => {
   it('marks the focused dependency relation for the graph renderer', () => {
     const model = buildTrackerFlowModel(snapshot, {
       activeEdgeId: 'dependency:prepare:deliver',
+      selectedNodeId: 'ticket:deliver',
+      upstreamEdgeIds: new Set(['dependency:prepare:deliver']),
+      upstreamNodeIds: new Set(['ticket:prepare']),
       highlightedEdgeIds: new Set(['dependency:prepare:deliver']),
       highlightedNodeIds: new Set(['ticket:prepare', 'ticket:deliver']),
       spotlight: true,
@@ -251,8 +252,41 @@ describe('buildTrackerFlowModel', () => {
 
     expect(model.edges[0]?.class).toContain('tracker-edge-active')
     expect(model.edges[0]?.class).toContain('tracker-edge-highlighted')
+    expect(model.edges[0]?.class).toContain('tracker-edge-upstream')
+    expect(model.edges[0]?.style).toMatchObject({ stroke: 'var(--color-accent-primary)' })
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.class).toContain(
-      'tracker-node-highlighted',
+      'tracker-node-upstream',
+    )
+    expect(model.nodes.find((node) => node.id === 'ticket:deliver')?.class).toContain(
+      'tracker-node-selected',
+    )
+    expect(model.nodes.find((node) => node.id === 'ticket:deliver')?.zIndex).toBeGreaterThan(
+      model.edges[0]?.zIndex ?? 0,
+    )
+  })
+
+  it('marks immediate downstream dependency context separately', () => {
+    const model = buildTrackerFlowModel(snapshot, {
+      selectedNodeId: 'ticket:prepare',
+      downstreamEdgeIds: new Set(['dependency:prepare:deliver']),
+      downstreamNodeIds: new Set(['ticket:deliver']),
+      highlightedEdgeIds: new Set(['dependency:prepare:deliver']),
+      highlightedNodeIds: new Set(['ticket:prepare', 'ticket:deliver']),
+      spotlight: true,
+    })
+
+    expect(model.edges[0]?.class).toContain('tracker-edge-downstream')
+    expect(model.edges[0]?.style).toMatchObject({
+      opacity: 1,
+      stroke: 'var(--color-success-default)',
+      strokeWidth: 4,
+    })
+    expect(model.edges[0]?.zIndex).toBeGreaterThan(1)
+    expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.class).toContain(
+      'tracker-node-selected',
+    )
+    expect(model.nodes.find((node) => node.id === 'ticket:deliver')?.class).toContain(
+      'tracker-node-downstream',
     )
   })
 })
