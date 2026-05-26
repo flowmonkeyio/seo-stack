@@ -18,6 +18,7 @@ export const useProjectsStore = defineStore('projects', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const activeProjectId = ref<number | null>(null)
+  let refreshRequest: { key: string; promise: Promise<void> } | null = null
 
   const activeProject = computed<Project | null>(() => {
     if (activeProjectId.value === null) return null
@@ -33,18 +34,31 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   async function refresh(activeOnly = false): Promise<void> {
-    loading.value = true
-    error.value = null
-    try {
-      const params = new URLSearchParams({ limit: String(DEFAULT_LIMIT) })
-      if (activeOnly) params.set('active_only', 'true')
-      const page = await apiFetch<ProjectsPage>(`/api/v1/projects?${params.toString()}`)
-      _ingestPage(page, false)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'failed to load projects'
-    } finally {
-      loading.value = false
+    const key = activeOnly ? 'active' : 'all'
+    if (refreshRequest?.key === key) return refreshRequest.promise
+
+    const request: { key: string; promise: Promise<void> } = {
+      key,
+      promise: Promise.resolve(),
     }
+    const promise = (async () => {
+      loading.value = true
+      error.value = null
+      try {
+        const params = new URLSearchParams({ limit: String(DEFAULT_LIMIT) })
+        if (activeOnly) params.set('active_only', 'true')
+        const page = await apiFetch<ProjectsPage>(`/api/v1/projects?${params.toString()}`)
+        _ingestPage(page, false)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'failed to load projects'
+      } finally {
+        if (refreshRequest === request) refreshRequest = null
+        loading.value = false
+      }
+    })()
+    request.promise = promise
+    refreshRequest = request
+    await promise
   }
 
   async function loadMore(): Promise<void> {

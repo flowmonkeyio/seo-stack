@@ -88,7 +88,7 @@ const projectNavSections = computed<StackOsNavSection[]>(() => {
 watch(
   () => currentProjectId.value,
   (projectId) => {
-    if (projectId) void catalog.refresh(projectId)
+    if (projectId) void catalog.refreshPlugins(projectId, { silent: true })
   },
   { immediate: true },
 )

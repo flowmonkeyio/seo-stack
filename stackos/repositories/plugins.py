@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
@@ -34,6 +35,13 @@ def _required_id(value: int | None) -> int:
     if value is None:
         raise RuntimeError("expected persisted row id")
     return int(value)
+
+
+def _group_by_plugin_slug(rows: Sequence[Any]) -> dict[str, list[Any]]:
+    grouped: dict[str, list[Any]] = {}
+    for row in rows:
+        grouped.setdefault(row.plugin_slug, []).append(row)
+    return grouped
 
 
 class PluginOut(BaseModel):
@@ -133,14 +141,25 @@ class CatalogOut(BaseModel):
 class PluginRepository:
     """Repository for installed plugin manifests and project enablement."""
 
+    _builtin_sync_engines: ClassVar[weakref.WeakSet[Any]] = weakref.WeakSet()
+
     def __init__(self, session: Session) -> None:
         self._s = session
+        self._builtin_plugins_synced = False
+        self._disabled_plugin_ids_cache: dict[int | None, set[int]] = {}
+        self._connector_keys_cache: set[str] | None = None
 
     def sync_builtin_plugins(self) -> None:
         """Idempotently upsert built-in plugin manifests into catalog tables."""
+        engine = self._s.get_bind()
+        if self._builtin_plugins_synced or engine in self._builtin_sync_engines:
+            self._builtin_plugins_synced = True
+            return
         for manifest in BUILTIN_PLUGIN_MANIFESTS:
             self._sync_manifest(manifest)
         self._s.commit()
+        self._builtin_plugins_synced = True
+        self._builtin_sync_engines.add(engine)
 
     def list_plugins(self, *, project_id: int | None = None) -> list[PluginOut]:
         self.sync_builtin_plugins()
@@ -188,6 +207,7 @@ class PluginRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
+        self._disabled_plugin_ids_cache.clear()
         return Envelope(data=self._project_plugin_out(row, plugin), project_id=project_id)
 
     def disable(self, *, project_id: int, plugin_slug: str) -> Envelope[ProjectPluginOut]:
@@ -212,6 +232,7 @@ class PluginRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
+        self._disabled_plugin_ids_cache.clear()
         return Envelope(data=self._project_plugin_out(row, plugin), project_id=project_id)
 
     def list_capabilities(
@@ -288,12 +309,16 @@ class PluginRepository:
             self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Action.key).asc())).all()
         )
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        availability_context = self._action_availability_context(project_id)
+        connector_keys = self._connector_keys()
         return [
             self._action_out(
                 action,
                 plugin,
                 provider,
                 project_id=project_id,
+                availability_context=availability_context,
+                connector_keys=connector_keys,
             )
             for action, plugin, provider in rows
         ]
@@ -346,13 +371,25 @@ class PluginRepository:
         disabled_plugin_ids = self._disabled_plugin_ids(project_id)
         if disabled_plugin_ids:
             plugins = [plugin for plugin in plugins if plugin.id not in disabled_plugin_ids]
+        capabilities_by_plugin = _group_by_plugin_slug(
+            self.list_capabilities(plugin_slug=plugin_slug, project_id=project_id)
+        )
+        providers_by_plugin = _group_by_plugin_slug(
+            self.list_providers(plugin_slug=plugin_slug, project_id=project_id)
+        )
+        actions_by_plugin = _group_by_plugin_slug(
+            self.list_actions(plugin_slug=plugin_slug, project_id=project_id)
+        )
+        resources_by_plugin = _group_by_plugin_slug(
+            self.list_resources(plugin_slug=plugin_slug, project_id=project_id)
+        )
         catalogs = [
             PluginCatalogOut(
                 plugin=plugin,
-                capabilities=self.list_capabilities(plugin_slug=plugin.slug, project_id=project_id),
-                providers=self.list_providers(plugin_slug=plugin.slug, project_id=project_id),
-                actions=self.list_actions(plugin_slug=plugin.slug, project_id=project_id),
-                resources=self.list_resources(plugin_slug=plugin.slug, project_id=project_id),
+                capabilities=capabilities_by_plugin.get(plugin.slug, []),
+                providers=providers_by_plugin.get(plugin.slug, []),
+                actions=actions_by_plugin.get(plugin.slug, []),
+                resources=resources_by_plugin.get(plugin.slug, []),
             )
             for plugin in plugins
         ]
@@ -543,7 +580,10 @@ class PluginRepository:
     def _disabled_plugin_ids(self, project_id: int | None) -> set[int]:
         if project_id is None:
             return set()
-        return {
+        cached = self._disabled_plugin_ids_cache.get(project_id)
+        if cached is not None:
+            return cached
+        disabled_ids = {
             row.plugin_id
             for row in self._s.exec(
                 select(ProjectPlugin).where(
@@ -552,6 +592,8 @@ class PluginRepository:
                 )
             ).all()
         }
+        self._disabled_plugin_ids_cache[project_id] = disabled_ids
+        return disabled_ids
 
     def _filter_project_enabled(
         self,
@@ -563,6 +605,18 @@ class PluginRepository:
         if not disabled_plugin_ids:
             return list(rows)
         return [row for row in rows if row[1].id not in disabled_plugin_ids]
+
+    def _action_availability_context(self, project_id: int | None) -> Any:
+        from stackos.action_availability import build_action_availability_context
+
+        return build_action_availability_context(self._s, project_id=project_id)
+
+    def _connector_keys(self) -> set[str]:
+        if self._connector_keys_cache is None:
+            from stackos.actions.connectors import DEFAULT_ACTION_CONNECTORS
+
+            self._connector_keys_cache = set(DEFAULT_ACTION_CONNECTORS.list_keys())
+        return self._connector_keys_cache
 
     def _plugin_out(self, row: Plugin, enabled_for_project: bool | None) -> PluginOut:
         out = PluginOut.model_validate(row)
@@ -631,9 +685,10 @@ class PluginRepository:
         provider: Provider | None,
         *,
         project_id: int | None = None,
+        availability_context: Any | None = None,
+        connector_keys: set[str] | None = None,
     ) -> ActionOut:
         from stackos.action_availability import build_action_availability
-        from stackos.actions.connectors import DEFAULT_ACTION_CONNECTORS
         from stackos.actions.manifest import parse_action_manifest
 
         assert row.id is not None and row.plugin_id is not None
@@ -641,9 +696,10 @@ class PluginRepository:
         availability = build_action_availability(
             self._s,
             manifest=manifest,
-            connector_keys=set(DEFAULT_ACTION_CONNECTORS.list_keys()),
+            connector_keys=connector_keys if connector_keys is not None else self._connector_keys(),
             project_id=project_id,
             provider_config_json=provider.config_json if provider is not None else None,
+            context=availability_context,
         )
         return ActionOut(
             id=row.id,

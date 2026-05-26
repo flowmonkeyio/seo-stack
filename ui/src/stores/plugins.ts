@@ -11,6 +11,7 @@ import type {
   SchemaAuthTestRequest,
   SchemaCapabilityOut,
   SchemaCatalogOut,
+  SchemaPluginCatalogOut,
   SchemaPluginOut,
   SchemaProviderOut,
   SchemaResourceOut,
@@ -37,26 +38,56 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
   )
 
+  async function refreshPlugins(
+    projectId?: number,
+    options: { silent?: boolean } = {},
+  ): Promise<void> {
+    if (!options.silent) loading.value = true
+    error.value = null
+    try {
+      const pluginQuery = projectId ? `?project_id=${projectId}` : ''
+      const pluginRows = await apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`)
+      plugins.value = pluginRows
+      catalog.value = composeCatalog(
+        pluginRows,
+        capabilities.value,
+        providers.value,
+        actions.value,
+        resources.value,
+      )
+    } catch (err) {
+      error.value = formatApiError(err, 'failed to load StackOS plugins')
+    } finally {
+      if (!options.silent) loading.value = false
+    }
+  }
+
   async function refresh(projectId?: number): Promise<void> {
     loading.value = true
     error.value = null
     try {
       const pluginQuery = projectId ? `?project_id=${projectId}` : ''
-      const [pluginRows, catalogBody, capabilityRows, providerRows, actionRows, resourceRows] =
-        await Promise.all([
+      const [pluginRows, capabilityRows, providerRows, actionRows, resourceRows] = await Promise.all(
+        [
           apiFetch<SchemaPluginOut[]>(`/api/v1/plugins${pluginQuery}`),
-          apiFetch<SchemaCatalogOut>(`/api/v1/catalog${pluginQuery}`),
           apiFetch<SchemaCapabilityOut[]>(`/api/v1/capabilities${pluginQuery}`),
           apiFetch<SchemaProviderOut[]>(`/api/v1/providers${pluginQuery}`),
           apiFetch<SchemaActionOut[]>(`/api/v1/actions${pluginQuery}`),
           apiFetch<SchemaResourceOut[]>(`/api/v1/resources${pluginQuery}`),
-        ])
+        ],
+      )
       plugins.value = pluginRows
-      catalog.value = catalogBody
       capabilities.value = capabilityRows
       providers.value = providerRows
       actions.value = actionRows
       resources.value = resourceRows
+      catalog.value = composeCatalog(
+        pluginRows,
+        capabilityRows,
+        providerRows,
+        actionRows,
+        resourceRows,
+      )
     } catch (err) {
       error.value = formatApiError(err, 'failed to load StackOS catalog')
     } finally {
@@ -179,6 +210,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     loading,
     error,
     enabledPlugins,
+    refreshPlugins,
     refresh,
     refreshAuth,
     storeCredential,
@@ -191,3 +223,23 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     resourcesFor,
   }
 })
+
+function composeCatalog(
+  plugins: SchemaPluginOut[],
+  capabilities: SchemaCapabilityOut[],
+  providers: SchemaProviderOut[],
+  actions: SchemaActionOut[],
+  resources: SchemaResourceOut[],
+): SchemaCatalogOut {
+  return {
+    plugins: plugins
+      .filter((plugin) => plugin.enabled_for_project !== false)
+      .map<SchemaPluginCatalogOut>((plugin) => ({
+        plugin,
+        capabilities: capabilities.filter((capability) => capability.plugin_slug === plugin.slug),
+        providers: providers.filter((provider) => provider.plugin_slug === plugin.slug),
+        actions: actions.filter((action) => action.plugin_slug === plugin.slug),
+        resources: resources.filter((resource) => resource.plugin_slug === plugin.slug),
+      })),
+  }
+}

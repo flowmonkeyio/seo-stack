@@ -92,7 +92,79 @@ describe('StackOS catalog store auth controls', () => {
     expect(postedBodies).toContainEqual({ credential_ref: 'cred_firecrawl' })
     expect(JSON.stringify(postedBodies)).not.toContain('secret')
   })
+
+  it('refreshes catalog lists without calling the aggregate catalog endpoint', async () => {
+    const calls: string[] = []
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/api/v1/plugins?project_id=1') {
+        return json([
+          plugin('utils', true),
+          plugin('seo', false),
+        ])
+      }
+      if (url === '/api/v1/capabilities?project_id=1') {
+        return json([{ plugin_slug: 'utils', key: 'web-retrieval' }])
+      }
+      if (url === '/api/v1/providers?project_id=1') {
+        return json([{ plugin_slug: 'utils', key: 'firecrawl' }])
+      }
+      if (url === '/api/v1/actions?project_id=1') {
+        return json([{ plugin_slug: 'utils', key: 'web.scrape' }])
+      }
+      if (url === '/api/v1/resources?project_id=1') {
+        return json([{ plugin_slug: 'utils', key: 'web-document' }])
+      }
+      return json({})
+    }) as typeof fetch
+
+    const store = useStackOsCatalogStore()
+    await store.refresh(1)
+
+    expect(calls).not.toContain('/api/v1/catalog?project_id=1')
+    expect(store.plugins).toHaveLength(2)
+    expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
+    expect(store.catalog?.plugins).toHaveLength(1)
+    expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')
+    expect(store.catalog?.plugins[0].actions).toEqual([{ plugin_slug: 'utils', key: 'web.scrape' }])
+  })
+
+  it('refreshes just plugin rows for app-shell navigation', async () => {
+    const calls: string[] = []
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/api/v1/plugins?project_id=1') {
+        return json([plugin('utils', true)])
+      }
+      return json({})
+    }) as typeof fetch
+
+    const store = useStackOsCatalogStore()
+    await store.refreshPlugins(1, { silent: true })
+
+    expect(calls).toEqual(['/api/v1/plugins?project_id=1'])
+    expect(store.loading).toBe(false)
+    expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
+    expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')
+  })
 })
+
+function plugin(slug: string, enabledForProject: boolean) {
+  return {
+    id: slug === 'utils' ? 1 : 2,
+    slug,
+    name: slug,
+    version: '1.0.0',
+    description: '',
+    source: 'builtin',
+    manifest_json: {},
+    created_at: '2026-05-26T00:00:00Z',
+    updated_at: '2026-05-26T00:00:00Z',
+    enabled_for_project: enabledForProject,
+  }
+}
 
 function authProvider() {
   return {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,52 @@ class ActionAvailabilityOut(BaseModel):
     budget_kind: str | None = None
 
 
+@dataclass(frozen=True)
+class ActionAvailabilityContext:
+    """Project-scoped credential and budget state shared across action rows."""
+
+    project_id: int | None
+    credentials_by_provider: dict[str, list[Credential]] = field(default_factory=dict)
+    budgets_by_kind: dict[str, IntegrationBudget] = field(default_factory=dict)
+    now: datetime = field(default_factory=_utcnow)
+
+
+def build_action_availability_context(
+    session: Session,
+    *,
+    project_id: int | None,
+) -> ActionAvailabilityContext:
+    """Preload project state used by many action availability checks."""
+    if project_id is None:
+        return ActionAvailabilityContext(project_id=None)
+
+    credential_rows = session.exec(
+        select(Credential)
+        .where(
+            col(Credential.revoked_at).is_(None),
+            (col(Credential.project_id) == project_id) | col(Credential.project_id).is_(None),
+        )
+        .order_by(
+            col(Credential.provider_key).asc(),
+            col(Credential.project_id).desc(),
+            col(Credential.created_at).desc(),
+        )
+    ).all()
+    credentials_by_provider: dict[str, list[Credential]] = {}
+    for row in credential_rows:
+        credentials_by_provider.setdefault(row.provider_key, []).append(row)
+
+    budget_rows = session.exec(
+        select(IntegrationBudget).where(IntegrationBudget.project_id == project_id)
+    ).all()
+
+    return ActionAvailabilityContext(
+        project_id=project_id,
+        credentials_by_provider=credentials_by_provider,
+        budgets_by_kind={row.kind: row for row in budget_rows},
+    )
+
+
 def _provider_disabled(provider_config_json: dict[str, Any] | None) -> bool:
     if not isinstance(provider_config_json, dict):
         return False
@@ -49,6 +96,7 @@ def _credential_state(
     *,
     project_id: int | None,
     manifest: ExecutableActionManifest,
+    context: ActionAvailabilityContext | None = None,
 ) -> tuple[str, list[str], list[str]]:
     if manifest.execution_mode is not None and manifest.connector_key is None:
         return "not_applicable", [], []
@@ -61,15 +109,21 @@ def _credential_state(
     if manifest.provider_key is None:
         return "not_applicable", [], []
 
-    rows = session.exec(
-        select(Credential)
-        .where(
-            Credential.provider_key == manifest.provider_key,
-            col(Credential.revoked_at).is_(None),
-            (col(Credential.project_id) == project_id) | col(Credential.project_id).is_(None),
+    if context is not None and context.project_id == project_id:
+        rows = context.credentials_by_provider.get(manifest.provider_key, [])
+    else:
+        rows = list(
+            session.exec(
+                select(Credential)
+                .where(
+                    Credential.provider_key == manifest.provider_key,
+                    col(Credential.revoked_at).is_(None),
+                    (col(Credential.project_id) == project_id)
+                    | col(Credential.project_id).is_(None),
+                )
+                .order_by(col(Credential.project_id).desc(), col(Credential.created_at).desc())
+            ).all()
         )
-        .order_by(col(Credential.project_id).desc(), col(Credential.created_at).desc())
-    ).all()
     refs = [row.credential_ref for row in rows]
     connected_refs = [row.credential_ref for row in rows if row.status == "connected"]
     if connected_refs:
@@ -87,20 +141,24 @@ def _budget_state(
     *,
     project_id: int | None,
     manifest: ExecutableActionManifest,
+    context: ActionAvailabilityContext | None = None,
 ) -> tuple[str, list[str]]:
     if not manifest.enforce_budget or not manifest.budget_kind:
         return "not_enforced", []
     if project_id is None:
         return "unknown", ["project_id_required_for_budget_status"]
-    row = session.exec(
-        select(IntegrationBudget).where(
-            IntegrationBudget.project_id == project_id,
-            IntegrationBudget.kind == manifest.budget_kind,
-        )
-    ).first()
+    if context is not None and context.project_id == project_id:
+        row = context.budgets_by_kind.get(manifest.budget_kind)
+    else:
+        row = session.exec(
+            select(IntegrationBudget).where(
+                IntegrationBudget.project_id == project_id,
+                IntegrationBudget.kind == manifest.budget_kind,
+            )
+        ).first()
     if row is None:
         return "missing", ["budget_required"]
-    now = _utcnow()
+    now = context.now if context is not None and context.project_id == project_id else _utcnow()
     effective_spend = row.current_month_spend
     if (row.last_reset.year, row.last_reset.month) != (now.year, now.month):
         effective_spend = 0.0
@@ -117,6 +175,7 @@ def build_action_availability(
     project_id: int | None = None,
     provider_config_json: dict[str, Any] | None = None,
     plugin_disabled: bool = False,
+    context: ActionAvailabilityContext | None = None,
 ) -> ActionAvailabilityOut:
     """Build static, decision-free execution readiness for an action."""
     reasons: list[str] = []
@@ -127,11 +186,13 @@ def build_action_availability(
         session,
         project_id=project_id,
         manifest=manifest,
+        context=context,
     )
     budget_state, budget_reasons = _budget_state(
         session,
         project_id=project_id,
         manifest=manifest,
+        context=context,
     )
     reasons.extend(credential_reasons)
     reasons.extend(budget_reasons)
@@ -200,4 +261,9 @@ def build_action_availability(
     )
 
 
-__all__ = ["ActionAvailabilityOut", "build_action_availability"]
+__all__ = [
+    "ActionAvailabilityContext",
+    "ActionAvailabilityOut",
+    "build_action_availability",
+    "build_action_availability_context",
+]

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import weakref
+
 from sqlmodel import Session
 
+from stackos import action_availability
 from stackos.auth_providers import AuthRepository
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import (
     IntegrationBudgetRepository,
@@ -249,6 +253,61 @@ def test_project_catalog_reports_action_availability(session: Session, project_i
     assert scrape.availability.executable is True
     assert scrape.availability.credential_state == "available"
     assert scrape.availability.budget_state == "available"
+
+
+def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
+    session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(PluginRepository, "_builtin_sync_engines", weakref.WeakSet())
+    repo = PluginRepository(session)
+    synced_slugs: list[str] = []
+    sync_manifest = repo._sync_manifest
+
+    def counted_sync_manifest(manifest):
+        synced_slugs.append(manifest.slug)
+        return sync_manifest(manifest)
+
+    monkeypatch.setattr(repo, "_sync_manifest", counted_sync_manifest)
+
+    catalog = repo.catalog()
+
+    assert {plugin.plugin.slug for plugin in catalog.plugins} >= {
+        "communications",
+        "core",
+        "gtm",
+        "media-buying",
+        "publishing",
+        "seo",
+        "utils",
+    }
+    assert synced_slugs == [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
+
+
+def test_catalog_builds_action_availability_context_once(
+    session: Session,
+    project_id: int,
+    monkeypatch,
+) -> None:
+    repo = PluginRepository(session)
+    context_calls = 0
+    build_context = action_availability.build_action_availability_context
+
+    def counted_build_context(*args, **kwargs):
+        nonlocal context_calls
+        context_calls += 1
+        return build_context(*args, **kwargs)
+
+    monkeypatch.setattr(
+        action_availability,
+        "build_action_availability_context",
+        counted_build_context,
+    )
+
+    catalog = repo.catalog(project_id=project_id)
+
+    assert sum(len(plugin.actions) for plugin in catalog.plugins) >= 100
+    assert context_calls == 1
 
 
 def test_capability_provider_describe_supports_plugin_filter(session: Session) -> None:

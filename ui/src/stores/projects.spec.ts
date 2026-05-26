@@ -62,6 +62,28 @@ describe('projects store', () => {
     expect(store.items.length).toBe(0)
   })
 
+  it('dedupes concurrent refresh() calls for the same page', async () => {
+    let resolveFetch!: (response: Response) => void
+    const fetchPromise = new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    })
+    globalThis.fetch = vi.fn(() => fetchPromise) as typeof fetch
+
+    const store = useProjectsStore()
+    const first = store.refresh()
+    const second = store.refresh()
+    resolveFetch(
+      new Response(JSON.stringify(PAGE), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    await Promise.all([first, second])
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    expect(store.items).toHaveLength(1)
+  })
+
   it('creates a project and marks it active', async () => {
     const postedBodies: unknown[] = []
     globalThis.fetch = vi.fn(async (_input, init) => {
