@@ -70,7 +70,7 @@ UI consume the same contracts.
 Agent read operations:
 
 - `tracker.status`
-- `tracker.get` (full snapshot; use for UI/debug/import audits, not routine
+- `tracker.get` (full snapshot; use for UI/debug/list review audits, not routine
   agent context)
 - `tracker.next`
 - `tracker.blockers`
@@ -98,6 +98,66 @@ REST callers use the generic operation adapter:
 ```http
 POST /api/v1/operations/tracker.get/call
 POST /api/v1/operations/tracker.patch/call
+```
+
+Ticket list creation and review reuse the same operation names. Do not add
+parallel tracker endpoints for list behavior.
+
+1. Draft and validate a list without writing by calling `tracker.createTicket`
+   with `tickets_json` and `dry_run=true`.
+2. Review the returned `results`, `errors`, and `warnings`. Use `tracker.get`
+   with `task_key`, `ticket_keys`, `ticket_ids`, `block_state`, or
+   `dependency_ticket_key` when the review needs existing tracker state.
+3. Create the same list by calling `tracker.createTicket` again with
+   `dry_run=false` or without `dry_run`.
+4. Patch many tickets by calling `tracker.updateTicket` with `updates_json`.
+   Each entry identifies one ticket by `ticket_key` or `ticket_id` and supplies
+   a `patch_json`. Updates are patch-only: omitted fields are preserved.
+
+```json
+{
+  "project_id": 1,
+  "task_key": "manual-comms",
+  "tickets_json": [
+    {
+      "key": "manual-comms-schema",
+      "title": "Add tracker schema",
+      "completion_evidence_json": {
+        "changed_files": ["stackos/repositories/tracker.py"]
+      }
+    },
+    {
+      "key": "manual-comms-ui",
+      "title": "Expose tracker UI",
+      "dependency_keys": ["manual-comms-schema"]
+    }
+  ],
+  "dry_run": true
+}
+```
+
+```json
+{
+  "project_id": 1,
+  "updates_json": [
+    {
+      "ticket_key": "manual-comms-schema",
+      "patch_json": {
+        "status": "complete",
+        "completion_evidence_json": {
+          "changed_files": ["stackos/repositories/tracker.py"],
+          "summary": "Schema persisted and tested."
+        }
+      }
+    },
+    {
+      "ticket_key": "manual-comms-ui",
+      "patch_json": {
+        "assignee": "codex"
+      }
+    }
+  ]
+}
 ```
 
 CLI aliases exist for common calls but still use the same operation adapter:
@@ -169,7 +229,7 @@ The Tasks UI is a generic project work map. It renders:
 - filters by workflow, status, assignee, and search text
 - a task index where each task row shows status, source/workflow, priority,
   done/total ticket count, completion percent, and current detail
-- one focused Vue Flow graph at a time so large imported tasks remain readable
+- one focused Vue Flow graph at a time so large task graphs remain readable
 - dependency-tree graph as the primary visualization, with ticket nodes laid out
   left-to-right by prerequisite/dependent relationships
 - optional nested task-box view for compact containment inspection

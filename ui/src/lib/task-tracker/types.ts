@@ -45,6 +45,7 @@ export interface TrackerTask {
   definition_of_done_json: string[]
   constraints_json: string[]
   expected_outcomes_json: string[]
+  completion_evidence_json: Record<string, unknown> | null
   context_json: Record<string, unknown> | null
   metadata_json: Record<string, unknown> | null
   created_by: string | null
@@ -84,6 +85,7 @@ export interface TrackerTicket {
   constraints_json: string[]
   expected_changes_json: string[]
   allowed_paths_json: string[]
+  completion_evidence_json: Record<string, unknown> | null
   context_json: Record<string, unknown> | null
   metadata_json: Record<string, unknown> | null
   created_by: string | null

@@ -25,7 +25,7 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
-from stackos.repositories.base import Page
+from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.tracker import (
     TrackerBriefOut,
     TrackerChangedOut,
@@ -61,11 +61,26 @@ class TrackerProjectInput(MCPInput):
 class TrackerGetInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"project_id": 1, "include_graph": True}},
+        json_schema_extra={
+            "examples": [
+                {"project_id": 1, "include_graph": True},
+                {
+                    "project_id": 1,
+                    "task_key": "telegram-comms",
+                    "ticket_keys": ["telegram-ingress", "telegram-reply"],
+                    "include_graph": False,
+                },
+            ]
+        },
     )
 
     project_id: int
     statuses: list[TrackerItemStatus] | None = None
+    task_key: str | None = None
+    ticket_keys: list[str] | None = None
+    ticket_ids: list[int] | None = None
+    block_state: Literal["blocked", "open"] | None = None
+    dependency_ticket_key: str | None = None
     workflow_key: str | None = None
     run_plan_id: int | None = None
     assignee: str | None = None
@@ -201,6 +216,7 @@ class TrackerCreateTaskInput(MCPInput):
     definition_of_done_json: list[str] | None = None
     constraints_json: list[str] | None = None
     expected_outcomes_json: list[str] | None = None
+    completion_evidence_json: dict[str, Any] | None = None
     context_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
     created_by: str | None = None
@@ -211,20 +227,35 @@ class TrackerCreateTicketInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "task_key": "telegram-comms",
-                "key": "telegram-ingress",
-                "title": "Wire Telegram ingress",
-                "dependency_keys": [],
-            }
+            "examples": [
+                {
+                    "project_id": 1,
+                    "task_key": "telegram-comms",
+                    "key": "telegram-ingress",
+                    "title": "Wire Telegram ingress",
+                    "dependency_keys": [],
+                },
+                {
+                    "project_id": 1,
+                    "task_key": "telegram-comms",
+                    "tickets_json": [
+                        {"key": "telegram-ingress", "title": "Wire Telegram ingress"},
+                        {
+                            "key": "telegram-reply",
+                            "title": "Send safe replies",
+                            "dependency_keys": ["telegram-ingress"],
+                        },
+                    ],
+                    "dry_run": True,
+                },
+            ]
         },
     )
 
     project_id: int
-    task_key: str
-    key: str
-    title: str
+    task_key: str | None = None
+    key: str | None = None
+    title: str | None = None
     goal: str = ""
     status: TrackerItemStatus = TrackerItemStatus.NOT_STARTED
     kind: TrackerTicketKind = TrackerTicketKind.TICKET
@@ -243,9 +274,22 @@ class TrackerCreateTicketInput(MCPInput):
     expected_changes_json: list[str] | None = None
     allowed_paths_json: list[str] | None = None
     references_json: list[dict[str, Any]] | None = None
+    completion_evidence_json: dict[str, Any] | None = None
     context_json: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
     created_by: str | None = None
+    tickets_json: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Optional ticket list import. When provided, task_key is shared by default "
+            "and single-ticket key/title fields are ignored."
+        ),
+    )
+    dependencies_json: list[dict[str, Any]] | None = None
+    dry_run: bool = Field(
+        default=False,
+        description="When tickets_json is provided, validate and normalize without writing.",
+    )
 
 
 class TrackerUpdateTaskInput(MCPInput):
@@ -270,17 +314,39 @@ class TrackerUpdateTicketInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
-            "example": {
-                "project_id": 1,
-                "ticket_key": "telegram-ingress",
-                "patch_json": {"status": "complete", "outcome": "verified"},
-            }
+            "examples": [
+                {
+                    "project_id": 1,
+                    "ticket_key": "telegram-ingress",
+                    "patch_json": {"status": "complete", "outcome": "verified"},
+                },
+                {
+                    "project_id": 1,
+                    "updates_json": [
+                        {
+                            "ticket_key": "telegram-ingress",
+                            "patch_json": {"status": "complete"},
+                        },
+                        {
+                            "ticket_key": "telegram-reply",
+                            "patch_json": {"assignee": "codex"},
+                        },
+                    ],
+                },
+            ]
         },
     )
 
     project_id: int
-    ticket_key: str
-    patch_json: dict[str, Any]
+    ticket_key: str | None = None
+    patch_json: dict[str, Any] | None = None
+    updates_json: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Optional list of atomic ticket patch updates. Each item identifies a ticket "
+            "by ticket_id or ticket_key and supplies patch_json."
+        ),
+    )
     actor: str | None = None
 
 
@@ -364,6 +430,11 @@ async def tracker_get(
     return TrackerRepository(ctx.session).get(
         project_id=inp.project_id,
         statuses=inp.statuses,
+        task_key=inp.task_key,
+        ticket_keys=inp.ticket_keys,
+        ticket_ids=inp.ticket_ids,
+        block_state=inp.block_state,
+        dependency_ticket_key=inp.dependency_ticket_key,
         workflow_key=inp.workflow_key,
         run_plan_id=inp.run_plan_id,
         assignee=inp.assignee,
@@ -530,6 +601,7 @@ async def tracker_create_task(
         definition_of_done_json=inp.definition_of_done_json,
         constraints_json=inp.constraints_json,
         expected_outcomes_json=inp.expected_outcomes_json,
+        completion_evidence_json=inp.completion_evidence_json,
         context_json=inp.context_json,
         metadata_json=inp.metadata_json,
         created_by=inp.created_by,
@@ -547,6 +619,35 @@ async def tracker_create_ticket(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[TrackerMutationOut]:
+    if inp.tickets_json is not None:
+        ticket_list_json = {
+            "task_key": inp.task_key,
+            "tickets": inp.tickets_json,
+            "dependencies": inp.dependencies_json or [],
+            "created_by": inp.created_by,
+        }
+        repo = TrackerRepository(ctx.session)
+        if inp.dry_run:
+            out = repo.validate_ticket_list(
+                project_id=inp.project_id, ticket_list_json=ticket_list_json
+            )
+            return WriteEnvelope[TrackerMutationOut](
+                data=out,
+                run_id=ctx.run_id,
+                project_id=inp.project_id,
+            )
+        env = repo.create_ticket_list(
+            project_id=inp.project_id,
+            ticket_list_json=ticket_list_json,
+            actor=inp.created_by,
+        )
+        return WriteEnvelope[TrackerMutationOut](
+            data=env.data,
+            run_id=ctx.run_id,
+            project_id=env.project_id,
+        )
+    if inp.task_key is None or inp.key is None or inp.title is None:
+        raise ValidationError("task_key, key, and title are required for single ticket creation")
     env = TrackerRepository(ctx.session).create_ticket(
         project_id=inp.project_id,
         task_key=inp.task_key,
@@ -570,6 +671,7 @@ async def tracker_create_ticket(
         expected_changes_json=inp.expected_changes_json,
         allowed_paths_json=inp.allowed_paths_json,
         references_json=inp.references_json,
+        completion_evidence_json=inp.completion_evidence_json,
         context_json=inp.context_json,
         metadata_json=inp.metadata_json,
         created_by=inp.created_by,
@@ -604,6 +706,19 @@ async def tracker_update_ticket(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[TrackerMutationOut]:
+    if inp.updates_json is not None:
+        env = TrackerRepository(ctx.session).update_ticket_list(
+            project_id=inp.project_id,
+            updates_json=inp.updates_json,
+            actor=inp.actor,
+        )
+        return WriteEnvelope[TrackerMutationOut](
+            data=env.data,
+            run_id=ctx.run_id,
+            project_id=env.project_id,
+        )
+    if inp.ticket_key is None or inp.patch_json is None:
+        raise ValidationError("ticket_key and patch_json are required for single ticket update")
     env = TrackerRepository(ctx.session).update_ticket(
         project_id=inp.project_id,
         ticket_key=inp.ticket_key,
@@ -749,20 +864,22 @@ def _write_spec(
     handler: Any,
     purpose: str,
     examples: tuple[OperationExample, ...] = (),
+    output_model: Any = WriteEnvelope[TrackerMutationOut],
 ) -> OperationSpec:
     return OperationSpec(
         name=name,
         summary=summary,
         input_model=input_model,
-        output_model=WriteEnvelope[TrackerMutationOut],
+        output_model=output_model,
         handler=handler,
         surfaces=_surfaces(name),
         purpose=purpose,
         when_to_use=(
             "Use this when the agent has decided how tracker state should change.",
-            "Do not put secrets in patch_json, metadata_json, context_json, or references.",
+            "Do not put secrets in patch_json, metadata_json, context_json, "
+            "completion_evidence_json, or references.",
         ),
-        prerequisites=("Pass project_id and stable task/ticket keys.",),
+        prerequisites=("Pass project_id and stable task/ticket keys or ticket ids.",),
         returns=("A WriteEnvelope with compact mutation output and the new tracker revision.",),
         examples=examples,
         mutating=True,
@@ -783,12 +900,26 @@ def operation_specs() -> list[OperationSpec]:
         ),
         _read_spec(
             name="tracker.get",
-            summary="Fetch tasks, tickets, dependencies, links, and optional graph projection.",
+            summary=(
+                "Fetch filtered tasks, tickets, dependencies, links, and optional graph projection."
+            ),
             input_model=TrackerGetInput,
             output_model=TrackerSnapshotOut,
             handler=tracker_get,
-            purpose="Use this for UI rendering or when the agent needs a bounded project work map.",
+            purpose=(
+                "Use this for UI rendering, list review by task/ticket ids, or when "
+                "the agent needs a bounded project work map."
+            ),
             examples=(
+                OperationExample(
+                    title="Review selected tickets under one task",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "core-tracker",
+                        "ticket_keys": ["core-tracker-schema", "core-tracker-ui"],
+                        "include_graph": False,
+                    },
+                ),
                 OperationExample(
                     title="Fetch workflow-filtered tracker graph",
                     arguments={
@@ -887,10 +1018,32 @@ def operation_specs() -> list[OperationSpec]:
         ),
         _write_spec(
             name="tracker.createTicket",
-            summary="Create one executable ticket under a task.",
+            summary="Create one executable ticket or validate/create a ticket list under a task.",
             input_model=TrackerCreateTicketInput,
             handler=tracker_create_ticket,
-            purpose="Use this to split a task into clear executable units and dependencies.",
+            purpose=(
+                "Use this to split a task into clear executable units and dependencies. "
+                "Pass tickets_json with dry_run=true to draft/review a list before "
+                "creating tickets."
+            ),
+            examples=(
+                OperationExample(
+                    title="Dry-run a ticket list",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "core-tracker",
+                        "tickets_json": [
+                            {"key": "core-tracker-schema", "title": "Add tracker schema"},
+                            {
+                                "key": "core-tracker-ui",
+                                "title": "Expose tracker UI",
+                                "dependency_keys": ["core-tracker-schema"],
+                            },
+                        ],
+                        "dry_run": True,
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.updateTask",
@@ -901,10 +1054,32 @@ def operation_specs() -> list[OperationSpec]:
         ),
         _write_spec(
             name="tracker.updateTicket",
-            summary="Update one ticket using an explicit patch.",
+            summary="Update one ticket or apply a list of atomic ticket patches.",
             input_model=TrackerUpdateTicketInput,
             handler=tracker_update_ticket,
-            purpose="Use this for ticket status, assignee, blockers, outcome, and dependencies.",
+            purpose=(
+                "Use this for ticket status, assignee, blockers, outcome, evidence, and "
+                "dependencies. Pass updates_json when several tickets need independent "
+                "patch-only updates by ticket_key or ticket_id."
+            ),
+            examples=(
+                OperationExample(
+                    title="Patch a ticket list",
+                    arguments={
+                        "project_id": 1,
+                        "updates_json": [
+                            {
+                                "ticket_key": "core-tracker-schema",
+                                "patch_json": {"status": "complete"},
+                            },
+                            {
+                                "ticket_key": "core-tracker-ui",
+                                "patch_json": {"assignee": "codex"},
+                            },
+                        ],
+                    },
+                ),
+            ),
         ),
         _write_spec(
             name="tracker.patch",

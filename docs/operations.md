@@ -234,6 +234,12 @@ The current core operation registry includes:
 - `runPlan.claimStep`
 - `runPlan.recordStep`
 
+Tracker list workflows reuse existing tracker operations. Use
+`tracker.createTicket` with `tickets_json` and `dry_run=true` for draft review,
+call the same operation without dry-run to create the list, use `tracker.get`
+filters for review, and use `tracker.updateTicket` with `updates_json` for
+atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
+
 ## Direct Actions Vs Workflows
 
 `action.run` is for one explicit action when no workflow state is needed:

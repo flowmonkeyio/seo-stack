@@ -27,7 +27,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import current_alembic_version, upgrade_to_head
 
-HEAD_REVISION = "0015_stackos_task_tracker"
+HEAD_REVISION = "0016_tracker_completion_evidence"
 
 
 @pytest.fixture

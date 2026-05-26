@@ -191,6 +191,99 @@ def test_tracker_patch_rejects_unsupported_shapes(
         )
 
 
+def test_tracker_ticket_list_import_review_update_and_evidence(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="ticket-list-flow",
+        title="Ticket list flow",
+        completion_evidence_json={"self_test": ["browser review planned"]},
+        created_by="codex",
+    )
+
+    ticket_list_json = {
+        "task_key": "ticket-list-flow",
+        "tickets": [
+            {
+                "key": "ticket-list-schema",
+                "title": "Add ticket list schema",
+                "completion_evidence_json": {"changed_files": ["stackos/repositories/tracker.py"]},
+            },
+            {
+                "key": "ticket-list-ui",
+                "title": "Expose ticket list UI",
+                "dependency_keys": ["ticket-list-schema"],
+            },
+        ],
+        "created_by": "codex",
+    }
+
+    dry_run = repo.validate_ticket_list(project_id=project_id, ticket_list_json=ticket_list_json)
+    assert dry_run.dry_run is True
+    assert dry_run.valid is True
+    assert [result.action for result in dry_run.results] == ["validated", "validated"]
+    assert repo.get(project_id=project_id, task_key="ticket-list-flow").tickets == []
+
+    imported = repo.create_ticket_list(
+        project_id=project_id,
+        ticket_list_json=ticket_list_json,
+        actor="codex",
+    ).data
+    assert imported.valid is True
+    assert [ticket.key for ticket in imported.tickets] == ["ticket-list-schema", "ticket-list-ui"]
+    assert imported.dependencies[0].ticket_key == "ticket-list-ui"
+    assert imported.dependencies[0].depends_on_ticket_key == "ticket-list-schema"
+    assert imported.tickets[0].completion_evidence_json == {
+        "changed_files": ["stackos/repositories/tracker.py"]
+    }
+
+    review = repo.get(
+        project_id=project_id,
+        task_key="ticket-list-flow",
+        ticket_keys=["ticket-list-ui"],
+        include_graph=False,
+    )
+    assert [ticket.key for ticket in review.tickets] == ["ticket-list-ui"]
+    assert review.graph is None
+
+    ticket_id = imported.tickets[1].id
+    updated = repo.update_ticket_list(
+        project_id=project_id,
+        updates_json=[
+            {
+                "ticket_key": "ticket-list-schema",
+                "patch_json": {
+                    "status": "complete",
+                    "completion_evidence_json": {
+                        "changed_files": ["stackos/repositories/tracker.py"],
+                        "summary": "List import contract persisted.",
+                    },
+                },
+            },
+            {"ticket_id": ticket_id, "patch_json": {"assignee": "codex"}},
+        ],
+        actor="codex",
+    ).data
+    assert updated.valid is True
+    assert [result.action for result in updated.results] == ["updated", "updated"]
+    assert {tuple(result.changed_fields) for result in updated.results} == {
+        ("status", "completion_evidence_json"),
+        ("assignee",),
+    }
+
+    snapshot = repo.get(project_id=project_id, task_key="ticket-list-flow", include_graph=False)
+    by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert by_key["ticket-list-schema"].status == TrackerItemStatus.COMPLETE
+    assert by_key["ticket-list-schema"].completion_evidence_json == {
+        "changed_files": ["stackos/repositories/tracker.py"],
+        "summary": "List import contract persisted.",
+    }
+    assert by_key["ticket-list-ui"].assignee == "codex"
+
+
 def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -> None:
     plan = (
         RunPlanRepository(session)

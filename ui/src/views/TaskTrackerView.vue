@@ -13,6 +13,7 @@ import {
   UiBadge,
   UiButton,
   UiCallout,
+  UiDialog,
   UiEmptyState,
   UiFormField,
   UiInput,
@@ -93,6 +94,7 @@ const selected = ref<TrackerSelectedItem | null>(null)
 const selectedEdgeId = ref<string | null>(null)
 const selectedNodeFocusId = ref<string | null>(null)
 const detailPanelOpen = ref(false)
+const taskDetailOpen = ref(false)
 const graphStatusFilters = ref<TrackerStatus[]>([])
 const graphBlockFilters = ref<GraphBlockFilter[]>([])
 
@@ -210,7 +212,7 @@ const taskSelectOptions = computed(() =>
     value: row.key,
     label: row.task.title,
     rightLabel: row.task.status.replace(/-/g, ' '),
-    rightMeta: `${row.doneCount}/${row.totalCount} tasks`,
+    rightMeta: `${row.doneCount}/${row.totalCount} tickets`,
     rightTone: trackerStatusTone(row.task.status),
   })),
 )
@@ -301,6 +303,8 @@ const selectedTicket = computed(() =>
     ? (graphTickets.value.find((ticket) => ticket.key === selected.value?.key) ?? null)
     : null,
 )
+
+const activeTask = computed(() => activeTaskRow.value?.task ?? null)
 
 const detailPanelTitle = computed(() => {
   if (selectedTicket.value) return selectedTicket.value.title
@@ -645,8 +649,26 @@ function onEdgeClick(event: EdgeMouseEvent): void {
 }
 
 function onPaneClick(event: MouseEvent): void {
+  clearGraphFocusFromCanvasClick(event)
+}
+
+function onGraphCanvasClick(event: MouseEvent): void {
+  clearGraphFocusFromCanvasClick(event)
+}
+
+function clearGraphFocusFromCanvasClick(event: MouseEvent): void {
   const target = event.target instanceof Element ? event.target : null
-  if (target?.closest('.vue-flow__node, .vue-flow__edge, .vue-flow__controls, .vue-flow__minimap')) {
+  if (
+    target?.closest(
+      [
+        '.vue-flow__node',
+        '.vue-flow__edge',
+        '.vue-flow__controls',
+        '.vue-flow__minimap',
+        '.tracker-graph-selection__actions',
+      ].join(', '),
+    )
+  ) {
     return
   }
   clearGraphFocus()
@@ -724,6 +746,14 @@ function syncActiveTaskToUrl(taskKey: string): void {
 
 function pluralize(label: string, count: number): string {
   return count === 1 ? label : `${label}s`
+}
+
+function hasJsonObject(value: Record<string, unknown> | null): boolean {
+  return Boolean(value && Object.keys(value).length > 0)
+}
+
+function formatJsonBlock(value: Record<string, unknown> | null): string {
+  return value ? JSON.stringify(value, null, 2) : ''
 }
 
 function countStatuses(statuses: TrackerStatus[]): Record<TrackerStatus, number> {
@@ -1002,16 +1032,24 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
           <UiPanel v-if="viewMode === 'graph'" :padded="false" class="tracker-flow-shell">
             <div class="tracker-flow-shell__bar">
               <div>
-                <p class="tracker-flow-shell__eyebrow">
-                  Dependency map
-                </p>
+                <p class="tracker-flow-shell__eyebrow">Dependency map</p>
                 <p class="tracker-flow-shell__title">
                   {{ activeTaskRow?.task.title ?? 'Task graph' }}
                 </p>
               </div>
-              <div class="tracker-flow-shell__stats">
-                <span>{{ graphTicketStatLabel }}</span>
-                <span>{{ graphEdgeStatLabel }}</span>
+              <div class="tracker-flow-shell__right">
+                <div class="tracker-flow-shell__stats">
+                  <span>{{ graphTicketStatLabel }}</span>
+                  <span>{{ graphEdgeStatLabel }}</span>
+                </div>
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!activeTask"
+                  @click="taskDetailOpen = true"
+                >
+                  Task details
+                </UiButton>
               </div>
             </div>
             <div class="tracker-graph-controls">
@@ -1059,64 +1097,71 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
                 </button>
               </div>
             </div>
-            <VueFlow
-              :key="flowRenderKey"
-              class="tracker-flow"
-              :nodes="flow.nodes"
-              :edges="flow.edges"
-              :default-viewport="{ x: 32, y: 32, zoom: 0.72 }"
-              :fit-view-on-init="graphFitOnInit"
-              :min-zoom="0.12"
-              :max-zoom="1.5"
-              pan-on-scroll
-              @node-click="onNodeClick"
-              @edge-click="onEdgeClick"
-              @pane-click="onPaneClick"
-            >
-              <template #node-tracker-ticket="props">
-                <TicketGraphNode v-bind="props" />
-              </template>
-              <Background pattern-color="var(--color-border-subtle)" />
-              <MiniMap pannable zoomable />
-              <Controls />
-              <div
-                v-if="graphSelectionVisible"
-                class="tracker-graph-selection"
-                @pointerdown.stop
-                @mousedown.stop
-                @click.stop
+            <div class="tracker-flow-frame" @click.capture="onGraphCanvasClick">
+              <VueFlow
+                :key="flowRenderKey"
+                class="tracker-flow"
+                :nodes="flow.nodes"
+                :edges="flow.edges"
+                :default-viewport="{ x: 32, y: 32, zoom: 0.72 }"
+                :fit-view-on-init="graphFitOnInit"
+                :min-zoom="0.12"
+                :max-zoom="1.5"
+                pan-on-scroll
+                @node-click="onNodeClick"
+                @edge-click="onEdgeClick"
+                @pane-click="onPaneClick"
               >
-                <div class="tracker-graph-selection__main">
-                  <div class="tracker-graph-selection__title-row">
-                    <p class="tracker-graph-selection__eyebrow">
-                      {{ graphSelectionLabel }}
-                    </p>
-                    <p class="tracker-graph-selection__title">
-                      {{ selectedTicket?.title ?? 'Dependency context' }}
-                    </p>
-                    <TrackerStatusBadge v-if="selectedTicket" :status="selectedTicket.status" />
+                <template #node-tracker-ticket="props">
+                  <TicketGraphNode v-bind="props" />
+                </template>
+                <Background pattern-color="var(--color-border-subtle)" />
+                <MiniMap pannable zoomable />
+                <Controls />
+                <div
+                  v-if="graphSelectionVisible"
+                  class="tracker-graph-selection"
+                  @pointerdown.stop
+                  @mousedown.stop
+                >
+                  <div class="tracker-graph-selection__main">
+                    <div class="tracker-graph-selection__title-row">
+                      <p class="tracker-graph-selection__eyebrow">
+                        {{ graphSelectionLabel }}
+                      </p>
+                      <p class="tracker-graph-selection__title">
+                        {{ selectedTicket?.title ?? 'Dependency context' }}
+                      </p>
+                      <TrackerStatusBadge v-if="selectedTicket" :status="selectedTicket.status" />
+                    </div>
+                    <div class="tracker-graph-selection__meta">
+                      <span v-if="selectedTicket">{{ selectedTicket.key }}</span>
+                      <span v-if="selectedGraphEdge?.label">{{ selectedGraphEdge.label }}</span>
+                      <span v-for="stat in graphSelectionStats" :key="stat">{{ stat }}</span>
+                      <span v-if="selectedTicket?.assignee"
+                        >owner {{ selectedTicket.assignee }}</span
+                      >
+                      <span v-if="selectedTicket?.run_plan_id"
+                        >run {{ selectedTicket.run_plan_id }}</span
+                      >
+                    </div>
                   </div>
-                  <div class="tracker-graph-selection__meta">
-                    <span v-if="selectedTicket">{{ selectedTicket.key }}</span>
-                    <span v-if="selectedGraphEdge?.label">{{ selectedGraphEdge.label }}</span>
-                    <span v-for="stat in graphSelectionStats" :key="stat">{{ stat }}</span>
-                    <span v-if="selectedTicket?.assignee">owner {{ selectedTicket.assignee }}</span>
-                    <span v-if="selectedTicket?.run_plan_id">run {{ selectedTicket.run_plan_id }}</span>
+                  <div class="tracker-graph-selection__actions">
+                    <UiButton
+                      v-if="selectedTicket"
+                      variant="secondary"
+                      size="sm"
+                      @click.stop="openSelectedDetail"
+                    >
+                      Details
+                    </UiButton>
+                    <UiButton variant="ghost" size="sm" @click.stop="clearGraphFocus"
+                      >Clear</UiButton
+                    >
                   </div>
                 </div>
-                <div class="tracker-graph-selection__actions">
-                  <UiButton
-                    v-if="selectedTicket"
-                    variant="secondary"
-                    size="sm"
-                    @click="openSelectedDetail"
-                  >
-                    Details
-                  </UiButton>
-                  <UiButton variant="ghost" size="sm" @click="clearGraphFocus">Clear</UiButton>
-                </div>
-              </div>
-            </VueFlow>
+              </VueFlow>
+            </div>
           </UiPanel>
 
           <UiPanel v-else :padded="false" class="overflow-hidden">
@@ -1134,7 +1179,6 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
               </template>
             </DataTable>
           </UiPanel>
-
         </div>
       </div>
     </div>
@@ -1174,6 +1218,18 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
             <span>Run plan</span>
             <strong>{{ selectedTicket.run_plan_id ?? '-' }}</strong>
           </div>
+          <div class="tracker-detail-fact">
+            <span>Parent</span>
+            <strong>{{ selectedTicket.parent_ticket_key ?? '-' }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Source</span>
+            <strong>{{ selectedTicket.source_kind }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Updated</span>
+            <strong>{{ formatDateTime(selectedTicket.updated_at) }}</strong>
+          </div>
         </div>
         <UiCallout
           v-if="selectedTicket.blocker_reason || selectedTicket.blocked_by.length"
@@ -1191,9 +1247,54 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
             </li>
           </ul>
         </div>
+        <div v-if="selectedTicket.expected_changes_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Expected changes</p>
+          <ul class="tracker-detail-list">
+            <li v-for="item in selectedTicket.expected_changes_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div v-if="selectedTicket.allowed_paths_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Allowed paths</p>
+          <ul class="tracker-detail-list tracker-detail-list--mono">
+            <li v-for="item in selectedTicket.allowed_paths_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div v-if="selectedTicket.constraints_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Constraints</p>
+          <ul class="tracker-detail-list">
+            <li v-for="item in selectedTicket.constraints_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
         <p v-if="selectedTicket.outcome" class="tracker-detail__outcome">
           {{ selectedTicket.outcome }}
         </p>
+        <div
+          v-if="hasJsonObject(selectedTicket.completion_evidence_json)"
+          class="tracker-detail-section"
+        >
+          <p class="tracker-detail-section__title">Completion evidence</p>
+          <pre class="tracker-detail-json">{{
+            formatJsonBlock(selectedTicket.completion_evidence_json)
+          }}</pre>
+        </div>
+        <div v-if="hasJsonObject(selectedTicket.source_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Source</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(selectedTicket.source_json) }}</pre>
+        </div>
+        <div v-if="hasJsonObject(selectedTicket.context_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Context</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(selectedTicket.context_json) }}</pre>
+        </div>
+        <div v-if="hasJsonObject(selectedTicket.metadata_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Metadata</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(selectedTicket.metadata_json) }}</pre>
+        </div>
       </div>
 
       <UiEmptyState
@@ -1202,6 +1303,94 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
         description="Pick a ticket from the graph or table."
       />
     </UiSidePanel>
+
+    <UiDialog
+      v-model="taskDetailOpen"
+      :title="activeTask?.title ?? 'Task detail'"
+      :description="activeTask?.key"
+      size="lg"
+    >
+      <div v-if="activeTask" class="tracker-detail__body">
+        <div class="tracker-detail__drawer-kicker">
+          <p class="tracker-detail__eyebrow">Task</p>
+          <TrackerStatusBadge :status="activeTask.status" />
+        </div>
+        <p v-if="activeTask.goal || activeTask.description" class="tracker-detail__description">
+          {{ activeTask.goal || activeTask.description }}
+        </p>
+        <div class="tracker-detail__facts">
+          <div class="tracker-detail-fact">
+            <span>Owner</span>
+            <strong>{{ activeTask.owner ?? '-' }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Priority</span>
+            <strong>{{ activeTask.priority_key }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Lane</span>
+            <strong>{{ activeTask.lane_key }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Type</span>
+            <strong>{{ activeTask.task_type }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Source</span>
+            <strong>{{ activeTask.source_kind }}</strong>
+          </div>
+          <div class="tracker-detail-fact">
+            <span>Updated</span>
+            <strong>{{ formatDateTime(activeTask.updated_at) }}</strong>
+          </div>
+        </div>
+        <div v-if="activeTask.definition_of_done_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Definition of done</p>
+          <ul class="tracker-detail-list">
+            <li v-for="item in activeTask.definition_of_done_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div v-if="activeTask.expected_outcomes_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Expected outcomes</p>
+          <ul class="tracker-detail-list">
+            <li v-for="item in activeTask.expected_outcomes_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div v-if="activeTask.constraints_json.length" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Constraints</p>
+          <ul class="tracker-detail-list">
+            <li v-for="item in activeTask.constraints_json" :key="item">
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div
+          v-if="hasJsonObject(activeTask.completion_evidence_json)"
+          class="tracker-detail-section"
+        >
+          <p class="tracker-detail-section__title">Completion evidence</p>
+          <pre class="tracker-detail-json">{{
+            formatJsonBlock(activeTask.completion_evidence_json)
+          }}</pre>
+        </div>
+        <div v-if="hasJsonObject(activeTask.source_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Source</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(activeTask.source_json) }}</pre>
+        </div>
+        <div v-if="hasJsonObject(activeTask.context_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Context</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(activeTask.context_json) }}</pre>
+        </div>
+        <div v-if="hasJsonObject(activeTask.metadata_json)" class="tracker-detail-section">
+          <p class="tracker-detail-section__title">Metadata</p>
+          <pre class="tracker-detail-json">{{ formatJsonBlock(activeTask.metadata_json) }}</pre>
+        </div>
+      </div>
+    </UiDialog>
   </UiPageShell>
 </template>
 
@@ -1410,6 +1599,14 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   font-weight: 600;
 }
 
+.tracker-flow-shell__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+
 .tracker-graph-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1566,10 +1763,18 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   gap: 6px;
 }
 
-.tracker-flow {
+.tracker-flow-frame {
   position: relative;
   flex: 1 1 auto;
   width: 100%;
+  min-height: 520px;
+  min-width: 0;
+}
+
+.tracker-flow {
+  position: relative;
+  width: 100%;
+  height: 100%;
   min-height: 520px;
   background: var(--color-bg-surface-alt);
 }
@@ -1668,6 +1873,11 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   line-height: 1.45;
 }
 
+.tracker-detail-list--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .tracker-detail__outcome {
   border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
@@ -1676,6 +1886,20 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   font-size: 13px;
   line-height: 1.5;
   padding: 12px 14px;
+}
+
+.tracker-detail-json {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 6px;
+  background: var(--color-bg-sunken);
+  color: var(--color-fg-default);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 12px;
+  white-space: pre-wrap;
 }
 
 :deep(.tracker-node-highlighted .ticket-graph-node) {
@@ -1789,6 +2013,10 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
   }
 
   .tracker-flow-shell__stats {
+    justify-content: start;
+  }
+
+  .tracker-flow-shell__right {
     justify-content: start;
   }
 

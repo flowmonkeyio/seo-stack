@@ -50,3 +50,89 @@ def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int
         "task:rest-tracker",
         "ticket:rest-ticket",
     }
+
+
+def test_tracker_operations_rest_create_ticket_accepts_list(
+    api: TestClient, project_id: int
+) -> None:
+    created_task = api.post(
+        "/api/v1/operations/tracker.createTask/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "key": "rest-ticket-list",
+                "title": "REST ticket list",
+                "created_by": "route-test",
+            }
+        },
+    )
+    assert created_task.status_code == 200, created_task.text
+
+    list_arguments = {
+        "project_id": project_id,
+        "task_key": "rest-ticket-list",
+        "tickets_json": [
+            {"key": "rest-ticket-list-schema", "title": "Schema"},
+            {
+                "key": "rest-ticket-list-ui",
+                "title": "UI",
+                "dependency_keys": ["rest-ticket-list-schema"],
+            },
+        ],
+        "created_by": "route-test",
+    }
+    dry_run = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={"arguments": {**list_arguments, "dry_run": True}},
+    )
+    assert dry_run.status_code == 200, dry_run.text
+    assert dry_run.json()["data"]["dry_run"] is True
+    assert dry_run.json()["data"]["valid"] is True
+
+    imported = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={"arguments": list_arguments},
+    )
+    assert imported.status_code == 200, imported.text
+    assert [ticket["key"] for ticket in imported.json()["data"]["tickets"]] == [
+        "rest-ticket-list-schema",
+        "rest-ticket-list-ui",
+    ]
+
+    updated = api.post(
+        "/api/v1/operations/tracker.updateTicket/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "updates_json": [
+                    {
+                        "ticket_key": "rest-ticket-list-schema",
+                        "patch_json": {"status": "complete"},
+                    },
+                    {
+                        "ticket_key": "rest-ticket-list-ui",
+                        "patch_json": {"assignee": "codex"},
+                    },
+                ],
+            }
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert [result["action"] for result in updated.json()["data"]["results"]] == [
+        "updated",
+        "updated",
+    ]
+
+    reviewed = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "rest-ticket-list",
+                "ticket_keys": ["rest-ticket-list-ui"],
+                "include_graph": False,
+            }
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert [ticket["key"] for ticket in reviewed.json()["tickets"]] == ["rest-ticket-list-ui"]

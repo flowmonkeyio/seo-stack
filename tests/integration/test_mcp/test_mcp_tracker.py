@@ -119,3 +119,106 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
     )
     assert [ticket["key"] for ticket in searched["tickets"]] == ["mcp-ticket"]
     assert "project_id" not in searched["tickets"][0]
+
+
+def test_tracker_mcp_create_get_update_accept_ticket_lists(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "mcp-ticket-list",
+            "title": "MCP ticket list",
+            "created_by": "mcp-test",
+        },
+    )
+    list_payload = {
+        "project_id": project_id,
+        "task_key": "mcp-ticket-list",
+        "tickets_json": [
+            {
+                "key": "mcp-ticket-list-schema",
+                "title": "Schema contract",
+                "completion_evidence_json": {"changed_files": ["stackos/operations/tracker.py"]},
+            },
+            {
+                "key": "mcp-ticket-list-ui",
+                "title": "UI review",
+                "dependency_keys": ["mcp-ticket-list-schema"],
+            },
+        ],
+        "created_by": "mcp-test",
+    }
+
+    dry_run = mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {**list_payload, "dry_run": True},
+    )
+    assert dry_run["data"]["dry_run"] is True
+    assert dry_run["data"]["valid"] is True
+    assert [result["action"] for result in dry_run["data"]["results"]] == ["validated", "validated"]
+
+    empty_review = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": "mcp-ticket-list", "include_graph": False},
+    )
+    assert empty_review["tickets"] == []
+
+    imported = mcp_client.call_tool_structured("tracker.createTicket", list_payload)
+    assert imported["data"]["valid"] is True
+    assert [ticket["key"] for ticket in imported["data"]["tickets"]] == [
+        "mcp-ticket-list-schema",
+        "mcp-ticket-list-ui",
+    ]
+    assert imported["data"]["dependencies"][0]["depends_on_ticket_key"] == "mcp-ticket-list-schema"
+
+    review = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": "mcp-ticket-list",
+            "ticket_keys": ["mcp-ticket-list-ui"],
+            "include_graph": False,
+        },
+    )
+    assert [ticket["key"] for ticket in review["tickets"]] == ["mcp-ticket-list-ui"]
+
+    updated = mcp_client.call_tool_structured(
+        "tracker.updateTicket",
+        {
+            "project_id": project_id,
+            "updates_json": [
+                {
+                    "ticket_key": "mcp-ticket-list-schema",
+                    "patch_json": {
+                        "status": "complete",
+                        "completion_evidence_json": {
+                            "changed_files": ["stackos/repositories/tracker.py"],
+                            "summary": "Bulk list path verified.",
+                        },
+                    },
+                },
+                {
+                    "ticket_key": "mcp-ticket-list-ui",
+                    "patch_json": {"assignee": "codex"},
+                },
+            ],
+            "actor": "mcp-test",
+        },
+    )
+    assert updated["data"]["valid"] is True
+    assert [result["action"] for result in updated["data"]["results"]] == ["updated", "updated"]
+
+    snapshot = mcp_client.call_tool_structured(
+        "tracker.get",
+        {"project_id": project_id, "task_key": "mcp-ticket-list", "include_graph": False},
+    )
+    by_key = {ticket["key"]: ticket for ticket in snapshot["tickets"]}
+    assert by_key["mcp-ticket-list-schema"]["completion_evidence_json"]["summary"] == (
+        "Bulk list path verified."
+    )
+    assert by_key["mcp-ticket-list-ui"]["assignee"] == "codex"
