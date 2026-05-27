@@ -16,7 +16,7 @@ work, start here:
 | Architecture or execution model | [`docs/architecture.md`](./docs/architecture.md), [`docs/operations.md`](./docs/operations.md), [`docs/agent-operating-model.md`](./docs/agent-operating-model.md) |
 | Callable operations or action execution | [`docs/operations.md`](./docs/operations.md), [`docs/action-executor.md`](./docs/action-executor.md), [`docs/extending.md`](./docs/extending.md) |
 | Provider auth or credentials | [`docs/auth-providers.md`](./docs/auth-providers.md), [`docs/security.md`](./docs/security.md) |
-| Plugins, resources, templates, runs, tasks | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/run-plans.md`](./docs/run-plans.md), [`docs/task-tracker.md`](./docs/task-tracker.md) |
+| Plugins, resources, templates, runs, tasks, agent presets | [`docs/plugins.md`](./docs/plugins.md), [`docs/workflow-templates.md`](./docs/workflow-templates.md), [`docs/agent-presets.md`](./docs/agent-presets.md), [`docs/run-plans.md`](./docs/run-plans.md), [`docs/task-tracker.md`](./docs/task-tracker.md) |
 | Provider contract reviews | [`docs/integration-contracts/AGENTS.md`](./docs/integration-contracts/AGENTS.md), [`docs/integration-contracts/`](./docs/integration-contracts/) |
 | UI work | [`docs/ui-design-system.md`](./docs/ui-design-system.md), [`docs/ui-component-inventory.md`](./docs/ui-component-inventory.md) |
 | Before-commit/release signoff | [`docs/release-signoff.md`](./docs/release-signoff.md) |
@@ -41,6 +41,11 @@ work, start here:
   tasks/tickets automatically; manual agent work should use `tracker.*`
   operations. The tracker stores lifecycle, dependencies, provenance, and
   verification context; agents still decide the work.
+- Agent presets are generic MCP/tool-consumer role contracts. They must be
+  adapted to project rules, stack, references, tracker workflow, and signoff
+  before use. Workflow templates may recommend host-side skills such as
+  `stackos:stackos` so the main agent knows how to operate StackOS MCP,
+  workflows, run plans, tasks, tickets, dependencies, and evidence.
 - Agents never receive secrets. They receive safe provider/account refs,
   auth-method keys, status, scopes, diagnostics, and opaque `credential_ref`
   values. `action.run` and `action.execute` resolve credentials inside the

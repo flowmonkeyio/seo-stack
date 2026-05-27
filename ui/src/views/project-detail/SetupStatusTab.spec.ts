@@ -68,8 +68,52 @@ describe('SetupStatusTab', () => {
           include_shadowed: false,
         })
       }
+      if (url === '/api/v1/projects/1/workflow-templates/seo.weekly?plugin_slug=seo') {
+        return json({
+          summary: { key: 'seo.weekly', name: 'SEO Weekly', version: '0.1.0' },
+          spec: {
+            schema_version: 'stackos.workflow-template.v1',
+            key: 'seo.weekly',
+            name: 'SEO Weekly',
+            version: '0.1.0',
+            description: '',
+            agent_requirements: [
+              {
+                role: 'seo-keyword-research',
+                requirement: 'required',
+                agent_preset_ref: 'seo.workflow.keyword-research',
+                purpose: 'Research search demand.',
+              },
+            ],
+            skill_requirements: [
+              {
+                skill_ref: 'stackos:stackos',
+                requirement: 'recommended',
+                purpose: 'Use StackOS tracker and run-plan conventions.',
+              },
+            ],
+            steps: [{ id: 'research', title: 'Research' }],
+          },
+        })
+      }
       if (url === '/api/v1/actions?project_id=1') {
         return json([{ plugin_slug: 'seo', key: 'keyword.discover' }])
+      }
+      if (url === '/api/v1/operations/agentPreset.list/call') {
+        return json({
+          presets: [
+            {
+              key: 'seo.workflow.keyword-research',
+              name: 'SEO Keyword Research Agent',
+              domain: 'seo',
+              role: 'seo-keyword-research',
+              plugin_slug: 'seo',
+              adaptation_required: true,
+              applies_to_workflows: ['seo.weekly'],
+            },
+          ],
+          include_shadowed: false,
+        })
       }
       if (url === '/api/v1/projects/1/runs?kind=run-plan&limit=1') {
         return json({ items: [], next_cursor: null, total_estimate: 0 })
@@ -94,6 +138,10 @@ describe('SetupStatusTab', () => {
     expect(wrapper.text()).toContain('Connections')
     expect(wrapper.text()).toContain('1 connected')
     expect(wrapper.text()).toContain('Workflow templates')
+    expect(wrapper.text()).toContain('Agent presets')
+    expect(wrapper.text()).toContain('1 generic presets')
+    expect(wrapper.text()).toContain('Skills')
+    expect(wrapper.text()).toContain('stackos:stackos')
     expect(wrapper.text()).toContain('Action contracts')
     expect(wrapper.text()).not.toContain('cred_firecrawl')
     expect(requestedUrls).toContain('/api/v1/health')

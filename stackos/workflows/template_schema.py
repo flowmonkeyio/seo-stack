@@ -8,7 +8,7 @@ and action execution state belong to later run-plan objects.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import (
@@ -214,6 +214,53 @@ class ContextRequirementSpec(BaseModel):
         return value
 
 
+class WorkflowAgentRequirementSpec(BaseModel):
+    """Agent role requirement attached to a reusable workflow template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(min_length=1, max_length=160)
+    requirement: Literal["required", "recommended", "optional"] = "required"
+    agent_preset_ref: str = Field(min_length=1, max_length=160)
+    purpose: str = ""
+    applies_to_steps: list[str] = Field(default_factory=list)
+    handoff_notes: list[str] = Field(default_factory=list)
+
+    @field_validator("role", "agent_preset_ref")
+    @classmethod
+    def _refs(cls, value: str) -> str:
+        return _validate_ref(value)
+
+    @field_validator("applies_to_steps")
+    @classmethod
+    def _step_refs(cls, value: list[str]) -> list[str]:
+        return [_validate_ref(item) for item in value]
+
+
+class WorkflowSkillRequirementSpec(BaseModel):
+    """Host/agent skill guidance recommended for operating a workflow template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skill_ref: str = Field(min_length=1, max_length=160)
+    requirement: Literal["required", "recommended", "optional"] = "recommended"
+    purpose: str = ""
+    applies_to_steps: list[str] = Field(default_factory=list)
+    setup_notes: list[str] = Field(default_factory=list)
+
+    @field_validator("skill_ref")
+    @classmethod
+    def _skill_ref(cls, value: str) -> str:
+        if not re.match(r"^[A-Za-z][A-Za-z0-9_]*(?::[A-Za-z][A-Za-z0-9_]*)?$", value):
+            raise ValueError("must be a skill name or plugin-qualified skill ref")
+        return value
+
+    @field_validator("applies_to_steps")
+    @classmethod
+    def _step_refs(cls, value: list[str]) -> list[str]:
+        return [_validate_ref(item) for item in value]
+
+
 class CapabilityRequirementSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -415,6 +462,8 @@ class WorkflowTemplateSpec(BaseModel):
     when_not_to_use: list[str] = Field(default_factory=list)
     inputs: list[TemplateIOSpec] = Field(default_factory=list)
     context_requirements: list[ContextRequirementSpec] = Field(default_factory=list)
+    agent_requirements: list[WorkflowAgentRequirementSpec] = Field(default_factory=list)
+    skill_requirements: list[WorkflowSkillRequirementSpec] = Field(default_factory=list)
     capability_requirements: list[CapabilityRequirementSpec] = Field(default_factory=list)
     auth_requirements: list[AuthRequirementSpec] = Field(default_factory=list)
     action_contracts: list[ActionContractSpec] = Field(default_factory=list)
@@ -478,6 +527,12 @@ class WorkflowTemplateSpec(BaseModel):
             source = sources[label]
             if len(values) != len(source):
                 raise ValueError(f"duplicate {label} keys are not allowed")
+        agent_roles = {item.role for item in self.agent_requirements}
+        if len(agent_roles) != len(self.agent_requirements):
+            raise ValueError("duplicate agent requirement roles are not allowed")
+        skill_refs = {item.skill_ref for item in self.skill_requirements}
+        if len(skill_refs) != len(self.skill_requirements):
+            raise ValueError("duplicate skill requirement refs are not allowed")
 
         for action in self.action_contracts:
             if action.auth_ref is not None and action.auth_ref not in refs["auth"]:
@@ -498,6 +553,21 @@ class WorkflowTemplateSpec(BaseModel):
             _check_refs(step.id, "approval_refs", step.approval_refs, refs["approvals"])
             _check_refs(step.id, "output_refs", step.output_refs, refs["outputs"])
             _check_refs(step.id, "depends_on", step.depends_on, refs["steps"], allow_self=False)
+
+        for agent_requirement in self.agent_requirements:
+            for step_ref in agent_requirement.applies_to_steps:
+                if step_ref not in refs["steps"]:
+                    raise ValueError(
+                        f"agent requirement {agent_requirement.role!r} applies_to_steps "
+                        f"references unknown step {step_ref!r}"
+                    )
+        for skill_requirement in self.skill_requirements:
+            for step_ref in skill_requirement.applies_to_steps:
+                if step_ref not in refs["steps"]:
+                    raise ValueError(
+                        f"skill requirement {skill_requirement.skill_ref!r} applies_to_steps "
+                        f"references unknown step {step_ref!r}"
+                    )
 
         secret_paths = _secret_paths(self.model_dump(mode="python", exclude_none=True))
         if secret_paths:
@@ -605,6 +675,8 @@ __all__ = [
     "TemplateBaseSpec",
     "TemplateIOSpec",
     "TemplateOwnerSpec",
+    "WorkflowAgentRequirementSpec",
+    "WorkflowSkillRequirementSpec",
     "WorkflowStepTemplateSpec",
     "WorkflowTemplateIssue",
     "WorkflowTemplateSpec",

@@ -10,6 +10,22 @@ when_to_use:
   - A pipeline, segment, opportunity set, or forecast needs a bounded risk review.
 when_not_to_use:
   - The operator already approved CRM updates and only needs mutation.
+agent_requirements:
+  - role: gtm-pipeline-risk-review
+    requirement: required
+    agent_preset_ref: gtm.workflow.pipeline-risk-review
+    purpose: Review pipeline risk, data freshness, opportunity blockers, and next actions.
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review CRM state assumptions, customer-data boundaries, and any mutation follow-up.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: goal
     name: Goal

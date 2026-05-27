@@ -62,6 +62,58 @@ def test_template_schema_accepts_generic_contracts() -> None:
     assert template.action_contracts[0].input_schema_json == {"type": "object"}
 
 
+def test_template_schema_accepts_agent_and_skill_requirements() -> None:
+    data = _template_dict()
+    data["agent_requirements"] = [
+        {
+            "role": "planning",
+            "requirement": "required",
+            "agent_preset_ref": "stackos.sdlc.planning",
+            "applies_to_steps": ["plan"],
+        }
+    ]
+    data["skill_requirements"] = [
+        {
+            "skill_ref": "stackos:stackos",
+            "requirement": "recommended",
+            "applies_to_steps": ["plan"],
+        }
+    ]
+
+    template = WorkflowTemplateSpec.model_validate(data)
+
+    assert template.agent_requirements[0].agent_preset_ref == "stackos.sdlc.planning"
+    assert template.skill_requirements[0].skill_ref == "stackos:stackos"
+
+
+def test_template_schema_rejects_unknown_agent_requirement_step_refs() -> None:
+    data = _template_dict()
+    data["agent_requirements"] = [
+        {
+            "role": "planning",
+            "agent_preset_ref": "stackos.sdlc.planning",
+            "applies_to_steps": ["missing"],
+        }
+    ]
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "agent requirement" in result.errors[0].message
+    assert "missing" in result.errors[0].message
+
+
+def test_template_schema_rejects_unknown_skill_requirement_step_refs() -> None:
+    data = _template_dict()
+    data["skill_requirements"] = [{"skill_ref": "stackos:stackos", "applies_to_steps": ["missing"]}]
+
+    result = validate_workflow_template_obj(data)
+
+    assert result.valid is False
+    assert "skill requirement" in result.errors[0].message
+    assert "missing" in result.errors[0].message
+
+
 def test_template_schema_rejects_unknown_references() -> None:
     data = _template_dict()
     data["steps"][0]["action_refs"] = ["missing-action"]

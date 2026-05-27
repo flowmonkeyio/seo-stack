@@ -16,13 +16,31 @@ import type {
   SchemaAuthProviderOut,
   SchemaAuthStatusOut,
   SchemaHealthResponse,
+  SchemaLoadedWorkflowTemplate,
   SchemaPageResponseRunOut,
   SchemaPluginOut,
   SchemaWorkflowTemplateListOut,
+  SchemaWorkflowTemplateSummaryOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { callOperation } from '@/lib/operations'
 
 type ChecklistStatus = 'done' | 'todo' | 'attention'
+
+interface AgentPresetSummary {
+  key: string
+  name: string
+  domain?: string | null
+  role?: string | null
+  plugin_slug?: string | null
+  adaptation_required?: boolean
+  applies_to_workflows?: string[]
+}
+
+interface AgentPresetListOut {
+  presets: AgentPresetSummary[]
+  include_shadowed?: boolean
+}
 
 interface ChecklistItem {
   key: string
@@ -45,6 +63,8 @@ const authStatus = ref<SchemaAuthStatusOut | null>(null)
 const templates = ref(0)
 const actions = ref(0)
 const runPlans = ref(0)
+const agentPresets = ref<AgentPresetSummary[]>([])
+const templateDetails = ref<SchemaLoadedWorkflowTemplate[]>([])
 
 const enabledPlugins = computed(() =>
   plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
@@ -56,6 +76,43 @@ const activeConnections = computed(() =>
 
 const connectedConnections = computed(() =>
   activeConnections.value.filter((connection) => connection.status === 'connected'),
+)
+
+const workflowAgentRequirements = computed(() =>
+  templateDetails.value.flatMap((template) => template.spec.agent_requirements ?? []),
+)
+
+const workflowSkillRequirements = computed(() =>
+  templateDetails.value.flatMap((template) => template.spec.skill_requirements ?? []),
+)
+
+const templatesWithAgentRequirements = computed(
+  () =>
+    templateDetails.value.filter((template) => (template.spec.agent_requirements ?? []).length > 0)
+      .length,
+)
+
+const templatesWithStackosSkill = computed(
+  () =>
+    templateDetails.value.filter((template) =>
+      (template.spec.skill_requirements ?? []).some(
+        (skill) => skill.skill_ref === 'stackos:stackos',
+      ),
+    ).length,
+)
+
+const adaptationRequiredPresets = computed(
+  () => agentPresets.value.filter((preset) => preset.adaptation_required !== false).length,
+)
+
+const agentDomains = computed(() =>
+  Array.from(
+    new Set(agentPresets.value.map((preset) => preset.domain).filter(Boolean) as string[]),
+  ).sort(),
+)
+
+const skillRefs = computed(() =>
+  Array.from(new Set(workflowSkillRequirements.value.map((skill) => skill.skill_ref))).sort(),
 )
 
 const checklist = computed<ChecklistItem[]>(() => {
@@ -115,6 +172,29 @@ const checklist = computed<ChecklistItem[]>(() => {
       to: 'workflow-templates',
     },
     {
+      key: 'agent-presets',
+      label: 'Agent presets',
+      detail:
+        agentPresets.value.length > 0
+          ? `${agentPresets.value.length} generic presets`
+          : 'None loaded',
+      status: agentPresets.value.length > 0 ? 'done' : 'todo',
+      to: 'operations',
+    },
+    {
+      key: 'workflow-skills',
+      label: 'Workflow skills',
+      detail:
+        workflowSkillRequirements.value.length > 0
+          ? `${templatesWithStackosSkill.value} templates with StackOS skill`
+          : 'No skill guidance',
+      status:
+        templates.value > 0 && templatesWithStackosSkill.value === templates.value
+          ? 'done'
+          : 'todo',
+      to: 'workflow-templates',
+    },
+    {
       key: 'actions',
       label: 'Action contracts',
       detail: `${actions.value} callable contracts`,
@@ -146,13 +226,41 @@ async function fetchOr<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+async function loadTemplateDetails(
+  id: number,
+  summaries: SchemaWorkflowTemplateSummaryOut[],
+): Promise<SchemaLoadedWorkflowTemplate[]> {
+  const responses = await Promise.allSettled(
+    summaries.map((template) => {
+      const params = new URLSearchParams()
+      if (template.plugin_slug) params.set('plugin_slug', template.plugin_slug)
+      const suffix = params.toString() ? `?${params.toString()}` : ''
+      return apiFetch<SchemaLoadedWorkflowTemplate>(
+        `/api/v1/projects/${id}/workflow-templates/${encodeURIComponent(template.key)}${suffix}`,
+      )
+    }),
+  )
+  return responses.flatMap((response) =>
+    response.status === 'fulfilled' ? [response.value] : [],
+  )
+}
+
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   loading.value = true
   error.value = null
   try {
     const id = projectId.value
-    const [healthRow, pluginRows, providerRows, statusRow, templateRows, actionRows, runPage] =
+    const [
+      healthRow,
+      pluginRows,
+      providerRows,
+      statusRow,
+      templateRows,
+      actionRows,
+      agentPresetRows,
+      runPage,
+    ] =
       await Promise.all([
         fetchOr<SchemaHealthResponse | null>('/api/v1/health', null),
         apiFetch<SchemaPluginOut[]>(`/api/v1/plugins?project_id=${id}`),
@@ -168,18 +276,22 @@ async function load(): Promise<void> {
           include_shadowed: false,
         }),
         fetchOr<SchemaActionOut[]>(`/api/v1/actions?project_id=${id}`, []),
+        callOperation<AgentPresetListOut>('agentPreset.list', { project_id: id }),
         fetchOr<SchemaPageResponseRunOut>(`/api/v1/projects/${id}/runs?kind=run-plan&limit=1`, {
           items: [],
           next_cursor: null,
           total_estimate: 0,
         }),
       ])
+    const detailRows = await loadTemplateDetails(id, templateRows.templates)
     health.value = healthRow
     plugins.value = pluginRows
     authProviders.value = providerRows
     authStatus.value = statusRow
     templates.value = templateRows.templates.length
     actions.value = actionRows.length
+    agentPresets.value = agentPresetRows.presets
+    templateDetails.value = detailRows
     runPlans.value = runPage.total_estimate ?? runPage.items.length
   } catch (err) {
     error.value = formatApiError(err, 'failed to load setup status')
@@ -256,7 +368,7 @@ watch(projectId, load)
               <UiBadge :tone="statusTone(item.status)" dot>
                 {{ statusLabel(item.status) }}
               </UiBadge>
-              <p class="truncate text-sm font-medium text-fg-strong">
+              <p class="text-sm font-medium text-fg-strong">
                 {{ item.label }}
               </p>
             </div>
@@ -264,10 +376,87 @@ watch(projectId, load)
               {{ item.detail }}
             </p>
           </div>
-          <UiButton v-if="item.to" size="sm" variant="ghost" @click="go(item.to)"> Open </UiButton>
+          <UiButton v-if="item.to" class="shrink-0" size="sm" variant="ghost" @click="go(item.to)">
+            Open
+          </UiButton>
         </div>
       </div>
     </UiPanel>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <UiPanel class="p-4">
+        <UiSectionHeader title="Agent Presets" as="h3">
+          <template #actions>
+            <UiBadge>{{ agentPresets.length }}</UiBadge>
+            <UiBadge tone="warning">{{ adaptationRequiredPresets }} adapt</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <dl class="grid gap-3 text-sm md:grid-cols-3">
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Available</dt>
+            <dd class="font-medium">{{ agentPresets.length }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Domains</dt>
+            <dd class="font-medium">{{ agentDomains.length }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Adaptation</dt>
+            <dd class="font-medium">{{ adaptationRequiredPresets }} required</dd>
+          </div>
+        </dl>
+        <div
+          v-if="agentDomains.length"
+          class="mt-4 flex flex-wrap gap-2"
+        >
+          <UiBadge
+            v-for="domain in agentDomains"
+            :key="domain"
+            tone="accent"
+          >
+            {{ domain }}
+          </UiBadge>
+        </div>
+      </UiPanel>
+
+      <UiPanel class="p-4">
+        <UiSectionHeader title="Skills" as="h3">
+          <template #actions>
+            <UiBadge>{{ workflowSkillRequirements.length }}</UiBadge>
+            <UiBadge tone="info">{{ templatesWithStackosSkill }} templates</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <dl class="grid gap-3 text-sm md:grid-cols-3">
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Skill refs</dt>
+            <dd class="font-medium">{{ skillRefs.length }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Template coverage</dt>
+            <dd class="font-medium">{{ templatesWithStackosSkill }} / {{ templates }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Workflow roles</dt>
+            <dd class="font-medium">
+              {{ workflowAgentRequirements.length }} roles on
+              {{ templatesWithAgentRequirements }} templates
+            </dd>
+          </div>
+        </dl>
+        <div
+          v-if="skillRefs.length"
+          class="mt-4 flex flex-wrap gap-2"
+        >
+          <UiBadge
+            v-for="skill in skillRefs"
+            :key="skill"
+            tone="info"
+          >
+            {{ skill }}
+          </UiBadge>
+        </div>
+      </UiPanel>
+    </div>
 
     <div class="grid gap-4 lg:grid-cols-3">
       <UiPanel class="p-4">

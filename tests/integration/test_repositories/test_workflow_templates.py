@@ -85,6 +85,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert [item.key for item in listing.templates] == ["core.project-memory-review"]
     assert described.summary.source == "plugin"
     assert described.spec.context_requirements
+    assert described.spec.agent_requirements[0].agent_preset_ref == (
+        "stackos.workflow.project-memory-review"
+    )
+    assert described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert described.spec.steps[0].id == "clarify-goal"
     assert [item.key for item in gtm_listing.templates] == [
         "gtm.account-research",
@@ -94,6 +98,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "gtm.pipeline-risk-review",
     ]
     assert gtm_described.summary.plugin_slug == "gtm"
+    assert gtm_described.spec.agent_requirements[0].agent_preset_ref == (
+        "gtm.workflow.account-research"
+    )
+    assert gtm_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert gtm_described.spec.action_contracts[0].action == "web.read"
     assert all("payload" not in step.model_dump_json() for step in gtm_described.spec.steps)
     assert [item.key for item in media_listing.templates] == [
@@ -104,6 +112,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "media-buying.performance-diagnosis",
     ]
     assert media_described.summary.plugin_slug == "media-buying"
+    assert media_described.spec.agent_requirements[0].agent_preset_ref == (
+        "media-buying.workflow.campaign-launch"
+    )
+    assert media_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert media_described.spec.action_contracts[0].action == "meta.campaign.create"
     assert all("payload" not in step.model_dump_json() for step in media_described.spec.steps)
     assert [item.key for item in communications_listing.templates] == [
@@ -113,6 +125,10 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "communications.rich-telegram-reply",
     ]
     assert communications_described.summary.plugin_slug == "communications"
+    assert communications_described.spec.agent_requirements[0].agent_preset_ref == (
+        "communications.workflow.inbox-review"
+    )
+    assert communications_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert communications_described.spec.action_contracts[0].action == "imap.messages.search"
     assert all(
         "payload" not in step.model_dump_json() for step in communications_described.spec.steps

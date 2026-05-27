@@ -298,6 +298,9 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "action.describe" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.validate" in _AGENT_VISIBLE_TOOL_NAMES
     assert "action.run" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentPreset.list" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentPreset.describe" in _AGENT_VISIBLE_TOOL_NAMES
+    assert "agentPreset.resolveForWorkflow" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.list" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.get" in _AGENT_VISIBLE_TOOL_NAMES
     assert "agentRequest.claim" in _AGENT_VISIBLE_TOOL_NAMES

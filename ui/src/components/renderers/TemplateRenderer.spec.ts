@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-import type { SchemaLoadedWorkflowTemplate } from '@/api'
+import {
+  WorkflowAgentRequirementSpecRequirement,
+  WorkflowSkillRequirementSpecRequirement,
+  type SchemaLoadedWorkflowTemplate,
+} from '@/api'
 import TemplateRenderer from './TemplateRenderer.vue'
 
 describe('TemplateRenderer', () => {
@@ -41,6 +45,25 @@ describe('TemplateRenderer', () => {
             return_mode: 'compact',
           },
         ],
+        agent_requirements: [
+          {
+            role: 'planning',
+            requirement: WorkflowAgentRequirementSpecRequirement.required,
+            agent_preset_ref: 'stackos.sdlc.planning',
+            purpose: 'Plan tickets and dependencies.',
+            applies_to_steps: ['review'],
+            handoff_notes: ['Use tracker tickets for sequencing.'],
+          },
+        ],
+        skill_requirements: [
+          {
+            skill_ref: 'stackos:stackos',
+            requirement: WorkflowSkillRequirementSpecRequirement.recommended,
+            purpose: 'Use StackOS MCP, tracker, run plans, and evidence conventions.',
+            applies_to_steps: ['review'],
+            setup_notes: ['Load the StackOS skill before workflow execution when supported.'],
+          },
+        ],
         steps: [
           {
             id: 'review',
@@ -57,6 +80,9 @@ describe('TemplateRenderer', () => {
 
     expect(w.text()).toContain('Review')
     expect(w.text()).toContain('recent_runs')
+    expect(w.text()).toContain('Agents & Skills')
+    expect(w.text()).toContain('stackos.sdlc.planning')
+    expect(w.text()).toContain('stackos:stackos')
     expect(w.text()).toContain('Workflow')
     expect(w.text()).not.toContain('credential_ref')
   })

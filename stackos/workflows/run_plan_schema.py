@@ -9,7 +9,7 @@ only opaque credential refs and the daemon resolves backing credentials.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import (
     AliasChoices,
@@ -27,7 +27,9 @@ from stackos.workflows.run_plan_grants import (
     parse_run_plan_mcp_tool_grants,
     validate_run_plan_mcp_tool_grants,
 )
-from stackos.workflows.template_loader import LoadedWorkflowTemplate
+
+if TYPE_CHECKING:
+    from stackos.workflows.template_loader import LoadedWorkflowTemplate
 
 RUN_PLAN_SCHEMA_VERSION = "stackos.run-plan.v1"
 MAX_RUN_PLAN_STEPS = 100

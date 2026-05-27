@@ -11,6 +11,22 @@ when_to_use:
   - The agent should reuse prior account context and learnings before collecting more evidence.
 when_not_to_use:
   - The target account set and reviewed context already exist.
+agent_requirements:
+  - role: gtm-account-research
+    requirement: required
+    agent_preset_ref: gtm.workflow.account-research
+    purpose: Produce source-backed account research, ICP fit, risks, and next workflow handoff.
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review privacy, source confidence, and handoff quality when research drives external action.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: goal
     name: Goal

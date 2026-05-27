@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { SchemaLoadedWorkflowTemplate, SchemaWorkflowTemplateSpec } from '@/api'
+import type {
+  SchemaLoadedWorkflowTemplate,
+  SchemaWorkflowAgentRequirementSpec,
+  SchemaWorkflowSkillRequirementSpec,
+  SchemaWorkflowTemplateSpec,
+} from '@/api'
 import { UiBadge, UiJsonBlock, UiPanel, UiSectionHeader } from '@/components/ui'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 
@@ -11,12 +16,24 @@ const props = defineProps<{
 
 const spec = computed<SchemaWorkflowTemplateSpec>(() => props.template.spec)
 const contextRequirements = computed(() => spec.value.context_requirements ?? [])
+const agentRequirements = computed(() => spec.value.agent_requirements ?? [])
+const skillRequirements = computed(() => spec.value.skill_requirements ?? [])
 const inputs = computed(() => spec.value.inputs ?? [])
 const outputs = computed(() => spec.value.outputs ?? [])
 const approvals = computed(() => spec.value.approval_gates ?? [])
 const policies = computed(() => spec.value.policies ?? [])
 const hooks = computed(() => spec.value.learning_hooks ?? [])
 const rawTemplate = computed(() => sanitizeForDisplay(spec.value))
+
+function requirementTone(
+  requirement:
+    | SchemaWorkflowAgentRequirementSpec['requirement']
+    | SchemaWorkflowSkillRequirementSpec['requirement'],
+): 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent' {
+  if (requirement === 'required') return 'warning'
+  if (requirement === 'recommended') return 'info'
+  return 'neutral'
+}
 </script>
 
 <template>
@@ -47,6 +64,141 @@ const rawTemplate = computed(() => sanitizeForDisplay(spec.value))
           <dd class="truncate font-mono">{{ template.summary.origin_path ?? '-' }}</dd>
         </div>
       </dl>
+    </UiPanel>
+
+    <UiPanel class="p-4">
+      <UiSectionHeader
+        title="Agents & Skills"
+        as="h3"
+        description="Generic presets and host skills the caller should adapt before running this workflow."
+      >
+        <template #actions>
+          <UiBadge>{{ agentRequirements.length }} agents</UiBadge>
+          <UiBadge>{{ skillRequirements.length }} skills</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <div class="grid gap-4 lg:grid-cols-2">
+        <section>
+          <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Agent Requirements
+          </h4>
+          <p
+            v-if="agentRequirements.length === 0"
+            class="text-sm text-fg-muted"
+          >
+            -
+          </p>
+          <ul
+            v-else
+            class="space-y-2"
+          >
+            <li
+              v-for="agent in agentRequirements"
+              :key="agent.role"
+              class="rounded-md border border-subtle bg-bg-surface px-3 py-2 text-sm"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-medium text-fg-default">{{ agent.role }}</span>
+                <UiBadge :tone="requirementTone(agent.requirement)">
+                  {{ agent.requirement }}
+                </UiBadge>
+              </div>
+              <p class="mt-1 truncate font-mono text-xs text-fg-muted">
+                {{ agent.agent_preset_ref }}
+              </p>
+              <p
+                v-if="agent.purpose"
+                class="mt-2 text-xs text-fg-muted"
+              >
+                {{ agent.purpose }}
+              </p>
+              <div
+                v-if="agent.applies_to_steps?.length"
+                class="mt-2 flex flex-wrap gap-1.5"
+              >
+                <UiBadge
+                  v-for="step in agent.applies_to_steps"
+                  :key="step"
+                  tone="accent"
+                >
+                  {{ step }}
+                </UiBadge>
+              </div>
+              <ul
+                v-if="agent.handoff_notes?.length"
+                class="mt-2 space-y-1 text-xs text-fg-muted"
+              >
+                <li
+                  v-for="note in agent.handoff_notes"
+                  :key="note"
+                >
+                  {{ note }}
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Skill Requirements
+          </h4>
+          <p
+            v-if="skillRequirements.length === 0"
+            class="text-sm text-fg-muted"
+          >
+            -
+          </p>
+          <ul
+            v-else
+            class="space-y-2"
+          >
+            <li
+              v-for="skill in skillRequirements"
+              :key="skill.skill_ref"
+              class="rounded-md border border-subtle bg-bg-surface px-3 py-2 text-sm"
+            >
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono text-xs font-medium text-fg-default">
+                  {{ skill.skill_ref }}
+                </span>
+                <UiBadge :tone="requirementTone(skill.requirement)">
+                  {{ skill.requirement }}
+                </UiBadge>
+              </div>
+              <p
+                v-if="skill.purpose"
+                class="mt-2 text-xs text-fg-muted"
+              >
+                {{ skill.purpose }}
+              </p>
+              <div
+                v-if="skill.applies_to_steps?.length"
+                class="mt-2 flex flex-wrap gap-1.5"
+              >
+                <UiBadge
+                  v-for="step in skill.applies_to_steps"
+                  :key="step"
+                  tone="accent"
+                >
+                  {{ step }}
+                </UiBadge>
+              </div>
+              <ul
+                v-if="skill.setup_notes?.length"
+                class="mt-2 space-y-1 text-xs text-fg-muted"
+              >
+                <li
+                  v-for="note in skill.setup_notes"
+                  :key="note"
+                >
+                  {{ note }}
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+      </div>
     </UiPanel>
 
     <UiPanel class="p-4">

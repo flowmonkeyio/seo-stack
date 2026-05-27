@@ -12,6 +12,9 @@ def test_operation_registry_documents_core_operations() -> None:
         "action.execute",
         "action.run",
         "action.validate",
+        "agentPreset.describe",
+        "agentPreset.list",
+        "agentPreset.resolveForWorkflow",
         "agentRequest.claim",
         "agentRequest.complete",
         "agentRequest.create",
@@ -114,6 +117,15 @@ def test_operation_registry_documents_core_operations() -> None:
     assert prepare_request.grant_policy == "direct-work-queue-write"
     assert any("does not infer intent" in item for item in prepare_request.prerequisites)
 
+    agent_preset_resolution = registry.get("agentPreset.resolveForWorkflow").describe_out()
+    assert agent_preset_resolution.surfaces["mcp"].enabled is True
+    assert agent_preset_resolution.surfaces["rest"].enabled is True
+    assert agent_preset_resolution.surfaces["cli"].command == (
+        "ops call agentPreset.resolveForWorkflow"
+    )
+    assert agent_preset_resolution.grant_policy == "direct-read"
+    assert any("StackOS skill" in item for item in agent_preset_resolution.prerequisites)
+
     communication_profile = registry.get("communicationProfile.upsert").describe_out()
     assert communication_profile.surfaces["mcp"].enabled is True
     assert communication_profile.surfaces["rest"].enabled is True
@@ -213,6 +225,9 @@ def test_operation_registry_surface_filter() -> None:
         "action.execute",
         "action.run",
         "action.validate",
+        "agentPreset.describe",
+        "agentPreset.list",
+        "agentPreset.resolveForWorkflow",
         "agentRequest.claim",
         "agentRequest.complete",
         "agentRequest.create",

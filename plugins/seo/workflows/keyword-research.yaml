@@ -10,6 +10,22 @@ when_to_use:
   - A project needs SEO opportunities from seed terms, competitors, or an agent-defined research angle.
 when_not_to_use:
   - The user already has a reviewed opportunity set and only needs execution.
+agent_requirements:
+  - role: seo-keyword-research
+    requirement: required
+    agent_preset_ref: seo.workflow.keyword-research
+    purpose: Lead keyword discovery, clustering, evidence review, and opportunity handoff.
+  - role: planning
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.planning
+    purpose: Break selected opportunities into executable follow-up tickets.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: goal
     name: Goal

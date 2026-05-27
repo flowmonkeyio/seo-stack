@@ -1,99 +1,61 @@
-"""Repository re-exports for the StackOS core."""
+"""Lazy repository re-exports for the StackOS core."""
 
 from __future__ import annotations
 
-from stackos.repositories.agent_requests import (
-    AgentRequestClaimOut,
-    AgentRequestOut,
-    AgentRequestRepository,
-)
-from stackos.repositories.base import (
-    BudgetExceededError,
-    ConflictError,
-    Envelope,
-    IdempotencyReplayError,
-    NotFoundError,
-    Page,
-    RepositoryError,
-    ValidationError,
-    cursor_paginate,
-    validate_transition,
-)
-from stackos.repositories.projects import (
-    IntegrationBudgetOut,
-    IntegrationBudgetRepository,
-    IntegrationCredentialOut,
-    IntegrationCredentialRepository,
-    ProjectOut,
-    ProjectRepository,
-    ScheduledJobOut,
-    ScheduledJobRepository,
-)
-from stackos.repositories.resources import (
-    ArtifactOut,
-    ArtifactRepository,
-    ResourceGetOut,
-    ResourceOut,
-    ResourceQueryOut,
-    ResourceRecordOut,
-    ResourceRepository,
-)
-from stackos.repositories.runs import (
-    IdempotencyKeyRepository,
-    IdempotencyOut,
-    RunOut,
-    RunRepository,
-    RunStepCallOut,
-    RunStepCallRepository,
-    RunStepOut,
-    RunStepRepository,
-)
-from stackos.repositories.workspaces import (
-    AgentSessionOut,
-    WorkspaceBindingOut,
-    WorkspaceRepository,
-    WorkspaceResolutionOut,
-)
+from importlib import import_module
+from typing import Any
 
-__all__ = [
-    "AgentRequestClaimOut",
-    "AgentRequestOut",
-    "AgentRequestRepository",
-    "AgentSessionOut",
-    "ArtifactOut",
-    "ArtifactRepository",
-    "BudgetExceededError",
-    "ConflictError",
-    "Envelope",
-    "IdempotencyKeyRepository",
-    "IdempotencyOut",
-    "IdempotencyReplayError",
-    "IntegrationBudgetOut",
-    "IntegrationBudgetRepository",
-    "IntegrationCredentialOut",
-    "IntegrationCredentialRepository",
-    "NotFoundError",
-    "Page",
-    "ProjectOut",
-    "ProjectRepository",
-    "RepositoryError",
-    "ResourceGetOut",
-    "ResourceOut",
-    "ResourceQueryOut",
-    "ResourceRecordOut",
-    "ResourceRepository",
-    "RunOut",
-    "RunRepository",
-    "RunStepCallOut",
-    "RunStepCallRepository",
-    "RunStepOut",
-    "RunStepRepository",
-    "ScheduledJobOut",
-    "ScheduledJobRepository",
-    "ValidationError",
-    "WorkspaceBindingOut",
-    "WorkspaceRepository",
-    "WorkspaceResolutionOut",
-    "cursor_paginate",
-    "validate_transition",
-]
+_EXPORTS: dict[str, str] = {
+    "AgentRequestClaimOut": "stackos.repositories.agent_requests",
+    "AgentRequestOut": "stackos.repositories.agent_requests",
+    "AgentRequestRepository": "stackos.repositories.agent_requests",
+    "AgentSessionOut": "stackos.repositories.workspaces",
+    "ArtifactOut": "stackos.repositories.resources",
+    "ArtifactRepository": "stackos.repositories.resources",
+    "BudgetExceededError": "stackos.repositories.base",
+    "ConflictError": "stackos.repositories.base",
+    "Envelope": "stackos.repositories.base",
+    "IdempotencyKeyRepository": "stackos.repositories.runs",
+    "IdempotencyOut": "stackos.repositories.runs",
+    "IdempotencyReplayError": "stackos.repositories.base",
+    "IntegrationBudgetOut": "stackos.repositories.projects",
+    "IntegrationBudgetRepository": "stackos.repositories.projects",
+    "IntegrationCredentialOut": "stackos.repositories.projects",
+    "IntegrationCredentialRepository": "stackos.repositories.projects",
+    "NotFoundError": "stackos.repositories.base",
+    "Page": "stackos.repositories.base",
+    "ProjectOut": "stackos.repositories.projects",
+    "ProjectRepository": "stackos.repositories.projects",
+    "RepositoryError": "stackos.repositories.base",
+    "ResourceGetOut": "stackos.repositories.resources",
+    "ResourceOut": "stackos.repositories.resources",
+    "ResourceQueryOut": "stackos.repositories.resources",
+    "ResourceRecordOut": "stackos.repositories.resources",
+    "ResourceRepository": "stackos.repositories.resources",
+    "RunOut": "stackos.repositories.runs",
+    "RunRepository": "stackos.repositories.runs",
+    "RunStepCallOut": "stackos.repositories.runs",
+    "RunStepCallRepository": "stackos.repositories.runs",
+    "RunStepOut": "stackos.repositories.runs",
+    "RunStepRepository": "stackos.repositories.runs",
+    "ScheduledJobOut": "stackos.repositories.projects",
+    "ScheduledJobRepository": "stackos.repositories.projects",
+    "ValidationError": "stackos.repositories.base",
+    "WorkspaceBindingOut": "stackos.repositories.workspaces",
+    "WorkspaceRepository": "stackos.repositories.workspaces",
+    "WorkspaceResolutionOut": "stackos.repositories.workspaces",
+    "cursor_paginate": "stackos.repositories.base",
+    "validate_transition": "stackos.repositories.base",
+}
+
+__all__ = sorted(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value

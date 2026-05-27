@@ -48,6 +48,7 @@ class OperationRegistry:
 def build_operation_registry() -> OperationRegistry:
     from stackos.operations import (
         actions,
+        agent_presets,
         agent_requests,
         communications,
         discovery,
@@ -66,6 +67,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in tool_profiles.operation_specs():
         registry.register(spec)
     for spec in actions.operation_specs():
+        registry.register(spec)
+    for spec in agent_presets.operation_specs():
         registry.register(spec)
     for spec in run_plans.operation_specs():
         registry.register(spec)

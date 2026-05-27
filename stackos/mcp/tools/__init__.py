@@ -5,6 +5,7 @@ from __future__ import annotations
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.tools import (
     actions,
+    agent_presets,
     agent_requests,
     artifacts,
     auth,
@@ -33,6 +34,7 @@ def register_all(registry: ToolRegistry) -> None:
     auth.register(registry)
     communications.register(registry)
     tool_profiles.register(registry)
+    agent_presets.register(registry)
     tracker.register(registry)
     context.register(registry)
     runs.register(registry)

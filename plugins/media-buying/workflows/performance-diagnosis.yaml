@@ -11,6 +11,22 @@ when_to_use:
   - The agent should retrieve only relevant historical fields before diagnosing.
 when_not_to_use:
   - The operator already approved a budget or campaign mutation and only needs execution.
+agent_requirements:
+  - role: media-performance-diagnosis
+    requirement: required
+    agent_preset_ref: media-buying.workflow.performance-diagnosis
+    purpose: Diagnose performance from available evidence while naming live-data and confidence limits.
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review measurement freshness, provider-contract assumptions, and any proposed risky follow-up.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: goal
     name: Goal

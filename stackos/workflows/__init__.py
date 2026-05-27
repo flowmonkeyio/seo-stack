@@ -16,6 +16,8 @@ from stackos.workflows.template_loader import (
     WorkflowTemplateSummaryOut,
 )
 from stackos.workflows.template_schema import (
+    WorkflowAgentRequirementSpec,
+    WorkflowSkillRequirementSpec,
     WorkflowTemplateSpec,
     WorkflowTemplateValidationOut,
     parse_workflow_template_obj,
@@ -28,6 +30,8 @@ __all__ = [
     "LoadedWorkflowTemplate",
     "RunPlanSpec",
     "RunPlanValidationOut",
+    "WorkflowAgentRequirementSpec",
+    "WorkflowSkillRequirementSpec",
     "WorkflowTemplateListOut",
     "WorkflowTemplateLoader",
     "WorkflowTemplateSpec",

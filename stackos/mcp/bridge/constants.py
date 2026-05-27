@@ -70,6 +70,9 @@ _AGENT_VISIBLE_TOOL_ORDER: tuple[str, ...] = (
     "learning.query",
     "experiment.query",
     "decision.query",
+    "agentPreset.list",
+    "agentPreset.describe",
+    "agentPreset.resolveForWorkflow",
     "workflowTemplate.list",
     "workflowTemplate.describe",
     "workflowTemplate.validate",
@@ -111,6 +114,7 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "workspace.connect",
         "auth.status",
         "toolProfile.resolve",
+        "agentPreset.resolveForWorkflow",
         "ingressEndpoint.routes",
         "ingressEndpoint.status",
         "communication.send",
@@ -144,6 +148,9 @@ _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
         "operation.describe",
         "action.describe",
         "action.validate",
+        "agentPreset.list",
+        "agentPreset.describe",
+        "agentPreset.resolveForWorkflow",
         "meta.enums",
     }
 )

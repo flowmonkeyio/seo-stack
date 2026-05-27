@@ -11,6 +11,7 @@ obvious without loading every document.
 | Renaming this repository for release | [`repository-rename.md`](./repository-rename.md), [`setup.md`](./setup.md), [`upgrade.md`](./upgrade.md) |
 | Understanding the product model | [`architecture.md`](./architecture.md), [`operations.md`](./operations.md), [`agent-operating-model.md`](./agent-operating-model.md) |
 | Auditing agent-facing flows and release clarity | [`agent-experience-audit.md`](./agent-experience-audit.md), [`agent-operating-model.md`](./agent-operating-model.md), [`operations.md`](./operations.md) |
+| Setting up generic agents or workflow roles | [`agent-presets.md`](./agent-presets.md), [`agent-operating-model.md`](./agent-operating-model.md), [`workflow-templates.md`](./workflow-templates.md), [`task-tracker.md`](./task-tracker.md) |
 | Adding or changing callable behavior | [`operations.md`](./operations.md), [`action-executor.md`](./action-executor.md), [`extending.md`](./extending.md) |
 | Adding or changing task/ticket tracking | [`task-tracker.md`](./task-tracker.md), [`run-plans.md`](./run-plans.md), [`operations.md`](./operations.md) |
 | Adding providers, auth, or credentials | [`auth-providers.md`](./auth-providers.md), [`security.md`](./security.md), [`integration-contracts/AGENTS.md`](./integration-contracts/AGENTS.md) |
@@ -45,6 +46,11 @@ obvious without loading every document.
 - Task tracking is project-scoped work state for agents and human navigation.
   Workflow runs mirror into tasks/tickets automatically, and manual agent work
   uses `tracker.*` operations. The tracker stores state; agents decide the work.
+- Agent presets are generic role contracts for MCP/tool consumers. They must be
+  adapted to project rules, stack, tracker workflow, references, and signoff
+  before use. Workflow templates can recommend host-side skills such as
+  `stackos:stackos` to teach StackOS MCP, workflows, run plans, tasks, tickets,
+  dependencies, and evidence.
 - SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
   remains domain-agnostic.
 

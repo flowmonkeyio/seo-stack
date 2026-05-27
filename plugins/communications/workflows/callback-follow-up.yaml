@@ -11,6 +11,22 @@ when_to_use:
   - The agent needs to verify stored button state before acting on callback_data.
 when_not_to_use:
   - The callback was already resolved or ignored.
+agent_requirements:
+  - role: communications-callback-follow-up
+    requirement: required
+    agent_preset_ref: communications.workflow.callback-follow-up
+    purpose: Preserve callback origin context and decide reply, send, or workflow handoff safely.
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review callback privacy, route policy, thread behavior, and provider-contract safety.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: agent_request_id
     name: Agent Request ID

@@ -55,6 +55,7 @@ session:
 operation.list({ "surface": "mcp" })
 operation.describe({ "name": "communication.send", "surface": "mcp" })
 operation.describe({ "name": "operation.describe", "surface": "mcp" })
+agentPreset.resolveForWorkflow({ "workflow_key": "core.project-memory-review" })
 ```
 
 The discovery operations are OperationSpecs too. `operation.list` includes
@@ -192,6 +193,9 @@ The current core operation registry includes:
 - `action.validate`
 - `action.run`
 - `action.execute`
+- `agentPreset.list`
+- `agentPreset.describe`
+- `agentPreset.resolveForWorkflow`
 - `agentRequest.list`
 - `agentRequest.get`
 - `agentRequest.create`
@@ -258,6 +262,17 @@ Tracker list workflows reuse existing tracker operations. Use
 call the same operation without dry-run to create the list, use `tracker.get`
 filters for review, and use `tracker.updateTicket` with `updates_json` for
 atomic per-ticket patches. Do not add separate list-specific tracker endpoints.
+
+Agent preset setup reuses the same operation infrastructure. Use
+`agentPreset.list` to discover generic role presets, `agentPreset.describe` to
+read one role and its project-adaptation contract, and
+`agentPreset.resolveForWorkflow` to resolve a workflow template into
+required/recommended agents plus `skill_requirements`.
+
+Workflow templates are inert presets/contracts. They do not act by themselves.
+The main agent should resolve preset and skill requirements, adapt generic roles
+to the project, create a concrete run plan with `runPlan.create`, and work
+through tracker tasks/tickets with explicit dependencies and evidence.
 
 ## Direct Actions Vs Workflows
 

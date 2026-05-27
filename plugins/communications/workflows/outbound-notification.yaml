@@ -11,6 +11,22 @@ when_to_use:
   - The agent has explicit recipients/channels and approved message content.
 when_not_to_use:
   - The recipient, channel, or message content is still ambiguous.
+agent_requirements:
+  - role: communications-outbound-notification
+    requirement: required
+    agent_preset_ref: communications.workflow.outbound-notification
+    purpose: Resolve named targets, validate content/capabilities, and send explicit notifications safely.
+  - role: delivery-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review rich-feature, policy, auth, idempotency, and no-silent-degradation behavior.
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through the existing tracker; create or update tasks/tickets rather than keeping workflow state only in chat.
 inputs:
   - key: notification_goal
     name: Notification Goal

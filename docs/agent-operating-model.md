@@ -44,11 +44,25 @@ mirror into tracker tasks/tickets automatically. Manual or ad hoc agent work
 should be made explicit with `tracker.createTask` and `tracker.createTicket`
 instead of living only in chat context.
 
+Generic agent presets are setup contracts for MCP/tool consumers. They are not
+daemon-run agents and they are not project-ready prompts. Before using one, the
+caller must adapt it with project guidance, stack details, tracker workflow,
+references, verification commands, and release expectations. Use
+`agentPreset.resolveForWorkflow` to see the required/recommended agent roles and
+host-side skill requirements for a workflow template.
+
+When a host supports skills, workflow templates may recommend `stackos:stackos`.
+That skill teaches agents how to use StackOS MCP, operations, workflow
+templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
+main agent decides whether to load it, but the workflow response makes the
+expectation visible.
+
 ## Workflow Path
 
 ```text
 agent intent
 -> operation.describe / action.describe when the contract is not already clear
+-> agentPreset.resolveForWorkflow when setting up workflow-specific roles
 -> workflow template or agent-authored run plan
 -> runPlan.validate/create/start
 -> tracker.brief or tracker.next for bounded work context

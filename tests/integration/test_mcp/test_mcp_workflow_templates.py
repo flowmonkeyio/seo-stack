@@ -74,6 +74,14 @@ outputs:
         "gtm.account-research",
         "gtm.pipeline-risk-review",
     }
+    gtm_described = mcp_client.call_tool_structured(
+        "workflowTemplate.describe",
+        {"key": "gtm.account-research", "plugin_slug": "gtm"},
+    )
+    assert gtm_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
+        "gtm.workflow.account-research"
+    )
+    assert gtm_described["spec"]["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
 
     media_listing = mcp_client.call_tool_structured(
         "workflowTemplate.list",

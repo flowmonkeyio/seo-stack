@@ -14,19 +14,44 @@ A template should be generic across domains and include:
 - `owner`
 - `when_to_use` and `when_not_to_use`
 - `inputs`
-- `instructions`
 - `context_requirements`
+- `agent_requirements`
+- `skill_requirements`
 - `capability_requirements`
-- `provider_requirements`
-- `action_requirements`
+- `auth_requirements`
+- `action_contracts`
+- `resource_contracts`
 - `policies`
 - `approval_gates`
 - `steps`
-- `expected_outputs`
-- `quality_checks`
-- `history_policy`
+- `outputs`
+- `learning_hooks`
+- `failure_handling`
 
 The template should not contain project secrets or one-off task state.
+
+## Agent And Skill Requirements
+
+`agent_requirements` names the generic roles a workflow expects. Each item has
+`role`, `requirement`, `agent_preset_ref`, `purpose`, optional
+`applies_to_steps`, and optional `handoff_notes`. The preset ref resolves
+through `agentPreset.resolveForWorkflow`.
+
+Returned presets are generic and must be adapted to project rules, tracker
+workflow, tech stack, documentation references, and signoff expectations before
+use.
+
+`skill_requirements` names host-side skills that can help the main agent
+operate the workflow. Built-in workflows recommend `stackos:stackos`, which
+teaches StackOS MCP, operations, workflow templates, run plans, tracker
+tasks/tickets, dependencies, and evidence.
+
+The main agent decides whether it can load the skill. If not, it should read
+the referenced docs and still follow the same tracker/run-plan model.
+
+All agents should work through the existing tracker. Planning agents should
+break work into deliverable tickets, encode logical dependencies and sequencing,
+avoid loose ends, and make blockers and definition of done visible.
 
 ## Context Requirements
 
@@ -72,12 +97,22 @@ and MCP grants such as `action.execute` with `action_refs:
 [communications.smtp.email.send]`. `runPlan.validate` returns warnings when a
 template-derived plan is structurally valid but lacks the grants needed to run.
 
+Workflow templates are inert reusable contracts. They do not act by themselves.
+An agent turns a template into concrete workflow state with `runPlan.create`,
+then uses `runPlan.start`, `runPlan.claimStep`, granted tools, and tracker
+tickets to execute and record work.
+
 ## Built-In And Project Templates
 
 StackOS can ship built-in templates through plugins. A project can also save
 its own templates. Project templates should record their source and version so
 agents can understand whether they are using a built-in pattern or a local
 operating method.
+
+New workflow authoring is available through the contract interface:
+`workflowTemplate.validate`, `workflowTemplate.save`, `workflowTemplate.fork`,
+and `runPlan.create`. The UI can inspect and use templates, but it is not yet a
+full visual workflow-builder.
 
 ## Examples
 

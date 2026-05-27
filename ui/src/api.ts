@@ -223,9 +223,9 @@ export interface paths {
          *
          *     This route verifies Slack's HMAC signature with the daemon-held signing
          *     secret, normalizes a bounded event/interactivity shape into communication
-         *     resources, optionally creates one generic agent request from static policy,
-         *     and stops. It never calls Slack, never starts a model, and never decides the
-         *     business workflow.
+         *     resources, applies shared communication policy, optionally creates one
+         *     generic agent request, and stops. It never calls Slack, never starts a
+         *     model, and never decides the business workflow.
          */
         post: operations["ingest_slack_payload_api_v1_ingress_slack__project_id___profile_key__post"];
         delete?: never;
@@ -245,12 +245,12 @@ export interface paths {
         put?: never;
         /**
          * Ingest Telegram Update
-         * @description Store a Telegram update and create one generic claimable agent request.
+         * @description Store a Telegram update and maybe create one claimable agent request.
          *
          *     This endpoint is intentionally static plumbing: it validates Telegram's
-         *     secret-token header, normalizes the event into Communications resources,
-         *     creates an `agent_requests` row, and stops. It does not call a model, infer
-         *     intent, approve work, or choose follow-up tools.
+         *     secret-token header, normalizes the event, applies shared communication
+         *     policy, persists Communications resources, and stops. It does not call a
+         *     model, infer intent, approve work, or choose follow-up tools.
          */
         post: operations["ingest_telegram_update_api_v1_ingress_telegram__project_id___profile_key__post"];
         delete?: never;
@@ -3748,10 +3748,6 @@ export interface components {
         TelegramIngressOut: {
             /** Agent Request Id */
             agent_request_id?: number | null;
-            /** Profile Key */
-            profile_key: string;
-            /** Profile Ref */
-            profile_ref: string;
             /** Event Record Id */
             event_record_id?: number | null;
             /** Interaction Record Id */
@@ -3762,6 +3758,10 @@ export interface components {
             ok: boolean;
             /** Policy Status */
             policy_status: string;
+            /** Profile Key */
+            profile_key: string;
+            /** Profile Ref */
+            profile_ref: string;
             /** Update Id */
             update_id: number;
         };
@@ -3840,6 +3840,54 @@ export interface components {
             type: string;
         };
         /**
+         * WorkflowAgentRequirementSpec
+         * @description Agent role requirement attached to a reusable workflow template.
+         */
+        WorkflowAgentRequirementSpec: {
+            /** Agent Preset Ref */
+            agent_preset_ref: string;
+            /** Applies To Steps */
+            applies_to_steps?: string[];
+            /** Handoff Notes */
+            handoff_notes?: string[];
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
+             * Requirement
+             * @default required
+             * @enum {string}
+             */
+            requirement: WorkflowAgentRequirementSpecRequirement;
+            /** Role */
+            role: string;
+        };
+        /**
+         * WorkflowSkillRequirementSpec
+         * @description Host/agent skill guidance recommended for operating a workflow template.
+         */
+        WorkflowSkillRequirementSpec: {
+            /** Applies To Steps */
+            applies_to_steps?: string[];
+            /**
+             * Purpose
+             * @default
+             */
+            purpose: string;
+            /**
+             * Requirement
+             * @default recommended
+             * @enum {string}
+             */
+            requirement: WorkflowSkillRequirementSpecRequirement;
+            /** Setup Notes */
+            setup_notes?: string[];
+            /** Skill Ref */
+            skill_ref: string;
+        };
+        /**
          * WorkflowStepTemplateSpec
          * @description Stage blueprint. It names intent/contracts, not concrete action payloads.
          */
@@ -3895,6 +3943,8 @@ export interface components {
         WorkflowTemplateSpec: {
             /** Action Contracts */
             action_contracts?: components["schemas"]["ActionContractSpec"][];
+            /** Agent Requirements */
+            agent_requirements?: components["schemas"]["WorkflowAgentRequirementSpec"][];
             /** Approval Gates */
             approval_gates?: components["schemas"]["ApprovalGateSpec"][];
             /** Auth Requirements */
@@ -3941,6 +3991,8 @@ export interface components {
              * @default stackos.workflow-template.v1
              */
             schema_version: string;
+            /** Skill Requirements */
+            skill_requirements?: components["schemas"]["WorkflowSkillRequirementSpec"][];
             /** Steps */
             steps: components["schemas"]["WorkflowStepTemplateSpec"][];
             /** Ui Json */
@@ -4304,6 +4356,8 @@ export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
+export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
+export type SchemaWorkflowSkillRequirementSpec = components['schemas']['WorkflowSkillRequirementSpec'];
 export type SchemaWorkflowStepTemplateSpec = components['schemas']['WorkflowStepTemplateSpec'];
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
@@ -6885,4 +6939,14 @@ export enum RunStatus {
     success = "success",
     failed = "failed",
     aborted = "aborted"
+}
+export enum WorkflowAgentRequirementSpecRequirement {
+    required = "required",
+    recommended = "recommended",
+    optional = "optional"
+}
+export enum WorkflowSkillRequirementSpecRequirement {
+    required = "required",
+    recommended = "recommended",
+    optional = "optional"
 }
