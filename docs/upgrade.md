@@ -15,9 +15,9 @@ stackos install
 
 `pipx upgrade` swaps the wheel; `stackos install` then re-mirrors
 the hydrated stackos plugin from the wheel's bundled `_assets/` tree,
-refreshes MCP registrations, and runs `doctor`. Use `stackos start` for
-first start and `stackos restart` after an upgrade when the daemon is
-already running.
+refreshes any existing Codex runtime cache copy, refreshes MCP registrations,
+and runs `doctor`. Use `stackos start` for first start and `stackos restart`
+after an upgrade when the daemon is already running.
 
 ## Clone mode
 
@@ -35,7 +35,7 @@ doctor install steps.
 | Step | Behaviour |
 |---|---|
 | Schema | `alembic upgrade head` runs at every daemon start. Down-migrations exist but are discouraged. |
-| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/stackos`. Retired plugin assets disappear from the plugin catalog on the next install. |
+| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/stackos`; package installs do the equivalent from bundled assets. Existing Codex runtime cache copies under `~/.codex/plugins/cache/local-stackos/stackos/*` are refreshed from the same source so `stackos:stackos` skill guidance stays current. Retired plugin assets disappear from the plugin catalog and cache on the next install. |
 | MCP registration | Codex CLI: `codex mcp add` registers the local `mcp-bridge` stdio command and is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `stackos rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | `stackos autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |

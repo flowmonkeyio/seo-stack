@@ -75,5 +75,6 @@ def test_doctor_json_emits_documented_schema(
         "launchd_plist_present",
         "plugins_installed",
         "plugin_marketplace_registered",
+        "stackos_plugin_skill_current",
     ):
         assert k in payload["checks"], f"missing optional check: {k}"

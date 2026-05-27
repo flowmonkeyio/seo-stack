@@ -14,7 +14,8 @@ Every supported setup path should land at the same state:
 1. Create local data and state directories.
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
-4. Hydrate the `stackos` Codex plugin from bundled assets.
+4. Hydrate the `stackos` Codex plugin from bundled assets and refresh any
+   existing Codex runtime cache copy.
 5. Register the stdio MCP bridge for supported agent runtimes.
 6. Start the daemon now, or install daemon autostart.
 7. Open the StackOS UI at `http://127.0.0.1:5180/`.
@@ -41,9 +42,10 @@ make serve
 ```
 
 `make install` syncs Python dependencies, initializes state, runs migrations,
-checks the committed UI bundle, installs plugin assets, registers MCP bridge
-entries, and runs `doctor`. It is normal for the final doctor check to report
-`daemon_up: False` before `make serve` starts the daemon.
+checks the committed UI bundle, installs plugin assets, refreshes any existing
+Codex plugin cache copy, registers MCP bridge entries, and runs `doctor`. It is
+normal for the final doctor check to report `daemon_up: False` before
+`make serve` starts the daemon.
 
 `make serve` runs the daemon in the foreground on:
 
@@ -75,10 +77,13 @@ stackos start
 ```
 
 `stackos install` initializes local state, runs database migrations,
-hydrates plugin assets from the package, registers MCP bridge entries, and runs
-`doctor`. A daemon-down doctor result is treated as a first-run warning during
-install; run `stackos start` next to start the singleton daemon in the
-background.
+hydrates plugin assets from the package, refreshes any existing Codex plugin
+cache copy, registers MCP bridge entries, and runs `doctor`. The bundled
+`stackos:stackos` skill is package-managed; operators and customers should not
+edit it by hand. Project-specific agent guidance belongs in project docs,
+workflow templates, tracker tasks, and adapted agent presets. A daemon-down
+doctor result is treated as a first-run warning during install; run
+`stackos start` next to start the singleton daemon in the background.
 
 Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
@@ -255,6 +260,7 @@ Important exit codes:
 | 4 | Database migration head mismatch. Run migrations or restart the daemon. |
 | 7 | Auth token is missing or has the wrong file mode. |
 | 8 | Seed is missing, has the wrong mode, or credentials cannot decrypt. |
+| 9 | Installed StackOS plugin or managed skill assets are missing or stale. |
 
 Use JSON output for automation:
 
@@ -275,6 +281,7 @@ Default paths:
 | Daemon log | `~/.local/state/stackos/daemon.log` |
 | PID file | `~/.local/state/stackos/daemon.pid` |
 | Codex plugin | `~/.codex/plugins/stackos` |
+| Codex plugin runtime cache | `~/.codex/plugins/cache/local-stackos/stackos/*` |
 | Plugin marketplace | `~/.agents/plugins/marketplace.json` |
 
 Moving an install to another machine requires copying the DB, `seed.bin`, and
@@ -283,7 +290,8 @@ credentials cannot be recovered.
 
 ## Repair And Upgrade
 
-Re-run install to repair plugin assets and MCP registration:
+Re-run install to repair plugin assets, stale Codex plugin cache copies, and MCP
+registration:
 
 ```bash
 stackos install

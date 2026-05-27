@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
 import stat
 import subprocess
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import typer
 
@@ -212,10 +213,97 @@ def _plugin_marketplace_has_stackos(home: Path) -> bool:
     )
 
 
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _stackos_plugin_skill_source() -> dict[str, object]:
+    rel_parts = ("stackos", "skills", "stackos", "SKILL.md")
+    rel_path = "/".join(rel_parts)
+    try:
+        from stackos import install as installer
+
+        source = installer._resolve_source("plugins")  # type: ignore[attr-defined]
+        if isinstance(source, Path):
+            path = source.joinpath(*rel_parts)
+            if not path.is_file():
+                return {"available": False, "relpath": rel_path, "error": "missing source skill"}
+            return {
+                "available": True,
+                "relpath": rel_path,
+                "path": str(path),
+                "sha256": _sha256(path.read_bytes()),
+            }
+
+        node: Any = source
+        for part in rel_parts:
+            node = node.joinpath(part)
+        if not node.is_file():
+            return {"available": False, "relpath": rel_path, "error": "missing bundled skill"}
+        return {
+            "available": True,
+            "relpath": rel_path,
+            "path": rel_path,
+            "sha256": _sha256(node.read_bytes()),
+        }
+    except Exception as exc:
+        return {"available": False, "relpath": rel_path, "error": str(exc)}
+
+
+def _installed_skill_info(path: Path, expected_sha256: str | None) -> dict[str, object]:
+    if not path.is_file():
+        return {"path": str(path), "exists": False, "ok": False}
+    digest = _sha256(path.read_bytes())
+    return {
+        "path": str(path),
+        "exists": True,
+        "sha256": digest,
+        "ok": expected_sha256 is not None and digest == expected_sha256,
+    }
+
+
+def _check_stackos_plugin_skill_sync(home: Path) -> tuple[bool, dict[str, object]]:
+    """Compare managed StackOS plugin skill copies with the canonical source."""
+    source = _stackos_plugin_skill_source()
+    expected = source.get("sha256") if source.get("available") else None
+    expected_hash = expected if isinstance(expected, str) else None
+    installed = _installed_skill_info(
+        home / ".codex" / "plugins" / "stackos" / "skills" / "stackos" / "SKILL.md",
+        expected_hash,
+    )
+
+    cache_root = home / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
+    caches: list[dict[str, object]] = []
+    if cache_root.is_dir():
+        for version_dir in sorted(cache_root.iterdir()):
+            if not (version_dir / ".codex-plugin" / "plugin.json").is_file():
+                continue
+            caches.append(
+                _installed_skill_info(
+                    version_dir / "skills" / "stackos" / "SKILL.md",
+                    expected_hash,
+                )
+            )
+
+    ok = (
+        bool(source.get("available"))
+        and bool(installed.get("ok"))
+        and all(bool(row.get("ok")) for row in caches)
+    )
+    return ok, {
+        "source": source,
+        "installed": installed,
+        "cache_count": len(caches),
+        "caches": caches,
+        "repair": "run `stackos install` or `make install` to refresh managed plugin assets",
+    }
+
+
 def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, object]]:
     """Return install mirror checks for plugin-first assets."""
     expected_skills = _expected_asset_count("skills")
     expected_plugins = _expected_asset_count("plugins")
+    skill_current, skill_info = _check_stackos_plugin_skill_sync(home)
     checks: dict[str, bool] = {}
     details: dict[str, object] = {
         "expected_skills": expected_skills,
@@ -230,7 +318,9 @@ def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, obje
     plugins_count = _installed_plugin_count(home)
     checks["plugins_installed"] = expected_plugins is not None and plugins_count == expected_plugins
     checks["plugin_marketplace_registered"] = _plugin_marketplace_has_stackos(home)
+    checks["stackos_plugin_skill_current"] = skill_current
     details["plugins_count"] = plugins_count
+    details["stackos_plugin_skill"] = skill_info
     return checks, details
 
 
@@ -332,6 +422,7 @@ def doctor(
       4 alembic head mismatch
       7 auth token missing or wrong mode
       8 seed file missing or wrong mode
+      9 installed StackOS plugin/skill assets missing or stale
 
     The DB-not-yet-created case is a *warning*, not a failure — first install
     has no DB until `make migrate` runs.
@@ -409,6 +500,8 @@ def doctor(
         code = 7
     elif not alembic_ok:
         code = 4
+    elif not all(install_checks.values()):
+        code = 9
     elif not daemon_up:
         code = 1
     else:
@@ -429,5 +522,13 @@ def doctor(
                 f"  note: {len(credential_issues)} credential row(s) failed to decrypt — "
                 "see --json output for details."
             )
+        if not all(install_checks.values()):
+            skill_info = install_info.get("stackos_plugin_skill")
+            repair = (
+                skill_info.get("repair")
+                if isinstance(skill_info, dict) and isinstance(skill_info.get("repair"), str)
+                else "run `stackos install` or `make install` to refresh managed assets"
+            )
+            typer.echo(f"  note: installed StackOS plugin or skill assets are stale — {repair}.")
 
     _exit(code)

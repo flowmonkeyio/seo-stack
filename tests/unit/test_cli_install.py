@@ -85,9 +85,17 @@ def test_copy_plugins_refreshes_existing_codex_cache(sandbox: Path) -> None:
         '{"mcpServers":{"stackos":{"command":"stackos","args":["mcp-bridge"]}}}',
         encoding="utf-8",
     )
+    stale_skill = cache / "skills" / "stackos" / "SKILL.md"
+    stale_skill.parent.mkdir(parents=True)
+    stale_skill.write_text("old skill\n", encoding="utf-8")
+    stale_file = cache / "skills" / "legacy" / "stale.md"
+    stale_file.parent.mkdir(parents=True)
+    stale_file.write_text("remove me\n", encoding="utf-8")
 
-    installer.copy_plugins(home=sandbox)
+    target, _count = installer.copy_plugins(home=sandbox)
 
+    assert stale_skill.read_bytes() == (target / "skills" / "stackos" / "SKILL.md").read_bytes()
+    assert not stale_file.exists()
     mcp = json.loads((cache / ".mcp.json").read_text(encoding="utf-8"))
     assert mcp["mcpServers"]["stackos"] == {
         "command": sys.executable,
@@ -108,6 +116,72 @@ def test_doctor_plugin_count_ignores_other_codex_plugins(sandbox: Path) -> None:
     assert doctor_cli._installed_plugin_count(sandbox) == 1
     assert details["plugins_count"] == 1
     assert checks["plugins_installed"] is True
+
+
+def test_doctor_reports_managed_stackos_plugin_skill_current(sandbox: Path) -> None:
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    (cache / "skills" / "stackos").mkdir(parents=True)
+    (cache / "skills" / "stackos" / "SKILL.md").write_text("old skill\n", encoding="utf-8")
+
+    installer.copy_plugins(home=sandbox)
+    installer.register_plugin_marketplace(home=sandbox)
+
+    checks, details = doctor_cli._check_installed_assets(sandbox)
+    skill = details["stackos_plugin_skill"]
+
+    assert checks["stackos_plugin_skill_current"] is True
+    assert isinstance(skill, dict)
+    assert skill["cache_count"] == 1
+    assert all(row["ok"] for row in skill["caches"])
+
+
+def test_doctor_reports_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
+    installer.copy_plugins(home=sandbox)
+    installer.register_plugin_marketplace(home=sandbox)
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    (cache / "skills" / "stackos").mkdir(parents=True)
+    (cache / "skills" / "stackos" / "SKILL.md").write_text("old skill\n", encoding="utf-8")
+
+    checks, details = doctor_cli._check_installed_assets(sandbox)
+    skill = details["stackos_plugin_skill"]
+
+    assert checks["stackos_plugin_skill_current"] is False
+    assert isinstance(skill, dict)
+    assert skill["cache_count"] == 1
+    assert skill["caches"][0]["ok"] is False
+    assert "stackos install" in skill["repair"]
+
+
+def test_doctor_exits_9_for_stale_stackos_plugin_skill_cache(sandbox: Path) -> None:
+    seed = sandbox / ".local" / "state" / "stackos" / "seed.bin"
+    seed.write_bytes(b"0" * 32)
+    os.chmod(seed, 0o600)
+    installer.copy_plugins(home=sandbox)
+    installer.register_plugin_marketplace(home=sandbox)
+    cache = sandbox / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos" / "0.1.0"
+    (cache / ".codex-plugin").mkdir(parents=True)
+    (cache / ".codex-plugin" / "plugin.json").write_text("{}", encoding="utf-8")
+    (cache / "skills" / "stackos").mkdir(parents=True)
+    (cache / "skills" / "stackos" / "SKILL.md").write_text("old skill\n", encoding="utf-8")
+
+    runner = CliRunner()
+    json_result = runner.invoke(app, ["doctor", "--json"])
+    payload = json.loads(json_result.stdout)
+
+    assert json_result.exit_code == 9
+    assert payload["code"] == 9
+    assert payload["checks"]["stackos_plugin_skill_current"] is False
+    assert "stackos install" in payload["info"]["install_checks"]["stackos_plugin_skill"]["repair"]
+
+    plain_result = runner.invoke(app, ["doctor"])
+
+    assert plain_result.exit_code == 9
+    assert "installed StackOS plugin or skill assets are stale" in plain_result.stdout
+    assert "stackos install" in plain_result.stdout
 
 
 def test_bridge_autostart_spawns_loopback_daemon(

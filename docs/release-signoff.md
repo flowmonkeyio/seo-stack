@@ -84,4 +84,5 @@ make doctor
 
 `doctor` may return daemon-down during first install before `make serve`; that
 is expected for setup checks and should be noted in the release notes if it is
-the only failing check.
+the only failing check. Plugin or managed skill drift is not expected; a doctor
+code `9` means install/upgrade did not refresh StackOS plugin assets correctly.

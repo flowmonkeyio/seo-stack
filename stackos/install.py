@@ -270,19 +270,21 @@ def _write_plugin_mcp_config(target: Path) -> None:
         raise
 
 
-def _refresh_existing_plugin_cache(home_dir: Path) -> None:
+def _refresh_existing_plugin_cache(home_dir: Path, source_plugin: Path) -> None:
     """Refresh Codex's installed plugin cache when it already exists.
 
     Codex loads enabled plugins from ``~/.codex/plugins/cache``. Updating the
     marketplace source is enough for a future reinstall, but refreshing our own
     existing cache copy keeps clone-mode installs usable immediately after
-    ``stackos install``.
+    ``stackos install``. The cache is a runtime copy of the plugin, so mirror
+    the full plugin tree instead of only refreshing generated MCP config.
     """
     cache_root = home_dir / ".codex" / "plugins" / "cache" / "local-stackos" / "stackos"
     if not cache_root.is_dir():
         return
     for version_dir in cache_root.iterdir():
         if (version_dir / ".codex-plugin" / "plugin.json").is_file():
+            _mirror_path(source_plugin, version_dir, exclude_dirs=())
             _write_plugin_mcp_config(version_dir / ".mcp.json")
 
 
@@ -297,7 +299,7 @@ def copy_plugins(home: Path | None = None) -> tuple[Path, int]:
         _mirror_traversable(source_root.joinpath("stackos"), target, exclude_dirs=())
 
     _write_plugin_mcp_config(target / ".mcp.json")
-    _refresh_existing_plugin_cache(home_dir)
+    _refresh_existing_plugin_cache(home_dir, target)
 
     count = sum(1 for p in target.rglob("plugin.json") if p.parent.name == ".codex-plugin")
     return target, count
