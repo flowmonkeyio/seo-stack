@@ -115,6 +115,42 @@ class _FakeClient:
         )
 
 
+class _RefreshingCatalogClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.tool_list_calls = 0
+
+    def post(self, _url: str, *, content: str, headers: dict[str, str]) -> _Response:
+        del headers
+        body = json.loads(content)
+        self.calls.append(body)
+        if body["method"] == "tools/list":
+            self.tool_list_calls += 1
+            tools = [_tool("budget.set")]
+            if self.tool_list_calls > 1:
+                tools.append(_tool("agentPreset.resolveForWorkflow"))
+            return _Response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "result": {"tools": tools},
+                }
+            )
+        tool_name = body["params"]["name"]
+        return _Response(
+            {
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {
+                    "structuredContent": {
+                        "tool": tool_name,
+                        "arguments": body["params"]["arguments"],
+                    }
+                },
+            }
+        )
+
+
 def test_bridge_tools_list_hides_daemon_internals() -> None:
     daemon_tools = [
         *[_tool(name) for name in _AGENT_VISIBLE_TOOL_ORDER],
@@ -763,6 +799,34 @@ def test_bridge_proxy_does_not_inject_step_token_for_setup_tool() -> None:
         "kind": "firecrawl",
         "monthly_budget_usd": 25.0,
     }
+
+
+def test_bridge_proxy_refreshes_stale_toolbox_catalog_once() -> None:
+    proxy = AgentBridgeProxy(url="http://daemon/mcp", headers={})
+    client = _RefreshingCatalogClient()
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 103,
+        "method": "tools/call",
+        "params": {
+            "name": "toolbox.call",
+            "arguments": {
+                "tool_name": "agentPreset.resolveForWorkflow",
+                "arguments": {"workflow_key": "engineering.tracked-delivery"},
+            },
+        },
+    }
+
+    response = proxy.handle(client, payload=payload, line=json.dumps(payload), request_id=103)
+    structured = _structured(response)
+
+    assert structured["tool"] == "agentPreset.resolveForWorkflow"
+    assert structured["arguments"] == {"workflow_key": "engineering.tracked-delivery"}
+    assert [call["method"] for call in client.calls] == [
+        "tools/list",
+        "tools/list",
+        "tools/call",
+    ]
 
 
 def test_bridge_proxy_injects_run_plan_token_for_granted_tool() -> None:

@@ -1,0 +1,187 @@
+slug: engineering
+name: Engineering
+version: 0.1.0
+description: First-party StackOS domain package for SDLC workflow templates, engineering task state, and reusable delivery agent presets.
+display_order: 10
+source: builtin
+capabilities:
+  - key: engineering-delivery
+    name: Engineering Delivery
+    description: Plan, implement, review, and release project engineering changes through tracker-backed workflow execution.
+    kind: domain
+  - key: engineering-review
+    name: Engineering Review
+    description: Review architecture, integration contracts, security boundaries, QA evidence, and release readiness.
+    kind: domain
+resources:
+  - key: engineering-decision
+    name: Engineering Decision
+    description: Durable design or release decision captured by an agent with evidence and scope.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - decision
+        - status
+      properties:
+        title:
+          type: string
+          description: Short operator-readable decision title.
+        decision:
+          type: string
+          description: The accepted design, release, or delivery decision.
+        rationale:
+          type: string
+          description: Evidence and tradeoffs behind the decision.
+        status:
+          type: string
+          enum:
+            - proposed
+            - accepted
+            - superseded
+            - rejected
+        scope:
+          type: string
+          description: Component, workflow, or project area affected.
+        ticket_keys:
+          type: array
+          items:
+            type: string
+        run_plan_id:
+          type: integer
+        evidence_refs:
+          type: array
+          items:
+            type: string
+        decided_by:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+        tags:
+          type: array
+          items:
+            type: string
+    ui_schema:
+      table_columns:
+        - title
+        - status
+        - scope
+        - decided_at
+      summary_fields:
+        - decision
+        - rationale
+      detail_sections:
+        - title: Decision
+          fields:
+            - title
+            - status
+            - decision
+            - rationale
+        - title: Traceability
+          fields:
+            - scope
+            - ticket_keys
+            - run_plan_id
+            - evidence_refs
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: engineering-decision
+      agent_guidance: Record durable decisions only when they affect future engineering delivery, review, or release work.
+  - key: engineering-evidence
+    name: Engineering Evidence
+    description: Verification evidence, manual review notes, or signoff artifacts for engineering work.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - evidence_type
+        - summary
+        - status
+      properties:
+        title:
+          type: string
+          description: Short evidence title.
+        evidence_type:
+          type: string
+          enum:
+            - automated-test
+            - browser-review
+            - manual-review
+            - command-output
+            - release-signoff
+            - limitation
+        summary:
+          type: string
+          description: What was verified or what limitation remains.
+        status:
+          type: string
+          enum:
+            - passed
+            - failed
+            - blocked
+            - informational
+        ticket_keys:
+          type: array
+          items:
+            type: string
+        task_key:
+          type: string
+        run_plan_id:
+          type: integer
+        command:
+          type: string
+        result:
+          type: string
+        artifact_refs:
+          type: array
+          items:
+            type: string
+        reviewer:
+          type: string
+        checked_at:
+          type: string
+          format: date-time
+    ui_schema:
+      table_columns:
+        - title
+        - evidence_type
+        - status
+        - checked_at
+      summary_fields:
+        - summary
+        - result
+      detail_sections:
+        - title: Evidence
+          fields:
+            - title
+            - evidence_type
+            - status
+            - summary
+            - result
+        - title: Traceability
+          fields:
+            - task_key
+            - ticket_keys
+            - run_plan_id
+            - command
+            - artifact_refs
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: engineering-evidence
+      agent_guidance: Store only verification evidence or explicit limitations that future agents can use for signoff decisions.
+ui:
+  nav:
+    section: Engineering
+    items:
+      - key: engineering.resources
+        label: Data
+        to: resources?plugin_slug=engineering
+        matchPrefix: true
+      - key: engineering.templates
+        label: Workflows
+        to: workflow-templates?plugin_slug=engineering
+config:
+  schema_version: stackos.plugin.v1

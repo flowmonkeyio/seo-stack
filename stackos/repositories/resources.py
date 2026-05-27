@@ -19,6 +19,7 @@ from stackos.db.models import (
     Resource,
     ResourceRecord,
 )
+from stackos.plugins.manifest import plugin_sort_key
 from stackos.repositories.base import (
     DEFAULT_PAGE_LIMIT,
     MAX_PAGE_LIMIT,
@@ -321,9 +322,9 @@ class ResourceRepository:
         stmt = select(Resource, Plugin).join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        return list(
-            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Resource.key).asc())).all()
-        )
+        rows = list(self._s.exec(stmt.order_by(col(Resource.key).asc())).all())
+        rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
+        return rows
 
     def _get_resource_pair(
         self,

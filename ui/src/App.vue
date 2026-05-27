@@ -11,9 +11,7 @@ import { RouterView, useRoute } from 'vue-router'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import {
-  coreNavSections,
-  pluginContributionSections,
-  setupNavSection,
+  projectNavSections as buildProjectNavSections,
   type StackOsNavSection,
 } from '@/lib/stackos/nav'
 import { useAuthStore } from '@/stores/auth'
@@ -78,11 +76,7 @@ onMounted(() => {
 const projectNavSections = computed<StackOsNavSection[]>(() => {
   const id = currentProjectId.value
   if (!id) return []
-  return [
-    ...coreNavSections(id),
-    ...pluginContributionSections(id, enabledPlugins.value),
-    setupNavSection(id),
-  ].filter((section) => section.items.length > 0)
+  return buildProjectNavSections(id, enabledPlugins.value)
 })
 
 watch(

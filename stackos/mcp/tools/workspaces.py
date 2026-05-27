@@ -7,10 +7,11 @@ the binding and session metadata in the singleton DB.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ConfigDict
 
+from stackos.config import get_settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.server import ToolRegistry, ToolSpec
@@ -20,9 +21,58 @@ from stackos.repositories.workspaces import (
     AgentSessionOut,
     WorkspaceBindingOut,
     WorkspaceBootstrapOut,
+    WorkspaceProjectCandidateOut,
     WorkspaceRepository,
     WorkspaceResolutionOut,
 )
+
+
+def _loopback_base_url() -> str:
+    settings = get_settings()
+    host = settings.host
+    display_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    return f"http://{display_host}:{settings.port}"
+
+
+def _ui_urls(ui_paths: dict[str, str]) -> dict[str, str]:
+    base = _loopback_base_url()
+    return {
+        key: f"{base}{path if path.startswith('/') else '/' + path}"
+        for key, path in ui_paths.items()
+    }
+
+
+def _ui_health() -> dict[str, Any]:
+    base = _loopback_base_url()
+    return {
+        "base_url": base,
+        "daemon_reached": True,
+        "meaning": (
+            "This MCP response came from the StackOS daemon. UI routes use the same "
+            "loopback host and port unless the operator configured a different local port."
+        ),
+    }
+
+
+def _with_candidate_urls(
+    candidates: list[WorkspaceProjectCandidateOut],
+) -> list[WorkspaceProjectCandidateOut]:
+    return [
+        candidate.model_copy(update={"ui_urls": _ui_urls(candidate.ui_paths)})
+        for candidate in candidates
+    ]
+
+
+def _with_ui_context[
+    T: AgentSessionOut | WorkspaceBootstrapOut | WorkspaceResolutionOut,
+](payload: T) -> T:
+    update: dict[str, Any] = {
+        "ui_urls": _ui_urls(payload.ui_paths),
+        "ui_health": _ui_health(),
+    }
+    if isinstance(payload, (AgentSessionOut, WorkspaceResolutionOut)):
+        update["candidate_projects"] = _with_candidate_urls(payload.candidate_projects)
+    return cast(T, payload.model_copy(update=update))
 
 
 class WorkspaceResolveInput(MCPInput):
@@ -148,11 +198,12 @@ class WorkspaceStartSessionInput(MCPInput):
 async def _workspace_resolve(
     inp: WorkspaceResolveInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WorkspaceResolutionOut:
-    return WorkspaceRepository(ctx.session).resolve(
+    resolved = WorkspaceRepository(ctx.session).resolve(
         repo_fingerprint=inp.repo_fingerprint,
         git_remote_url=inp.git_remote_url,
         cwd=inp.cwd,
     )
+    return _with_ui_context(resolved)
 
 
 async def _workspace_connect(
@@ -197,7 +248,9 @@ async def _workspace_bootstrap(
         rebind_existing=inp.rebind_existing,
     )
     return WriteEnvelope[WorkspaceBootstrapOut](
-        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+        data=_with_ui_context(env.data),
+        run_id=ctx.run_id,
+        project_id=env.project_id,
     )
 
 
@@ -234,7 +287,9 @@ async def _workspace_start_session(
         auto_bootstrap=inp.auto_bootstrap,
     )
     return WriteEnvelope[AgentSessionOut](
-        data=env.data, run_id=ctx.run_id, project_id=env.project_id
+        data=_with_ui_context(env.data),
+        run_id=ctx.run_id,
+        project_id=env.project_id,
     )
 
 

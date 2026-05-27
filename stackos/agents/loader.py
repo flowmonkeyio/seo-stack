@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 import stackos
 from stackos.agents.schema import AgentPresetSpec, parse_agent_preset_bundle_yaml
+from stackos.plugins.manifest import plugin_sort_key
 from stackos.repositories.base import ConflictError, NotFoundError
 
 PLUGIN_AGENT_PRESET_PRECEDENCE = 10
@@ -182,6 +183,7 @@ class AgentPresetLoader:
             resolved.append(preset)
         resolved.sort(
             key=lambda item: (
+                *plugin_sort_key(item.summary.plugin_slug, None),
                 item.summary.key,
                 -item.summary.precedence,
                 item.summary.source,

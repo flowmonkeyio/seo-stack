@@ -144,8 +144,25 @@ def _setup_guidance() -> list[str]:
     return [
         "Agent presets are generic MCP/tool-consumer contracts, not daemon-run agents.",
         (
+            "SDLC setup follows the normal workflow path under "
+            "engineering.tracked-delivery: describe the workflow, resolve its "
+            "agent presets, create/start a run plan when executing, and mirror "
+            "or update tracker tasks/tickets."
+        ),
+        (
             "Do not use a generic preset verbatim; adapt it to project rules, "
             "tech stack, references, tracker workflow, and signoff expectations first."
+        ),
+        (
+            "Local agent files are host/project-specific. StackOS does not detect, "
+            "write, or register .codex, markdown-frontmatter, or other host agent "
+            "formats; the main agent adapts presets into local files only when the "
+            "host/project guidance calls for it."
+        ),
+        (
+            "recommended_tools are StackOS operation refs. Call them directly only "
+            "when the host exposes them; otherwise inspect with toolbox.describe and "
+            "invoke with toolbox.call."
         ),
         (
             "Use the existing StackOS tracker for planning and delivery: create/update "

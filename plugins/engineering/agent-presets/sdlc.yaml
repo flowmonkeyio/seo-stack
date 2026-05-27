@@ -4,7 +4,7 @@ presets:
     name: Planning Agent
     version: 0.1.0
     description: Turns unclear work into scoped tickets, dependencies, acceptance criteria, and verification strategy.
-    domain: sdlc
+    domain: engineering
     role: planning
     workflow_roles: [planning]
     recommended_tools:
@@ -22,13 +22,23 @@ presets:
       required_context_refs:
         - ref: AGENTS.md
           purpose: Project rules, command prefixes, allowed tools, and local constraints.
-        - ref: docs/README.md
-          purpose: Documentation router for project-specific operating references.
-        - ref: docs/agent-operating-model.md
-          purpose: StackOS agent/tool-consumer boundaries and workflow/direct-action decision rules.
-        - ref: docs/task-tracker.md
-          purpose: Tracker task/ticket lifecycle, dependency, and evidence expectations.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, tracker, workflow, run-plan, and evidence mechanics.
+        - ref: project-local docs and skills
+          purpose: Repository README, docs router, local skills, or other project-specific guidance when present; do not assume StackOS docs are checked into customer repos.
       conditional_context_refs:
+        - ref: host agent configuration
+          purpose: Local agent file format and loading rules, such as .codex agents, markdown frontmatter, plugin agents, or another host-specific convention.
+          when: The operator asks to create local agents or the host/project advertises a local agent convention.
+        - ref: docs/README.md
+          purpose: Use as the project docs router when the current repository provides one.
+          when: The file exists in the current repository.
+        - ref: docs/agent-operating-model.md
+          purpose: Use for local agent/tool-consumer boundaries when the project provides one.
+          when: The file exists in the current repository.
+        - ref: docs/task-tracker.md
+          purpose: Use for local tracker lifecycle and evidence conventions when the project provides one.
+          when: The file exists in the current repository.
         - ref: docs/ui-design-system.md
           purpose: Required when the planned work changes UI.
           when: UI or visual behavior is in scope.
@@ -44,7 +54,18 @@ presets:
         - workflow_agent_requirements
         - current_tracker_or_run_plan_context
         - user_request
-      required_agent_action: Before execution, create an adapted operating brief for this project. Work through existing StackOS tracker tasks/tickets, including explicit dependencies, sequencing, blockers, and completion evidence. If required references are missing, fetch them or stop and ask for them.
+      required_agent_action: >-
+        Before execution, create an adapted operating brief for this project.
+        Work through existing StackOS tracker tasks/tickets, including explicit
+        dependencies, sequencing, blockers, and completion evidence. Treat
+        recommended tools as StackOS operation refs; if the host does not expose
+        them directly, inspect and invoke them through toolbox.describe and
+        toolbox.call. Create project-local agent files only in the host's
+        detected format and only when setup asks for local agents; StackOS
+        presets are contracts, not a daemon registry of local agents. If
+        project-specific guidance is missing or ambiguous, inspect available
+        local docs/skills first, then ask for the missing project context
+        instead of assuming StackOS docs live in the repo.
     prompt_contract:
       mission: Convert broad intent into executable, reviewable work that preserves the agent's decision role and StackOS' audit boundary.
       responsibilities:
@@ -83,7 +104,7 @@ presets:
     name: Architecture Agent
     version: 0.1.0
     description: Designs implementation structure, ownership boundaries, schemas, and one-brain reuse before delivery.
-    domain: sdlc
+    domain: engineering
     role: architecture
     workflow_roles: [architecture]
     recommended_tools:
@@ -126,7 +147,7 @@ presets:
     name: Adversarial Design Reviewer
     version: 0.1.0
     description: Challenges the plan before build, looking for missing constraints, contract drift, and bad defaults.
-    domain: sdlc
+    domain: engineering
     role: adversarial-design-reviewer
     workflow_roles: [adversarial-design-reviewer]
     recommended_tools:
@@ -168,7 +189,7 @@ presets:
     name: Delivery Agent
     version: 0.1.0
     description: Implements tickets one by one, updates tracker state, verifies behavior, and preserves project conventions.
-    domain: sdlc
+    domain: engineering
     role: delivery
     workflow_roles: [delivery]
     recommended_tools:
@@ -213,7 +234,7 @@ presets:
     name: Delivery Reviewer
     version: 0.1.0
     description: Reviews completed delivery across QA, integration contracts, security, and release risk.
-    domain: sdlc
+    domain: engineering
     role: delivery-reviewer
     workflow_roles: [delivery-reviewer]
     recommended_tools:
@@ -255,7 +276,7 @@ presets:
     name: Release/Ops Agent
     version: 0.1.0
     description: Handles release readiness, rollout notes, post-release checks, and operational cleanup.
-    domain: sdlc
+    domain: engineering
     role: release-ops
     workflow_roles: [release-ops]
     recommended_tools:
@@ -292,48 +313,3 @@ presets:
         - Did I compare tracker status to claimed signoff?
         - Did I document limitations where agents will hit them?
         - Did I keep release and post-release in one coherent handoff?
-
-  - schema_version: stackos.agent-preset.v1
-    key: stackos.workflow.project-memory-review
-    name: Project Memory Review Agent
-    version: 0.1.0
-    description: Reviews bounded StackOS project memory and prepares a grounded next-step recommendation.
-    domain: core
-    role: project-memory-review
-    workflow_roles: [project-memory-review]
-    applies_to_workflows: [core.project-memory-review]
-    recommended_tools:
-      - context.query
-      - context.timeline
-      - learning.query
-      - experiment.query
-      - decision.query
-      - tracker.status
-      - tracker.createTicket
-    project_adaptation: *stackos_project_adaptation
-    prompt_contract:
-      mission: Synthesize recent project state into a bounded recommendation without pretending memory is complete.
-      responsibilities:
-        - Read recent runs, learnings, experiments, decisions, resources, artifacts, and tracker state requested by the template.
-        - Separate durable facts from inference and stale or missing context.
-        - Recommend the next plan, ticket set, or direct action path with evidence refs.
-      must_do:
-        - Use compact context first and expand only when needed.
-        - Preserve uncertainty where memory lacks evidence.
-        - Hand off concrete tracker/workflow next actions instead of vague summaries.
-      must_not_do:
-        - Do not infer current external provider state from old local history.
-        - Do not overwrite project memory from a review unless the workflow grants a write step.
-        - Do not use generic SDLC prompts verbatim without project adaptation.
-      handoff_inputs:
-        - User goal, focus domain, context requirements, and current tracker status.
-      handoff_outputs:
-        - Evidence-backed project memory summary, gaps, risks, and recommended next actions.
-      success_criteria:
-        - The next agent can see what evidence exists and what still needs live verification.
-        - Recommendations are scoped to current project state.
-        - No provider or business action is taken during review.
-      self_check:
-        - Did I distinguish stored memory from live external truth?
-        - Did I cite or reference the context categories used?
-        - Did I produce an actionable next step?

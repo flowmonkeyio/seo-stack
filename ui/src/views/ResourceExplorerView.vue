@@ -270,11 +270,18 @@ watch(
             </summary>
             <div class="border-t border-subtle p-3">
               <UiJsonBlock
+                v-if="selectedUiSchemaJson !== null"
                 :data="selectedUiSchemaJson"
                 density="compact"
                 max-height="14rem"
                 wrap
               />
+              <p
+                v-else
+                class="text-sm text-fg-muted"
+              >
+                No UI schema configured for this resource.
+              </p>
             </div>
           </details>
 
@@ -284,11 +291,18 @@ watch(
             </summary>
             <div class="border-t border-subtle p-3">
               <UiJsonBlock
+                v-if="selectedConfigJson !== null"
                 :data="selectedConfigJson"
                 density="compact"
                 max-height="14rem"
                 wrap
               />
+              <p
+                v-else
+                class="text-sm text-fg-muted"
+              >
+                No resource config configured for this resource.
+              </p>
             </div>
           </details>
         </UiPanel>

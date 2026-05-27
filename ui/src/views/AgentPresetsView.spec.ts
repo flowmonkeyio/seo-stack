@@ -43,12 +43,12 @@ describe('AgentPresetsView', () => {
               name: 'Planning Agent',
               version: '0.1.0',
               description: 'Breaks work into sequenced tickets and dependencies.',
-              domain: 'sdlc',
+              domain: 'engineering',
               role: 'planning',
               agent_type: 'planner',
               source: 'builtin',
               precedence: 0,
-              plugin_slug: null,
+              plugin_slug: 'engineering',
               workflow_roles: [],
               applies_to_workflows: [],
               generic_preset: true,
@@ -67,6 +67,22 @@ describe('AgentPresetsView', () => {
               plugin_slug: 'seo',
               workflow_roles: ['research'],
               applies_to_workflows: ['seo.keyword-research'],
+              generic_preset: true,
+              adaptation_required: true,
+            },
+            {
+              key: 'communications.workflow.inbox-review',
+              name: 'Communications Inbox Agent',
+              version: '0.1.0',
+              description: 'Reviews communication inbox state.',
+              domain: 'communications',
+              role: 'communications-inbox-review',
+              agent_type: 'specialist',
+              source: 'builtin',
+              precedence: 10,
+              plugin_slug: 'communications',
+              workflow_roles: ['triage'],
+              applies_to_workflows: ['communications.inbox-review'],
               generic_preset: true,
               adaptation_required: true,
             },
@@ -89,7 +105,7 @@ describe('AgentPresetsView', () => {
     vi.restoreAllMocks()
   })
 
-  it('defaults to SDLC presets and shows project adaptation guidance', async () => {
+  it('defaults to engineering presets and shows project adaptation guidance', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id/agent-presets', component: AgentPresetsView }],
@@ -102,11 +118,14 @@ describe('AgentPresetsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Planning Agent'))
 
     expect(wrapper.text()).toContain('Agent Presets')
-    expect(wrapper.text()).toContain('SDLC')
+    expect(wrapper.text()).toContain('Engineering')
     expect(wrapper.text()).toContain('project-specific setup required')
     expect(wrapper.text()).toContain('do not use verbatim')
     expect(wrapper.text()).toContain('Create dependency-aware tickets.')
     expect(wrapper.text()).not.toContain('SEO Keyword Research Agent')
+
+    const tabLabels = wrapper.findAll('[role="tab"]').map((tab) => tab.text())
+    expect(tabLabels.slice(0, 4)).toEqual(['All', 'Engineering', 'Communications', 'SEO'])
   })
 })
 
@@ -119,12 +138,12 @@ function describePreset(key: string) {
       key === 'stackos.sdlc.planning'
         ? 'Breaks work into sequenced tickets and dependencies.'
         : 'Researches search demand.',
-    domain: key === 'stackos.sdlc.planning' ? 'sdlc' : 'seo',
+    domain: key === 'stackos.sdlc.planning' ? 'engineering' : 'seo',
     role: key === 'stackos.sdlc.planning' ? 'planning' : 'seo-keyword-research',
     agent_type: key === 'stackos.sdlc.planning' ? 'planner' : 'specialist',
     source: 'builtin',
     precedence: 0,
-    plugin_slug: key === 'stackos.sdlc.planning' ? null : 'seo',
+    plugin_slug: key === 'stackos.sdlc.planning' ? 'engineering' : 'seo',
     workflow_roles: key === 'stackos.sdlc.planning' ? [] : ['research'],
     applies_to_workflows: key === 'stackos.sdlc.planning' ? [] : ['seo.keyword-research'],
     generic_preset: true,

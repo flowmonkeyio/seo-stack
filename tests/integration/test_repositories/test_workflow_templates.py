@@ -71,6 +71,11 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         key="gtm.account-research",
         plugin_slug="gtm",
     )
+    engineering_listing = repo.list_templates(plugin_slug="engineering")
+    engineering_described = repo.describe_template(
+        key="engineering.tracked-delivery",
+        plugin_slug="engineering",
+    )
     media_listing = repo.list_templates(plugin_slug="media-buying")
     media_described = repo.describe_template(
         key="media-buying.campaign-launch",
@@ -90,6 +95,16 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     )
     assert described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
     assert described.spec.steps[0].id == "clarify-goal"
+    assert [item.key for item in engineering_listing.templates] == [
+        "engineering.tracked-delivery",
+    ]
+    assert engineering_described.summary.plugin_slug == "engineering"
+    assert engineering_described.spec.agent_requirements[0].agent_preset_ref == (
+        "stackos.sdlc.planning"
+    )
+    assert engineering_described.spec.skill_requirements[0].skill_ref == "stackos:stackos"
+    assert engineering_described.spec.steps[0].id == "scope-work"
+    assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
     assert [item.key for item in gtm_listing.templates] == [
         "gtm.account-research",
         "gtm.crm-hygiene-pass",

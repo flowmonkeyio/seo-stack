@@ -51,6 +51,19 @@ references, verification commands, and release expectations. Use
 `agentPreset.resolveForWorkflow` to see the required/recommended agent roles and
 host-side skill requirements for a workflow template.
 
+SDLC roles run through the normal workflow-template path under
+`engineering.tracked-delivery`. The workflow references the `stackos.sdlc.*`
+preset family for planning, architecture, delivery, review, and release roles;
+`agentPreset.resolveForWorkflow` turns that workflow into the required and
+recommended role contracts.
+
+Local agent installation is outside the StackOS daemon boundary. StackOS
+describes generic presets and workflow role requirements, but the host/project
+decides whether those become `.codex` agents, markdown-frontmatter agents,
+plugin agent files, or session-only instructions. If a host does not expose a
+recommended StackOS operation directly, the agent should inspect and invoke it
+through the scoped toolbox.
+
 When a host supports skills, workflow templates may recommend `stackos:stackos`.
 That skill teaches agents how to use StackOS MCP, operations, workflow
 templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
@@ -150,13 +163,16 @@ stackos mcp-bridge
 ```
 
 The agent-facing bridge exposes only `workspace.startSession`,
-`workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. Setup,
-workflow, tracker, auth, and run-plan tools are reached through
-`toolbox.call`. If a repo is already bound, the bridge injects `project_id` and
-relaxes the advertised schemas so agents do not have to keep repeating it. If a
-caller explicitly passes a different `project_id`, the bridge refuses the call.
-There is no global active project in the agent path; the workspace-bound project
-is the source of truth.
+`workspace.resolve`, `toolbox.describe`, and `toolbox.call` directly. First-run
+setup uses `workspace.startSession` to create or reuse one workspace binding.
+Ongoing operations use the same call only to confirm the workspace-bound
+project, then move to narrowly scoped `toolbox.describe` / `toolbox.call`
+requests. Setup, workflow, tracker, auth, and run-plan tools are reached
+through `toolbox.call`. If a repo is already bound, the bridge injects
+`project_id` and relaxes the advertised schemas so agents do not have to keep
+repeating it. If a caller explicitly passes a different `project_id`, the
+bridge refuses the call. There is no global active project in the agent path;
+the workspace-bound project is the source of truth.
 
 Workspace hints are also scoped. The bridge injects its current
 `cwd`, `repo_fingerprint`, `git_remote_url`, `last_known_root`, runtime, and
@@ -182,11 +198,15 @@ idempotent:
 1. Call `workspace.startSession` from the current repo/directory. It creates or
    reuses one project for that workspace root and stores the binding in the
    daemon DB when no binding exists yet. It does not write files into the repo.
-2. Continue with project-scoped tools immediately; the bridge injects the
+2. Read the returned setup state carefully: `workspace_bound` or
+   `project_scoped_tools_usable` means project-scoped tools can run. Missing
+   `framework` or `content_model_json` means the project profile is
+   under-described for adaptation, not that the workspace is unusable.
+3. Continue with project-scoped tools immediately; the bridge injects the
    resolved `project_id`.
-3. Use `workspace.resolve` when the caller needs a read-only diagnostic before
+4. Use `workspace.resolve` when the caller needs a read-only diagnostic before
    setup.
-4. Use `toolbox.call` for `project.list`, `project.create`,
+5. Use `toolbox.call` for `project.list`, `project.create`,
    `workspace.bootstrap`, or `workspace.connect` only when the
    operator intentionally wants to choose a specific existing project or supply
    explicit project metadata.

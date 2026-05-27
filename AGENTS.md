@@ -26,8 +26,9 @@ work, start here:
 - The runtime layers are project -> workflow template -> run plan. Projects
   store durable state, templates define reusable setup, and run plans are
   concrete execution instances with scoped grants and audit history.
-- Core stays domain-agnostic. SEO, media buying, GTM, publishing, and utilities
-  belong in plugins through manifests, resources, actions, and templates.
+- Core stays domain-agnostic. Engineering, SEO, media buying, GTM, publishing,
+  communications, and utilities belong in plugins through manifests, resources,
+  actions, and templates.
 - Agents decide strategy. StackOS stores, validates, resolves daemon-held auth,
   executes explicit calls, and records audit. Tools/connectors must not invent
   workflow logic or business decisions.

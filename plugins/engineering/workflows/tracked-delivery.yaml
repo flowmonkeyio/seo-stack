@@ -1,0 +1,296 @@
+schema_version: stackos.workflow-template.v1
+key: engineering.tracked-delivery
+name: Engineering Tracked Delivery
+version: 0.1.0
+description: Reusable SDLC workflow for planning, delivering, reviewing, and releasing engineering changes through StackOS tracker state.
+domain: engineering
+owner:
+  team: StackOS
+when_to_use:
+  - A user asks for engineering work that needs planning, implementation, review, and signoff.
+  - A project wants local/host agents configured from SDLC presets for a concrete delivery flow.
+  - Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.
+when_not_to_use:
+  - The request is one explicit provider/tool action with no durable delivery state.
+  - The project already has a more specific domain workflow template that fully covers the work.
+agent_requirements:
+  - role: planning
+    requirement: required
+    agent_preset_ref: stackos.sdlc.planning
+    purpose: Convert broad engineering intent into scoped tasks, tickets, dependencies, and verification strategy.
+    applies_to_steps:
+      - scope-work
+      - plan-tickets
+  - role: architecture
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.architecture
+    purpose: Design implementation structure, ownership boundaries, operation contracts, and one-brain reuse before build.
+    applies_to_steps:
+      - design-approach
+  - role: adversarial-design-reviewer
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.adversarial-design-reviewer
+    purpose: Challenge the plan before build for missing constraints, bad defaults, unclear dependencies, and agent-facing ambiguity.
+    applies_to_steps:
+      - review-design
+  - role: delivery
+    requirement: required
+    agent_preset_ref: stackos.sdlc.delivery
+    purpose: Implement tracker tickets one by one, update state truthfully, and preserve project conventions.
+    applies_to_steps:
+      - deliver-tickets
+  - role: delivery-reviewer
+    requirement: required
+    agent_preset_ref: stackos.sdlc.delivery-reviewer
+    purpose: Review completed delivery across QA, integration contracts, security, docs, and release risk.
+    applies_to_steps:
+      - review-delivery
+  - role: release-ops
+    requirement: recommended
+    agent_preset_ref: stackos.sdlc.release-ops
+    purpose: Prepare release readiness, final docs, known limitations, rollout notes, and post-release checks.
+    applies_to_steps:
+      - release-closeout
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, engineering workflows, run plans, tracker tasks/tickets, dependencies, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Work through existing tracker tasks/tickets and record completion evidence; do not keep SDLC state only in chat.
+      - Adapt generic SDLC presets to the project's agent file format, tech stack, docs, tests, and release rules before creating local agents.
+inputs:
+  - key: goal
+    name: Goal
+    type: string
+    required: true
+    description: Engineering outcome requested by the user or upstream workflow.
+  - key: repo_context
+    name: Repository Context
+    type: object
+    required: false
+    description: Optional known stack, docs, constraints, or host-agent format supplied by the caller.
+  - key: release_intent
+    name: Release Intent
+    type: string
+    required: false
+    description: Optional target release, branch, commit, or rollout expectation.
+context_requirements:
+  - id: current_tracker
+    source: resources
+    purpose: Use existing tracker-related resources or imported planning context when present before creating new work.
+    filters:
+      plugin_slug: engineering
+      resource_keys:
+        - engineering-decision
+        - engineering-evidence
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+  - id: recent_runs
+    source: runs
+    purpose: Check recent run evidence and failed signoffs before repeating delivery work.
+    fields:
+      - kind
+      - status
+      - last_step
+      - metadata_json
+    max_items: 10
+    return_mode: compact
+  - id: recent_decisions
+    source: decisions
+    purpose: Reuse accepted technical or release decisions that constrain implementation.
+    fields:
+      - title
+      - decision
+      - rationale
+      - status
+      - tags
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: engineering-delivery
+    required: true
+    description: Tracker-backed planning, delivery, review, and release flow for engineering work.
+  - key: engineering-review
+    required: true
+    description: Architecture, QA, integration contract, security, and release-readiness review.
+resource_contracts:
+  - key: decisions
+    resource: engineering-decision
+    purpose: Store design or release decisions when the run creates durable engineering rationale.
+  - key: evidence
+    resource: engineering-evidence
+    purpose: Store verification and signoff evidence when the run creates reusable artifacts.
+policies:
+  - key: agent_decides_strategy
+    kind: boundary
+    description: The workflow defines SDLC contracts; agents still decide implementation strategy from project context.
+  - key: one_brain_delivery
+    kind: architecture
+    description: New behavior should have one canonical owner and reuse existing operations/adapters instead of duplicating logic.
+  - key: truthful_tracker_state
+    kind: delivery
+    description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, and evidence.
+approval_gates:
+  - key: human_scope_review
+    description: Required when scope, architecture, migration, provider behavior, or release risk is ambiguous.
+    required_when: unclear_scope_or_material_risk
+  - key: release_review
+    description: Required before claiming release readiness or pushing externally visible changes.
+    required_when: release_or_push
+steps:
+  - id: scope-work
+    title: Scope Work
+    purpose: Restate the engineering goal, constraints, project setup, host-agent format, and missing context.
+    input_refs:
+      - goal
+      - repo_context
+      - release_intent
+    context_refs:
+      - current_tracker
+      - recent_runs
+      - recent_decisions
+    policy_refs:
+      - agent_decides_strategy
+    approval_refs:
+      - human_scope_review
+    output_refs:
+      - scope_summary
+    success_criteria:
+      - The workflow distinguishes first-run setup from ongoing project operations.
+      - Missing project guidance or host-agent format is explicit.
+  - id: plan-tickets
+    title: Plan Tracker Tickets
+    purpose: Create or update tracker tasks/tickets with dependencies, sequencing, blockers, and definition of done.
+    policy_refs:
+      - truthful_tracker_state
+    depends_on:
+      - scope-work
+    output_refs:
+      - tracker_plan
+    success_criteria:
+      - Tickets are executable without rereading the whole conversation.
+      - Dependencies match the actual delivery order.
+  - id: design-approach
+    title: Design Approach
+    purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, docs, tests, and release implications.
+    policy_refs:
+      - one_brain_delivery
+    depends_on:
+      - plan-tickets
+    output_refs:
+      - design_summary
+    success_criteria:
+      - The design avoids duplicate logic and names every touched contract boundary.
+  - id: review-design
+    title: Review Design
+    purpose: Challenge the plan and design before implementation, focusing on user intent, agent experience, edge cases, and missing constraints.
+    approval_refs:
+      - human_scope_review
+    depends_on:
+      - design-approach
+    output_refs:
+      - design_review
+    success_criteria:
+      - Blocking design gaps are resolved before delivery starts.
+  - id: deliver-tickets
+    title: Deliver Tickets
+    purpose: Claim ready tracker tickets, implement one by one, update status, and record focused verification evidence.
+    policy_refs:
+      - truthful_tracker_state
+      - one_brain_delivery
+    resource_refs:
+      - decisions
+      - evidence
+    depends_on:
+      - review-design
+    output_refs:
+      - delivery_summary
+    success_criteria:
+      - Ticket state matches reality.
+      - Targeted verification proves the behavior named in each ticket definition of done.
+  - id: review-delivery
+    title: Review Delivery
+    purpose: Review completed delivery across QA, integration contracts, security boundaries, docs, and manual evidence.
+    approval_refs:
+      - release_review
+    resource_refs:
+      - evidence
+    depends_on:
+      - deliver-tickets
+    output_refs:
+      - review_summary
+    success_criteria:
+      - Release blockers and residual risks are explicit.
+      - The review does not rubber-stamp open or unverified tickets.
+  - id: release-closeout
+    title: Release Closeout
+    purpose: Confirm tracker status, signoff, docs, known limitations, commit/release state, and post-release checks.
+    input_refs:
+      - release_intent
+    approval_refs:
+      - release_review
+    resource_refs:
+      - evidence
+    depends_on:
+      - review-delivery
+    output_refs:
+      - release_summary
+    success_criteria:
+      - Release readiness reflects tracker reality and verification evidence.
+outputs:
+  - key: scope_summary
+    name: Scope Summary
+    type: object
+    required: true
+  - key: tracker_plan
+    name: Tracker Plan
+    type: object
+    required: true
+  - key: design_summary
+    name: Design Summary
+    type: object
+    required: false
+  - key: design_review
+    name: Design Review
+    type: object
+    required: false
+  - key: delivery_summary
+    name: Delivery Summary
+    type: object
+    required: true
+  - key: review_summary
+    name: Review Summary
+    type: object
+    required: true
+  - key: release_summary
+    name: Release Summary
+    type: object
+    required: false
+learning_hooks:
+  - key: engineering_reuse
+    prompt: Capture reusable engineering lessons only when the evidence is explicit and project-scoped.
+    tags:
+      - engineering
+      - sdlc
+failure_handling:
+  - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
+  - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: sdlc
+  step_ids:
+    - scope-work
+    - plan-tickets
+    - design-approach
+    - review-design
+    - deliver-tickets
+    - review-delivery
+    - release-closeout

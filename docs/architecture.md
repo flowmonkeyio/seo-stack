@@ -37,7 +37,7 @@ Plugins package domain behavior as metadata:
 - workflow templates
 - UI navigation contributions
 
-SEO, media buying, GTM, and utilities should all fit this shape.
+Engineering, SEO, media buying, GTM, and utilities should all fit this shape.
 
 ### Workflow Template
 

@@ -172,11 +172,12 @@ class AgentBridgeProxy:
             },
         )
 
-    def _ensure_tool_catalog(self, client: Any) -> None:
-        if self.tool_catalog:
+    def _ensure_tool_catalog(self, client: Any, *, refresh: bool = False) -> None:
+        if self.tool_catalog and not refresh:
             return
-        self.tool_catalog = _bridge_tool_catalog(
-            self.request_daemon(client, self._tool_list_body())
+        self.tool_catalog = (
+            _bridge_tool_catalog(self.request_daemon(client, self._tool_list_body()))
+            or self.tool_catalog
         )
 
     def _ensure_workspace_scope(self, client: Any) -> None:
@@ -305,6 +306,12 @@ class AgentBridgeProxy:
         arguments: dict[str, Any],
     ) -> str:
         self._ensure_tool_catalog(client)
+        requested_raw = arguments.get("tool_names")
+        if isinstance(requested_raw, list) and any(
+            isinstance(name, str) and name and name not in self.tool_catalog
+            for name in requested_raw
+        ):
+            self._ensure_tool_catalog(client, refresh=True)
         run_id = _bridge_as_int(arguments.get("run_id"))
         self._refresh_run_context(client, run_id)
         return _bridge_toolbox_describe(
@@ -343,6 +350,8 @@ class AgentBridgeProxy:
                 "toolbox.call cannot call toolbox virtual tools.",
                 {"tool": target_name},
             )
+        if target_name not in self.tool_catalog:
+            self._ensure_tool_catalog(client, refresh=True)
         if target_name not in self.tool_catalog:
             return _bridge_call_error(
                 request_id,

@@ -9,8 +9,8 @@ Every bundled preset is generic and must be adapted before use:
 - `generic_preset: true`
 - `project_adaptation.required: true`
 - `project_adaptation.do_not_use_verbatim: true`
-- required project references, such as `AGENTS.md`, `docs/README.md`,
-  `docs/agent-operating-model.md`, and `docs/task-tracker.md`
+- required adaptation references such as `AGENTS.md`, `stackos:stackos`, and
+  project-local docs or skills when present
 - a prompt assembly order:
   `generic_agent_preset -> project_adaptation_overlay -> workflow_agent_requirements -> current_tracker_or_run_plan_context -> user_request`
 
@@ -18,6 +18,39 @@ The adapting agent must rewrite the generic role for the current project:
 technology stack, rules, documentation references, available MCP tools,
 workflow/run-plan model, tracker task/ticket conventions, verification
 commands, and release expectations.
+
+`recommended_tools` are StackOS operation references. Some hosts mount those
+operations as direct MCP tools, while the StackOS bridge may expose only
+`workspace.startSession`, `workspace.resolve`, `toolbox.describe`, and
+`toolbox.call`. Treat the operation refs as the intent-level tool list: call
+them directly only when the host exposes them, otherwise inspect the exact names
+with `toolbox.describe` and invoke them through `toolbox.call`.
+
+Bundled presets must not assume customer repositories contain StackOS' own
+documentation files. StackOS operating guidance comes from the installed
+`stackos:stackos` skill and MCP tool descriptions. Repo-local docs such as
+`docs/README.md`, `docs/task-tracker.md`, or local skills should be used when
+they exist, but absence of those files is a project-context gap, not a broken
+StackOS install.
+
+## Engineering Setup
+
+StackOS presets are not local agent files and they are not registered back into
+StackOS as daemon-managed agents. They are generic contracts that a main agent
+may adapt into whatever the host/project supports: `.codex` agents, markdown
+frontmatter files, plugin-specific agent files, or no local files at all.
+
+SDLC setup uses the same workflow path as other domains. Start with
+`workflowTemplate.describe({ "key": "engineering.tracked-delivery",
+"plugin_slug": "engineering" })`, resolve its agents with
+`agentPreset.resolveForWorkflow`, then create/start a run plan when executing
+the work. The workflow references `stackos.sdlc.*` presets as required and
+recommended roles, but the workflow owns the SDLC flow.
+
+The main agent should detect or read the host convention before writing local
+agents. If no convention is available, it should use the resolved workflow
+agents as operating guidance in the current session or ask the operator which
+host format to use.
 
 ## StackOS Skill
 

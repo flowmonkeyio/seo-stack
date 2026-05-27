@@ -22,15 +22,22 @@ presets:
       required_context_refs:
         - ref: AGENTS.md
           purpose: Project rules, command/tool constraints, and local delivery expectations.
-        - ref: docs/README.md
-          purpose: Router to canonical StackOS and project docs.
-        - ref: docs/operations.md
-          purpose: Provider-neutral communication operation boundaries.
-        - ref: docs/integration-contracts/communications.md
-          purpose: Communication provider contract and no-silent-degradation expectations.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, communications operations, workflow/run-plan, tracker, dependency, and evidence mechanics.
+        - ref: project-local docs and skills
+          purpose: Repository README, docs router, local communication policy, local skills, or other project-specific context when present; do not assume StackOS docs are checked into customer repos.
         - ref: plugins/communications/workflows/
           purpose: Communication workflow contracts shipped with the plugin.
       conditional_context_refs:
+        - ref: docs/README.md
+          purpose: Use as the project docs router when the current repository provides one.
+          when: The file exists in the current repository.
+        - ref: docs/operations.md
+          purpose: Use for provider-neutral communication operation boundaries when the project provides it.
+          when: The file exists in the current repository.
+        - ref: docs/integration-contracts/communications.md
+          purpose: Use for communication provider contracts when the project provides it.
+          when: The file exists in the current repository.
         - ref: docs/security.md
           purpose: Required when messages include customer data, private threads, auth, or external sends.
           when: Privacy, provider auth, or outbound delivery is in scope.

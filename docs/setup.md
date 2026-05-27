@@ -132,7 +132,7 @@ After the daemon is running, use the UI in this order:
 2. Create or select the project that represents the business, site, product, or
    client.
 3. Review the installed plugin catalog and confirm the project has the domains
-   it needs, such as SEO, media buying, GTM, publishing, or utilities. The
+   it needs, such as engineering, SEO, media buying, GTM, publishing, or utilities. The
    browser should not become a broad plugin-mutation console. Catalog mutation
    belongs in a deliberate admin path such as CLI, REST-admin, or an
    agent-owned setup operation that still writes the same project state.

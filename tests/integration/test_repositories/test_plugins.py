@@ -22,12 +22,13 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     plugins = repo.list_plugins()
 
     assert [p.slug for p in plugins] == [
+        "engineering",
         "communications",
-        "core",
         "gtm",
         "media-buying",
         "publishing",
         "seo",
+        "core",
         "utils",
     ]
     seo = repo.get_plugin("seo")
@@ -46,6 +47,10 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     communications = repo.get_plugin("communications")
     assert communications.name == "Communications"
     assert communications.manifest_json["ui"]["nav"]["section"] == "Communications"
+    engineering = repo.get_plugin("engineering")
+    assert engineering.name == "Engineering"
+    assert engineering.manifest_json["ui"]["nav"]["section"] == "Engineering"
+    assert engineering.manifest_json["display_order"] == 10
 
 
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:
@@ -155,6 +160,21 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
         "enrichment-record",
         "pipeline-snapshot",
     }
+
+    engineering = repo.catalog(plugin_slug="engineering").plugins[0]
+    assert {cap.key for cap in engineering.capabilities} >= {
+        "engineering-delivery",
+        "engineering-review",
+    }
+    assert {resource.key for resource in engineering.resources} >= {
+        "engineering-decision",
+        "engineering-evidence",
+    }
+    engineering_resources = {resource.key: resource for resource in engineering.resources}
+    assert engineering_resources["engineering-decision"].ui_schema_json is not None
+    assert engineering_resources["engineering-decision"].config_json is not None
+    assert engineering_resources["engineering-evidence"].ui_schema_json is not None
+    assert engineering_resources["engineering-evidence"].config_json is not None
 
     media = repo.catalog(plugin_slug="media-buying").plugins[0]
     assert {cap.key for cap in media.capabilities} >= {
@@ -275,6 +295,7 @@ def test_catalog_syncs_builtin_manifests_once_per_repository_instance(
     assert {plugin.plugin.slug for plugin in catalog.plugins} >= {
         "communications",
         "core",
+        "engineering",
         "gtm",
         "media-buying",
         "publishing",

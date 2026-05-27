@@ -2,6 +2,7 @@ slug: communications
 name: Communications
 version: 0.1.0
 description: First-party StackOS package for messaging, email send, mailbox/message lifecycle, and agent-trigger resources.
+display_order: 20
 source: builtin
 capabilities:
   - key: messaging

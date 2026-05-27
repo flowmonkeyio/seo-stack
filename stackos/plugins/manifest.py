@@ -12,6 +12,16 @@ import yaml
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(?:[-.][a-z0-9_]+)*$")
+_DEFAULT_PLUGIN_DISPLAY_ORDER = {
+    "engineering": 10,
+    "communications": 20,
+    "gtm": 30,
+    "media-buying": 40,
+    "publishing": 50,
+    "seo": 60,
+    "core": 900,
+    "utils": 910,
+}
 
 
 def _validate_key(value: str) -> str:
@@ -156,6 +166,7 @@ class PluginManifest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     version: str = Field(default="0.1.0", max_length=40)
     description: str = ""
+    display_order: int = Field(default=500, ge=0, le=10_000)
     source: str = Field(default="builtin", max_length=40)
     capabilities: list[CapabilityManifest] = Field(default_factory=list)
     providers: list[ProviderManifest] = Field(default_factory=list)
@@ -214,7 +225,37 @@ def load_plugin_manifest_files() -> tuple[PluginManifest, ...]:
     clone = [load_plugin_manifest_file(path) for path in _plugin_manifest_paths()]
     manifests = {manifest.slug: manifest for manifest in bundled}
     manifests.update({manifest.slug: manifest for manifest in clone})
-    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+    return tuple(
+        sorted(
+            manifests.values(),
+            key=lambda manifest: plugin_sort_key(
+                manifest.slug,
+                manifest.model_dump(mode="json", by_alias=True),
+            ),
+        )
+    )
+
+
+def plugin_display_order(
+    slug: str | None,
+    manifest_json: dict[str, Any] | None = None,
+) -> int:
+    if manifest_json is not None:
+        raw = manifest_json.get("display_order")
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, str) and raw.isdecimal():
+            return int(raw)
+    if slug is not None and slug in _DEFAULT_PLUGIN_DISPLAY_ORDER:
+        return _DEFAULT_PLUGIN_DISPLAY_ORDER[slug]
+    return 500
+
+
+def plugin_sort_key(
+    slug: str | None,
+    manifest_json: dict[str, Any] | None = None,
+) -> tuple[int, str]:
+    return (plugin_display_order(slug, manifest_json), slug or "")
 
 
 _OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
@@ -347,6 +388,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
         slug="core",
         name="StackOS Core",
         description="Domain-neutral project, workflow, run, context, auth, and catalog primitives.",
+        display_order=900,
         capabilities=[
             CapabilityManifest(
                 key="plugin-catalog",
@@ -422,6 +464,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
         slug="utils",
         name="Utilities",
         description="Domain-neutral utility providers and actions reusable by any plugin.",
+        display_order=910,
         capabilities=[
             CapabilityManifest(
                 key="image-generation",
@@ -897,7 +940,15 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
 def _combined_builtin_plugin_manifests() -> tuple[PluginManifest, ...]:
     manifests = {manifest.slug: manifest for manifest in _CODE_PLUGIN_MANIFESTS}
     manifests.update({manifest.slug: manifest for manifest in load_plugin_manifest_files()})
-    return tuple(sorted(manifests.values(), key=lambda manifest: manifest.slug))
+    return tuple(
+        sorted(
+            manifests.values(),
+            key=lambda manifest: plugin_sort_key(
+                manifest.slug,
+                manifest.model_dump(mode="json", by_alias=True),
+            ),
+        )
+    )
 
 
 BUILTIN_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = _combined_builtin_plugin_manifests()
@@ -911,4 +962,5 @@ __all__ = [
     "ResourceManifest",
     "load_plugin_manifest_file",
     "load_plugin_manifest_files",
+    "plugin_sort_key",
 ]

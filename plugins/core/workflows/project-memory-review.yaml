@@ -38,7 +38,7 @@ inputs:
     name: Focus Domain
     type: string
     required: false
-    description: Optional domain filter such as seo, media-buying, gtm, or operations.
+    description: Optional domain filter such as engineering, seo, media-buying, gtm, or operations.
 context_requirements:
   - id: recent_runs
     source: runs

@@ -29,12 +29,13 @@ def test_builtin_plugin_manifests_validate() -> None:
     slugs = [manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS]
 
     assert slugs == [
+        "engineering",
         "communications",
-        "core",
         "gtm",
         "media-buying",
         "publishing",
         "seo",
+        "core",
         "utils",
     ]
     for manifest in BUILTIN_PLUGIN_MANIFESTS:
@@ -53,6 +54,24 @@ def test_builtin_plugin_manifests_validate() -> None:
         "communication-cursor",
     }
     assert resources_by_plugin["core"] >= {"learning", "experiment"}
+    assert resources_by_plugin["engineering"] >= {
+        "engineering-decision",
+        "engineering-evidence",
+    }
+    engineering = next(
+        manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "engineering"
+    )
+    engineering_resources = {resource.key: resource for resource in engineering.resources}
+    assert engineering.display_order == 10
+    assert engineering_resources["engineering-decision"].ui_schema is not None
+    assert engineering_resources["engineering-decision"].config is not None
+    assert engineering_resources["engineering-decision"].schema_data["required"] == [
+        "title",
+        "decision",
+        "status",
+    ]
+    assert engineering_resources["engineering-evidence"].ui_schema is not None
+    assert engineering_resources["engineering-evidence"].config is not None
     assert resources_by_plugin["gtm"] >= {"account", "lead", "pipeline-snapshot"}
     assert resources_by_plugin["media-buying"] >= {"campaign", "creative"}
     assert resources_by_plugin["publishing"] >= {"published-post", "publish-target"}

@@ -17,7 +17,7 @@ Create a plugin manifest under `plugins/<slug>/plugin.yaml` with:
 - optional workflow templates under `plugins/<slug>/workflows/`
 
 Plugin slugs and resource keys should be stable. A plugin can represent a
-domain such as SEO, media buying, GTM, analytics, or utilities.
+domain such as engineering, SEO, media buying, GTM, analytics, or utilities.
 
 ## Add A Provider
 

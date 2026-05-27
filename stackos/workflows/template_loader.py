@@ -22,6 +22,7 @@ from stackos.db.models import (
     WorkflowTemplate,
     WorkflowTemplateVersion,
 )
+from stackos.plugins.manifest import plugin_sort_key
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError
 from stackos.repositories.plugins import PluginRepository
 from stackos.workflows.template_schema import (
@@ -185,29 +186,44 @@ class WorkflowTemplateLoader:
         *,
         template_json: dict[str, Any] | None = None,
         template_yaml: str | None = None,
+        key: str | None = None,
+        project_id: int | None = None,
+        repo_root: str | None = None,
+        plugin_slug: str | None = None,
+        source: str | None = None,
     ) -> WorkflowTemplateValidationOut:
-        if template_json is None and template_yaml is None:
+        raw_inputs = [template_json is not None, template_yaml is not None, key is not None]
+        if sum(1 for present in raw_inputs if present) == 0:
             return WorkflowTemplateValidationOut(
                 valid=False,
                 errors=[
                     WorkflowTemplateIssue(
                         path="$",
-                        message="template_json or template_yaml is required",
+                        message="template_json, template_yaml, or key is required",
                         code="missing_template",
                     )
                 ],
             )
-        if template_json is not None and template_yaml is not None:
+        if sum(1 for present in raw_inputs if present) > 1:
             return WorkflowTemplateValidationOut(
                 valid=False,
                 errors=[
                     WorkflowTemplateIssue(
                         path="$",
-                        message="pass only one of template_json or template_yaml",
+                        message="pass only one of template_json, template_yaml, or key",
                         code="ambiguous_template",
                     )
                 ],
             )
+        if key is not None:
+            loaded = self.describe_template(
+                key=key,
+                project_id=project_id,
+                repo_root=repo_root,
+                plugin_slug=plugin_slug,
+                source=source,
+            )
+            return validate_workflow_template_obj(loaded.spec.model_dump(mode="json"))
         if template_json is not None:
             return validate_workflow_template_obj(template_json)
         assert template_yaml is not None
@@ -387,6 +403,7 @@ class WorkflowTemplateLoader:
             resolved.append(template)
         resolved.sort(
             key=lambda item: (
+                *plugin_sort_key(item.summary.plugin_slug, None),
                 item.summary.key,
                 -item.summary.precedence,
                 item.summary.source,

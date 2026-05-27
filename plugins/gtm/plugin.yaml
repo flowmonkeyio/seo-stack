@@ -2,6 +2,7 @@ slug: gtm
 name: GTM And RevOps
 version: 0.1.0
 description: First-party StackOS domain package for go-to-market and RevOps provider contracts, resource schemas, and reusable workflow templates.
+display_order: 30
 source: builtin
 capabilities:
   - key: account-research

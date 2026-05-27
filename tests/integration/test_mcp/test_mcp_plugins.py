@@ -8,12 +8,13 @@ from .conftest import MCPClient
 def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     plugins = mcp_client.call_tool_structured("plugin.list", {})["items"]
     assert [p["slug"] for p in plugins] == [
+        "engineering",
         "communications",
-        "core",
         "gtm",
         "media-buying",
         "publishing",
         "seo",
+        "core",
         "utils",
     ]
 
@@ -77,6 +78,15 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
     assert {a["key"] for a in publishing["plugins"][0]["actions"]} >= {
         "wordpress.post.create",
         "ghost.post.create",
+    }
+
+    engineering = mcp_client.call_tool_structured(
+        "catalog.describe",
+        {"plugin_slug": "engineering"},
+    )
+    assert {r["key"] for r in engineering["plugins"][0]["resources"]} >= {
+        "engineering-decision",
+        "engineering-evidence",
     }
 
 

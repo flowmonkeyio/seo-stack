@@ -23,15 +23,22 @@ presets:
       required_context_refs:
         - ref: AGENTS.md
           purpose: Project rules, command/tool constraints, and local delivery expectations.
-        - ref: docs/README.md
-          purpose: Router to the canonical StackOS and project docs.
-        - ref: docs/workflow-templates.md
-          purpose: Workflow template, run-plan, and agent requirement expectations.
-        - ref: docs/task-tracker.md
-          purpose: Ticket evidence, dependencies, and verification state.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, workflow, run-plan, tracker, dependency, and evidence mechanics.
+        - ref: project-local docs and skills
+          purpose: Repository README, docs router, local skills, editorial guidance, or other project-specific context when present; do not assume StackOS docs are checked into customer repos.
         - ref: plugins/seo/workflows/
           purpose: SEO workflow contracts shipped with the plugin.
       conditional_context_refs:
+        - ref: docs/README.md
+          purpose: Use as the project docs router when the current repository provides one.
+          when: The file exists in the current repository.
+        - ref: docs/workflow-templates.md
+          purpose: Use for local workflow/run-plan expectations when the project provides one.
+          when: The file exists in the current repository.
+        - ref: docs/task-tracker.md
+          purpose: Use for local ticket evidence and dependency conventions when the project provides one.
+          when: The file exists in the current repository.
         - ref: docs/resources-and-artifacts.md
           purpose: Required when keyword, page, or SERP results are stored as resources or artifacts.
           when: The workflow writes durable research outputs.

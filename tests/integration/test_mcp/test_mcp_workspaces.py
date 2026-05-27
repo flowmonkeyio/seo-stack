@@ -16,10 +16,17 @@ def test_workspace_resolve_unknown_requests_connect(
     assert resolved["needs_connect"] is True
     assert resolved["project_id"] is None
     assert resolved["binding"] is None
+    assert resolved["setup_state"]["state"] == "needs_workspace_binding"
+    assert resolved["setup_state"]["project_scoped_tools_usable"] is False
+    assert resolved["ui_urls"]["projects"] == "http://127.0.0.1:5180/"
+    assert resolved["ui_health"]["daemon_reached"] is True
     assert resolved["next_step"]["recommended_tool"] == "workspace.bootstrap"
     assert [project["id"] for project in resolved["candidate_projects"]] == [
         seeded_project["data"]["id"]
     ]
+    assert resolved["candidate_projects"][0]["ui_urls"]["setup"] == (
+        f"http://127.0.0.1:5180/projects/{seeded_project['data']['id']}/setup"
+    )
 
 
 def test_workspace_bootstrap_creates_project_once_for_workspace_root(
@@ -88,6 +95,13 @@ def test_workspace_connect_list_and_start_session(
     assert [row["repo_fingerprint"] for row in bindings] == ["git:abc123"]
     assert started["project_id"] == project_id
     assert started["data"]["workspace_binding_id"] == connected["data"]["id"]
+    assert started["data"]["setup_state"]["state"] == "bound_profile_configured"
+    assert started["data"]["setup_state"]["project_scoped_tools_usable"] is True
+    assert started["data"]["setup_state"]["profile_missing"] == []
+    assert (
+        started["data"]["ui_urls"]["setup"] == f"http://127.0.0.1:5180/projects/{project_id}/setup"
+    )
+    assert started["data"]["ui_health"]["daemon_reached"] is True
 
 
 def test_workspace_start_session_autobootstraps_unbound_directory(
@@ -113,6 +127,11 @@ def test_workspace_start_session_autobootstraps_unbound_directory(
     assert started["data"]["binding_was_created"] is True
     assert started["data"]["workspace_binding_id"] == bindings[0]["id"]
     assert started["data"]["next_step"]["status"] == "ready"
+    assert started["data"]["setup_state"]["state"] == "bound_profile_incomplete"
+    assert started["data"]["setup_state"]["profile_missing"] == [
+        "framework",
+        "content_model_json",
+    ]
 
 
 def test_workspace_resolves_by_current_directory_root(

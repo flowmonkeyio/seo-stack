@@ -35,16 +35,21 @@ run token.
    global active project concept.
 4. Use `toolbox.describe`/`toolbox.call` for hidden setup tools and the current
    run-plan step grants that are not in the direct list.
-5. When a run plan needs missing vendor credentials, do not ask the user to
+5. Agent presets are contracts, not daemon-run local agents. When asked to set
+   up local agents, adapt presets to the host/project's detected format
+   (`.codex`, markdown frontmatter, plugin files, or session-only guidance).
+   Do not register local agents back into StackOS unless the project provides a
+   separate host-specific mechanism.
+6. When a run plan needs missing vendor credentials, do not ask the user to
    paste secrets into chat. Name the missing providers and send the operator to
    `http://localhost:5180/projects/{project_id}/connections`. After the user
    connects them in the UI, call `toolbox.call` for `auth.status` and
    `auth.test` before continuing.
-6. When a step requires a provider call, use `action.describe`,
+7. When a step requires a provider call, use `action.describe`,
    `action.validate`, and the step-granted `action.execute` path. The daemon
    resolves credentials inside the action process and returns only sanitized
    output.
-7. When the user asks for one explicit action and no workflow state is needed,
+8. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
    `intent_summary`, and an `idempotency_key` for non-read actions. Leave
    `verbose=false` unless the full redacted action payload is needed for
@@ -52,16 +57,35 @@ run token.
 
 ## Common Flows
 
-- Connect repo: call `workspace.startSession`; the bridge should return a
-  project-bound session and inject the resolved project on later calls. If the
-  operator wants a specific existing project, call `toolbox.call` for
-  `workspace.connect` or `workspace.bootstrap` with that project identifier
-  explicitly.
+- First run in a repo: call `workspace.startSession`. The bridge should create
+  or reuse one daemon-owned project binding for that workspace and return UI
+  links plus setup/profile state. Treat `workspace_bound=true` as "project tools
+  are usable"; missing framework/content-model profile fields are adaptation
+  hints, not blockers.
+- Ongoing repo session: call `workspace.startSession`, use the workspace-bound
+  project id, then call only the scoped tools needed for the current task. Do
+  not request broad schemas or catalog dumps unless debugging.
+- Connect to a specific project: if the operator wants a known existing
+  project, call `toolbox.call` for `workspace.connect` or
+  `workspace.bootstrap` with that project identifier explicitly.
+- Set up SDLC/local agents: use the normal workflow path with
+  `engineering.tracked-delivery`. Describe the workflow, resolve agents with
+  `agentPreset.resolveForWorkflow`, then create/start a run plan when
+  executing. Adapt the referenced `stackos.sdlc.*` presets to the
+  host/project's local agent format only when local agents are requested.
+  Treat each preset's `recommended_tools` as StackOS operation refs. If those
+  refs are not mounted as direct host tools, use `toolbox.describe` and
+  `toolbox.call`.
 - Connect vendors: inspect the run plan's needed providers, share
   `/projects/{project_id}/connections`, wait for the operator to connect them
   in the UI, then run `toolbox.call` for `auth.status` and `auth.test`.
-- Continue work: call `workspace.startSession`, use the workspace-bound
-  project id, then call `toolbox.call` for tracker/run-plan/workflow tools.
+- Plan direct work: use tracker tasks/tickets when the agent is planning or
+  delivering scoped work outside a concrete workflow run. Create dependencies,
+  blockers, definition of done, and completion evidence there.
+- Execute workflow work: use a workflow template when work should follow a
+  reusable contract. `runPlan.create` turns the template into concrete state;
+  `runPlan.start` and step grants control which tools/actions are available.
+  Mirror or link tracker tickets when human-visible sequencing/evidence matters.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`.

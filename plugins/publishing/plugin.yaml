@@ -2,6 +2,7 @@ slug: publishing
 name: Publishing
 version: 0.1.0
 description: First-party StackOS package for CMS publishing provider contracts and post artifacts.
+display_order: 50
 source: builtin
 capabilities:
   - key: cms-publishing

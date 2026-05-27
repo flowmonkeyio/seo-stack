@@ -21,6 +21,7 @@ from stackos.workflows import (
     parse_workflow_template_obj,
     parse_workflow_template_yaml,
 )
+from stackos.workflows.template_schema import WorkflowTemplateIssue
 
 
 class WorkflowTemplateListInput(MCPInput):
@@ -46,10 +47,24 @@ class WorkflowTemplateDescribeInput(MCPInput):
 
 
 class WorkflowTemplateValidateInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"template_json": {}}})
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"key": "core.project-memory-review"},
+                {"template_json": {}},
+            ]
+        },
+    )
 
     template_json: dict[str, Any] | None = None
     template_yaml: str | None = None
+    key: str | None = None
+    workflow_key: str | None = None
+    project_id: int | None = None
+    repo_root: str | None = None
+    plugin_slug: str | None = None
+    source: str | None = None
 
 
 class WorkflowTemplateSaveInput(MCPInput):
@@ -117,9 +132,26 @@ async def _template_validate(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WorkflowTemplateValidationOut:
+    if inp.key is not None and inp.workflow_key is not None and inp.key != inp.workflow_key:
+        return WorkflowTemplateValidationOut(
+            valid=False,
+            errors=[
+                WorkflowTemplateIssue(
+                    path="$",
+                    message="key and workflow_key must match when both are provided",
+                    code="ambiguous_template_key",
+                )
+            ],
+        )
+    key = inp.key or inp.workflow_key
     return WorkflowTemplateLoader(ctx.session).validate_template(
         template_json=inp.template_json,
         template_yaml=inp.template_yaml,
+        key=key,
+        project_id=inp.project_id,
+        repo_root=inp.repo_root,
+        plugin_slug=inp.plugin_slug,
+        source=inp.source,
     )
 
 

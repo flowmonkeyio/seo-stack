@@ -111,8 +111,11 @@ operating method.
 
 New workflow authoring is available through the contract interface:
 `workflowTemplate.validate`, `workflowTemplate.save`, `workflowTemplate.fork`,
-and `runPlan.create`. The UI can inspect and use templates, but it is not yet a
-full visual workflow-builder.
+and `runPlan.create`. Use `workflowTemplate.validate({ "key":
+"core.project-memory-review" })` to validate an installed/catalog template by
+key. Use `template_json` or `template_yaml` when validating a draft before
+saving it. The UI can inspect and use templates, but it is not yet a full
+visual workflow-builder.
 
 ## Examples
 

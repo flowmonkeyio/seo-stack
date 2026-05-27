@@ -58,8 +58,8 @@ obvious without loading every document.
   before use. Workflow templates can recommend host-side skills such as
   `stackos:stackos` to teach StackOS MCP, workflows, run plans, tasks, tickets,
   dependencies, and evidence.
-- SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
-  remains domain-agnostic.
+- Engineering, SEO, media buying, GTM, publishing, communications, and utilities
+  are plugins. Core StackOS remains domain-agnostic.
 
 ## Verification Commands
 

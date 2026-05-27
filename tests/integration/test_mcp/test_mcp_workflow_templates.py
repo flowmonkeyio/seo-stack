@@ -52,6 +52,10 @@ outputs:
         "workflowTemplate.validate",
         {"template_json": _template_json()},
     )
+    validation_by_key = mcp_client.call_tool_structured(
+        "workflowTemplate.validate",
+        {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
+    )
 
     sources = {
         item["source"]
@@ -60,11 +64,15 @@ outputs:
     }
     assert sources == {"plugin", "repo"}
     assert "gtm.account-research" in {item["key"] for item in listing["templates"]}
+    assert "engineering.tracked-delivery" in {item["key"] for item in listing["templates"]}
     assert "media-buying.campaign-launch" in {item["key"] for item in listing["templates"]}
     assert described["summary"]["source"] == "repo"
     assert described["summary"]["name"] == "Repo Project Memory Review"
     assert validation["valid"] is True
     assert validation["template"]["key"] == "company.review"
+    assert validation_by_key["valid"] is True
+    assert validation_by_key["template"]["key"] == "core.project-memory-review"
+    assert validation_by_key["template"]["name"] == "Repo Project Memory Review"
 
     gtm_listing = mcp_client.call_tool_structured(
         "workflowTemplate.list",
@@ -82,6 +90,24 @@ outputs:
         "gtm.workflow.account-research"
     )
     assert gtm_described["spec"]["skill_requirements"][0]["skill_ref"] == "stackos:stackos"
+
+    engineering_listing = mcp_client.call_tool_structured(
+        "workflowTemplate.list",
+        {"plugin_slug": "engineering"},
+    )
+    assert [item["key"] for item in engineering_listing["templates"]] == [
+        "engineering.tracked-delivery"
+    ]
+    engineering_described = mcp_client.call_tool_structured(
+        "workflowTemplate.describe",
+        {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+    )
+    assert engineering_described["spec"]["agent_requirements"][0]["agent_preset_ref"] == (
+        "stackos.sdlc.planning"
+    )
+    assert engineering_described["spec"]["skill_requirements"][0]["skill_ref"] == (
+        "stackos:stackos"
+    )
 
     media_listing = mcp_client.call_tool_structured(
         "workflowTemplate.list",
@@ -104,6 +130,18 @@ def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> No
 
     assert validation["valid"] is False
     assert "must not contain secrets" in validation["errors"][0]["message"]
+
+
+def test_workflow_template_validate_rejects_ambiguous_key_aliases(
+    mcp_client: MCPClient,
+) -> None:
+    validation = mcp_client.call_tool_structured(
+        "workflowTemplate.validate",
+        {"key": "core.project-memory-review", "workflow_key": "seo.keyword-research"},
+    )
+
+    assert validation["valid"] is False
+    assert validation["errors"][0]["code"] == "ambiguous_template_key"
 
 
 def test_workflow_template_writes_are_registered_but_not_system_granted(

@@ -22,7 +22,7 @@ from stackos.db.models import (
     Provider,
     Resource,
 )
-from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, PluginManifest
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, PluginManifest, plugin_sort_key
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError
 from stackos.repositories.resources import ResourceOut
 
@@ -164,7 +164,8 @@ class PluginRepository:
     def list_plugins(self, *, project_id: int | None = None) -> list[PluginOut]:
         self.sync_builtin_plugins()
         enabled_by_plugin = self._enabled_map(project_id)
-        rows = self._s.exec(select(Plugin).order_by(col(Plugin.slug).asc())).all()
+        rows = list(self._s.exec(select(Plugin)).all())
+        rows = sorted(rows, key=lambda row: plugin_sort_key(row.slug, row.manifest_json))
         return [self._plugin_out(row, enabled_by_plugin.get(_required_id(row.id))) for row in rows]
 
     def get_plugin(self, slug: str, *, project_id: int | None = None) -> PluginOut:
@@ -245,10 +246,9 @@ class PluginRepository:
         stmt = select(Capability, Plugin).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(
-            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Capability.key).asc())).all()
-        )
+        rows = list(self._s.exec(stmt.order_by(col(Capability.key).asc())).all())
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._capability_out(capability, plugin) for capability, plugin in rows]
 
     def get_capability(self, *, key: str, plugin_slug: str | None = None) -> CapabilityOut:
@@ -272,10 +272,9 @@ class PluginRepository:
         stmt = select(Provider, Plugin).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(
-            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Provider.key).asc())).all()
-        )
+        rows = list(self._s.exec(stmt.order_by(col(Provider.key).asc())).all())
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
 
     def get_provider(self, *, key: str, plugin_slug: str | None = None) -> ProviderOut:
@@ -305,10 +304,9 @@ class PluginRepository:
         )
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(
-            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Action.key).asc())).all()
-        )
+        rows = list(self._s.exec(stmt.order_by(col(Action.key).asc())).all())
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         availability_context = self._action_availability_context(project_id)
         connector_keys = self._connector_keys()
         return [
@@ -354,10 +352,9 @@ class PluginRepository:
         stmt = select(Resource, Plugin).join(Plugin, col(Resource.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(
-            self._s.exec(stmt.order_by(col(Plugin.slug).asc(), col(Resource.key).asc())).all()
-        )
+        rows = list(self._s.exec(stmt.order_by(col(Resource.key).asc())).all())
         rows = self._filter_project_enabled(rows, project_id=project_id)
+        rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._resource_out(resource, plugin) for resource, plugin in rows]
 
     def catalog(

@@ -16,6 +16,28 @@ export interface StackOsNavSection {
 
 export type StackOsRouteQuery = Record<string, unknown>
 
+const PLUGIN_ORDER: Record<string, number> = {
+  engineering: 10,
+  communications: 20,
+  gtm: 30,
+  'media-buying': 40,
+  publishing: 50,
+  seo: 60,
+  core: 900,
+  utils: 910,
+}
+
+const PLUGIN_LABELS: Record<string, string> = {
+  engineering: 'Engineering',
+  communications: 'Communications',
+  gtm: 'GTM',
+  'media-buying': 'Media Buying',
+  publishing: 'Publishing',
+  seo: 'SEO',
+  core: 'Core',
+  utils: 'Utilities',
+}
+
 interface PluginNavContribution {
   section?: string
   items?: Array<{
@@ -92,13 +114,25 @@ export function setupNavSection(projectId: number): StackOsNavSection {
   }
 }
 
+export function projectNavSections(
+  projectId: number,
+  plugins: SchemaPluginOut[],
+): StackOsNavSection[] {
+  const pluginSections = pluginContributionSections(projectId, plugins)
+  return [
+    ...coreNavSections(projectId),
+    ...pluginSections,
+    setupNavSection(projectId),
+  ].filter((section) => section.items.length > 0)
+}
+
 export function pluginContributionSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
   const base = `/projects/${projectId}`
   const sections: StackOsNavSection[] = []
-  for (const plugin of plugins) {
+  for (const plugin of [...plugins].sort(comparePlugins)) {
     if (plugin.enabled_for_project === false) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
     const nav = isPluginNav(ui?.nav) ? ui.nav : null
@@ -125,6 +159,29 @@ export function pluginContributionSections(
     }
   }
   return sections
+}
+
+function comparePlugins(a: SchemaPluginOut, b: SchemaPluginOut): number {
+  return (
+    stackOsPluginDisplayOrder(a.slug, a.manifest_json) -
+      stackOsPluginDisplayOrder(b.slug, b.manifest_json) ||
+    a.name.localeCompare(b.name)
+  )
+}
+
+export function stackOsPluginDisplayOrder(
+  slug: string,
+  manifestJson?: { display_order?: unknown } | null,
+): number {
+  const rawOrder = manifestJson?.display_order
+  if (typeof rawOrder === 'number') return rawOrder
+  if (typeof rawOrder === 'string' && /^\d+$/.test(rawOrder)) return Number.parseInt(rawOrder, 10)
+  return PLUGIN_ORDER[slug] ?? 500
+}
+
+export function stackOsPluginLabel(slug?: string | null): string {
+  if (!slug) return 'Unknown'
+  return PLUGIN_LABELS[slug] ?? slug.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
 export function isStackOsNavItemActive(

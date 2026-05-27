@@ -17,6 +17,7 @@ import type { DataTableColumn } from '@/components/types'
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
+import { stackOsPluginDisplayOrder, stackOsPluginLabel } from '@/lib/stackos/nav'
 
 interface AgentPromptContract {
   mission: string
@@ -106,7 +107,7 @@ const selected = ref<AgentPresetDescribeOut | null>(null)
 const loading = ref(false)
 const detailLoading = ref(false)
 const error = ref<string | null>(null)
-const domainFilter = ref<DomainFilter>('sdlc')
+const domainFilter = ref<DomainFilter>('engineering')
 
 const selectedKey = computed(() => String(route.query.preset ?? ''))
 const filteredRows = computed(() =>
@@ -117,10 +118,19 @@ const filteredRows = computed(() =>
 const domainOptions = computed(() => [
   { key: 'all', label: 'All' },
   ...Array.from(new Set(rows.value.map((row) => row.domain ?? 'unknown')))
-    .sort()
-    .map((domain) => ({ key: domain, label: domain === 'sdlc' ? 'SDLC' : domain })),
+    .sort(
+      (a, b) =>
+        stackOsPluginDisplayOrder(a) - stackOsPluginDisplayOrder(b) ||
+        stackOsPluginLabel(a).localeCompare(stackOsPluginLabel(b)),
+    )
+    .map((domain) => ({
+      key: domain,
+      label: stackOsPluginLabel(domain),
+    })),
 ])
-const sdlcCount = computed(() => rows.value.filter((row) => row.domain === 'sdlc').length)
+const engineeringCount = computed(
+  () => rows.value.filter((row) => row.domain === 'engineering').length,
+)
 const workflowLinkedCount = computed(
   () => rows.value.filter((row) => row.applies_to_workflows.length > 0).length,
 )
@@ -145,7 +155,9 @@ async function loadList(): Promise<void> {
     })
     rows.value = payload.presets.map((preset) => ({ ...preset, id: preset.key }))
     const key =
-      selectedKey.value || rows.value.find((row) => row.domain === 'sdlc')?.key || rows.value[0]?.key
+      selectedKey.value ||
+      rows.value.find((row) => row.domain === 'engineering')?.key ||
+      rows.value[0]?.key
     if (key) await loadDetail(key)
     else selected.value = null
   } catch (err) {
@@ -184,14 +196,13 @@ async function selectPreset(row: PresetRow): Promise<void> {
 }
 
 function domainLabel(domain?: string | null): string {
-  if (!domain) return 'unknown'
-  return domain === 'sdlc' ? 'SDLC' : domain
+  return stackOsPluginLabel(domain)
 }
 
 function domainTone(
   domain?: string | null,
 ): 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent' {
-  if (domain === 'sdlc') return 'warning'
+  if (domain === 'engineering') return 'success'
   if (domain === 'core') return 'accent'
   return 'info'
 }
@@ -231,8 +242,8 @@ watch(domainFilter, () => {
         <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ rows.length }}</p>
       </UiPanel>
       <UiPanel class="p-4">
-        <p class="text-xs font-semibold uppercase text-fg-muted">SDLC</p>
-        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ sdlcCount }}</p>
+        <p class="text-xs font-semibold uppercase text-fg-muted">Engineering</p>
+        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ engineeringCount }}</p>
       </UiPanel>
       <UiPanel class="p-4">
         <p class="text-xs font-semibold uppercase text-fg-muted">Workflow Linked</p>

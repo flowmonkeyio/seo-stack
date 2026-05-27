@@ -91,6 +91,42 @@ def _ui_paths(project_id: int | None) -> dict[str, str]:
     }
 
 
+def _setup_state(
+    *,
+    binding: WorkspaceBindingOut | None,
+    needs_connect: bool,
+    auto_bootstrap: bool | None = None,
+) -> dict[str, Any]:
+    if needs_connect or binding is None:
+        return {
+            "state": "needs_workspace_binding",
+            "workspace_bound": False,
+            "project_scoped_tools_usable": False,
+            "profile_complete": False,
+            "profile_missing": ["workspace_binding"],
+            "meaning": (
+                "No project-scoped StackOS operations are available until this workspace is bound."
+            ),
+        }
+    profile_missing: list[str] = []
+    if not binding.framework:
+        profile_missing.append("framework")
+    if binding.content_model_json is None:
+        profile_missing.append("content_model_json")
+    return {
+        "state": "bound_profile_incomplete" if profile_missing else "bound_profile_configured",
+        "workspace_bound": True,
+        "project_scoped_tools_usable": True,
+        "profile_complete": not profile_missing,
+        "profile_missing": profile_missing,
+        "meaning": (
+            "The workspace is bound and project-scoped tools are usable. "
+            "Profile fields are adaptation hints for agents and workflows, not a blocker."
+        ),
+        "auto_bootstrap": auto_bootstrap,
+    }
+
+
 def _repo_hints(
     *,
     repo_fingerprint: str | None,
@@ -214,6 +250,9 @@ class AgentSessionOut(BaseModel):
     candidate_projects: list[WorkspaceProjectCandidateOut] = Field(default_factory=list)
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
+    ui_urls: dict[str, str] = Field(default_factory=dict)
+    ui_health: dict[str, Any] = Field(default_factory=dict)
+    setup_state: dict[str, Any] = Field(default_factory=dict)
     next_step: dict[str, Any] | None = None
 
 
@@ -224,6 +263,7 @@ class WorkspaceProjectCandidateOut(BaseModel):
     domain: str
     is_active: bool
     ui_paths: dict[str, str]
+    ui_urls: dict[str, str] = Field(default_factory=dict)
 
 
 class WorkspaceResolutionOut(BaseModel):
@@ -235,6 +275,9 @@ class WorkspaceResolutionOut(BaseModel):
     candidate_projects: list[WorkspaceProjectCandidateOut] = Field(default_factory=list)
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
+    ui_urls: dict[str, str] = Field(default_factory=dict)
+    ui_health: dict[str, Any] = Field(default_factory=dict)
+    setup_state: dict[str, Any] = Field(default_factory=dict)
     next_step: dict[str, Any] | None = None
 
 
@@ -249,6 +292,9 @@ class WorkspaceBootstrapOut(BaseModel):
     needs_connect: bool = False
     repo_hints: dict[str, Any] = Field(default_factory=dict)
     ui_paths: dict[str, str] = Field(default_factory=dict)
+    ui_urls: dict[str, str] = Field(default_factory=dict)
+    ui_health: dict[str, Any] = Field(default_factory=dict)
+    setup_state: dict[str, Any] = Field(default_factory=dict)
     next_step: dict[str, Any] | None = None
 
 
@@ -473,6 +519,7 @@ class WorkspaceRepository:
                     cwd=cwd,
                 ),
                 ui_paths=_ui_paths(None),
+                setup_state=_setup_state(binding=None, needs_connect=True),
                 next_step=_connect_required_next_step(
                     repo_fingerprint=repo_fingerprint,
                     git_remote_url=git_remote_url,
@@ -495,6 +542,7 @@ class WorkspaceRepository:
                 cwd=cwd,
             ),
             ui_paths=_ui_paths(row.project_id),
+            setup_state=_setup_state(binding=out, needs_connect=False),
             next_step=_connected_next_step(row.project_id),
         )
 
@@ -564,6 +612,7 @@ class WorkspaceRepository:
                 needs_connect=False,
                 repo_hints=bootstrap.data.repo_hints,
                 ui_paths=bootstrap.data.ui_paths,
+                setup_state=bootstrap.data.setup_state,
                 next_step=bootstrap.data.next_step,
             )
         binding_id = resolution.binding.id if resolution.binding is not None else None
@@ -588,14 +637,19 @@ class WorkspaceRepository:
                     "candidate_projects": resolution.candidate_projects,
                     "repo_hints": resolution.repo_hints,
                     "ui_paths": resolution.ui_paths,
+                    "setup_state": resolution.setup_state,
                     "next_step": resolution.next_step,
                 }
             )
         elif resolution.project_id is not None:
+            auto_bootstrap = bootstrap is not None
+            setup_state = dict(resolution.setup_state)
+            if setup_state:
+                setup_state["auto_bootstrap"] = auto_bootstrap
             out = out.model_copy(
                 update={
                     "needs_connect": False,
-                    "auto_bootstrap": bootstrap is not None,
+                    "auto_bootstrap": auto_bootstrap,
                     "project_was_created": (
                         bootstrap.data.project_was_created if bootstrap is not None else None
                     ),
@@ -604,6 +658,7 @@ class WorkspaceRepository:
                     ),
                     "repo_hints": resolution.repo_hints,
                     "ui_paths": resolution.ui_paths,
+                    "setup_state": setup_state,
                     "next_step": resolution.next_step,
                 }
             )
@@ -753,6 +808,11 @@ class WorkspaceRepository:
                 cwd=cwd,
             ),
             ui_paths=_ui_paths(project.id),
+            setup_state=_setup_state(
+                binding=binding,
+                needs_connect=False,
+                auto_bootstrap=binding_was_created,
+            ),
             next_step=_connected_next_step(project.id),
         )
 

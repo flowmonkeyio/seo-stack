@@ -5,6 +5,7 @@ import {
   coreNavSections,
   isStackOsNavItemActive,
   pluginContributionSections,
+  projectNavSections,
   setupNavSection,
 } from './nav'
 
@@ -114,6 +115,38 @@ describe('StackOS nav contributions', () => {
     expect(pluginContributionSections(7, [disabled])).toEqual([])
   })
 
+  it('keeps project nav first and orders plugin tools with engineering first', () => {
+    const engineering = pluginFixture('engineering', 'Engineering')
+    const communications = pluginFixture('communications', 'Communications')
+    const seo = pluginFixture('seo', 'SEO')
+
+    const sections = projectNavSections(7, [seo, communications, engineering])
+
+    expect(sections[0].label).toBe('Work')
+    expect(sections[1].label).toBe('Workflows')
+    expect(sections[5].label).toBe('Engineering')
+    expect(sections[6].label).toBe('Communications')
+    expect(sections[5].items.map((item) => item.to)).toEqual([
+      '/projects/7/resources?plugin_slug=engineering',
+      '/projects/7/workflow-templates?plugin_slug=engineering',
+    ])
+    expect(sections.map((section) => section.label)).toContain('SEO')
+  })
+
+  it('uses manifest display order for plugin tools before falling back to slug defaults', () => {
+    const customEarly = pluginFixture('custom-early', 'Custom Early', 5)
+    const engineering = pluginFixture('engineering', 'Engineering')
+    const communications = pluginFixture('communications', 'Communications')
+
+    const sections = pluginContributionSections(7, [communications, engineering, customEarly])
+
+    expect(sections.map((section) => section.label)).toEqual([
+      'Custom Early',
+      'Engineering',
+      'Communications',
+    ])
+  })
+
   it('keeps plugin-scoped nav active state separate from generic pages', () => {
     const genericResources = { to: '/projects/7/resources' }
     const seoResources = {
@@ -145,3 +178,38 @@ describe('StackOS nav contributions', () => {
     ).toBe(true)
   })
 })
+
+function pluginFixture(slug: string, section: string, displayOrder?: number): SchemaPluginOut {
+  return {
+    id: slug === 'engineering' ? 1 : 2,
+    slug,
+    name: section,
+    version: '0.1.0',
+    description: '',
+    source: 'builtin',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    enabled_for_project: true,
+    manifest_json: {
+      ...(displayOrder === undefined ? {} : { display_order: displayOrder }),
+      ui: {
+        nav: {
+          section,
+          items: [
+            {
+              key: `${slug}.resources`,
+              label: 'Data',
+              to: `resources?plugin_slug=${slug}`,
+              matchPrefix: true,
+            },
+            {
+              key: `${slug}.templates`,
+              label: 'Workflows',
+              to: `workflow-templates?plugin_slug=${slug}`,
+            },
+          ],
+        },
+      },
+    },
+  } as SchemaPluginOut
+}

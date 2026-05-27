@@ -25,8 +25,8 @@ action contracts. They are the agent-visible map, so they must be precise.
 - Provider/vendor operations belong in plugin actions executed through
   `action.execute`; do not add provider-specific direct MCP tools for normal
   agents.
-- SEO, media buying, GTM, publishing, and utilities are plugins. Core StackOS
-  should stay generic.
+- Engineering, SEO, media buying, GTM, publishing, communications, and utilities
+  are plugins. Core StackOS should stay generic.
 
 ## Review Checklist
 
