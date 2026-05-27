@@ -21,12 +21,13 @@ describe('ResourceExplorerView', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders generic resources and redacts record details', async () => {
+  it('renders data drilldown schema details and redacts record details', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       if (url.includes('/api/v1/plugins')) {
         return json([
           plugin('core', 'StackOS Core'),
+          plugin('communications', 'Communications'),
           plugin('utils', 'Utilities'),
         ])
       }
@@ -43,9 +44,9 @@ describe('ResourceExplorerView', () => {
             key: 'learning',
             name: 'Learning',
             description: 'Durable observation.',
-            schema_json: { type: 'object' },
-            ui_schema_json: null,
-            config_json: null,
+            schema_json: { type: 'object', properties: { body: { type: 'string' } } },
+            ui_schema_json: { layout: 'compact' },
+            config_json: { api_key: 'schema-secret' },
           },
         ])
       }
@@ -76,15 +77,25 @@ describe('ResourceExplorerView', () => {
       history: createMemoryHistory(),
       routes: [{ path: '/projects/:id/resources', component: ResourceExplorerView }],
     })
-    await router.push('/projects/1/resources')
+    await router.push('/projects/1/resources?plugin_slug=communications')
     await router.isReady()
 
     const w = mount(ResourceExplorerView, { global: { plugins: [router] } })
     await vi.waitFor(() => expect(w.text()).toContain('Learning'))
 
+    expect(w.text()).toContain('Communications Data')
+    expect(w.text()).toContain('Schema Details')
+    expect(w.text()).toContain('Schema JSON')
+    expect(w.text()).toContain('UI Schema JSON')
     expect(w.text()).toContain('Lesson')
     expect(w.text()).toContain('[redacted]')
+    expect(w.text()).not.toContain('schema-secret')
     expect(w.text()).not.toContain('record-secret')
+
+    const schemaRow = w
+      .findAll('tr')
+      .find((row) => row.text().includes('Learning') && row.text().includes('Durable observation.'))
+    expect(schemaRow?.attributes('tabindex')).toBe('0')
   })
 })
 

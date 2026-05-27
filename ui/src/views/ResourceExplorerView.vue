@@ -7,10 +7,19 @@ import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
 import ResourceViewRenderer from '@/components/renderers/ResourceViewRenderer.vue'
-import { UiBadge, UiCallout, UiFormField, UiPageShell, UiPanel, UiSectionHeader, UiSelect } from '@/components/ui'
+import {
+  UiBadge,
+  UiCallout,
+  UiFormField,
+  UiJsonBlock,
+  UiPageShell,
+  UiPanel,
+  UiSectionHeader,
+  UiSelect,
+} from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
-import { formatDateTime } from '@/lib/stackos/json'
+import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useStackOsResourcesStore } from '@/stores/stackosResources'
 
@@ -23,7 +32,30 @@ const { resources, records, artifacts, loading, error } = storeToRefs(resourcesS
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const pluginSlug = ref(String(route.query.plugin_slug ?? ''))
 const resourceKey = ref(String(route.query.resource_key ?? ''))
+const selectedResource = ref<SchemaResourceOut | null>(null)
 const selectedRecord = ref<SchemaResourceRecordOut | null>(null)
+
+const selectedPlugin = computed(
+  () => enabledPlugins.value.find((plugin) => plugin.slug === pluginSlug.value) ?? null,
+)
+const pageTitle = computed(() =>
+  selectedPlugin.value ? `${selectedPlugin.value.name} Data` : 'Data Explorer',
+)
+const pageDescription = computed(() =>
+  selectedPlugin.value
+    ? `Schemas, records, and artifacts owned by ${selectedPlugin.value.name}.`
+    : 'Plugin data schemas, project records, and artifact references.',
+)
+const breadcrumbLabel = computed(() => (selectedPlugin.value ? 'Data' : 'Data Explorer'))
+const selectedSchemaJson = computed(() =>
+  selectedResource.value ? sanitizeForDisplay(selectedResource.value.schema_json ?? null) : null,
+)
+const selectedUiSchemaJson = computed(() =>
+  selectedResource.value ? sanitizeForDisplay(selectedResource.value.ui_schema_json ?? null) : null,
+)
+const selectedConfigJson = computed(() =>
+  selectedResource.value ? sanitizeForDisplay(selectedResource.value.config_json ?? null) : null,
+)
 
 const pluginOptions = computed(() => [
   { value: '', label: 'All plugins' },
@@ -31,7 +63,7 @@ const pluginOptions = computed(() => [
 ])
 
 const resourceOptions = computed(() => [
-  { value: '', label: 'All resources' },
+  { value: '', label: 'All schemas' },
   ...resources.value.map((resource) => ({ value: resource.key, label: resource.name })),
 ])
 
@@ -58,6 +90,8 @@ async function load(): Promise<void> {
       resourceKey: resourceKey.value || null,
     }),
   ])
+  selectedResource.value =
+    resources.value.find((resource) => resource.key === resourceKey.value) ?? resources.value[0] ?? null
   selectedRecord.value = records.value[0] ?? null
 }
 
@@ -79,6 +113,12 @@ watch(records, (items) => {
     selectedRecord.value = items[0] ?? null
   }
 })
+watch(resources, (items) => {
+  if (!selectedResource.value || !items.some((resource) => resource.id === selectedResource.value?.id)) {
+    selectedResource.value =
+      items.find((resource) => resource.key === resourceKey.value) ?? items[0] ?? null
+  }
+})
 watch(
   () => route.query,
   () => {
@@ -93,9 +133,9 @@ watch(
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Resource Explorer"
-      description="Plugin resource schemas, project records, and artifact references."
-      :breadcrumbs="[{ label: 'Resources' }]"
+      :title="pageTitle"
+      :description="pageDescription"
+      :breadcrumbs="[{ label: breadcrumbLabel }]"
     />
 
     <UiCallout
@@ -114,7 +154,7 @@ watch(
             @update:model-value="onPlugin"
           />
         </UiFormField>
-        <UiFormField label="Resource">
+        <UiFormField label="Schema">
           <UiSelect
             :model-value="resourceKey"
             :options="resourceOptions"
@@ -144,9 +184,12 @@ watch(
             :items="resources"
             :columns="resourceColumns"
             :loading="loading"
+            :selected-id="selectedResource?.id"
             max-height="18rem"
             aria-label="Resource schemas"
             empty-message="No resource schemas."
+            interactive
+            @row-click="(row) => (selectedResource = row)"
           >
             <template #cell:plugin_slug="{ value }">
               <UiBadge tone="accent">{{ value }}</UiBadge>
@@ -179,9 +222,77 @@ watch(
             </template>
           </DataTable>
         </UiPanel>
-      </div>
+    </div>
 
       <div class="space-y-4 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+        <UiPanel
+          v-if="selectedResource"
+          class="p-4"
+        >
+          <UiSectionHeader
+            title="Schema Details"
+            :description="selectedResource.description"
+          >
+            <template #actions>
+              <UiBadge tone="accent">{{ selectedResource.plugin_slug }}</UiBadge>
+              <UiBadge>{{ selectedResource.key }}</UiBadge>
+            </template>
+          </UiSectionHeader>
+
+          <dl class="mt-4 grid gap-3 text-sm md:grid-cols-2">
+            <div class="min-w-0">
+              <dt class="text-xs text-fg-muted">Name</dt>
+              <dd class="truncate font-medium text-fg-strong">{{ selectedResource.name }}</dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-xs text-fg-muted">Key</dt>
+              <dd class="truncate font-mono">{{ selectedResource.key }}</dd>
+            </div>
+          </dl>
+
+          <details class="mt-4 rounded-md border border-subtle bg-bg-surface">
+            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+              Schema JSON
+            </summary>
+            <div class="border-t border-subtle p-3">
+              <UiJsonBlock
+                :data="selectedSchemaJson"
+                density="compact"
+                max-height="16rem"
+                wrap
+              />
+            </div>
+          </details>
+
+          <details class="mt-3 rounded-md border border-subtle bg-bg-surface">
+            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+              UI Schema JSON
+            </summary>
+            <div class="border-t border-subtle p-3">
+              <UiJsonBlock
+                :data="selectedUiSchemaJson"
+                density="compact"
+                max-height="14rem"
+                wrap
+              />
+            </div>
+          </details>
+
+          <details class="mt-3 rounded-md border border-subtle bg-bg-surface">
+            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+              Config JSON
+            </summary>
+            <div class="border-t border-subtle p-3">
+              <UiJsonBlock
+                :data="selectedConfigJson"
+                density="compact"
+                max-height="14rem"
+                wrap
+              />
+            </div>
+          </details>
+        </UiPanel>
+
         <section v-if="selectedRecord" class="space-y-3">
           <UiSectionHeader
             title="Record Details"
