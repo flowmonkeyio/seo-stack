@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 141
+    assert len(names) == 142
     assert {
         "action.execute",
         "auth.status",
@@ -21,6 +21,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "budget.set",
         "run.start",
         "workspace.updateProfile",
+        "readiness.check",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -177,6 +178,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert resolver.surfaces["cli"].command == "ops call toolProfile.resolve"
     assert resolver.grant_policy == "direct-read"
     assert any("credential_ref" in item for item in resolver.returns)
+
+    readiness = registry.get("readiness.check").describe_out()
+    assert readiness.category == "setup"
+    assert readiness.surfaces["mcp"].enabled is True
+    assert readiness.surfaces["rest"].enabled is True
+    assert readiness.surfaces["cli"].command == "ops call readiness.check"
+    assert readiness.grant_policy == "direct-read"
+    assert any("global auth.status gaps" in item for item in readiness.prerequisites)
 
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True

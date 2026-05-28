@@ -41,8 +41,10 @@ run token.
    frontmatter, plugin files, or session-only guidance). StackOS does not scan,
    write, or register host-local agent files; the host agent inspects repository
    files and adapts presets only when local-agent setup is requested.
-6. When a run plan needs missing vendor credentials, do not ask the user to
-   paste secrets into chat. Name the missing providers and send the operator to
+6. When a workflow or action might need vendor setup, call `toolbox.call` for
+   `readiness.check` with the selected `workflow_key` or `action_ref` before
+   broad `auth.status`. Do not ask the user to paste secrets into chat. Name
+   only the scoped missing providers and send the operator to
    `http://localhost:5180/projects/{project_id}/connections`. After the user
    connects them in the UI, call `toolbox.call` for `auth.status` and
    `auth.test` before continuing.
@@ -92,8 +94,11 @@ run token.
   means the active step exists but the grant snapshot does not cover this tool
   or argument shape.
 - Connect vendors: inspect the run plan's needed providers, share
-  `/projects/{project_id}/connections`, wait for the operator to connect them
-  in the UI, then run `toolbox.call` for `auth.status` and `auth.test`.
+  scoped readiness first with `toolbox.call` for `readiness.check` using the
+  selected `workflow_key` or `action_ref`. Share
+  `/projects/{project_id}/connections` only for the listed providers, wait for
+  the operator to connect them in the UI, then run `toolbox.call` for
+  `auth.status` and `auth.test`.
 - Plan direct work: use tracker tasks/tickets when the agent is planning or
   delivering scoped work outside a concrete workflow run. Create dependencies,
   blockers, definition of done, and completion evidence there.
@@ -105,6 +110,7 @@ run token.
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`.
 - Execute one direct action: describe/validate when useful, call
+  `toolbox.call` for `readiness.check` when setup is uncertain, call
   `toolbox.call` for `action.run`, and read the compact result.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store outputs as

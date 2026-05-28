@@ -16,6 +16,7 @@ from stackos.mcp.tools import (
     operations,
     plugins,
     projects,
+    readiness,
     resources,
     runs,
     sitemap,
@@ -42,6 +43,7 @@ def register_all(registry: ToolRegistry) -> None:
     meta.register(registry)
     operations.register(registry)
     plugins.register(registry)
+    readiness.register(registry)
     resources.register(registry)
     artifacts.register(registry)
     sitemap.register(registry)

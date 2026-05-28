@@ -179,6 +179,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "runPlan.validate",
         "provider.describe",
         "provider.list",
+        "readiness.check",
         "resource.get",
         "resource.query",
         "schedule.list",

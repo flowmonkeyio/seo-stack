@@ -143,6 +143,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "operation.describe",
         "operation.list",
         "plugin.list",
+        "readiness.check",
         "project.create",
         "project.get",
         "project.list",

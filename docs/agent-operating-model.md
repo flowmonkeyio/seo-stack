@@ -83,6 +83,7 @@ expectation visible.
 agent intent
 -> operation.list when the available operation names are not already clear
 -> operation.describe / action.list / action.describe when the contract is not already clear
+-> readiness.check when a selected workflow/action may need provider setup
 -> agentPreset.resolveForWorkflow when setting up workflow-specific roles
 -> workflow template or agent-authored run plan
 -> runPlan.validate/create/start
@@ -103,11 +104,20 @@ work state, dependency readiness, and verification context. The step still
 claims and records through `runPlan.*`, and provider execution still flows
 through `action.execute`.
 
+Use `readiness.check` when the agent already knows the selected workflow or
+action. It reports only setup gaps for that scope, such as the credential or
+budget needed by `seo.keyword-research`, instead of making the project look
+blocked because unrelated providers are disconnected. Workflow readiness can be
+`ready=true` while `execution_ready=false`: the agent may still create or plan
+the run, but should connect the listed providers before executing affected
+action steps.
+
 ## Direct Action Path
 
 ```text
 agent receives one explicit user request
 -> operation.describe / action.list / action.describe when the contract is not already clear
+-> toolbox.call(readiness.check) for the selected action when setup is uncertain
 -> toolbox.call(toolProfile.resolve) when provider/auth/profile selection is needed
 -> toolbox.call(action.describe / action.validate) when needed
 -> toolbox.call(action.run)

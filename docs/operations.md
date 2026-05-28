@@ -243,6 +243,7 @@ The current core operation registry includes:
 - `ingressEndpoint.status`
 - `localAgentChat.createMessage`
 - `toolProfile.resolve`
+- `readiness.check`
 - `tracker.status`
 - `tracker.get`
 - `tracker.next`
@@ -287,6 +288,13 @@ Workflow templates are inert presets/contracts. They do not act by themselves.
 The main agent should resolve preset and skill requirements, adapt generic roles
 to the project, create a concrete run plan with `runPlan.create`, and work
 through tracker tasks/tickets with explicit dependencies and evidence.
+
+Use `readiness.check` before broad setup scans when the agent already knows a
+workflow key or action ref. It answers the scoped question: is this workflow or
+action executable now, and which exact credentials, budgets, connectors, or
+setup items are missing? For workflow templates, `ready=true` means the template
+is usable for planning/run-plan creation; `execution_ready=false` means only the
+listed action dependencies need setup before affected steps execute.
 
 ## Direct Actions Vs Workflows
 

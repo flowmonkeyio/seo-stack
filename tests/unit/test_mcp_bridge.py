@@ -363,6 +363,7 @@ def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> 
     assert "project.get" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "project.create" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "plugin.list" in _AGENT_SETUP_TOOLBOX_NAMES
+    assert "readiness.check" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.describe" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.list" in _AGENT_SETUP_TOOLBOX_NAMES
     assert "action.validate" in _AGENT_SETUP_TOOLBOX_NAMES

@@ -53,6 +53,13 @@ are acceptable. The `warnings` array tells the agent where a valid plan may
 still fail during execution because a step names work contracts but lacks the
 MCP grants needed by `runPlan.claimStep` and later tool calls.
 
+For provider/setup readiness, call `readiness.check` with the selected
+`workflow_key` or concrete `action_ref` before asking for broad credential
+status. This is intentionally separate from run-plan structural validation:
+`readiness.check(workflow_key=...)` tells the agent which scoped providers,
+budgets, or connectors are missing, while still allowing `runPlan.create` when
+the workflow can be planned before credentials are connected.
+
 Common warning codes:
 
 - `missing_action_execute_grant`: a step declares `action_refs`, but no

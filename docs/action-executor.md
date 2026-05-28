@@ -116,6 +116,8 @@ Direct/read discovery operations:
 - `action.list`
 - `action.describe`
 - `action.validate`
+- `readiness.check` when the agent already knows the selected workflow/action
+  and wants only scoped setup blockers
 - `toolProfile.resolve` when an agent needs a safe provider/profile/credential
   tuple before choosing an explicit action payload
 
@@ -123,6 +125,12 @@ Use `action.list` before `action.describe` when the agent knows the plugin,
 provider, capability, executable state, or search term but does not yet know
 the exact `action_ref`. It returns compact project-aware availability state
 without requiring a broad plugin manifest scan.
+
+Use `readiness.check` before `auth.status` for selected work. It reuses action
+availability and workflow template action contracts to report only the
+credentials, budgets, or connectors needed by that workflow/action. This keeps
+an agent from treating every disconnected provider in the project as a blocker
+for one concrete run.
 
 Run-plan-scoped execution operation:
 
