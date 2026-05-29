@@ -16,6 +16,7 @@ from sqlmodel import (
 )
 
 from stackos.db.models import (
+    RunPlan,
     RunPlanStep,
     TaskTracker,
     TaskTrackerLane,
@@ -588,6 +589,54 @@ class TrackerQueryMixin:
         if row is None and not missing_ok:
             raise NotFoundError("tracker ticket not found", data={"ticket_key": key})
         return row
+
+    def workflow_step_ticket_context(
+        self,
+        *,
+        project_id: int,
+        run_plan_id: int,
+        step_id: str,
+    ) -> dict[str, Any]:
+        tracker = self.ensure_tracker(project_id=project_id)
+        plan = self._s.get(RunPlan, run_plan_id)
+        if plan is None or plan.project_id != project_id:
+            raise NotFoundError(
+                "run plan not found in project",
+                data={"project_id": project_id, "run_plan_id": run_plan_id},
+            )
+        step = self._s.exec(
+            select(RunPlanStep).where(
+                RunPlanStep.run_plan_id == run_plan_id,
+                RunPlanStep.step_id == step_id,
+            )
+        ).first()
+        if step is None:
+            raise NotFoundError(
+                "run-plan step not found",
+                data={"run_plan_id": run_plan_id, "step_id": step_id},
+            )
+        task_key = f"workflow-{run_plan_id}"
+        task = self._task_by_key(tracker.id, task_key, missing_ok=True)
+        if task is None:
+            raise NotFoundError(
+                "workflow tracker task not found; create the run plan first",
+                data={"run_plan_id": run_plan_id, "task_key": task_key},
+            )
+        ticket = self._ticket_for_step(tracker.id, run_plan_id, step_id)
+        if ticket is None:
+            raise NotFoundError(
+                "workflow step ticket not found; create the run plan first",
+                data={"run_plan_id": run_plan_id, "step_id": step_id},
+            )
+        return {
+            "task_key": task.key,
+            "parent_ticket_key": ticket.key,
+            "run_plan_id": plan.id,
+            "run_plan_key": plan.key,
+            "run_plan_step_id": step.id,
+            "step_id": step.step_id,
+            "template_key": plan.template_key,
+        }
 
     def _ticket_for_step(
         self,

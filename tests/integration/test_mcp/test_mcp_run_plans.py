@@ -557,11 +557,14 @@ def test_run_plan_create_from_template_and_list(
         "runPlan.create",
         {
             "project_id": project_id,
-            "template_key": "core.project-memory-review",
+            "workflow_key": "core.project-memory-review",
             "inputs_json": {"goal": "Review recent project memory."},
         },
     )
-    page = mcp_client.call_tool_structured("runPlan.list", {"project_id": project_id})
+    page = mcp_client.call_tool_structured(
+        "runPlan.list",
+        {"project_id": project_id, "workflow_key": "core.project-memory-review"},
+    )
     fetched = mcp_client.call_tool_structured(
         "runPlan.get",
         {"run_plan_id": created["data"]["id"]},
@@ -580,13 +583,13 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
 
     structural = mcp_client.call_tool_structured(
         "runPlan.validate",
-        {"project_id": project_id, "template_key": "core.project-memory-review"},
+        {"project_id": project_id, "workflow_key": "core.project-memory-review"},
     )
     missing = mcp_client.call_tool_structured(
         "runPlan.validate",
         {
             "project_id": project_id,
-            "template_key": "core.project-memory-review",
+            "workflow_key": "core.project-memory-review",
             "enforce_required_inputs": True,
         },
     )
@@ -594,7 +597,7 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
         "runPlan.validate",
         {
             "project_id": project_id,
-            "template_key": "core.project-memory-review",
+            "workflow_key": "core.project-memory-review",
             "inputs_json": {"goal": "Review recent project memory."},
             "enforce_required_inputs": True,
         },
@@ -605,6 +608,28 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
     assert "goal" in missing["errors"][0]["message"]
     assert with_inputs["valid"] is True
     assert with_inputs["plan"]["key"] == "core.project-memory-review.run"
+
+
+def test_run_plan_template_and_workflow_key_must_match(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    rejected = mcp_client.call_tool_error(
+        "runPlan.validate",
+        {
+            "project_id": project_id,
+            "template_key": "core.project-memory-review",
+            "workflow_key": "engineering.tracked-delivery",
+        },
+    )
+
+    assert rejected["code"] == -32602
+    assert rejected["message"] == "ValidationError"
+    assert "must match" in rejected["data"]["detail"]
+    assert rejected["data"]["template_key"] == "core.project-memory-review"
+    assert rejected["data"]["workflow_key"] == "engineering.tracked-delivery"
 
 
 def test_run_plan_validate_rejects_secrets(mcp_client: MCPClient) -> None:

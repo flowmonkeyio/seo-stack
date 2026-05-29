@@ -272,7 +272,9 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this to split a task into clear executable units and dependencies. "
                 "Pass tickets_json with dry_run=true to draft/review a list before "
-                "creating tickets."
+                "creating tickets. For workflow execution, pass run_plan_id and step_id "
+                "so StackOS attaches the work to the mirrored workflow step without "
+                "requiring generated tracker keys."
             ),
             examples=(
                 OperationExample(
@@ -289,6 +291,16 @@ def operation_specs() -> list[OperationSpec]:
                             },
                         ],
                         "dry_run": True,
+                    },
+                ),
+                OperationExample(
+                    title="Create a ticket under a workflow step",
+                    arguments={
+                        "project_id": 1,
+                        "run_plan_id": 42,
+                        "step_id": "deliver",
+                        "key": "fix-media-handoff",
+                        "title": "Forward source media in the canonical handoff",
                     },
                 ),
             ),

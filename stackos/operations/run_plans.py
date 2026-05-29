@@ -20,7 +20,7 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
-from stackos.repositories.base import Page
+from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.run_plans import (
     RunPlanOut,
     RunPlanRepository,
@@ -34,12 +34,13 @@ from stackos.workflows import RunPlanValidationOut
 class RunPlanValidateInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
-        json_schema_extra={"example": {"template_key": "core.project-memory-review"}},
+        json_schema_extra={"example": {"workflow_key": "core.project-memory-review"}},
     )
 
     project_id: int | None = None
     run_plan_json: dict[str, Any] | None = None
     template_key: str | None = None
+    workflow_key: str | None = None
     repo_root: str | None = None
     plugin_slug: str | None = None
     source: str | None = None
@@ -55,7 +56,7 @@ class RunPlanCreateInput(MCPInput):
         json_schema_extra={
             "example": {
                 "project_id": 1,
-                "template_key": "core.project-memory-review",
+                "workflow_key": "core.project-memory-review",
                 "inputs_json": {"goal": "Review recent project memory"},
             }
         },
@@ -64,6 +65,7 @@ class RunPlanCreateInput(MCPInput):
     project_id: int
     run_plan_json: dict[str, Any] | None = None
     template_key: str | None = None
+    workflow_key: str | None = None
     repo_root: str | None = None
     plugin_slug: str | None = None
     source: str | None = None
@@ -100,6 +102,7 @@ class RunPlanListInput(MCPInput):
     run_id: int | None = None
     status: RunPlanStatus | None = None
     template_key: str | None = None
+    workflow_key: str | None = None
     limit: int | None = None
     after_id: int | None = None
 
@@ -176,6 +179,15 @@ class RunPlanRecordStepInput(MCPInput):
     error: str | None = None
 
 
+def _template_key(template_key: str | None, workflow_key: str | None) -> str | None:
+    if template_key is not None and workflow_key is not None and template_key != workflow_key:
+        raise ValidationError(
+            "template_key and workflow_key must match when both are provided",
+            data={"template_key": template_key, "workflow_key": workflow_key},
+        )
+    return template_key if template_key is not None else workflow_key
+
+
 async def run_plan_validate(
     inp: RunPlanValidateInput,
     ctx: MCPContext,
@@ -183,7 +195,7 @@ async def run_plan_validate(
 ) -> RunPlanValidationOut:
     return RunPlanRepository(ctx.session).validate_plan(
         run_plan_json=inp.run_plan_json,
-        template_key=inp.template_key,
+        template_key=_template_key(inp.template_key, inp.workflow_key),
         project_id=inp.project_id,
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
@@ -203,7 +215,7 @@ async def run_plan_create(
     env = RunPlanRepository(ctx.session).create(
         project_id=inp.project_id,
         run_plan_json=inp.run_plan_json,
-        template_key=inp.template_key,
+        template_key=_template_key(inp.template_key, inp.workflow_key),
         repo_root=inp.repo_root,
         plugin_slug=inp.plugin_slug,
         source=inp.source,
@@ -248,7 +260,7 @@ async def run_plan_list(
         project_id=inp.project_id,
         run_id=inp.run_id,
         status=inp.status,
-        template_key=inp.template_key,
+        template_key=_template_key(inp.template_key, inp.workflow_key),
         limit=inp.limit,
         after_id=inp.after_id,
     )
@@ -348,7 +360,7 @@ def operation_specs() -> list[OperationSpec]:
                 "A script wants to verify that a workflow template can become a run plan.",
             ),
             prerequisites=(
-                "Pass run_plan_json for an explicit plan or template_key for a "
+                "Pass run_plan_json for an explicit plan or workflow_key/template_key for a "
                 "template-derived plan.",
                 "Pass project_id when the validation depends on project templates.",
                 "Set enforce_required_inputs=true and pass inputs_json when validating a "
@@ -363,7 +375,7 @@ def operation_specs() -> list[OperationSpec]:
                     title="Validate a template-derived plan",
                     arguments={
                         "project_id": 1,
-                        "template_key": "core.project-memory-review",
+                        "workflow_key": "core.project-memory-review",
                         "inputs_json": {"goal": "Review recent project memory"},
                         "enforce_required_inputs": True,
                     },
@@ -389,7 +401,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=(
                 "Pass project_id.",
-                "Pass either run_plan_json or template_key.",
+                "Pass either run_plan_json or workflow_key/template_key.",
                 "Do not place secrets in metadata_json, selected_context_json, or run_plan_json.",
             ),
             returns=(
@@ -402,7 +414,7 @@ def operation_specs() -> list[OperationSpec]:
                     title="Create a plan from a project template",
                     arguments={
                         "project_id": 1,
-                        "template_key": "core.project-memory-review",
+                        "workflow_key": "core.project-memory-review",
                         "inputs_json": {"goal": "Review recent project memory"},
                     },
                 ),

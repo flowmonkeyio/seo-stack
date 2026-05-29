@@ -453,6 +453,41 @@ def test_cli_run_plans_create_alias_calls_operation(
     assert json.loads(result.stdout)["data"]["id"] == 9
 
 
+def test_cli_run_plans_create_accepts_workflow_key(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"id": 10}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-plans",
+            "create",
+            "--project",
+            "7",
+            "--workflow-key",
+            "engineering.tracked-delivery",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls[0][1] == "/api/v1/operations/runPlan.create/call"
+    assert calls[0][2] is not None
+    assert calls[0][2]["arguments"]["workflow_key"] == "engineering.tracked-delivery"
+    assert json.loads(result.stdout)["data"]["id"] == 10
+
+
 def test_cli_run_plans_claim_step_requires_run_token(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any] | None]] = []
 

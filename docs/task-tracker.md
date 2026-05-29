@@ -57,6 +57,12 @@ Lifecycle mirroring is mechanical:
 StackOS only mirrors state. It does not invent tickets beyond the concrete
 run-plan steps and it does not decide how to repair failures.
 
+When an agent needs to create delivery tickets under a workflow step, it should
+call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves
+the mirrored `workflow-{run_plan_id}` task and step ticket, records the
+workflow refs on the new ticket, and avoids asking the agent to infer generated
+tracker keys.
+
 For customer feedback, tracker-backed delivery starts after support
 investigation, not during intake. `communications.customer-feedback-intake`
 creates a canonical thread and refs only. `support.issue-investigation` mirrors
@@ -233,8 +239,9 @@ For workflow work:
 
 ```text
 workflowTemplate.describe
--> runPlan.create
+-> runPlan.create(workflow_key=...)
 -> tracker.status or tracker.brief
+-> tracker.createTicket(run_plan_id=..., step_id=...) when extra delivery tickets are needed
 -> runPlan.start
 -> runPlan.claimStep
 -> do the step

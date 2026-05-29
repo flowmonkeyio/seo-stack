@@ -314,6 +314,10 @@ def run_plans_validate(
         str | None,
         typer.Option("--template-key", help="Template key to validate as a run plan."),
     ] = None,
+    workflow_key: Annotated[
+        str | None,
+        typer.Option("--workflow-key", help="Workflow key to validate as a run plan."),
+    ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     repo_root: Annotated[str | None, typer.Option("--repo-root", help="Repository root.")] = None,
     plugin_slug: Annotated[str | None, typer.Option("--plugin", help="Plugin slug filter.")] = None,
@@ -324,6 +328,7 @@ def run_plans_validate(
         {
             "run_plan_json": _load_operation_arguments(input_path) if input_path else None,
             "template_key": template_key,
+            "workflow_key": workflow_key,
             "repo_root": repo_root,
             "plugin_slug": plugin_slug,
             "source": source,
@@ -343,6 +348,10 @@ def run_plans_create(
         str | None,
         typer.Option("--template-key", help="Template key to instantiate."),
     ] = None,
+    workflow_key: Annotated[
+        str | None,
+        typer.Option("--workflow-key", help="Workflow key to instantiate."),
+    ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     key: Annotated[str | None, typer.Option("--key", help="Override run-plan key.")] = None,
     title: Annotated[str | None, typer.Option("--title", help="Override run-plan title.")] = None,
@@ -356,6 +365,7 @@ def run_plans_create(
         {
             "run_plan_json": _load_operation_arguments(input_path) if input_path else None,
             "template_key": template_key,
+            "workflow_key": workflow_key,
             "repo_root": repo_root,
             "plugin_slug": plugin_slug,
             "source": source,
@@ -407,6 +417,10 @@ def run_plans_list(
         str | None,
         typer.Option("--template-key", help="Filter by template key."),
     ] = None,
+    workflow_key: Annotated[
+        str | None,
+        typer.Option("--workflow-key", help="Filter by workflow key."),
+    ] = None,
     limit: Annotated[int | None, typer.Option("--limit", help="Page size.")] = None,
     after_id: Annotated[int | None, typer.Option("--after-id", help="Cursor id.")] = None,
     run_token: Annotated[
@@ -419,6 +433,7 @@ def run_plans_list(
         {
             "status": status,
             "template_key": template_key,
+            "workflow_key": workflow_key,
             "limit": limit,
             "after_id": after_id,
         },

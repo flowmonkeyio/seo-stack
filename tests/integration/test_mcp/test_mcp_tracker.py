@@ -5,6 +5,15 @@ from __future__ import annotations
 from .conftest import MCPClient
 
 
+def _workflow_step_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "tracker.workflow-step.run",
+        "title": "Tracker workflow step",
+        "steps": [{"id": "deliver", "title": "Deliver"}],
+    }
+
+
 def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     listed_tools = mcp_client.list_tools()
     tools = {tool["name"] for tool in listed_tools}
@@ -35,7 +44,9 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     create_props = by_name["tracker.createTicket"]["inputSchema"]["properties"]
     update_props = by_name["tracker.updateTicket"]["inputSchema"]["properties"]
     reject_props = by_name["tracker.rejectTask"]["inputSchema"]["properties"]
-    assert {"tickets_json", "dependencies_json", "dry_run"} <= set(create_props)
+    assert {"tickets_json", "dependencies_json", "dry_run", "run_plan_id", "step_id"} <= set(
+        create_props
+    )
     assert {"updates_json", "dry_run"} <= set(update_props)
     assert {"task_key", "run_plan_id", "reason"} <= set(reject_props)
 
@@ -128,6 +139,70 @@ def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict)
     )
     assert [ticket["key"] for ticket in searched["tickets"]] == ["mcp-ticket"]
     assert "project_id" not in searched["tickets"][0]
+
+
+def test_tracker_create_ticket_can_target_workflow_step(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_step_plan_json()},
+    )
+    run_plan_id = int(plan["data"]["id"])
+    workflow_task_key = f"workflow-{run_plan_id}"
+    workflow_step_ticket_key = f"{workflow_task_key}-deliver"
+
+    created = mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "step_id": "deliver",
+            "key": "workflow-child-single",
+            "title": "Single child ticket",
+            "source_json": {"chat_ref": "slack:thread:123"},
+            "created_by": "mcp-test",
+        },
+    )
+
+    assert created["data"]["task"]["key"] == workflow_task_key
+    assert created["data"]["ticket"]["parent_ticket_key"] == workflow_step_ticket_key
+    assert created["data"]["ticket"]["run_plan_id"] == run_plan_id
+    assert created["data"]["ticket"]["run_plan_step_id"] is not None
+    assert created["data"]["ticket"]["source_json"]["chat_ref"] == "slack:thread:123"
+    assert created["data"]["ticket"]["source_json"]["step_id"] == "deliver"
+
+    list_payload = {
+        "project_id": project_id,
+        "run_plan_id": run_plan_id,
+        "step_id": "deliver",
+        "tickets_json": [
+            {"key": "workflow-child-a", "title": "Child A"},
+            {
+                "key": "workflow-child-b",
+                "title": "Child B",
+                "dependency_keys": ["workflow-child-a"],
+            },
+        ],
+        "created_by": "mcp-test",
+    }
+    dry_run = mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {**list_payload, "dry_run": True},
+    )
+    imported = mcp_client.call_tool_structured("tracker.createTicket", list_payload)
+
+    assert dry_run["data"]["valid"] is True
+    assert imported["data"]["task"]["key"] == workflow_task_key
+    assert [ticket["parent_ticket_key"] for ticket in imported["data"]["tickets"]] == [
+        workflow_step_ticket_key,
+        workflow_step_ticket_key,
+    ]
+    assert imported["data"]["tickets"][0]["run_plan_id"] == run_plan_id
+    assert imported["data"]["tickets"][0]["source_json"]["step_id"] == "deliver"
+    assert imported["data"]["dependencies"][0]["depends_on_ticket_key"] == "workflow-child-a"
 
 
 def test_tracker_mcp_create_get_update_accept_ticket_lists(

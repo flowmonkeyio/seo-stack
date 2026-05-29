@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import RunPlan, RunPlanStatus
@@ -33,6 +34,72 @@ def _safe_rejection_reason(reason: str) -> str:
     if not clean:
         raise ValidationError("reason is required to reject a task")
     return clean
+
+
+def _workflow_step_context(
+    repo: TrackerRepository,
+    inp: TrackerCreateTicketInput,
+) -> dict[str, Any] | None:
+    if (inp.run_plan_id is None) != (inp.step_id is None):
+        raise ValidationError("run_plan_id and step_id must be provided together")
+    if inp.run_plan_id is None:
+        return None
+    step_id = str(inp.step_id or "").strip()
+    if not step_id:
+        raise ValidationError("step_id is required when run_plan_id is provided")
+    context = repo.workflow_step_ticket_context(
+        project_id=inp.project_id,
+        run_plan_id=inp.run_plan_id,
+        step_id=step_id,
+    )
+    if inp.task_key is not None and inp.task_key != context["task_key"]:
+        raise ValidationError(
+            "task_key is resolved from run_plan_id and step_id; omit it or pass the workflow task",
+            data={"task_key": inp.task_key, "resolved_task_key": context["task_key"]},
+        )
+    if inp.parent_ticket_key is not None and inp.parent_ticket_key != context["parent_ticket_key"]:
+        raise ValidationError(
+            "parent_ticket_key is resolved from run_plan_id and step_id; "
+            "omit it or pass the workflow step ticket",
+            data={
+                "parent_ticket_key": inp.parent_ticket_key,
+                "resolved_parent_ticket_key": context["parent_ticket_key"],
+            },
+        )
+    return context
+
+
+def _workflow_source_json(
+    source_json: dict[str, Any] | None,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(source_json or {})
+    merged.update(
+        {
+            key: value
+            for key, value in {
+                "run_plan_id": context["run_plan_id"],
+                "run_plan_key": context["run_plan_key"],
+                "run_plan_step_id": context["run_plan_step_id"],
+                "step_id": context["step_id"],
+                "template_key": context["template_key"],
+                "workflow_parent_ticket_key": context["parent_ticket_key"],
+            }.items()
+            if value is not None
+        }
+    )
+    return merged
+
+
+def _workflow_ticket_json(raw: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    ticket = dict(raw)
+    if not str(ticket.get("parent_ticket_key") or "").strip():
+        ticket["parent_ticket_key"] = context["parent_ticket_key"]
+    ticket["run_plan_id"] = context["run_plan_id"]
+    ticket["run_plan_step_id"] = context["run_plan_step_id"]
+    source_json = ticket.get("source_json") if isinstance(ticket.get("source_json"), dict) else None
+    ticket["source_json"] = _workflow_source_json(source_json, context)
+    return ticket
 
 
 async def tracker_create_task(
@@ -74,14 +141,20 @@ async def tracker_create_ticket(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[TrackerMutationOut]:
+    repo = TrackerRepository(ctx.session)
+    workflow_context = _workflow_step_context(repo, inp)
     if inp.tickets_json is not None:
+        tickets_json = (
+            [_workflow_ticket_json(item, workflow_context) for item in inp.tickets_json]
+            if workflow_context is not None
+            else inp.tickets_json
+        )
         ticket_list_json = {
-            "task_key": inp.task_key,
-            "tickets": inp.tickets_json,
+            "task_key": workflow_context["task_key"] if workflow_context else inp.task_key,
+            "tickets": tickets_json,
             "dependencies": inp.dependencies_json or [],
             "created_by": inp.created_by,
         }
-        repo = TrackerRepository(ctx.session)
         if inp.dry_run:
             out = repo.validate_ticket_list(
                 project_id=inp.project_id, ticket_list_json=ticket_list_json
@@ -101,11 +174,20 @@ async def tracker_create_ticket(
             run_id=ctx.run_id,
             project_id=env.project_id,
         )
-    if inp.task_key is None or inp.key is None or inp.title is None:
+    task_key = workflow_context["task_key"] if workflow_context else inp.task_key
+    parent_ticket_key = (
+        workflow_context["parent_ticket_key"] if workflow_context else inp.parent_ticket_key
+    )
+    source_json = (
+        _workflow_source_json(inp.source_json, workflow_context)
+        if workflow_context is not None
+        else inp.source_json
+    )
+    if task_key is None or inp.key is None or inp.title is None:
         raise ValidationError("task_key, key, and title are required for single ticket creation")
-    env = TrackerRepository(ctx.session).create_ticket(
+    env = repo.create_ticket(
         project_id=inp.project_id,
-        task_key=inp.task_key,
+        task_key=task_key,
         key=inp.key,
         title=inp.title,
         goal=inp.goal,
@@ -114,13 +196,13 @@ async def tracker_create_ticket(
         assignee=inp.assignee,
         priority_key=inp.priority_key,
         lane_key=inp.lane_key,
-        parent_ticket_key=inp.parent_ticket_key,
+        parent_ticket_key=parent_ticket_key,
         dependency_keys=inp.dependency_keys,
         blocker_reason=inp.blocker_reason,
         outcome=inp.outcome,
         effort=inp.effort,
         source_kind=inp.source_kind,
-        source_json=inp.source_json,
+        source_json=source_json,
         definition_of_done_json=inp.definition_of_done_json,
         constraints_json=inp.constraints_json,
         expected_changes_json=inp.expected_changes_json,
@@ -129,6 +211,8 @@ async def tracker_create_ticket(
         completion_evidence_json=inp.completion_evidence_json,
         context_json=inp.context_json,
         metadata_json=inp.metadata_json,
+        run_plan_id=workflow_context["run_plan_id"] if workflow_context else None,
+        run_plan_step_id=workflow_context["run_plan_step_id"] if workflow_context else None,
         created_by=inp.created_by,
     )
     return WriteEnvelope[TrackerMutationOut](

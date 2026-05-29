@@ -142,6 +142,8 @@ class TrackerBulkMixin:
                 completion_evidence_json=spec["completion_evidence_json"],
                 context_json=spec["context_json"],
                 metadata_json=spec["metadata_json"],
+                run_plan_id=spec["run_plan_id"],
+                run_plan_step_id=spec["run_plan_step_id"],
                 created_by=spec["created_by"] or actor,
                 now=now,
             )
@@ -530,6 +532,12 @@ class TrackerBulkMixin:
                     else None,
                     "metadata_json": raw.get("metadata_json")
                     if isinstance(raw.get("metadata_json"), dict)
+                    else None,
+                    "run_plan_id": raw.get("run_plan_id")
+                    if isinstance(raw.get("run_plan_id"), int)
+                    else None,
+                    "run_plan_step_id": raw.get("run_plan_step_id")
+                    if isinstance(raw.get("run_plan_step_id"), int)
                     else None,
                     "created_by": raw.get("created_by") or ticket_list_json.get("created_by"),
                 }

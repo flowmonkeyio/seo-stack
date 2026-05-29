@@ -217,6 +217,13 @@ class TrackerCreateTicketInput(MCPInput):
                 },
                 {
                     "project_id": 1,
+                    "run_plan_id": 42,
+                    "step_id": "deliver",
+                    "key": "fix-webhook-media-forwarding",
+                    "title": "Forward Telegram media in canonical Slack handoff",
+                },
+                {
+                    "project_id": 1,
                     "task_key": "telegram-comms",
                     "tickets_json": [
                         {"key": "telegram-ingress", "title": "Wire Telegram ingress"},
@@ -234,6 +241,20 @@ class TrackerCreateTicketInput(MCPInput):
 
     project_id: int
     task_key: str | None = None
+    run_plan_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional workflow run-plan id. When supplied with step_id, StackOS resolves "
+            "the mirrored workflow task and step ticket instead of requiring generated keys."
+        ),
+    )
+    step_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional workflow step id. Must be supplied with run_plan_id to create "
+            "tickets under that mirrored workflow step."
+        ),
+    )
     key: str | None = None
     title: str | None = None
     goal: str = ""

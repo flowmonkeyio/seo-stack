@@ -233,6 +233,8 @@ class TrackerMutationMixin:
         completion_evidence_json: dict[str, Any] | None = None,
         context_json: dict[str, Any] | None = None,
         metadata_json: dict[str, Any] | None = None,
+        run_plan_id: int | None = None,
+        run_plan_step_id: int | None = None,
         created_by: str | None = None,
         commit: bool = True,
     ) -> Envelope[TrackerMutationOut]:
@@ -270,6 +272,8 @@ class TrackerMutationMixin:
             completion_evidence_json=completion_evidence_json,
             context_json=context_json,
             metadata_json=metadata_json,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
             created_by=created_by,
             now=now,
         )

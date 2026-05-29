@@ -15,7 +15,7 @@ granted actions, and recording results.
    non-secret configuration such as schedules and budgets.
 2. Discover or describe a template with `workflowTemplate.*`.
 3. Draft a concrete plan from the template or an agent-authored object.
-4. Validate it with `runPlan.validate`.
+4. Validate it with `runPlan.validate` using `workflow_key` for a template-derived run.
 5. Create it with `runPlan.create` after reviewing errors and warnings.
 6. Start it with `runPlan.start` and keep the returned `run_token`.
 7. Claim and record steps through run-plan controller tools using that
