@@ -21,7 +21,7 @@ from .protocol import _bridge_as_int
 
 def _bridge_response_mode(arguments: dict[str, Any]) -> str:
     raw = arguments.get(_AGENT_RESPONSE_MODE_FIELD)
-    if raw in {"compact", "standard", "verbose"}:
+    if raw in {"ack", "compact", "raw", "standard", "verbose"}:
         return str(raw)
     return "compact"
 
@@ -36,6 +36,12 @@ def _bridge_forward_arguments(
     forwarded = dict(arguments)
     if not _bridge_tool_accepts_field(catalog, tool_name, _AGENT_RESPONSE_MODE_FIELD):
         forwarded.pop(_AGENT_RESPONSE_MODE_FIELD, None)
+    elif _AGENT_RESPONSE_MODE_FIELD not in forwarded:
+        forwarded[_AGENT_RESPONSE_MODE_FIELD] = _bridge_tool_default_response_mode(
+            catalog,
+            tool_name,
+            response_mode,
+        )
     if (
         response_mode == "verbose"
         and _bridge_tool_accepts_field(catalog, tool_name, "verbose")
@@ -43,6 +49,21 @@ def _bridge_forward_arguments(
     ):
         forwarded["verbose"] = True
     return forwarded
+
+
+def _bridge_tool_default_response_mode(
+    catalog: dict[str, dict[str, Any]],
+    tool_name: str,
+    fallback: str,
+) -> str:
+    meta = catalog.get(tool_name, {}).get("_meta")
+    if isinstance(meta, dict):
+        policy = meta.get("response_policy")
+        if isinstance(policy, dict):
+            mode = policy.get("default_mode")
+            if isinstance(mode, str) and mode:
+                return mode
+    return fallback
 
 
 def _bridge_compact_tool_response(
@@ -64,6 +85,8 @@ def _bridge_compact_tool_response(
         return response_text
     structured = result.get("structuredContent")
     if not isinstance(structured, dict):
+        return response_text
+    if isinstance(structured.get("operation"), str) and isinstance(structured.get("status"), str):
         return response_text
     compact = _bridge_compact_structured(tool_name, structured)
     if compact is None:

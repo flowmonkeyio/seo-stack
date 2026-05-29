@@ -107,11 +107,27 @@ work, start here:
   setup, workflows, run plans, tracker, auth, resources, communications, and
   actions are called through the scoped toolbox. Use `toolbox.describe` with
   exact `tool_names`; do not request broad schemas unless debugging.
-- Agent-facing MCP setup/discovery responses are compact by default. Use
-  `response_mode=standard` or `response_mode=verbose` only when full daemon
+- Agent-facing MCP setup/discovery responses are compact by default when the
+  operation policy allows it. Use `response_mode=raw`,
+  `response_mode=standard`, or `response_mode=verbose` only when full daemon
   payloads are needed. For direct write actions, pass `intent_id` when stable
   retry semantics matter; StackOS can derive a request-scoped idempotency key
   otherwise.
+- Response shaping is an agent contract, not cosmetic truncation. New
+  operations must declare whether `compact`, `raw`, and `ack` are allowed.
+  `compact` must keep the ids, refs, counts, warnings, grant hints, and next
+  safe-action fields an agent needs for the next tool call. `ack` is only for
+  successful internal writes where a minimal response can still preserve retry
+  safety. Errors, validation failures, grant denials, auth/setup diagnostics,
+  and provider-side partial failures must always return structured repair
+  context, regardless of requested response mode. Provider or external
+  side-effect operations such as `action.run`, `action.execute`,
+  `communication.send`, and `communication.reply` are raw-only until a
+  provider-safe compact contract exists; never hide external message ids, file
+  ids, provider request ids, idempotency status, partial success state, or retry
+  guidance after a side-effect attempt. Idempotency rows must store canonical
+  raw responses first, then shape the returned payload per request so a later
+  raw replay can recover full details after an earlier compact or ack response.
 - The UI should render generic StackOS objects: projects, plugins, workflow
   templates, run plans, resources, artifacts, auth status, action calls,
   context, learnings, experiments, decisions, and tracker tasks/tickets.
@@ -131,6 +147,8 @@ When changing an execution or tool flow, update these together:
 
 1. data model and repository invariant
 2. operation spec, schemas, surface policy, examples, and agent guidance
+   including response policy, compact fields, raw-only side effects, and ack
+   safety
 3. MCP/REST/CLI adapter visibility generated from the operation registry
 4. permission grant and no-secret auth boundary
 5. plugin manifest or workflow template metadata

@@ -84,6 +84,11 @@ async def _execute_delivery(
             else ["called provider connector", "created action_call audit row"]
         ),
         resolved=resolved,
+        action_call=env.data.action_call.model_dump(mode="json"),
+        output_json=output,
+        metadata_json=env.data.metadata_json,
+        credential_ref=env.data.credential_ref,
+        cost_cents=env.data.cost_cents,
     )
     return WriteEnvelope(data=out, run_id=env.run_id, project_id=env.project_id)
 

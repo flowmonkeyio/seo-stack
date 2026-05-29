@@ -144,6 +144,9 @@ def _tool_operation_context(tool: dict[str, Any]) -> dict[str, Any] | None:
     purpose = meta.get("purpose")
     if isinstance(purpose, str) and purpose:
         out["summary"] = purpose.split(". ", 1)[0].strip()
+    response_policy = meta.get("response_policy")
+    if isinstance(response_policy, dict):
+        out["response_policy"] = response_policy
     return out
 
 

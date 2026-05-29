@@ -234,7 +234,10 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert body["surfaces"]["rest"]["enabled"] is True
     assert body["surfaces"]["cli"]["enabled"] is True
     assert body["grant_policy"] == "run-plan-step-action-ref"
+    assert body["response_policy"]["default_mode"] == "raw"
+    assert body["response_policy"]["allowed_modes"] == ["raw"]
     assert "project_id" in body["input_schema"]["properties"]
+    assert "response_mode" in body["input_schema"]["properties"]
     assert body["examples"][0]["arguments"]["action_ref"] == "utils.sitemap.fetch"
     assert any("credential_ref" in item for item in body["prerequisites"])
 
@@ -571,7 +574,7 @@ def test_operation_rest_mock_provider_vertical_slice(
     )
 
 
-def test_operation_rest_action_run_mock_provider_returns_compact_output(
+def test_operation_rest_action_run_mock_provider_returns_raw_output(
     api: TestClient,
     project_id: int,
 ) -> None:
@@ -602,8 +605,8 @@ def test_operation_rest_action_run_mock_provider_returns_compact_output(
     assert body["compact"]["message"] == "hello from direct REST action"
     assert body["compact"]["status"] == "success"
     assert body["cost_cents"] == 5
-    assert body["action_call"] is None
-    assert body["output_json"] is None
+    assert body["action_call"]["provider_key"] == "mock-provider"
+    assert body["output_json"]["message"] == "hello from direct REST action"
     assert "mock-direct-secret" not in rendered
 
 
@@ -927,6 +930,46 @@ def test_operation_rest_local_agent_chat_creates_message_and_request(
     assert body["agent_request"]["source_provider"] == "local-agent-chat"
     assert body["agent_request"]["source_resource_key"] == "communication-message"
     assert replayed.json()["data"]["agent_request"]["id"] == body["agent_request"]["id"]
+
+
+def test_operation_rest_idempotency_replay_can_expand_from_ack_to_raw(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    arguments = {
+        "project_id": project_id,
+        "thread_key": "support-idempotency",
+        "message_key": "msg-ack-raw",
+        "sender_ref": "local-user:operator",
+        "sender_display_name": "Operator",
+        "text": "Preserve raw replay after a compact acknowledgement.",
+        "create_request": True,
+        "idempotency_key": "local-chat-ack-raw-replay",
+    }
+
+    acknowledged = api.post(
+        "/api/v1/operations/localAgentChat.createMessage/call",
+        json={"arguments": {**arguments, "response_mode": "ack"}},
+    )
+    replayed_raw = api.post(
+        "/api/v1/operations/localAgentChat.createMessage/call",
+        json={"arguments": {**arguments, "response_mode": "raw"}},
+    )
+
+    assert acknowledged.status_code == 200, acknowledged.text
+    assert replayed_raw.status_code == 200, replayed_raw.text
+    ack_body = acknowledged.json()
+    replay_body = replayed_raw.json()
+    assert "data" not in ack_body
+    assert ack_body["refs"]["message_ref"] == (
+        "local-agent-chat:message:support-idempotency:msg-ack-raw"
+    )
+    assert replay_body["idempotency_replay"] is True
+    assert replay_body["data"]["message_ref"] == ack_body["refs"]["message_ref"]
+    assert (
+        replay_body["data"]["agent_request"]["source_message_ref"]
+        == ack_body["refs"]["message_ref"]
+    )
 
 
 def test_operation_rest_telegram_profile_setup_to_ingress_slice(

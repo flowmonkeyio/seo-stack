@@ -108,17 +108,19 @@ def test_mcp_input_rejects_extra_fields() -> None:
 
 
 def test_mcp_input_accepts_cross_cutting_fields() -> None:
-    """idempotency_key, run_token, expected_etag are accepted on every input."""
+    """Cross-cutting execution and response fields are accepted on every input."""
     inp = _ExampleInput.model_validate(
         {
             "project_id": 1,
             "idempotency_key": "abc",
             "run_token": "tok",
             "expected_etag": "etag",
+            "response_mode": "ack",
         }
     )
     assert inp.idempotency_key == "abc"
     assert inp.run_token == "tok"
+    assert inp.response_mode == "ack"
 
 
 # ---------------------------------------------------------------------------

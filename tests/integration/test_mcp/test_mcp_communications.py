@@ -614,7 +614,7 @@ def test_provider_neutral_communication_setup_resolves_targets_and_context(
     assert "text_preview" in err["data"]["allowed_fields"]
 
 
-def test_communication_send_executes_compact_dry_run_through_target(
+def test_communication_send_executes_raw_dry_run_through_target(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -681,7 +681,10 @@ def test_communication_send_executes_compact_dry_run_through_target(
         "created dry-run action_call audit row",
         "did not call provider connector",
     ]
-    assert "credential_ref" not in json.dumps(sent)
+    assert sent["data"]["action_call"]["provider_key"] == "slack-bot"
+    assert sent["data"]["output_json"]["dry_run"] is True
+    assert sent["data"]["credential_ref"].startswith("cred_")
+    assert "token-roadmap" not in json.dumps(sent)
 
 
 def test_communication_send_uses_single_slack_file_upload_for_text_and_files(

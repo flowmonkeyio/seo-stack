@@ -58,8 +58,9 @@ Every internal execution writes an `action_calls` sidecar row with:
 - status, dry-run flag, duration, cost, error, and idempotency key
 
 `action.execute` returns the public action-call audit shape for workflow runs.
-`action.run` returns a compact direct-action result by default and includes the
-full redacted action call only when `verbose=true`. Internal database
+`action.run` returns raw redacted direct-action output by default because
+provider side effects need external ids, partial-delivery state, idempotency
+state, and retry context available to the next agent. Internal database
 identifiers such as `credential_id`, `action_id`, and replay-only
 `idempotency_key` stay in storage and are not returned to agents. For write
 actions, callers may pass `idempotency_key` or the more agent-friendly
@@ -146,8 +147,9 @@ Direct one-action execution operation:
 
 `action.run` is direct execution for one explicit action. Non-read actions
 require `confirm_direct=true` and `intent_summary`; callers may pass
-`intent_id` or `idempotency_key` for stable retries. The result is compact
-unless the caller passes `verbose=true`. It is not a substitute for workflow
+`intent_id` or `idempotency_key` for stable retries. The result is raw redacted
+provider output so agents retain external refs and retry context. It is not a
+substitute for workflow
 memory, approval gates, artifacts, learnings, experiments, or decisions.
 
 `action.execute` is not direct execution surface. It is callable only through a

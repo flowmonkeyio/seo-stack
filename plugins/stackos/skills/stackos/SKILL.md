@@ -54,9 +54,9 @@ run token.
    output.
 8. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
-   `intent_summary`, and an `idempotency_key` for non-read actions. Leave
-   `verbose=false` unless the full redacted action payload is needed for
-   debugging.
+   `intent_summary`, and an `idempotency_key` for non-read actions. Provider
+   side-effect operations return raw redacted provider output by default; do not
+   request compact or ack shapes for them.
 
 ## Common Flows
 
@@ -137,7 +137,7 @@ run token.
   then `runPlan.recordStep`.
 - Execute one direct action: describe/validate when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, call
-  `toolbox.call` for `action.run`, and read the compact result.
+  `toolbox.call` for `action.run`, and read the raw redacted provider result.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store outputs as
   resources, artifacts, learnings, or run step summaries.

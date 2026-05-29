@@ -168,7 +168,13 @@ class ActionRunInput(MCPInput):
     metadata_json: dict[str, Any] | None = None
     intent_summary: str | None = None
     confirm_direct: bool = False
-    verbose: bool = False
+    verbose: bool = Field(
+        default=False,
+        description=(
+            "Deprecated compatibility flag. action.run now always returns raw redacted "
+            "execution details because provider side effects are raw-only."
+        ),
+    )
 
 
 class ActionRunOut(BaseModel):
@@ -417,7 +423,7 @@ async def action_run(
         dry_run=inp.dry_run,
         metadata_json=metadata,
     )
-    out = _action_run_out(env.data, verbose=inp.verbose)
+    out = _action_run_out(env.data, verbose=True)
     return WriteEnvelope[ActionRunOut](
         data=out,
         run_id=env.run_id,
@@ -853,7 +859,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="action.run",
-            summary="Run one explicit action directly with compact output and audit.",
+            summary="Run one explicit action directly with raw redacted output and audit.",
             input_model=ActionRunInput,
             output_model=WriteEnvelope[ActionRunOut],
             handler=action_run,
@@ -880,12 +886,12 @@ def operation_specs() -> list[OperationSpec]:
                 "For non-read actions, pass confirm_direct=true and intent_summary; "
                 "pass intent_id or idempotency_key when stable retries matter. "
                 "If omitted, StackOS derives a request-scoped idempotency key.",
-                "Use verbose=true only when the full redacted action payload is needed.",
+                "Provider side-effect results are raw-only so agents keep external ids, "
+                "delivery state, and retry safety context.",
             ),
             returns=(
-                "A compact sanitized result by default.",
                 "A redacted action-call audit id linked to the project.",
-                "The full ActionExecutionOut only when verbose=true.",
+                "The full redacted action payload, provider output, metadata, and compact hints.",
             ),
             examples=(
                 OperationExample(

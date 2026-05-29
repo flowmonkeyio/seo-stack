@@ -151,3 +151,8 @@ class CommunicationSendOut(BaseModel):
     dry_run: bool = False
     effects: list[str] = Field(default_factory=list)
     resolved: dict[str, Any] = Field(default_factory=dict)
+    action_call: dict[str, Any] | None = None
+    output_json: dict[str, Any] = Field(default_factory=dict)
+    metadata_json: dict[str, Any] | None = None
+    credential_ref: str | None = None
+    cost_cents: int = 0

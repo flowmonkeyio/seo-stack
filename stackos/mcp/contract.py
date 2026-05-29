@@ -21,9 +21,9 @@ registration check picks it up automatically.
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -205,6 +205,17 @@ class MCPInput(BaseModel):
 
     expected_etag: str | None = None
     """Optimistic-concurrency token for mutating tools that support it."""
+
+    response_mode: Literal["compact", "raw", "ack", "standard", "verbose"] | None = Field(
+        default=None,
+        description=(
+            "Agent response shape. compact returns next-call-sufficient refs, raw returns "
+            "the full redacted payload, and ack returns a minimal success envelope for "
+            "safe internal writes. standard aliases raw; verbose aliases raw with any "
+            "operation-specific diagnostics."
+        ),
+    )
+    """Optional response-shaping hint. Errors always return structured repair context."""
 
 
 class MCPOutput(BaseModel):

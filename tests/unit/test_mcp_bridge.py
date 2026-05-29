@@ -20,6 +20,7 @@ from stackos.mcp.bridge import (
     _bridge_compact_profile,
     _bridge_compact_structured,
     _bridge_filter_tool_list_response,
+    _bridge_forward_arguments,
     _bridge_toolbox_describe,
 )
 from stackos.mcp.contract import verb_is_mutating
@@ -35,6 +36,7 @@ def _tool(
     *,
     operation_name: str | None = None,
     grant_policy: str | None = None,
+    response_policy: dict[str, object] | None = None,
 ) -> dict[str, object]:
     out: dict[str, object] = {
         "name": name,
@@ -42,12 +44,14 @@ def _tool(
         "inputSchema": {"type": "object"},
         "outputSchema": {"type": "object"},
     }
-    if operation_name is not None or grant_policy is not None:
+    if operation_name is not None or grant_policy is not None or response_policy is not None:
         meta: dict[str, object] = {}
         if operation_name is not None:
             meta["operation_name"] = operation_name
         if grant_policy is not None:
             meta["grant_policy"] = grant_policy
+        if response_policy is not None:
+            meta["response_policy"] = response_policy
         out["_meta"] = meta
     return out
 
@@ -258,6 +262,29 @@ def test_bridge_toolbox_describes_setup_and_current_step_tools_only() -> None:
     assert statuses["resource.upsert"]["reason_code"] == "active_step_granted"
     assert statuses["action.execute"]["operation"]["name"] == "action.execute"
     assert statuses["missing"]["reason_code"] == "unknown_tool"
+
+
+def test_bridge_forwards_policy_default_response_mode() -> None:
+    catalog = {
+        "action.run": _tool(
+            "action.run",
+            operation_name="action.run",
+            response_policy={"default_mode": "raw", "allowed_modes": ["raw"]},
+        )
+    }
+    catalog["action.run"]["inputSchema"] = {
+        "type": "object",
+        "properties": {"response_mode": {"type": "string"}},
+    }
+
+    forwarded = _bridge_forward_arguments(
+        catalog=catalog,
+        tool_name="action.run",
+        arguments={},
+        response_mode="compact",
+    )
+
+    assert forwarded["response_mode"] == "raw"
 
 
 def test_bridge_caches_run_token_and_step_grants() -> None:

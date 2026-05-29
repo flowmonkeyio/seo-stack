@@ -79,11 +79,32 @@ Each description includes:
 - enabled surfaces: `mcp`, `rest`, `cli`
 - grant policy, for example `run-plan-step-action-ref`
 - secret policy
+- response policy: default mode, allowed modes, ack safety, and raw-only reason
 - JSON input schema
 - JSON output schema
 - prerequisites
 - return notes
 - examples
+
+## Response Modes
+
+Operation responses are shaped for agent decision-making. The canonical
+operation result is always the raw redacted payload. When an agent requests a
+different shape, StackOS stores raw first for idempotency, then shapes the
+returned payload.
+
+- `compact`: next-call-sufficient ids, refs, counts, warnings, and action hints.
+- `raw`/`standard`/`verbose`: full redacted daemon payload.
+- `ack`: minimal success envelope for safe internal writes only.
+
+Errors are never compacted. Validation failures, grant denials, auth/setup
+diagnostics, and provider partial failures keep structured repair context so an
+agent can decide whether to retry, claim a step, reconnect a provider, or stop.
+
+Provider side-effect operations are raw-only for now, including `action.run`,
+`action.execute`, `communication.send`, and `communication.reply`. They must not
+hide external ids, per-file delivery state, provider request ids, idempotency
+state, partial success information, or retry guidance.
 
 MCP tools are generated from the same operation specs, so the daemon has one
 callable contract per StackOS primitive. The agent bridge intentionally
@@ -142,6 +163,7 @@ stackos ops call action.execute \
   --project 1 \
   --run-token "$RUN_TOKEN" \
   --idempotency-key sitemap-1 \
+  --response-mode raw \
   --input action-input.json
 ```
 
@@ -195,8 +217,11 @@ stackos tracker patch --project 1 --input tracker-patch.json
 Agent tracker reads such as `tracker.status`, `tracker.next`,
 `tracker.blockers`, `tracker.brief`, `tracker.why`, `tracker.execute`,
 `tracker.verify`, `tracker.history`, `tracker.changed`, and `tracker.search`
-are compact by default. Pass `response_mode: "standard"` through `ops call`,
-MCP, or REST only when the full diagnostic row payload is needed.
+are compact by default on the agent-facing bridge and on tracker-specific
+commands. For direct REST, direct daemon MCP, or generic `ops call`, pass
+`response_mode: "compact"` when the caller wants the compact shape and
+`response_mode: "raw"` or `"standard"` when the full diagnostic row payload is
+needed.
 
 ## Registered Core Operations
 
@@ -335,15 +360,17 @@ listed action dependencies need setup before affected steps execute.
    absent, StackOS derives a safe key before connector execution.
 4. Credentials are resolved inside the daemon; callers pass only
    `credential_ref`.
-5. Direct action responses are compact by default. Use `verbose=true` only when
-   the full redacted action call and output payload are needed.
+5. Direct action responses are raw redacted provider output by default so agents
+   keep external refs, partial-delivery state, idempotency state, and retry
+   context.
 6. The execution writes the same `action_calls` audit row as workflow
    execution, but without run-plan linkage.
 
-Agent-facing MCP setup/discovery tools also default to compact bridge-shaped
-responses. Use `response_mode=standard` for the normal daemon payload and
-`response_mode=verbose` for tools that support expanded diagnostics. REST and UI
-surfaces keep their full contracts.
+Agent-facing MCP setup/discovery tools default to compact bridge-shaped
+responses when the operation policy allows it. Use `response_mode=raw` or
+`response_mode=standard` for the normal daemon payload, and `response_mode=ack`
+only for safe internal writes. REST and UI surfaces keep their full contracts
+unless the caller explicitly passes `response_mode`.
 
 Use `action.execute` when the action belongs to a workflow:
 

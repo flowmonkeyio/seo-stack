@@ -52,7 +52,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Unsupported rich features reject by default with model-readable repair context.",
             ),
             returns=(
-                "A compact sent/validated result with message_ref and action_call_id.",
+                "A raw redacted sent/validated result with message refs, file refs, "
+                "action_call_id, provider output, and retry-safe audit context.",
                 "effects states whether the provider connector was called or "
                 "only a dry-run audit row was written.",
             ),
@@ -96,7 +97,8 @@ def operation_specs() -> list[OperationSpec]:
                 "action_call audit row without calling the provider connector.",
             ),
             returns=(
-                "A compact sent/validated result with message_ref and action_call_id.",
+                "A raw redacted sent/validated result with origin/thread refs, "
+                "message refs, action_call_id, provider output, and retry-safe audit context.",
                 "effects states whether the provider connector was called or "
                 "only a dry-run audit row was written.",
             ),

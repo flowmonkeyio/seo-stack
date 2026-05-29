@@ -101,10 +101,20 @@ def ops_call(
         str | None,
         typer.Option("--idempotency-key", help="Merge idempotency_key into operation arguments."),
     ] = None,
+    response_mode: Annotated[
+        str | None,
+        typer.Option(
+            "--response-mode",
+            help="compact, raw, or ack response shaping for operations that allow it.",
+        ),
+    ] = None,
 ) -> None:
     """Call one operation through the daemon's generic REST adapter."""
+    loaded = _load_operation_arguments(input_path)
+    if response_mode is not None:
+        loaded["response_mode"] = response_mode
     arguments = _merge_common_arguments(
-        _load_operation_arguments(input_path),
+        loaded,
         project_id=project_id,
         run_token=run_token,
         idempotency_key=idempotency_key,
@@ -281,7 +291,10 @@ def actions_run(
     ] = None,
     verbose: Annotated[
         bool,
-        typer.Option("--verbose", help="Return full redacted action execution details."),
+        typer.Option(
+            "--verbose",
+            help="Deprecated no-op; action.run always returns raw redacted execution details.",
+        ),
     ] = False,
 ) -> None:
     """Run one explicit action directly without creating a workflow run plan."""

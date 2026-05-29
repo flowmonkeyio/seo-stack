@@ -136,7 +136,7 @@ agent receives one explicit user request
 -> toolbox.call(action.run)
 -> daemon-side credential resolution
 -> connector execution
--> compact result and action_calls audit row
+-> raw redacted provider result and action_calls audit row
 ```
 
 `action.run` is available through the MCP toolbox, REST, and CLI. It still uses
@@ -175,10 +175,12 @@ tracker.createTask
 -> tracker.rejectTask if the operator rejects or parks the task/run
 ```
 
-Agent-facing MCP responses are compact by default for noisy discovery/setup
-tools. Pass `response_mode=standard` when the full normal daemon payload is
-needed, or `response_mode=verbose`/`verbose=true` for diagnostics on tools that
-support it. This keeps simple MCP calls from flooding the context window while
+Agent-facing MCP responses are compact by default for noisy internal
+discovery/setup tools when the operation policy allows it. Pass
+`response_mode=raw` or `response_mode=standard` when the full normal daemon
+payload is needed, and use `response_mode=ack` only for safe internal writes.
+Provider side effects stay raw-only so agents keep external ids and retry
+context. This keeps simple MCP calls from flooding the context window while
 preserving the richer REST/UI contracts.
 
 Workflow evidence follows the same boundary. Read project resources with

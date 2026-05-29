@@ -65,8 +65,9 @@ plans can be created from templates or authored directly by an agent.
 
 A direct action is a single explicit action call that does not need a workflow
 template or run plan. In MCP sessions it is executed through `toolbox.call` for
-`action.run`; it still resolves credentials inside the daemon, returns compact
-output by default, and writes an `action_calls` audit row.
+`action.run`; it still resolves credentials inside the daemon, returns raw
+redacted provider output for retry-safe agent follow-up, and writes an
+`action_calls` audit row.
 
 ### Action Call
 
@@ -122,7 +123,7 @@ The agent-facing MCP bridge surface is intentionally small:
 - bootstrap/setup: workspace binding, budgets, schedules, safe auth
   status/test, workflow-template discovery, and run-plan creation/start
 - direct execution: `action.run` through `toolbox.call` for one explicit action
-  with compact output
+  with raw redacted provider output
 - workflow execution: run-plan controller tools, `action.execute`, resource and
   artifact writes, memory writes, and run audit tools
 - memory: context, learnings, experiments, decisions

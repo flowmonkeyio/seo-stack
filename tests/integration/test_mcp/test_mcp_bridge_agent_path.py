@@ -1018,6 +1018,7 @@ def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
                     "plugin_slug": "core",
                     "resource_key": "learning",
                     "data_json": {"body": "bridge injected run token"},
+                    "response_mode": "raw",
                 },
             },
             request_id="resource-upsert",

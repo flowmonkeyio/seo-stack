@@ -225,7 +225,7 @@ async def _budget_set(
     inp: BudgetSetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[IntegrationBudgetOut]:
     env = IntegrationBudgetRepository(ctx.session).set(
-        **inp.model_dump(exclude={"idempotency_key", "run_token", "expected_etag"})
+        **inp.model_dump(exclude={"idempotency_key", "run_token", "expected_etag", "response_mode"})
     )
     return WriteEnvelope[IntegrationBudgetOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
@@ -236,7 +236,7 @@ async def _budget_update(
     inp: BudgetUpdateInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[IntegrationBudgetOut]:
     env = IntegrationBudgetRepository(ctx.session).set(
-        **inp.model_dump(exclude={"idempotency_key", "run_token", "expected_etag"})
+        **inp.model_dump(exclude={"idempotency_key", "run_token", "expected_etag", "response_mode"})
     )
     return WriteEnvelope[IntegrationBudgetOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id

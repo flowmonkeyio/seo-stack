@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from stackos.mcp.server import ToolRegistry, ToolSpec
 from stackos.operations.registry import OperationRegistry
 from stackos.operations.spec import OperationSpec
@@ -19,6 +21,8 @@ def operation_to_tool_spec(operation: OperationSpec) -> ToolSpec:
         operation_grant_policy=operation.grant_policy,
         operation_secret_policy=operation.secret_policy,
         operation_purpose=operation.purpose,
+        operation_response_policy=operation.describe_out().response_policy.model_dump(mode="json"),
+        output_schema_model=dict[str, Any],
     )
 
 

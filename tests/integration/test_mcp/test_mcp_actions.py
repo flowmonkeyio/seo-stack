@@ -537,7 +537,7 @@ def test_action_execute_mock_provider_vertical_slice_through_mcp(
     assert "mock-mcp-secret" not in json.dumps(audit)
 
 
-def test_action_run_direct_mock_provider_returns_compact_output(
+def test_action_run_direct_mock_provider_returns_raw_output(
     mcp_client: MCPClient,
     seeded_project: dict,
 ) -> None:
@@ -569,8 +569,8 @@ def test_action_run_direct_mock_provider_returns_compact_output(
     assert len(data["compact"]["message"]) <= 503
     assert data["compact"]["status"] == "success"
     assert data["cost_cents"] == 3
-    assert data["action_call"] is None
-    assert data["output_json"] is None
+    assert data["action_call"]["provider_key"] == "mock-provider"
+    assert data["output_json"]["message"].startswith("hello direct action")
     assert "direct-secret" not in rendered
 
 
@@ -647,7 +647,8 @@ def test_action_run_derives_idempotency_for_confirmed_non_read(
     data = out["data"]
     assert data["status"] == "success"
     assert data["compact"]["id"] == 55
-    assert data["action_call"] is None
+    assert data["action_call"]["provider_key"] == "wordpress"
+    assert data["output_json"]["id"] == 55
 
 
 def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(

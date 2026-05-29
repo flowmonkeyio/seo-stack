@@ -188,11 +188,12 @@ def _bridge_add_response_mode_schema(tool: dict[str, Any]) -> dict[str, Any]:
         _AGENT_RESPONSE_MODE_FIELD,
         {
             "type": "string",
-            "enum": ["compact", "standard", "verbose"],
+            "enum": ["compact", "raw", "ack", "standard", "verbose"],
             "default": "compact",
             "description": (
-                "Agent response shape. compact is default; standard/verbose returns "
-                "the full daemon payload for diagnostics."
+                "Agent response shape. compact is default for internal agent calls; "
+                "raw/standard/verbose return the full redacted daemon payload; ack "
+                "returns a minimal success envelope for safe internal writes."
             ),
         },
     )

@@ -19,7 +19,7 @@ from stackos.db.models import (
 )
 from stackos.mcp.contract import MCPInput
 
-TrackerResponseMode = Literal["compact", "standard", "verbose"]
+TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 
 
 class TrackerProjectInput(MCPInput):
@@ -32,8 +32,8 @@ class TrackerProjectInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
-            "the full tracker rows for diagnostics."
+            "Agent response shape. compact is default; raw/standard/verbose return "
+            "the full tracker rows for diagnostics. raw aliases standard."
         ),
     )
 
@@ -80,7 +80,7 @@ class TrackerNextInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
+            "Agent response shape. compact is default; raw/standard/verbose return "
             "full tracker ticket rows for diagnostics."
         ),
     )
@@ -103,7 +103,7 @@ class TrackerTicketInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
+            "Agent response shape. compact is default; raw/standard/verbose return "
             "the full tracker brief for diagnostics."
         ),
     )
@@ -121,7 +121,7 @@ class TrackerHistoryInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
+            "Agent response shape. compact is default; raw/standard/verbose return "
             "full tracker history rows with before/after/patch payloads."
         ),
     )
@@ -141,7 +141,7 @@ class TrackerChangedInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
+            "Agent response shape. compact is default; raw/standard/verbose return "
             "full tracker history rows with before/after/patch payloads."
         ),
     )
@@ -161,7 +161,7 @@ class TrackerSearchInput(MCPInput):
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
-            "Agent response shape. compact is default; standard/verbose returns "
+            "Agent response shape. compact is default; raw/standard/verbose return "
             "full matching task and ticket rows for diagnostics."
         ),
     )

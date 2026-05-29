@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
 
@@ -18,6 +18,34 @@ from stackos.mcp.contract import MCPInput, verb_is_mutating
 from stackos.mcp.streaming import ProgressEmitter
 
 OperationHandler = Callable[[Any, MCPContext, ProgressEmitter], Awaitable[Any]]
+ResponseMode = Literal["compact", "raw", "ack"]
+
+_RAW_ONLY_RESPONSE_OPERATIONS = frozenset(
+    {
+        "action.execute",
+        "action.run",
+        "communication.reply",
+        "communication.send",
+    }
+)
+
+_ACK_UNSAFE_RESPONSE_OPERATIONS = _RAW_ONLY_RESPONSE_OPERATIONS | frozenset(
+    {
+        "agentRequest.claim",
+        "agentRequest.prepareRunPlan",
+        "auth.start",
+        "auth.test",
+        "readiness.check",
+        "runPlan.claimStep",
+        "runPlan.create",
+        "runPlan.start",
+        "toolProfile.resolve",
+        "workspace.bootstrap",
+        "workspace.connect",
+        "workspace.resolve",
+        "workspace.startSession",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +81,17 @@ class OperationExample:
 
 
 @dataclass(frozen=True)
+class OperationResponsePolicy:
+    """Agent-facing response-shaping policy for one operation."""
+
+    default_mode: ResponseMode = "compact"
+    allowed_modes: tuple[ResponseMode, ...] = ("compact", "raw")
+    ack_safe: bool = False
+    raw_only_reason: str | None = None
+    compact_notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class OperationSpec:
     """Single source of truth for a StackOS callable operation."""
 
@@ -71,6 +110,7 @@ class OperationSpec:
     grant_policy: str = "tool-grant"
     secret_policy: str = "no-secret-output"
     category: str | None = None
+    response_policy: OperationResponsePolicy | None = None
 
     @property
     def read_only(self) -> bool:
@@ -86,6 +126,12 @@ class OperationSpec:
     def category_name(self) -> str:
         return self.category or _category_for_operation_name(self.name)
 
+    @property
+    def effective_response_policy(self) -> OperationResponsePolicy:
+        if self.response_policy is not None:
+            return self.response_policy
+        return _default_response_policy(self)
+
     def summary_out(self) -> OperationSummaryOut:
         return OperationSummaryOut(
             name=self.name,
@@ -96,6 +142,7 @@ class OperationSpec:
             surfaces=_surfaces_out(self.surfaces),
             grant_policy=self.grant_policy,
             secret_policy=self.secret_policy,
+            response_policy=_response_policy_out(self.effective_response_policy),
         )
 
     def describe_out(self) -> OperationDescribeOut:
@@ -106,7 +153,10 @@ class OperationSpec:
             when_to_use=list(self.when_to_use),
             prerequisites=list(self.prerequisites),
             returns=list(self.returns),
-            input_schema=_schema_for(self.input_model),
+            input_schema=_input_schema_for_response_policy(
+                _schema_for(self.input_model),
+                self.effective_response_policy,
+            ),
             output_schema=_schema_for(self.output_model),
             examples=[
                 OperationExampleOut(title=item.title, arguments=item.arguments, notes=item.notes)
@@ -128,6 +178,14 @@ class OperationExampleOut(BaseModel):
     notes: str | None = None
 
 
+class OperationResponsePolicyOut(BaseModel):
+    default_mode: ResponseMode
+    allowed_modes: list[ResponseMode]
+    ack_safe: bool
+    raw_only_reason: str | None = None
+    compact_notes: list[str] = Field(default_factory=list)
+
+
 class OperationSummaryOut(BaseModel):
     name: str
     category: str
@@ -137,6 +195,7 @@ class OperationSummaryOut(BaseModel):
     surfaces: dict[str, OperationSurfaceOut]
     grant_policy: str
     secret_policy: str
+    response_policy: OperationResponsePolicyOut
 
 
 class OperationDescribeOut(OperationSummaryOut):
@@ -218,6 +277,83 @@ def _surfaces_out(surfaces: OperationSurfaces) -> dict[str, OperationSurfaceOut]
     }
 
 
+def _default_response_policy(spec: OperationSpec) -> OperationResponsePolicy:
+    if spec.name in _RAW_ONLY_RESPONSE_OPERATIONS:
+        return OperationResponsePolicy(
+            default_mode="raw",
+            allowed_modes=("raw",),
+            ack_safe=False,
+            raw_only_reason=(
+                "Provider/external side-effect operations keep full redacted output so "
+                "agents retain provider ids, delivery state, partial failures, and retry "
+                "safety context."
+            ),
+            compact_notes=(
+                "Do not compact provider side effects until the action contract defines "
+                "a provider-safe compact shape.",
+            ),
+        )
+    ack_safe = not spec.read_only and spec.name not in _ACK_UNSAFE_RESPONSE_OPERATIONS
+    allowed: tuple[ResponseMode, ...] = (
+        ("compact", "raw", "ack")
+        if ack_safe
+        else (
+            "compact",
+            "raw",
+        )
+    )
+    return OperationResponsePolicy(
+        default_mode="compact",
+        allowed_modes=allowed,
+        ack_safe=ack_safe,
+        compact_notes=(
+            "Compact responses must keep the ids, refs, counts, warnings, and next-step "
+            "fields an agent needs for the next safe tool call.",
+        ),
+    )
+
+
+def _response_policy_out(policy: OperationResponsePolicy) -> OperationResponsePolicyOut:
+    return OperationResponsePolicyOut(
+        default_mode=policy.default_mode,
+        allowed_modes=list(policy.allowed_modes),
+        ack_safe=policy.ack_safe,
+        raw_only_reason=policy.raw_only_reason,
+        compact_notes=list(policy.compact_notes),
+    )
+
+
+def _input_schema_for_response_policy(
+    schema: dict[str, Any],
+    policy: OperationResponsePolicy,
+) -> dict[str, Any]:
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return schema
+    response_mode = properties.get("response_mode")
+    if not isinstance(response_mode, dict):
+        return schema
+    response_mode["enum"] = _response_mode_schema_values(policy)
+    response_mode["default"] = policy.default_mode
+    response_mode["description"] = (
+        "Agent response shape for this operation. compact returns next-call-sufficient "
+        "refs, raw returns the full redacted payload, and ack returns a minimal success "
+        "envelope when the operation is ack-safe. standard and verbose alias raw."
+    )
+    return schema
+
+
+def _response_mode_schema_values(policy: OperationResponsePolicy) -> list[str]:
+    values: list[str] = []
+    if "compact" in policy.allowed_modes:
+        values.append("compact")
+    if "raw" in policy.allowed_modes:
+        values.extend(["raw", "standard", "verbose"])
+    if "ack" in policy.allowed_modes:
+        values.append("ack")
+    return values
+
+
 def _schema_for(model: Any) -> dict[str, Any]:
     if isinstance(model, type) and issubclass(model, BaseModel):
         return model.model_json_schema(mode="serialization")
@@ -231,9 +367,12 @@ __all__ = [
     "OperationGroupOut",
     "OperationHandler",
     "OperationListOut",
+    "OperationResponsePolicy",
+    "OperationResponsePolicyOut",
     "OperationSpec",
     "OperationSummaryOut",
     "OperationSurface",
     "OperationSurfaceOut",
     "OperationSurfaces",
+    "ResponseMode",
 ]

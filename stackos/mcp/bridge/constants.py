@@ -24,8 +24,6 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
         "agentPreset.resolveForWorkflow",
         "ingressEndpoint.routes",
         "ingressEndpoint.status",
-        "communication.send",
-        "communication.reply",
         "communicationProfile.list",
         "communicationProfile.get",
         "communicationTarget.list",

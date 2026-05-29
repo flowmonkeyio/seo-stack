@@ -101,6 +101,8 @@ class ToolSpec:
     operation_grant_policy: str | None = None
     operation_secret_policy: str | None = None
     operation_purpose: str | None = None
+    operation_response_policy: dict[str, Any] | None = None
+    output_schema_model: Any | None = None
 
     def __post_init__(self) -> None:
         self.read_only = not verb_is_mutating(self.name)
@@ -193,6 +195,38 @@ def _input_schema(model: type[MCPInput]) -> dict[str, Any]:
     return model.model_json_schema(mode="serialization")
 
 
+def _operation_input_schema(spec: ToolSpec) -> dict[str, Any]:
+    schema = _input_schema(spec.input_model)
+    policy = spec.operation_response_policy
+    if not isinstance(policy, dict):
+        return schema
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return schema
+    response_mode = properties.get("response_mode")
+    if not isinstance(response_mode, dict):
+        return schema
+    allowed = policy.get("allowed_modes")
+    modes = _response_mode_schema_values(allowed if isinstance(allowed, list) else [])
+    if modes:
+        response_mode["enum"] = modes
+    default_mode = policy.get("default_mode")
+    if isinstance(default_mode, str):
+        response_mode["default"] = default_mode
+    return schema
+
+
+def _response_mode_schema_values(allowed_modes: list[Any]) -> list[str]:
+    values: list[str] = []
+    if "compact" in allowed_modes:
+        values.append("compact")
+    if "raw" in allowed_modes:
+        values.extend(["raw", "standard", "verbose"])
+    if "ack" in allowed_modes:
+        values.append("ack")
+    return values
+
+
 def _output_schema(model: Any) -> dict[str, Any]:
     """Extract the JSON Schema for a tool's output model.
 
@@ -252,11 +286,15 @@ def _to_tool(spec: ToolSpec) -> mcp_types.Tool:
         meta["secret_policy"] = spec.operation_secret_policy
     if spec.operation_purpose is not None:
         meta["purpose"] = spec.operation_purpose
+    if spec.operation_response_policy is not None:
+        meta["response_policy"] = spec.operation_response_policy
     return mcp_types.Tool(
         name=spec.name,
         description=spec.description,
-        inputSchema=_input_schema(spec.input_model),
-        outputSchema=_output_schema(spec.output_model),
+        inputSchema=_operation_input_schema(spec)
+        if spec.operation_name is not None
+        else _input_schema(spec.input_model),
+        outputSchema=_output_schema(spec.output_schema_model or spec.output_model),
         annotations=annotations,
         _meta=meta,
     )

@@ -103,6 +103,8 @@ def test_cli_ops_call_merges_common_arguments(
             "run-token",
             "--idempotency-key",
             "idem-1",
+            "--response-mode",
+            "raw",
         ],
         catch_exceptions=False,
     )
@@ -119,6 +121,7 @@ def test_cli_ops_call_merges_common_arguments(
                     "project_id": 7,
                     "run_token": "run-token",
                     "idempotency_key": "idem-1",
+                    "response_mode": "raw",
                 }
             },
         )

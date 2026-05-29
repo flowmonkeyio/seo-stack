@@ -19,6 +19,7 @@ from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.permissions import check_call_grant
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.registry import OperationRegistry
+from stackos.operations.responses import resolve_response_mode, shape_operation_response
 from stackos.repositories.base import (
     ConflictError,
     IdempotencyReplayError,
@@ -50,6 +51,7 @@ class OperationDispatcher:
         settings: Settings | None = None,
     ) -> OperationDispatchResult:
         spec = self._registry.get(name, surface=surface)
+        response_mode = resolve_response_mode(spec, arguments, surface=surface)
         try:
             parsed = spec.input_model.model_validate(arguments or {})
         except PydanticValidationError as exc:
@@ -86,7 +88,13 @@ class OperationDispatcher:
             ):
                 cached = self._idempotency_check(spec.name, ctx)
                 if cached is not None:
-                    return OperationDispatchResult(payload=cached, duration_ms=0)
+                    shaped = shape_operation_response(
+                        spec,
+                        cached,
+                        response_mode=response_mode,
+                        idempotency_replay=True,
+                    )
+                    return OperationDispatchResult(payload=shaped, duration_ms=0)
             try:
                 started = time.perf_counter()
                 result = await spec.handler(parsed, ctx, ProgressEmitter(None, None))
@@ -130,7 +138,8 @@ class OperationDispatcher:
                 and ctx.project_id is not None
             ):
                 self._idempotency_record(spec.name, ctx, payload)
-            return OperationDispatchResult(payload=payload, duration_ms=duration_ms)
+            shaped = shape_operation_response(spec, payload, response_mode=response_mode)
+            return OperationDispatchResult(payload=shaped, duration_ms=duration_ms)
 
     def _idempotency_check(self, operation_name: str, ctx: Any) -> dict[str, Any] | None:
         repo = IdempotencyKeyRepository(ctx.session)

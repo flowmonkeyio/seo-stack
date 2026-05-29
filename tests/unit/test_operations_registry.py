@@ -35,8 +35,16 @@ def test_operation_registry_documents_core_operations() -> None:
     assert described.surfaces["rest"].enabled is True
     assert described.surfaces["cli"].enabled is True
     assert described.grant_policy == "run-plan-step-action-ref"
+    assert described.response_policy.default_mode == "raw"
+    assert described.response_policy.allowed_modes == ["raw"]
+    assert described.response_policy.raw_only_reason is not None
     assert "properties" in described.input_schema
     assert "project_id" in described.input_schema["properties"]
+    assert described.input_schema["properties"]["response_mode"]["enum"] == [
+        "raw",
+        "standard",
+        "verbose",
+    ]
     assert "WriteEnvelope" in described.output_schema["title"]
     assert any("run_token" in item for item in described.prerequisites)
     assert described.examples[0].arguments["action_ref"] == "utils.sitemap.fetch"
@@ -46,6 +54,8 @@ def test_operation_registry_documents_core_operations() -> None:
     assert direct_action.surfaces["rest"].enabled is True
     assert direct_action.surfaces["cli"].command == "actions run"
     assert direct_action.grant_policy == "direct-action-policy"
+    assert direct_action.response_policy.default_mode == "raw"
+    assert direct_action.response_policy.allowed_modes == ["raw"]
     assert any("confirm_direct=true" in item for item in direct_action.prerequisites)
     assert any("intent_id or idempotency_key" in item for item in direct_action.prerequisites)
 
@@ -126,6 +136,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert operation_list.surfaces["rest"].enabled is True
     assert operation_list.surfaces["cli"].command == "ops list"
     assert operation_list.grant_policy == "direct-read"
+    assert operation_list.input_schema["properties"]["response_mode"]["enum"] == [
+        "compact",
+        "raw",
+        "standard",
+        "verbose",
+    ]
     assert any(
         "available StackOS operation inventory" in item for item in operation_list.when_to_use
     )
@@ -210,6 +226,12 @@ def test_operation_registry_documents_core_operations() -> None:
     assert tracker_next.surfaces["rest"].enabled is True
     assert tracker_next.surfaces["cli"].command == "tracker next"
     assert tracker_next.grant_policy == "direct-read"
+    assert tracker_next.input_schema["properties"]["response_mode"]["enum"] == [
+        "compact",
+        "raw",
+        "standard",
+        "verbose",
+    ]
     assert any("bounded project work context" in item for item in tracker_next.when_to_use)
 
     tracker_patch = registry.get("tracker.patch").describe_out()
