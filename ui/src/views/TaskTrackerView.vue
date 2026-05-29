@@ -23,6 +23,7 @@ import TrackerGraphPanel from './task-tracker/TrackerGraphPanel.vue'
 import TrackerTaskDetailDialog from './task-tracker/TrackerTaskDetailDialog.vue'
 import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vue'
 import TrackerTicketTable from './task-tracker/TrackerTicketTable.vue'
+import TrackerWarningSummary from './task-tracker/TrackerWarningSummary.vue'
 import type {
   GraphBlockFilter,
   SelectMetaTone,
@@ -823,9 +824,7 @@ watch([statusFilter, workflowFilter, assigneeFilter, search], () => ensureActive
       @clear="clearFilters"
     />
 
-    <UiCallout v-for="warning in flow.warnings" :key="warning" tone="warning">
-      {{ warning }}
-    </UiCallout>
+    <TrackerWarningSummary :warnings="flow.warnings" />
 
     <div v-if="!loading && taskRows.length === 0" class="min-h-[360px]">
       <UiEmptyState
