@@ -15,6 +15,7 @@ import typer
 
 from stackos import __milestone__, __version__
 from stackos.config import Settings, get_settings
+from stackos.install import _codex_mcp_line_is_bridge as _install_codex_mcp_line_is_bridge
 
 from .app import _exit, app
 from .constants import _MCP_SERVER_NAME
@@ -311,10 +312,10 @@ def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, obje
     }
     for runtime in ("codex", "claude"):
         skills_count = _installed_asset_count(home, runtime, "skills")
+        skills_installed = expected_skills is not None and skills_count == expected_skills
         details[f"{runtime}_skills_count"] = skills_count
-        details[f"{runtime}_skills_installed"] = (
-            expected_skills is not None and skills_count == expected_skills
-        )
+        details[f"{runtime}_skills_installed"] = skills_installed
+        checks[f"{runtime}_skills_installed"] = skills_installed
     plugins_count = _installed_plugin_count(home)
     checks["plugins_installed"] = expected_plugins is not None and plugins_count == expected_plugins
     checks["plugin_marketplace_registered"] = _plugin_marketplace_has_stackos(home)
@@ -325,20 +326,7 @@ def _check_installed_assets(home: Path) -> tuple[dict[str, bool], dict[str, obje
 
 
 def _codex_mcp_line_is_bridge(line: str) -> bool:
-    normalized = line.strip()
-    if not normalized.startswith(_MCP_SERVER_NAME):
-        return False
-    lowered = normalized.lower()
-    forbidden = (
-        "/mcp",
-        "--url",
-        "--bearer-token-env-var",
-        "authorization",
-        "bearer",
-    )
-    if any(token in lowered for token in forbidden):
-        return False
-    return "stdio" in lowered or "mcp-bridge" in lowered
+    return _install_codex_mcp_line_is_bridge(line)
 
 
 def _check_codex_mcp_registered() -> tuple[bool, dict[str, object]]:
@@ -371,6 +359,10 @@ def _check_codex_mcp_registered() -> tuple[bool, dict[str, object]]:
         "expected_server": _MCP_SERVER_NAME,
         "entries": stackos_lines,
         "bridge_entries": bridge_lines,
+        "status": "current" if ok else ("stale" if stackos_lines else "missing"),
+        "repair": (
+            "run `stackos install --mcp-only` or `bash scripts/register-mcp-codex.sh --force`"
+        ),
     }
 
 

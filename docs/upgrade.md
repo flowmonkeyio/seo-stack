@@ -13,11 +13,12 @@ pipx upgrade stackos
 stackos install
 ```
 
-`pipx upgrade` swaps the wheel; `stackos install` then re-mirrors
-the hydrated stackos plugin from the wheel's bundled `_assets/` tree,
-refreshes any existing Codex runtime cache copy, refreshes MCP registrations,
-and runs `doctor`. Use `stackos start` for first start and `stackos restart`
-after an upgrade when the daemon is already running.
+`pipx upgrade` swaps the wheel; `stackos install` then re-mirrors the
+Codex and Claude Code skill mirrors from bundled `_assets/skills`, hydrates the
+StackOS plugin from bundled `_assets/plugins`, refreshes any existing Codex
+runtime cache copy, repairs MCP registrations, and runs `doctor`. Use
+`stackos start` for first start and `stackos restart` after an upgrade when the
+daemon is already running.
 
 ## Clone mode
 
@@ -26,17 +27,19 @@ git pull
 make install
 ```
 
-`make install` re-syncs Python deps, runs migrations to head, rebuilds
-the UI bundle (no-op once committed), and re-runs the plugin, MCP, and
-doctor install steps.
+`make install` re-syncs Python deps, runs migrations to head, verifies the
+committed UI bundle (building only if it is missing), mirrors the Codex and
+Claude Code skills, hydrates the plugin, refreshes any existing Codex runtime
+cache copy, repairs MCP registrations, and runs `doctor`.
 
 ## What happens during upgrade
 
 | Step | Behaviour |
 |---|---|
 | Schema | `alembic upgrade head` runs at every daemon start. Down-migrations exist but are discouraged. |
-| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/stackos`; package installs do the equivalent from bundled assets. Existing Codex runtime cache copies under `~/.codex/plugins/cache/local-stackos/stackos/*` are refreshed from the same source so `stackos:stackos` skill guidance stays current. Retired plugin assets disappear from the plugin catalog and cache on the next install. |
-| MCP registration | Codex CLI: `codex mcp add` registers the local `mcp-bridge` stdio command and is a no-op when already registered (the script greps `mcp list` first). Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
+| Skill mirrors | The canonical StackOS skill source is `plugins/stackos/skills/stackos/SKILL.md` in clone mode and `stackos/_assets/skills/stackos/SKILL.md` in package mode. Install mirrors it into `~/.codex/skills/stackos/SKILL.md` and `~/.claude/skills/stackos/SKILL.md`; stale files in those managed mirrors are removed. |
+| Plugin | `rsync -a --delete` mirrors and hydrates `~/.codex/plugins/stackos`; package installs do the equivalent from bundled assets. Existing Codex runtime cache copies under `~/.codex/plugins/cache/local-stackos/stackos/*` are refreshed from the same source so plugin-provided `stackos:stackos` skill guidance stays current. Retired plugin assets disappear from the plugin catalog and cache on the next install. |
+| MCP registration | Codex CLI: current local `mcp-bridge` stdio registrations are a no-op; stale `stackos` entries are removed and replaced by install or `scripts/register-mcp-codex.sh`. Claude Code: atomic JSON merge with `.bak` backup; sibling servers preserved. Neither registration stores a bearer token in client config. |
 | Auth token | **Does not rotate on upgrade.** Run `stackos rotate-token --yes` or `make rotate-token` explicitly to rotate; registration refreshes saved configs. Restart any running daemon so middleware loads the new token. |
 | launchd plist | `stackos autostart install` owns plist generation for clone and package installs. If the existing plist matches the generated one, it is a no-op. If different, `--force` overwrites with a `.bak` retained. |
 
@@ -45,8 +48,9 @@ doctor install steps.
 Bump major version. Release notes call out manual migrations:
 
 - DB schema changes: covered by Alembic — no action required.
-- Skill or plugin asset removals: documented in the changelog; the install
-  step deletes them automatically via `rsync --delete`.
+- Managed StackOS skill or plugin asset removals: documented in the changelog;
+  the install step deletes them automatically from managed mirrors via
+  `rsync --delete` or equivalent package-resource mirroring.
 - Auth token format change: would require an explicit `rotate-token`
   call; surfaced in release notes if it ever happens.
 - `stackos` CLI subcommand removal: documented as a breaking change and

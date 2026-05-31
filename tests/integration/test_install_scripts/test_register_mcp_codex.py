@@ -43,7 +43,10 @@ def codex_stub(tmp_path: Path) -> Path:
     log = tmp_path / "invocations.log"
     state = tmp_path / "registered"
     script = bin_dir / "codex"
-    list_line = '  "mcp list") if [[ -f "$STATE" ]]; then echo "stackos stdio -"; fi ;;\n'
+    list_line = (
+        '  "mcp list") if [[ -f "$STATE" ]]; then '
+        'echo "stackos /tmp/python -m stackos mcp-bridge"; fi ;;\n'
+    )
     script.write_text(
         "#!/usr/bin/env bash\n"
         f'echo "$@" >> "{log}"\n'
@@ -142,6 +145,36 @@ def test_force_reregisters(sandbox_home: Path, scripts_dir: Path, codex_stub: Pa
     invocations_after_force = log.read_text(encoding="utf-8").splitlines()
     add_count_after = sum(1 for line in invocations_after_force if line.startswith("mcp add"))
     assert add_count_after == add_count_first + 1
+
+
+def test_stale_entry_is_repaired(sandbox_home: Path, scripts_dir: Path, tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "invocations.log"
+    state = tmp_path / "registered"
+    state.write_text("stale\n", encoding="utf-8")
+    script = bin_dir / "codex"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        f'echo "$@" >> "{log}"\n'
+        f'STATE="{state}"\n'
+        'case "$1 $2" in\n'
+        '  "mcp list") if [[ -f "$STATE" ]]; then '
+        'echo "stackos --url http://127.0.0.1:5180/mcp"; fi ;;\n'
+        '  "mcp add") echo "current" > "$STATE" ;;\n'
+        '  "mcp remove") rm -f "$STATE" ;;\n'
+        '  *) echo "unknown: $@" >&2; exit 2 ;;\n'
+        "esac\n",
+        encoding="utf-8",
+    )
+    script.chmod(stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+    result = _run(scripts_dir / "register-mcp-codex.sh", sandbox_home, bin_dir)
+
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text(encoding="utf-8").splitlines()
+    assert any(line.startswith("mcp remove stackos") for line in calls)
+    assert any(line.startswith("mcp add stackos") for line in calls)
 
 
 def test_register_fails_without_token(

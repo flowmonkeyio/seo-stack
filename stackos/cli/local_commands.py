@@ -69,7 +69,7 @@ def migrate() -> None:
 def install(
     skills_only: Annotated[
         bool,
-        typer.Option("--skills-only", help="Only mirror skills/ into runtimes."),
+        typer.Option("--skills-only", help="Only mirror the StackOS skill into runtimes."),
     ] = False,
     mcp_only: Annotated[
         bool,
@@ -95,9 +95,9 @@ def install(
     assets via ``importlib.resources``. The two paths land at the same end
     state.
 
-    Re-running is idempotent: plugins are the default runtime surface, MCP
-    registration upserts existing entries, and loose skills remain available
-    through the explicit ``--skills-only`` flag.
+    Re-running is idempotent: plugins are the default Codex runtime surface,
+    Codex and Claude skill mirrors are hydrated from the same canonical
+    StackOS skill, and MCP registration upserts existing entries.
     """
     from stackos import install as installer
 
@@ -108,7 +108,7 @@ def install(
             err=True,
         )
         raise typer.Exit(code=2)
-    do_skills = skills_only
+    do_skills = skills_only or not (mcp_only or plugins_only)
     do_mcp = mcp_only or not (skills_only or plugins_only)
     do_plugins = plugins_only or not (skills_only or mcp_only)
 

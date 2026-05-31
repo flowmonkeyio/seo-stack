@@ -68,13 +68,12 @@ packages = ["stackos"]
 # `stackos/ui_dist/` bundle is already inside the package and ships
 # automatically.
 [tool.hatch.build.targets.wheel.force-include]
-"skills" = "stackos/_assets/skills"
+"plugins/stackos/skills" = "stackos/_assets/skills"
 "plugins" = "stackos/_assets/plugins"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "stackos",
-    "skills",
     "plugins",
     "scripts",
     "Makefile",

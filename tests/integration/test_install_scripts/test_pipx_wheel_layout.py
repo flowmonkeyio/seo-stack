@@ -4,7 +4,7 @@ A pipx-mode install has no checked-out repo on disk, so
 `stackos install` resolves assets via `importlib.resources` from
 ``stackos/_assets/skills/`` and ``stackos/_assets/plugins/``.
 We verify the wheel produced by `python -m build` contains those paths
-with the same skill counts as the source repo.
+with the same skill counts as the canonical StackOS skill source.
 """
 
 from __future__ import annotations
@@ -44,7 +44,8 @@ def _wheel_names(wheel: Path) -> list[str]:
 
 def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
     repo_root = Path(__file__).resolve().parents[3]
-    expected = sum(1 for _ in (repo_root / "skills").rglob("SKILL.md"))
+    source = repo_root / "plugins" / "stackos" / "skills" / "stackos"
+    expected = sum(1 for _ in source.rglob("SKILL.md"))
     names = _wheel_names(built_wheel)
     bundled = [
         n for n in names if n.startswith("stackos/_assets/skills/") and n.endswith("/SKILL.md")
@@ -52,6 +53,7 @@ def test_wheel_includes_assets_skills(built_wheel: Path) -> None:
     assert len(bundled) == expected, (
         f"wheel has {len(bundled)} SKILL.md files; source has {expected}"
     )
+    assert "stackos/_assets/skills/stackos/SKILL.md" in names
 
 
 def test_wheel_includes_stackos_plugin(built_wheel: Path) -> None:

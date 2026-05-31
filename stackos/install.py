@@ -1,10 +1,10 @@
 """Install pipeline shared by clone-mode (bash scripts) and pipx-mode (`stackos install`).
 
-Clone installs reach into ``${REPO_ROOT}/plugins`` and the optional
-``${REPO_ROOT}/skills`` asset directory when a project ships top-level skills.
-Pipx installs cannot use repo-relative paths, so those assets are bundled at
-``stackos/_assets/skills`` and ``stackos/_assets/plugins`` and
-resolved through ``importlib.resources``.
+Clone installs reach into ``${REPO_ROOT}/plugins`` and the canonical
+``${REPO_ROOT}/plugins/stackos/skills/stackos`` skill asset directory. Pipx
+installs cannot use repo-relative paths, so those assets are bundled at
+``stackos/_assets/skills`` and ``stackos/_assets/plugins`` and resolved
+through ``importlib.resources``.
 
 The two install paths copy from different *sources* but write to the same
 *targets* and share the same idempotency contract: re-running yields the same
@@ -110,8 +110,15 @@ def _resolve_source(kind: Literal["skills", "plugins"]) -> Path | Traversable:
     """
     repo = _repo_root_if_clone()
     if repo is not None:
+        if kind == "skills":
+            plugin_skill = repo / "plugins" / "stackos" / "skills" / "stackos"
+            if plugin_skill.is_dir():
+                return plugin_skill
         return repo / kind
-    return _bundled_assets_root().joinpath(kind)
+    source = _bundled_assets_root().joinpath(kind)
+    if kind == "skills":
+        source = source.joinpath("stackos")
+    return source
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +402,7 @@ def register_mcp_codex(
     if codex_bin is None:
         return "Codex CLI not on PATH — skipping MCP registration."
 
-    def _list_has() -> bool:
+    def _list_entries() -> list[str]:
         try:
             out = subprocess.run(
                 [codex_bin, "mcp", "list"],
@@ -404,20 +411,18 @@ def register_mcp_codex(
                 check=False,
             ).stdout
         except OSError:
-            return False
-        return any(line.strip().startswith(f"{MCP_SERVER_NAME} ") for line in out.splitlines())
+            return []
+        return [
+            line.strip()
+            for line in out.splitlines()
+            if line.strip().startswith(f"{MCP_SERVER_NAME} ")
+        ]
+
+    def _list_has_current_bridge() -> bool:
+        return any(_codex_mcp_line_is_bridge(line) for line in _list_entries())
 
     def _remove_if_present(name: str) -> bool:
-        try:
-            out = subprocess.run(
-                [codex_bin, "mcp", "list"],
-                capture_output=True,
-                text=True,
-                check=False,
-            ).stdout
-        except OSError:
-            return False
-        if not any(line.strip().startswith(f"{name} ") for line in out.splitlines()):
+        if not any(line.strip().startswith(f"{name} ") for line in _list_entries()):
             return False
         subprocess.run([codex_bin, "mcp", "remove", name], check=False)
         return True
@@ -428,14 +433,16 @@ def register_mcp_codex(
             return f"Unregistered MCP '{MCP_SERVER_NAME}' from Codex CLI"
         return f"MCP '{MCP_SERVER_NAME}' not registered with Codex CLI; nothing to remove"
 
-    if _list_has() and not force:
+    current_bridge = _list_has_current_bridge()
+    existing_entries = _list_entries()
+    if current_bridge and not force:
         return f"MCP '{MCP_SERVER_NAME}' already registered with Codex CLI"
 
     # Sanity-check that the auth token exists; the bridge reads it at runtime
     # and keeps it out of the agent-visible MCP registration.
     _read_token(home_dir)
 
-    if force:
+    if force or existing_entries:
         _remove_if_present(MCP_SERVER_NAME)
 
     subprocess.run(
@@ -453,6 +460,24 @@ def register_mcp_codex(
         check=True,
     )
     return f"Registered MCP '{MCP_SERVER_NAME}' with Codex CLI via mcp-bridge"
+
+
+def _codex_mcp_line_is_bridge(line: str) -> bool:
+    """Return true when a Codex MCP list row is the local stdio bridge."""
+    normalized = line.strip()
+    if not normalized.startswith(f"{MCP_SERVER_NAME} "):
+        return False
+    lowered = normalized.lower()
+    forbidden = (
+        "/mcp",
+        "--url",
+        "--bearer-token-env-var",
+        "authorization",
+        "bearer",
+    )
+    if any(token in lowered for token in forbidden):
+        return False
+    return "mcp-bridge" in lowered
 
 
 def register_mcp_claude(

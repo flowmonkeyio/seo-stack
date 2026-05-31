@@ -59,7 +59,8 @@ def test_copy_skills_clone_mode(sandbox: Path) -> None:
     target, count = installer.copy_skills("codex", home=sandbox)
     assert target == sandbox / ".codex" / "skills" / "stackos"
     assert target.is_dir()
-    assert count == 0
+    assert count == 1
+    assert (target / "SKILL.md").is_file()
 
 
 def test_copy_plugins_hydrates_catalogs(sandbox: Path) -> None:
@@ -331,12 +332,12 @@ def test_cli_install_skills_only_subcommand(sandbox: Path) -> None:
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.stdout
-    assert (sandbox / ".codex" / "skills" / "stackos").is_dir()
-    assert (sandbox / ".claude" / "skills" / "stackos").is_dir()
+    assert (sandbox / ".codex" / "skills" / "stackos" / "SKILL.md").is_file()
+    assert (sandbox / ".claude" / "skills" / "stackos" / "SKILL.md").is_file()
     assert not (sandbox / ".codex" / "plugins" / "stackos").exists()
 
 
-def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
+def test_cli_install_default_installs_plugin_and_skill_mirrors(sandbox: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
@@ -345,7 +346,8 @@ def test_cli_install_default_is_plugin_first(sandbox: Path) -> None:
     )
     assert result.exit_code == 0, result.stdout
     assert (sandbox / ".codex" / "plugins" / "stackos" / ".codex-plugin" / "plugin.json").is_file()
-    assert not (sandbox / ".codex" / "skills" / "stackos").exists()
+    assert (sandbox / ".codex" / "skills" / "stackos" / "SKILL.md").is_file()
+    assert (sandbox / ".claude" / "skills" / "stackos" / "SKILL.md").is_file()
     assert (sandbox / ".local" / "share" / "stackos" / "stackos.db").is_file()
     assert current_alembic_version(Settings()) == HEAD_REVISION
 
@@ -569,7 +571,7 @@ def test_launchd_autostart_requires_force_for_different_plist(
 
 
 def test_codex_mcp_doctor_accepts_bridge_entries_only() -> None:
-    assert doctor_cli._codex_mcp_line_is_bridge("stackos stdio -")
+    assert not doctor_cli._codex_mcp_line_is_bridge("stackos stdio -")
     assert doctor_cli._codex_mcp_line_is_bridge("stackos /path/python -m stackos mcp-bridge")
     assert not doctor_cli._codex_mcp_line_is_bridge("stackos http://127.0.0.1:5180/mcp")
     assert not doctor_cli._codex_mcp_line_is_bridge(

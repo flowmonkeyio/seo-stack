@@ -1,7 +1,7 @@
-"""`scripts/install-codex.sh` mirrors `skills/` into a sandbox HOME.
+"""`scripts/install-codex.sh` mirrors the canonical StackOS skill into sandbox HOME.
 
 Re-running must yield the same end state (audit B-24) and the count
-must equal the source repo's `SKILL.md` count.
+must equal the canonical StackOS skill source's `SKILL.md` count.
 """
 
 from __future__ import annotations
@@ -13,7 +13,11 @@ from pathlib import Path
 
 
 def _expected_skill_count(repo_root: Path) -> int:
-    return sum(1 for _ in (repo_root / "skills").rglob("SKILL.md"))
+    return sum(1 for _ in _source_skill(repo_root).rglob("SKILL.md"))
+
+
+def _source_skill(repo_root: Path) -> Path:
+    return repo_root / "plugins" / "stackos" / "skills" / "stackos"
 
 
 def _run(script: Path, home: Path) -> str:
@@ -71,7 +75,8 @@ def test_install_codex_deletes_stale(sandbox_home: Path, scripts_dir: Path) -> N
     """A file that lives only in the target (not in source) is removed on re-install."""
     _run(scripts_dir / "install-codex.sh", sandbox_home)
     target = sandbox_home / ".codex" / "skills" / "stackos"
-    stale = target / "01-research" / "stale-leftover.md"
+    stale = target / "legacy" / "stale-leftover.md"
+    stale.parent.mkdir(parents=True)
     stale.write_text("old SKILL drift\n", encoding="utf-8")
 
     _run(scripts_dir / "install-codex.sh", sandbox_home)
@@ -81,10 +86,10 @@ def test_install_codex_deletes_stale(sandbox_home: Path, scripts_dir: Path) -> N
 def test_install_codex_matches_source(
     sandbox_home: Path, scripts_dir: Path, repo_root: Path
 ) -> None:
-    """Installed tree must mirror `skills/` byte-for-byte."""
+    """Installed tree must mirror the canonical StackOS skill source byte-for-byte."""
     _run(scripts_dir / "install-codex.sh", sandbox_home)
     target = sandbox_home / ".codex" / "skills" / "stackos"
-    cmp = filecmp.dircmp(str(repo_root / "skills"), str(target))
+    cmp = filecmp.dircmp(str(_source_skill(repo_root)), str(target))
     # Allow only `.DS_Store` differences (excluded by --exclude).
     assert cmp.left_only == [] or cmp.left_only == [".DS_Store"]
     assert cmp.right_only == []

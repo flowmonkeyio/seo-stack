@@ -36,6 +36,9 @@ install: ## Full dev install — deps + migrate + UI bundle + plugin + MCP + doc
 	@bash scripts/register-mcp-codex.sh
 	@echo "==> Registering bridge MCP for Claude Code"
 	@bash scripts/register-mcp-claude.sh
+	@echo "==> Installing runtime skill mirrors"
+	@bash scripts/install-codex.sh
+	@bash scripts/install-claude.sh
 	@echo "==> Installing plugins"
 	@bash scripts/install-plugins.sh
 	@echo "==> Running doctor (daemon-down is allowed before \`make serve\`; hard failures stop install)"

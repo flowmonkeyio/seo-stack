@@ -2,9 +2,10 @@
 #
 # Register `stackos` with the Codex CLI as an MCP server.
 #
-# Idempotent: if Codex already lists a `stackos` server we treat the
-# script as a no-op. The registered server is the local stdio bridge; the
-# bearer token stays inside the bridge process.
+# Idempotent: if Codex already lists the current local stdio bridge we treat
+# the script as a no-op. Stale `stackos` entries are removed and replaced so
+# users do not have to discover `--force` during setup. The bearer token stays
+# inside the bridge process.
 #
 # `--remove` unregisters the server (used by `make uninstall`).
 # `--force` re-registers even if already present (used after rotation).
@@ -39,6 +40,13 @@ already_registered() {
     codex mcp list 2>/dev/null | grep -q "^${1}[[:space:]]"
 }
 
+current_bridge_registered() {
+    codex mcp list 2>/dev/null \
+        | grep "^${1}[[:space:]]" \
+        | grep -v -E '/mcp|--url|--bearer-token-env-var|authorization|bearer' \
+        | grep -q 'mcp-bridge'
+}
+
 if [[ "${ACTION}" == "remove" ]]; then
     if already_registered "${MCP_NAME}"; then
         codex mcp remove "${MCP_NAME}"
@@ -49,7 +57,7 @@ if [[ "${ACTION}" == "remove" ]]; then
     exit 0
 fi
 
-if [[ "${ACTION}" == "register" ]] && already_registered "${MCP_NAME}"; then
+if [[ "${ACTION}" == "register" ]] && current_bridge_registered "${MCP_NAME}"; then
     echo "MCP '${MCP_NAME}' already registered with Codex CLI"
     exit 0
 fi
@@ -58,8 +66,8 @@ if [[ ! -f "${TOKEN_PATH}" ]]; then
     echo "auth token missing at ${TOKEN_PATH} — run \`make install\` or \`stackos init\` first." >&2
     exit 1
 fi
-# `--force` removes-then-adds so the registration refreshes after rotation.
-if [[ "${ACTION}" == "force" ]] && already_registered "${MCP_NAME}"; then
+# Remove-then-add when forced or when an existing entry is stale.
+if already_registered "${MCP_NAME}"; then
     codex mcp remove "${MCP_NAME}"
 fi
 

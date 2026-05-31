@@ -14,16 +14,18 @@ Every supported setup path should land at the same state:
 1. Create local data and state directories.
 2. Create `seed.bin` and `auth.token` with mode `0600`.
 3. Run database migrations.
-4. Hydrate the `stackos` Codex plugin from bundled assets and refresh any
+4. Hydrate the `stackos` skill mirrors for Codex and Claude from the canonical
+   package-managed skill.
+5. Hydrate the `stackos` Codex plugin from bundled assets and refresh any
    existing Codex runtime cache copy.
-5. Register the stdio MCP bridge for supported agent runtimes.
-6. Start the daemon now, or install daemon autostart.
-7. Open the StackOS UI at `http://127.0.0.1:5180/`.
-8. Create or select a project.
-9. Enable needed plugins.
-10. Add provider connections.
-11. Connect any working repository through workspace binding.
-12. Run workflow templates, run plans, and action calls.
+6. Register the stdio MCP bridge for supported agent runtimes.
+7. Start the daemon now, or install daemon autostart.
+8. Open the StackOS UI at `http://127.0.0.1:5180/`.
+9. Create or select a project.
+10. Enable needed plugins.
+11. Add provider connections.
+12. Connect any working repository through workspace binding.
+13. Run workflow templates, run plans, and action calls.
 
 Agents never receive the auth token, seed, API keys, OAuth tokens, SMTP
 passwords, app passwords, or encrypted credential payloads. They receive safe
@@ -42,8 +44,9 @@ make serve
 ```
 
 `make install` syncs Python dependencies, initializes state, runs migrations,
-checks the committed UI bundle, installs plugin assets, refreshes any existing
-Codex plugin cache copy, registers MCP bridge entries, and runs `doctor`. It is
+checks the committed UI bundle, installs Codex and Claude skill mirrors,
+installs plugin assets, refreshes any existing Codex plugin cache copy,
+registers MCP bridge entries, and runs `doctor`. It is
 normal for the final doctor check to report `daemon_up: False` before
 `make serve` starts the daemon.
 
@@ -76,14 +79,15 @@ stackos install
 stackos start
 ```
 
-`stackos install` initializes local state, runs database migrations,
-hydrates plugin assets from the package, refreshes any existing Codex plugin
-cache copy, registers MCP bridge entries, and runs `doctor`. The bundled
-`stackos:stackos` skill is package-managed; operators and customers should not
-edit it by hand. Project-specific agent guidance belongs in project docs,
-workflow templates, tracker tasks, and adapted agent presets. A daemon-down
-doctor result is treated as a first-run warning during install; run
-`stackos start` next to start the singleton daemon in the background.
+`stackos install` initializes local state, runs database migrations, hydrates
+Codex and Claude skill mirrors from the package-managed `stackos:stackos`
+skill, hydrates plugin assets, refreshes any existing Codex plugin cache copy,
+registers MCP bridge entries, and runs `doctor`. Operators and customers should
+not edit the managed StackOS skill by hand. Project-specific agent guidance
+belongs in project docs, workflow templates, tracker tasks, and adapted agent
+presets. A daemon-down doctor result is treated as a first-run warning during
+install; run `stackos start` next to start the singleton daemon in the
+background.
 
 Use `stackos restart` when a daemon is already running and should reload
 settings, token rotation, or package code.
@@ -280,6 +284,8 @@ Default paths:
 | Credential seed | `~/.local/state/stackos/seed.bin` |
 | Daemon log | `~/.local/state/stackos/daemon.log` |
 | PID file | `~/.local/state/stackos/daemon.pid` |
+| Codex skill mirror | `~/.codex/skills/stackos/SKILL.md` |
+| Claude Code skill mirror | `~/.claude/skills/stackos/SKILL.md` |
 | Codex plugin | `~/.codex/plugins/stackos` |
 | Codex plugin runtime cache | `~/.codex/plugins/cache/local-stackos/stackos/*` |
 | Plugin marketplace | `~/.agents/plugins/marketplace.json` |
@@ -301,6 +307,31 @@ In clone mode:
 
 ```bash
 make install
+```
+
+If only the host-agent skill mirrors are stale, use:
+
+```bash
+stackos install --skills-only
+```
+
+or, in clone mode:
+
+```bash
+make install-skills-codex
+make install-skills-claude
+```
+
+If only MCP registration is stale, use:
+
+```bash
+stackos install --mcp-only
+```
+
+or, in clone mode:
+
+```bash
+bash scripts/register-mcp-codex.sh --force
 ```
 
 After token rotation or package upgrades, restart the daemon:
