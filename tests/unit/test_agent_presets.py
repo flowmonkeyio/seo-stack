@@ -41,11 +41,24 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
 
 def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     loaded = AgentPresetLoader().describe_preset(key="stackos.sdlc.planning")
+    contract = loaded.preset.prompt_contract
+    contract_text = " ".join(
+        [
+            *contract.responsibilities,
+            *contract.must_do,
+            *contract.handoff_outputs,
+            *contract.success_criteria,
+            *contract.self_check,
+        ]
+    )
 
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "tracker" in loaded.preset.project_adaptation.required_agent_action.lower()
-    assert "dependencies" in " ".join(loaded.preset.prompt_contract.must_do).lower()
+    assert "dependencies" in " ".join(contract.must_do).lower()
+    assert "workflow-backed run plan before tracker.createtask" in contract_text.lower()
+    assert "direct tracker tasks only" in contract_text.lower()
+    assert "canonical workflow-backed task/run plan" in contract_text.lower()
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:
@@ -100,6 +113,8 @@ def test_agent_preset_setup_guidance_names_host_and_toolbox_boundaries() -> None
     assert ".codex/agents/*.toml" in guidance
     assert "workspace.updateprofile" in guidance
     assert "source media forwarding" in guidance
+    assert "before tracker.createtask or tracker.createticket" in guidance
+    assert "direct tracker tasks only" in guidance
     assert "resource.query" in guidance
     assert "resource.upsert" in guidance
     assert "artifact.create" in guidance

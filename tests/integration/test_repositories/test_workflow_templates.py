@@ -240,8 +240,16 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "release-closeout",
     ]
     assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
+    assert engineering_described.spec.metadata_json["workflow_selection_invariant"] == (
+        "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"
+    )
+    engineering_text = engineering_described.spec.model_dump_json()
+    assert "workflow_selection_precedence" in engineering_text
+    assert "workflow-backed run plan before creating tracker tickets" in engineering_text
+    assert "direct tracker task and a later workflow task" in engineering_text
     plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
     plan_text = plan_step.model_dump_json()
+    assert "workflow task/run plan from the start" in plan_text
     assert "attachment only" in plan_text
     assert "bridge child tickets" in plan_text
     assert "detached branches" in plan_text

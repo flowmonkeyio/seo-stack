@@ -1,13 +1,14 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.2.0
+version: 0.2.1
 description: Reusable SDLC workflow for requirements, discovery, design, test planning, delivery, verification, review, and release through StackOS tracker state.
 domain: engineering
 owner:
   team: StackOS
 when_to_use:
   - A user asks for engineering work that needs planning, implementation, review, and signoff.
+  - A user explicitly asks to use a workflow, engineering workflow, StackOS workflow, or "the workflow" for engineering delivery.
   - Work should be visible as tracker tasks/tickets with dependencies, blockers, evidence, and release state.
   - A project wants host-local agents configured from SDLC presets for a concrete delivery flow.
   - The change touches contracts, tests, UI, data, provider behavior, MCP/REST/CLI operation surfaces, docs, or release risk.
@@ -165,6 +166,9 @@ policies:
   - key: truthful_tracker_state
     kind: delivery
     description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, deferred scope, and evidence.
+  - key: workflow_selection_precedence
+    kind: selection
+    description: When the operator explicitly asks to use a workflow, engineering workflow, StackOS workflow, or "the workflow", agents must create or resolve the workflow-backed run plan before creating tracker tickets; direct tracker tasks are valid only when the operator asks for task/dependency tracking without invoking a workflow.
   - key: workflow_dependency_spine
     kind: delivery
     description: run_plan_id and step_id attachment is containment/linkage only; workflow-backed delivery tickets must be dependency-bridged into the mirrored workflow step chain.
@@ -184,6 +188,8 @@ steps:
     purpose: Restate the engineering goal, delivery mode, constraints, project setup, host-agent format, and missing context.
     instructions:
       - Classify the work as small fix, tracked delivery, or team delivery; keep the workflow compact for small fixes but do not skip evidence.
+      - If the operator explicitly asked to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before creating tracker tasks or tickets.
+      - Do not create a direct tracker task first and then create a workflow task for the same work; the workflow task/run plan is canonical when workflow intent was explicit.
       - Confirm which project guidance, local skills, host-agent format, tracker/run-plan state, and release expectations apply.
       - Surface missing context before planning if a reasonable project-specific assumption would be risky.
     input_refs:
@@ -197,6 +203,7 @@ steps:
     policy_refs:
       - agent_decides_strategy
       - project_adaptation_required
+      - workflow_selection_precedence
       - main_agent_accountability
     approval_refs:
       - human_scope_review
@@ -204,6 +211,7 @@ steps:
       - scope_summary
     success_criteria:
       - The workflow distinguishes first-run setup from ongoing project operations.
+      - Explicit workflow intent is represented by a workflow-backed run plan before any delivery tickets are created.
       - Delivery mode, missing project guidance, and host-agent format are explicit.
   - id: define-requirements
     title: Define Requirements And Flows
@@ -247,6 +255,8 @@ steps:
     purpose: Create or update tracker tasks/tickets with dependencies, sequencing, blockers, owned scopes, and definition of done.
     instructions:
       - "Slice work by ownership and proof surface: requirements/discovery, contracts, data, backend/runtime, UI, tests, docs/signoff, verification, and release when relevant."
+      - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
+      - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
       - For workflow-backed tickets, treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
       - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
@@ -254,6 +264,7 @@ steps:
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
       - truthful_tracker_state
+      - workflow_selection_precedence
       - workflow_dependency_spine
       - main_agent_accountability
     depends_on:
@@ -262,6 +273,7 @@ steps:
       - tracker_plan
     success_criteria:
       - Tickets are executable without rereading the whole conversation.
+      - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
       - Dependencies match the actual delivery order and no loose ends are hidden.
       - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
       - No detached delivery, verification, docs, signoff, or release branch can become ready independently of the workflow.
@@ -387,10 +399,12 @@ steps:
     instructions:
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
       - Mark hidden required work, stale blockers, dangling dependencies, and deferred scope explicitly.
+      - Treat duplicate direct tracker tasks created before a workflow-backed run plan for explicitly requested workflow work as a blocking tracker-truth finding.
       - Treat a detached workflow step ticket versus child-ticket chain as a blocking tracker-truth finding, not a vague missing-dependencies note.
       - Do not let tracker completion override failed or missing verification.
     policy_refs:
       - truthful_tracker_state
+      - workflow_selection_precedence
       - workflow_dependency_spine
       - evidence_over_assertion
     depends_on:
@@ -399,6 +413,7 @@ steps:
       - tracker_audit
     success_criteria:
       - No required open work is hidden from the closeout.
+      - Explicit workflow work has one canonical workflow task/run plan, not a split direct-task plus workflow-task record.
       - Tracker status and delivery evidence agree.
       - Workflow-backed tickets are dependency-bridged into the workflow spine, with no ready detached branch bypassing delivery order.
   - id: release-closeout
@@ -489,6 +504,7 @@ metadata:
   run_mode: stackos_run_plan
   workflow_family: sdlc
   baseline: requirements_to_release
+  workflow_selection_invariant: explicit_workflow_intent_requires_run_plan_before_tracker_tickets
   agent_subset:
     - requirements-flow-definer
     - codebase-explorer

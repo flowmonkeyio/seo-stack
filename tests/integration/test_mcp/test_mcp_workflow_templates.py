@@ -196,6 +196,13 @@ outputs:
     assert engineering_described["spec"]["skill_requirements"][0]["skill_ref"] == (
         "stackos:stackos"
     )
+    engineering_text = str(engineering_described["spec"])
+    assert engineering_described["spec"]["metadata_json"]["workflow_selection_invariant"] == (
+        "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"
+    )
+    assert "workflow_selection_precedence" in engineering_text
+    assert "workflow-backed run plan before creating tracker tickets" in engineering_text
+    assert "direct tracker task and a later workflow task" in engineering_text
 
     media_listing = mcp_client.call_tool_structured(
         "workflowTemplate.list",

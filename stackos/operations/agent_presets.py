@@ -161,6 +161,15 @@ def _setup_guidance() -> list[str]:
             "tech stack, references, tracker workflow, and signoff expectations first."
         ),
         (
+            "When the operator explicitly asks to use a workflow, engineering "
+            'workflow, StackOS workflow, or "the workflow", create or resolve '
+            "the workflow-backed run plan before tracker.createTask or "
+            "tracker.createTicket. Put discovery, design, delivery, verification, "
+            "and closeout tickets under the workflow task/run plan from the "
+            "start. Direct tracker tasks only apply when the operator asks for "
+            "task/dependency tracking without invoking a workflow."
+        ),
+        (
             "Local agent files are host/project-specific. StackOS does not detect, "
             "write, or register .codex, markdown-frontmatter, or other host agent "
             "formats. The main agent should inspect host-local files such as "

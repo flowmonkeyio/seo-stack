@@ -57,6 +57,18 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     planning_contract = described["preset"]["preset"]["prompt_contract"]
     assert "workflow graph check" in " ".join(planning_contract["responsibilities"])
     assert "attachment only" in " ".join(planning_contract["must_do"])
+    planning_text = " ".join(
+        [
+            *planning_contract["responsibilities"],
+            *planning_contract["must_do"],
+            *planning_contract["handoff_outputs"],
+            *planning_contract["success_criteria"],
+            *planning_contract["self_check"],
+        ]
+    ).lower()
+    assert "workflow-backed run plan before tracker.createtask" in planning_text
+    assert "direct tracker tasks only" in planning_text
+    assert "canonical workflow-backed task/run plan" in planning_text
     reviewer = mcp_client.call_tool_structured(
         "agentPreset.describe",
         {"key": "stackos.sdlc.delivery-reviewer", "response_mode": "raw"},

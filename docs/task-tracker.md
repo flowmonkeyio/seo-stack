@@ -43,6 +43,14 @@ Statuses are intentionally small and generic:
 `runPlan.create` automatically creates a tracker task and one ticket per
 run-plan step. Step dependencies become ticket dependencies.
 
+Workflow selection happens before ticket creation. When an operator explicitly
+asks to use a workflow, engineering workflow, StackOS workflow, or "the
+workflow", agents must create or resolve the workflow-backed run plan before
+creating tracker tickets. All discovery, design, delivery, verification, and
+closeout tickets for that work should be created under the workflow task/run
+plan from the start. Direct tracker tasks are valid only when the operator asks
+for task/dependency tracking without invoking a workflow.
+
 Lifecycle mirroring is mechanical:
 
 | Run-plan event | Tracker effect |
@@ -294,7 +302,9 @@ deferred.
 For direct/manual work:
 
 ```text
-tracker.createTask
+confirm the operator asked for task/dependency tracking without invoking a workflow
+-> tracker.status
+-> tracker.createTask
 -> tracker.createTicket
 -> tracker.next
 -> tracker.pick

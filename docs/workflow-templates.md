@@ -53,6 +53,14 @@ All agents should work through the existing tracker. Planning agents should
 break work into deliverable tickets, encode logical dependencies and sequencing,
 avoid loose ends, and make blockers and definition of done visible.
 
+Workflow selection takes precedence over tracker ticket creation. When an
+operator explicitly asks to use a workflow, engineering workflow, StackOS
+workflow, or "the workflow", agents must create or resolve the workflow-backed
+run plan before creating tracker tickets. All discovery, design, delivery,
+verification, and closeout tickets for that work belong under the workflow
+task/run plan from the start. Direct tracker tasks are valid only when the
+operator asks for task/dependency tracking without invoking a workflow.
+
 For engineering workflows, the reusable SDLC baseline should keep the method
 explicit even when a project adapts the role names or host-agent format:
 

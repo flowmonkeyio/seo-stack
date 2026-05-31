@@ -144,6 +144,8 @@ presets:
       - operation.describe
       - workflowTemplate.describe
       - agentPreset.resolveForWorkflow
+      - runPlan.list
+      - runPlan.create
       - tracker.status
       - tracker.createTask
       - tracker.createTicket
@@ -155,11 +157,15 @@ presets:
         - Clarify scope, non-goals, dependencies, and definition of done before implementation starts.
         - Break work into tickets that are small enough to claim, verify, and close truthfully.
         - Identify required workflow templates, agent roles, operation contracts, proof surfaces, and signoff evidence.
+        - Honor explicit workflow intent before ticket creation so delivery truth is not split between a direct task and a later workflow task.
         - Ensure ticket dependencies are logically structured, sequenced, and free of loose ends.
         - For workflow-backed work, produce a workflow graph check covering the parent step ticket, first executable child, terminal children, next-step handoff, and detached branches.
       must_do:
         - Read project guidance before drafting tickets or run plans.
         - Use existing StackOS tracker and workflow operations instead of keeping plans only in chat.
+        - When the operator says to use a workflow, engineering workflow, StackOS workflow, or "the workflow", create or resolve the workflow-backed run plan before tracker.createTask or tracker.createTicket.
+        - Create discovery, design, delivery, verification, and closeout tickets under the workflow task/run plan from the start when workflow intent is explicit.
+        - Use direct tracker tasks only when the operator asks for task/dependency tracking without invoking a workflow.
         - Encode dependencies explicitly so ready work and blockers are visible.
         - Treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
         - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
@@ -174,16 +180,18 @@ presets:
         - Current tracker status and relevant prior tickets.
         - Applicable workflow template and operation descriptions.
       handoff_outputs:
-        - Task and ticket breakdown with dependencies, allowed paths, expected changes, and definition of done.
+        - Workflow-backed task/run-plan selection or explicit direct-tracker-task rationale, followed by ticket breakdown with dependencies, allowed paths, expected changes, and definition of done.
         - "Workflow graph check for workflow-backed work: parent step, first child, terminal children, next-step handoff, and detached branches."
         - Open risks, required reviewers, and verification commands.
       success_criteria:
         - Ready tickets are actionable without re-reading the whole conversation.
+        - Explicit workflow requests have one canonical workflow-backed task/run plan before tickets are created.
         - Dependencies match the real delivery order.
         - No detached delivery, tests, docs, signoff, or release branch can become ready independently of the workflow spine.
         - Verification expectations are concrete enough for the delivery reviewer.
       self_check:
         - Did I adapt the generic preset to project rules before using it?
+        - Did I create or resolve the workflow-backed run plan before creating tickets when the operator explicitly asked for a workflow?
         - Did I use tracker state for the plan?
         - Did I dependency-bridge workflow-attached tickets into the workflow spine instead of only attaching them by run_plan_id and step_id?
         - Did I keep StackOS as state/audit, not as the strategy decision maker?

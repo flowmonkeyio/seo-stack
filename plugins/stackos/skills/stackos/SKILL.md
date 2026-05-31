@@ -123,15 +123,21 @@ run token.
   the operator to connect them in the UI, then run `toolbox.call` for
   `auth.status` and `auth.test`.
 - Plan direct work: use tracker tasks/tickets when the agent is planning or
-  delivering scoped work outside a concrete workflow run. Create dependencies,
-  blockers, definition of done, and completion evidence there.
+  delivering scoped work outside a concrete workflow run and the operator did
+  not invoke a workflow. Create dependencies, blockers, definition of done, and
+  completion evidence there.
 - Execute workflow work: use a workflow template when work should follow a
-  reusable contract. Check the attached workflow extension first when the
-  project has route refs, default inputs, selected context, guardrails, or
-  workflow-field overrides. `runPlan.create` applies enabled extension defaults
-  and the effective template, then turns it into concrete state; `runPlan.start`
-  and step grants control which tools/actions are available. Mirror or link tracker tickets when
-  human-visible sequencing/evidence matters.
+  reusable contract or when the operator explicitly asks to use a workflow,
+  engineering workflow, StackOS workflow, or "the workflow". Create or resolve
+  the workflow-backed run plan before creating tracker tasks or tickets, then
+  create discovery, design, delivery, verification, and closeout tickets under
+  the workflow task/run plan from the start. Check the attached workflow
+  extension first when the project has route refs, default inputs, selected
+  context, guardrails, or workflow-field overrides. `runPlan.create` applies
+  enabled extension defaults and the effective template, then turns it into
+  concrete state; `runPlan.start` and step grants control which tools/actions
+  are available. Mirror or link tracker tickets when human-visible
+  sequencing/evidence matters.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`.

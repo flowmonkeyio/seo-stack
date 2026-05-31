@@ -51,6 +51,13 @@ same-thread operator instruction asks for task creation, and
 verification, review, and release. The workflows reference generic presets as
 required and recommended roles, but the workflow owns the flow.
 
+When an operator explicitly asks to use a workflow, engineering workflow,
+StackOS workflow, or "the workflow", agents must create or resolve the
+workflow-backed run plan before creating tracker tickets. All discovery, design,
+delivery, verification, and closeout tickets for that work belong under the
+workflow task/run plan from the start. Direct tracker tasks are valid only when
+the operator asks for task/dependency tracking without invoking a workflow.
+
 The tracked-delivery workflow uses this baseline:
 
 ```text
@@ -155,6 +162,11 @@ and still follow the tracker/run-plan model.
 All presets are expected to work through the existing StackOS tracker:
 
 - planning agents create scoped tasks/tickets
+- explicit workflow intent takes precedence over direct tracker tasks; create or
+  resolve the workflow-backed run plan before tracker ticket creation
+- all discovery, design, delivery, verification, and closeout tickets for an
+  explicit workflow request belong under the workflow task/run plan from the
+  start
 - support investigation agents create tasks only after explicit same-thread human
   instruction in the canonical Slack thread
 - support investigation tasks/tickets preserve source, thread, conclusion,
@@ -214,6 +226,9 @@ Workflow templates are inert reusable contracts. They do not act by themselves.
 An agent selects a workflow template, resolves its preset/skill guidance, then
 creates a concrete run plan with `runPlan.create`. Work execution then happens
 through the run plan, granted tools, provider actions, and tracker tickets.
+If the operator explicitly invoked a workflow, this run-plan selection must
+happen before tracker task/ticket creation so delivery truth is not split across
+a direct task and a later workflow task.
 
 New workflow authoring is contract-driven today:
 
