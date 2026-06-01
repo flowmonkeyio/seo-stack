@@ -180,6 +180,7 @@ cover the migrated clean path for:
 - `sitemap`: `utils.sitemap.fetch`
 - `reddit`: `utils.reddit.search-subreddit`, `utils.reddit.top-questions`
 - `dataforseo`: `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract`
+- `serper`: `seo.serper.search`
 - `ahrefs`: `seo.competitor.keywords`, `seo.backlink.research`
 - `wordpress`: `publishing.wordpress.post.create`
 - `ghost`: `publishing.ghost.post.create`
@@ -196,6 +197,11 @@ cover the migrated clean path for:
   `salesloft`, `google-workspace`, and `microsoft-365`: first GTM/RevOps
   provider actions
 - `meta-ads`, `google-ads`, and `taboola`: first paid media provider actions
+
+OpenRouter is registered as a Utilities connection and auth-test integration
+only. It intentionally has no generic text-generation action until a workflow
+owns the model-call policy, grants, audit shape, output persistence, and
+operator approval boundary.
 
 Actions that are intentionally not executable use explicit `execution_mode`
 metadata, such as `deferred-partner-api`, `deferred-inbound`,

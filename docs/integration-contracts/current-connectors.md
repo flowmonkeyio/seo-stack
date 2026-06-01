@@ -1,8 +1,8 @@
 # Current Executable Connector Contract Audit
 
-Audit date: 2026-05-22
+Audit date: 2026-06-01
 
-Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader, Reddit, DataForSEO, Ahrefs, WordPress, Ghost, sitemap, and generic HTTP. This file is an integration-point audit only. It does not change manifests, tests, or runtime behavior.
+Scope: executable connector contracts for OpenAI Images, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, and generic HTTP, plus connection-only setup providers that intentionally do not expose actions yet. This file is an integration-point audit only. It does not change manifests, tests, or runtime behavior.
 
 ## StackOS Contract Boundary
 
@@ -19,7 +19,9 @@ Important consequence: provider docs should shape action schemas and connector c
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
 | DataForSEO | [Live SERP advanced](https://docs.dataforseo.com/v3/serp-se-type-live-advanced/), [Google Ads search volume live](https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/), [DataForSEO Labs Google domain intersection](https://docs.dataforseo.com/v3/dataforseo_labs-google-domain_intersection-live/), [DataForSEO Labs Google keywords for site](https://docs.dataforseo.com/v3/dataforseo_labs-google-keywords_for_site-live/), [user data probe](https://docs.dataforseo.com/v3/appendix-user-data/) | DataForSEO examples use API login/password Basic auth | Endpoint pages document task arrays, per-minute limits, and `tasks[].cost`; [errors appendix](https://docs.dataforseo.com/v3/appendix-errors/) |
+| Serper.dev | [Serper.dev Google Search API product/docs entrypoint](https://serper.dev/) | The public product page verifies the Google Search API and response shape; the exact endpoint/header contract comes from provider dashboard/playground examples rather than a stable public docs URL | Response examples include result blocks and provider credit metadata when available; StackOS bounds `num` and `page` inputs |
 | Ahrefs | [API v3 introduction](https://docs.ahrefs.com/en/api/docs/introduction), [API keys](https://docs.ahrefs.com/en/api/docs/api-keys-creation-and-management), [limits consumption](https://docs.ahrefs.com/api/docs/limits-consumption), [Site Explorer](https://docs.ahrefs.com/en/api/reference/site-explorer), [organic keywords](https://docs.ahrefs.com/api/reference/site-explorer/get-organic-keywords), [all backlinks](https://docs.ahrefs.com/api/reference/site-explorer/get-all-backlinks) | API keys page | API v3 introduction and limits consumption |
+| OpenRouter | [authentication](https://openrouter.ai/docs/api/reference/authentication), [models](https://openrouter.ai/docs/api/api-reference/models/get-models) | OpenRouter requests use a bearer token and optional attribution headers | The normal setup probe uses the read-only models endpoint; no text-generation action is exposed yet |
 | WordPress | [REST API authentication](https://developer.wordpress.org/rest-api/using-the-rest-api/authentication/), [Posts endpoint](https://developer.wordpress.org/rest-api/reference/posts/), [Application Passwords](https://developer.wordpress.org/rest-api/reference/application-passwords/) | Authentication and Application Passwords pages | [Pagination](https://developer.wordpress.org/rest-api/using-the-rest-api/pagination/), [global parameters](https://developer.wordpress.org/rest-api/using-the-rest-api/global-parameters/) |
 | Ghost | [Admin API overview](https://docs.ghost.org/admin-api/), [Admin posts overview](https://docs.ghost.org/admin-api/posts/overview), [creating a post](https://docs.ghost.org/admin-api/posts/creating-a-post), [uploading an image](https://docs.ghost.org/admin-api/images/uploading-an-image) | Admin API token authentication/JWT section | Admin API overview covers JSON shape, pagination, parameters, filtering, and errors |
 | Sitemap | [sitemaps.org protocol](https://www.sitemaps.org/protocol.html), [sitemaps.org FAQ](https://www.sitemaps.org/faq.html), [Google robots.txt sitemap field](https://developers.google.com/search/reference/robots_txt) | none | Protocol/FAQ define URL/index limits and optional fields |
@@ -35,10 +37,17 @@ Important consequence: provider docs should shape action schemas and connector c
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
 | `sitemap` | `utils.sitemap.fetch` | `stackos/actions/sitemap.py`, `stackos/integrations/sitemap.py:84` | `stackos/plugins/manifest.py:525` | No provider and no credential. |
 | `dataforseo` | `seo.keyword.research`, `seo.serp.analyze`, `seo.paa.extract` | `stackos/actions/dataforseo.py`, `stackos/integrations/dataforseo.py:25` | `plugins/seo/plugin.yaml:20`, `plugins/seo/plugin.yaml:36`, `plugins/seo/plugin.yaml:66`, `plugins/seo/plugin.yaml:94` | Basic auth: `login` in credential config and password in encrypted payload. |
+| `serper` | `seo.serper.search` | `stackos/actions/serper.py`, `stackos/integrations/serper.py` | `plugins/seo/plugin.yaml` | API key payload sent through the provider header; provider credit metadata is surfaced when present. |
 | `ahrefs` | `seo.competitor.keywords`, `seo.backlink.research` | `stackos/actions/ahrefs.py`, `stackos/integrations/ahrefs.py:22` | `plugins/seo/plugin.yaml:31`, `plugins/seo/plugin.yaml:120`, `plugins/seo/plugin.yaml:148` | Bearer API key payload; requires eligible paid plan/API units. |
 | `wordpress` | `publishing.wordpress.post.create` | `stackos/actions/wordpress.py`, `stackos/integrations/wordpress.py:17` | `plugins/publishing/plugin.yaml:12`, `plugins/publishing/plugin.yaml:40` | WordPress site URL in config; username/application password in encrypted payload. |
 | `ghost` | `publishing.ghost.post.create` | `stackos/actions/ghost.py`, `stackos/integrations/ghost.py:17` | `plugins/publishing/plugin.yaml:23`, `plugins/publishing/plugin.yaml:87` | Ghost URL and optional API version in config; Admin API key in encrypted payload. |
 | `http` | plugin-defined custom actions only | `stackos/actions/http.py:170` | documented in `docs/plugins.md:77`; no first-party manifest row | Static plugin config supplies URL/method/auth mode; daemon injects credential if allowed. |
+
+## Connection-Only Setup Providers
+
+| Provider key | Current implementation refs | Manifest refs | Auth/setup implication |
+| --- | --- | --- | --- |
+| `openrouter` | `stackos/integrations/openrouter.py`, `stackos/integrations/__init__.py` | `stackos/plugins/manifest.py` built-in utils provider | API key payload with optional `HTTP-Referer` and `X-OpenRouter-Title` attribution config. Auth tests use read-only models metadata; no generic text-generation action is exposed. |
 
 ## Cross-Cutting Contract Principles
 
@@ -131,6 +140,52 @@ Recommended corrections:
 - Add optional `limit`/`offset` where Labs endpoints support them before exposing more Labs actions.
 - Add comments linking each wrapper method to the exact DataForSEO endpoint doc.
 - Keep current exposed actions narrow until schemas cover provider limits and pagination.
+
+### Serper.dev
+
+Current: `seo.serper.search` posts explicit search inputs to the Serper Google
+Search endpoint and returns the provider JSON as evidence. The daemon-held
+credential is sent only inside the connector boundary.
+
+Gaps/mismatches:
+
+- Public docs and examples focus on the product/API playground path rather than
+  a stable versioned docs tree; the concrete `google.serper.dev` endpoint,
+  `X-API-KEY` header, and payload field contract are based on provider
+  dashboard/playground examples. Keep comments and manifests tied to the
+  provider entrypoint and re-check the concrete request shape before expansion.
+- Provider credit metadata is surfaced when present, but StackOS cannot
+  pre-budget Serper calls until provider credit cost semantics are modeled.
+- The action exposes page input but no cursor abstraction. That is fine for live
+  search evidence; templates must ask for bounded pages explicitly.
+
+Recommended corrections:
+
+- Keep the search action narrow and provider-specific instead of abstracting it
+  as a generic `search.google` action.
+- Add provider-credit budget mapping only after verified response metadata and
+  account plan behavior are documented.
+
+### OpenRouter
+
+Current: OpenRouter is a Utilities connection provider and auth-test wrapper
+only. `auth.test` calls the read-only models endpoint so operators can verify
+stored credentials and optional attribution headers.
+
+Gaps/mismatches:
+
+- There is no StackOS text-generation action yet by design. A future model
+  action needs explicit workflow policy, step grants, output persistence,
+  privacy/retention expectations, budget semantics, and operator approval.
+- The credits endpoint requires credit-management access and is not part of the
+  normal StackOS connection test.
+
+Recommended corrections:
+
+- Do not wire OpenRouter into `action.list` until a provider-safe action
+  contract exists.
+- When adding model execution later, define project/workflow ownership before
+  accepting arbitrary prompts or routing decisions.
 
 ### Ahrefs
 

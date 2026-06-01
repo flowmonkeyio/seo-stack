@@ -166,7 +166,11 @@ run token.
   enabled extension defaults and the effective template, then turns it into
   concrete state; `runPlan.start` and step grants control which tools/actions
   are available. Mirror or link tracker tickets when human-visible
-  sequencing/evidence matters.
+  sequencing/evidence matters. For workflow-backed tickets, `run_plan_id` and
+  `step_id` are attachment only. Add dependency edges into the mirrored workflow
+  spine, then immediately call `tracker.get` with `run_plan_id` and
+  `include_graph=true`. Treat workflow-spine warnings as blockers before
+  recording planning, delivery, verification, or closeout steps as successful.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`. For long implementation stretches between claim

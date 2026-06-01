@@ -24,7 +24,9 @@ from stackos.integrations.google_paa import GooglePaaIntegration
 from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
+from stackos.integrations.openrouter import OpenRouterIntegration
 from stackos.integrations.reddit import RedditIntegration
+from stackos.integrations.serper import SerperIntegration
 from stackos.integrations.slack_bot import SlackBotIntegration
 from stackos.integrations.smtp import SmtpIntegration
 from stackos.integrations.telegram_bot import TelegramBotIntegration
@@ -36,8 +38,10 @@ if TYPE_CHECKING:
 
 REGISTRY: dict[str, type[BaseIntegration]] = {
     "dataforseo": DataForSeoIntegration,
+    "serper": SerperIntegration,
     "firecrawl": FirecrawlIntegration,
     "openai-images": OpenAIImagesIntegration,
+    "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
     "jina": JinaReaderIntegration,
@@ -55,8 +59,9 @@ def integration_class_for(kind: str) -> type[BaseIntegration] | None:
     """Resolve the wrapper class for an ``integration_credentials.kind``.
 
     Returns ``None`` if no wrapper is registered. Runtime LLM keys for
-    the current operator agent live outside StackOS; the daemon should not
-    register prose-generation wrappers or spawn hidden writer sessions.
+    the current operator agent live outside StackOS; the daemon may register
+    setup probes such as OpenRouter, but should not register generic
+    prose-generation actions or spawn hidden writer sessions.
     """
     return REGISTRY.get(kind)
 
@@ -73,7 +78,9 @@ __all__ = [
     "IntegrationCallResult",
     "JinaReaderIntegration",
     "OpenAIImagesIntegration",
+    "OpenRouterIntegration",
     "RedditIntegration",
+    "SerperIntegration",
     "SlackBotIntegration",
     "SmtpIntegration",
     "TelegramBotIntegration",

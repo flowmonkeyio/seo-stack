@@ -86,10 +86,12 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert {cap.key for cap in utils.capabilities} >= {
         "image-generation",
         "web-retrieval",
+        "model-access",
         "integration-testing",
     }
     assert {provider.key for provider in utils.providers} >= {
         "openai-images",
+        "openrouter",
         "firecrawl",
         "mock-provider",
     }
@@ -107,14 +109,16 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert utils_actions["sitemap.fetch"].config_json["requires_credential"] is False
     assert utils_actions["mock.echo"].config_json["connector"] == "mock-provider"
     assert utils_actions["mock.echo"].config_json["requires_credential"] is True
+    assert all(action.provider_key != "openrouter" for action in utils.actions)
 
     seo = repo.catalog(plugin_slug="seo").plugins[0]
     assert {cap.key for cap in seo.capabilities} >= {"seo-content", "seo-research"}
-    assert {provider.key for provider in seo.providers} >= {"dataforseo", "ahrefs"}
+    assert {provider.key for provider in seo.providers} >= {"dataforseo", "serper", "ahrefs"}
     assert {action.key for action in seo.actions} >= {
         "keyword.research",
         "serp.analyze",
         "paa.extract",
+        "serper.search",
         "competitor.keywords",
     }
     seo_actions = {action.key: action for action in seo.actions}
@@ -122,6 +126,8 @@ def test_catalog_describes_capabilities_providers_and_actions(session: Session) 
     assert seo_actions["serp.analyze"].config_json["connector"] == "dataforseo"
     assert seo_actions["paa.extract"].config_json["connector"] == "dataforseo"
     assert seo_actions["paa.extract"].config_json["operation"] == "paa"
+    assert seo_actions["serper.search"].config_json["connector"] == "serper"
+    assert seo_actions["serper.search"].operation == "search"
     assert seo_actions["competitor.keywords"].config_json["connector"] == "ahrefs"
     assert seo_actions["backlink.research"].config_json["connector"] == "ahrefs"
     assert {resource.key for resource in seo.resources} >= {

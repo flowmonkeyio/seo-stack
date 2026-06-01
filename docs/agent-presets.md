@@ -188,7 +188,10 @@ Planning agents should produce deliverable tickets with logical sequencing,
 clear dependencies, no dangling loose ends, and concrete definition of done.
 For workflow-backed work, their plan must include a graph check covering the
 parent step ticket, first executable child, terminal children, next-step
-handoff, and detached branches.
+handoff, and detached branches. After creating or changing workflow-backed
+tickets, call `tracker.get` with `run_plan_id` and `include_graph=true`; fix
+workflow-spine warnings before recording planning, delivery, verification,
+tracker audit, or release closeout as successful.
 
 ## Operations
 

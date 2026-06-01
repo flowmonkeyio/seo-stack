@@ -300,6 +300,7 @@ workflowTemplate.describe
 -> tracker.status or tracker.brief
 -> tracker.createTicket(run_plan_id=..., step_id=...) when extra delivery tickets are needed
 -> bridge workflow-backed tickets with explicit dependency_keys or dependencies_json
+-> tracker.get(run_plan_id=..., include_graph=true) and fix workflow-spine warnings
 -> runPlan.start
 -> runPlan.claimStep
 -> do the step
@@ -331,6 +332,12 @@ correct. Completion evidence should point to the code, commands, manual checks,
 docs, run-plan steps, artifacts, or reviewed decisions that make a ticket true.
 If the evidence is missing, the ticket should remain open or move to the
 specific terminal status that matches reality.
+
+For workflow-backed work, a clean graph is part of planning truth. After
+creating or updating child tickets under a workflow step, run `tracker.get` with
+`include_graph=true` for the run plan and repair workflow-spine warnings before
+recording planning, delivery, verification, tracker audit, or release closeout
+as successful.
 
 For direct/manual work:
 

@@ -130,6 +130,48 @@ def test_action_list_hides_disconnected_external_integrations_by_default(
     assert extract_items[0]["exposure"]["hidden_reason"] == "action_deferred"
 
 
+def test_action_list_exposes_serper_only_after_connection(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    hidden = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "seo", "provider_key": "serper"},
+    )
+    full = mcp_client.call_tool_structured(
+        "action.list",
+        {
+            "project_id": project_id,
+            "plugin_slug": "seo",
+            "provider_key": "serper",
+            "include_unavailable_integrations": True,
+        },
+    )
+
+    assert not any(item["action_ref"] == "seo.serper.search" for item in hidden["items"])
+    assert hidden["hidden_count"] >= 1
+    serper_items = [item for item in full["items"] if item["action_ref"] == "seo.serper.search"]
+    assert serper_items
+    assert serper_items[0]["availability_status"] == "missing_credential"
+    assert serper_items[0]["exposure"]["state"] == "external_not_connected"
+    assert serper_items[0]["exposure"]["visible_by_default"] is False
+    assert serper_items[0]["exposure"]["hidden_reason"] == "integration_not_connected"
+
+    _create_serper_credential(mcp_client, project_id)
+    ready = mcp_client.call_tool_structured(
+        "action.list",
+        {"project_id": project_id, "plugin_slug": "seo", "provider_key": "serper"},
+    )
+
+    ready_items = [item for item in ready["items"] if item["action_ref"] == "seo.serper.search"]
+    assert ready_items
+    assert ready_items[0]["availability_status"] == "ready"
+    assert ready_items[0]["exposure"]["state"] == "external_connected"
+    assert ready_items[0]["exposure"]["visible_by_default"] is True
+
+
 def test_integration_list_summarizes_hidden_external_actions(
     mcp_client: MCPClient,
     seeded_project: dict,
@@ -239,6 +281,20 @@ def _create_dataforseo_credential(mcp: MCPClient, project_id: int) -> str:
     status = mcp.call_tool_structured(
         "auth.status",
         {"project_id": project_id, "provider_key": "dataforseo"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
+def _create_serper_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/serper/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "serper-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "serper"},
     )
     return status["connections"][0]["credential_ref"]
 

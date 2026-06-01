@@ -485,6 +485,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 kind="utility",
             ),
             CapabilityManifest(
+                key="model-access",
+                name="Model Access",
+                description="Store and validate domain-neutral model gateway credentials.",
+                kind="utility",
+            ),
+            CapabilityManifest(
                 key="integration-testing",
                 name="Integration Testing",
                 description="Exercise StackOS auth, grants, connector, and audit flow locally.",
@@ -516,6 +522,58 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         ],
                     )
                 ],
+            ),
+            ProviderManifest(
+                key="openrouter",
+                name="OpenRouter",
+                description=(
+                    "Unified model API provider connection for future workflow-owned model actions."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="OpenRouter API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                                placeholder="sk-or-v1-...",
+                            ),
+                            AuthFieldManifest(
+                                key="http_referer",
+                                label="HTTP Referer",
+                                type="text",
+                                secret=False,
+                                required=False,
+                            ),
+                            AuthFieldManifest(
+                                key="app_title",
+                                label="Application Title",
+                                type="text",
+                                secret=False,
+                                required=False,
+                            ),
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "OpenRouter is currently stored and auth-tested as a connection "
+                        "only. StackOS does not expose generic text-generation actions "
+                        "until a workflow-owned policy, grant, and audit contract exists."
+                    ),
+                    "docs": [
+                        "https://openrouter.ai/docs/api/reference/authentication",
+                        "https://openrouter.ai/docs/api/api-reference/models/get-models",
+                    ],
+                },
             ),
             ProviderManifest(
                 key="firecrawl",

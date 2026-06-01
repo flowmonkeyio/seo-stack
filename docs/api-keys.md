@@ -7,8 +7,9 @@ agents only as sanitized status plus opaque `credential_ref` values.
 Recommended setup flow:
 
 1. Let the agent identify the vendors needed for the current run plan.
-2. Let the agent call `toolbox.call` for `auth.status` to see which provider
-   refs already exist.
+2. Let the agent call `toolbox.call` for `readiness.check` on the selected
+   workflow or action first, then `auth.status` only for the scoped missing
+   providers.
 3. Open the project Connections page the agent gives you, for example
    `http://127.0.0.1:5180/projects/1/connections?provider_key=dataforseo`.
 4. Connect vendors from the named cards. Do not paste secrets into agent
@@ -51,6 +52,55 @@ Env var equivalent (server side / tests):
 ```
 DATAFORSEO_LOGIN=...
 DATAFORSEO_PASSWORD=...
+```
+
+---
+
+## Serper.dev
+
+Used by: the SEO `seo.serper.search` action for bounded Google Search result
+evidence.
+
+1. Sign up at <https://serper.dev/>.
+2. Create or copy an API key from the Serper dashboard.
+3. In Connections -> Serper.dev, choose the `api_key` method, enter the key,
+   and save the profile.
+
+The connector sends the key inside the provider boundary as `X-API-KEY` and
+posts explicit query, country, language, page, and result-count inputs. The
+auth test uses a minimal search because Serper does not expose a separate
+public account-probe endpoint.
+
+Env var equivalent:
+
+```
+SERPER_API_KEY=...
+```
+
+---
+
+## OpenRouter
+
+Used by: Utilities provider setup for future workflow-owned model access. The
+current StackOS contract stores and auth-tests the connection only; it does not
+expose a generic text-generation action.
+
+1. Open <https://openrouter.ai/settings/keys>.
+2. Create an API key with the least scope needed for the project.
+3. In Connections -> OpenRouter, choose the `api_key` method and enter the API
+   key.
+4. Optionally fill **HTTP Referer** and **Application Title** so OpenRouter can
+   attribute requests. StackOS sends those as safe attribution headers during
+   setup probes and future provider calls.
+
+The auth test calls the read-only models endpoint. Do not paste model prompts
+or OpenRouter keys into agent chat; a future model action must define workflow
+policy, grants, budgets, output persistence, and audit shape first.
+
+Env var equivalent:
+
+```
+OPENROUTER_API_KEY=...
 ```
 
 ---

@@ -261,6 +261,7 @@ steps:
       - For workflow-backed tickets, treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
       - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
+      - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; treat graph warnings as blockers before recording this step successful.
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
       - truthful_tracker_state
@@ -276,6 +277,7 @@ steps:
       - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
       - Dependencies match the actual delivery order and no loose ends are hidden.
       - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
+      - tracker.get include_graph=true returns no workflow-spine warnings for the planned run plan.
       - No detached delivery, verification, docs, signoff, or release branch can become ready independently of the workflow.
   - id: design-approach
     title: Design Approach

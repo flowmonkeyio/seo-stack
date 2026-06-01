@@ -147,6 +147,7 @@ presets:
       - runPlan.list
       - runPlan.create
       - tracker.status
+      - tracker.get
       - tracker.createTask
       - tracker.createTicket
       - tracker.updateTicket
@@ -169,6 +170,7 @@ presets:
         - Encode dependencies explicitly so ready work and blockers are visible.
         - Treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
         - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
+        - After creating or changing workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true, then fix workflow-spine warnings before handoff.
         - Review the plan for dangling tickets, missing blockers, hidden handoffs, and missing verification before delivery starts.
         - Include manual verification expectations when UI, MCP, provider, release, or operator-facing behavior changes.
       must_not_do:
@@ -193,6 +195,7 @@ presets:
         - Did I adapt the generic preset to project rules before using it?
         - Did I create or resolve the workflow-backed run plan before creating tickets when the operator explicitly asked for a workflow?
         - Did I use tracker state for the plan?
+        - Did I run tracker.get with run_plan_id and include_graph=true after creating workflow-backed tickets?
         - Did I dependency-bridge workflow-attached tickets into the workflow spine instead of only attaching them by run_plan_id and step_id?
         - Did I keep StackOS as state/audit, not as the strategy decision maker?
 
@@ -349,7 +352,9 @@ presets:
       - operation.describe
       - tracker.verify
       - tracker.brief
+      - tracker.get
       - runPlan.get
+      - runPlan.checkConsistency
       - action.describe
     project_adaptation: *stackos_project_adaptation
     prompt_contract:
@@ -366,6 +371,8 @@ presets:
         - Lead with bugs, regressions, missing tests, contract mismatches, and security concerns.
         - Check that tracker completion evidence is specific and true.
         - Check workflow-backed ticket graphs for step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, and detached branches.
+        - Use tracker.get with run_plan_id and include_graph=true for workflow-backed delivery; treat workflow-spine warnings as blocking findings.
+        - Check runPlan.get consistency_issues or runPlan.checkConsistency when run-plan, run audit, and tracker state may have diverged.
         - Separate confirmed findings, project decisions, false positives, and residual risks.
         - "Verify one-brain reuse: one operation/spec/source of truth, multiple adapters."
       must_not_do:

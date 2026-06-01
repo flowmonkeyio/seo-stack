@@ -92,6 +92,15 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert publishing_actions["ghost.post.create"].config["connector"] == "ghost"
     assert publishing_actions["wordpress.post.create"].input_schema["required"] == ["post"]
     utils = next(manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "utils")
+    utils_providers = {provider.key: provider for provider in utils.providers}
+    assert "openrouter" in utils_providers
+    assert _auth_field_keys(utils_providers["openrouter"]) == [
+        "api_key",
+        "http_referer",
+        "app_title",
+    ]
+    assert "Unified model API provider connection" in utils_providers["openrouter"].description
+    assert {capability.key for capability in utils.capabilities} >= {"model-access"}
     utils_actions = {action.key: action for action in utils.actions}
     assert utils_actions["web.scrape"].config["connector"] == "firecrawl"
     assert utils_actions["web.read"].config == {
@@ -111,6 +120,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "allows_credential": False,
     }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
+    assert all(action.provider != "openrouter" for action in utils.actions)
 
 
 def test_communications_plugin_yaml_facade_validates() -> None:
@@ -367,10 +377,12 @@ def test_seo_plugin_yaml_facade_validates() -> None:
     }
     assert {provider.key for provider in manifest.providers} >= {
         "dataforseo",
+        "serper",
         "ahrefs",
     }
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["dataforseo"]) == ["login", "password"]
+    assert _auth_field_keys(providers["serper"]) == ["api_key"]
     assert {resource.key for resource in manifest.resources} >= {
         "keyword-opportunity",
         "serp-snapshot",
@@ -397,6 +409,16 @@ def test_seo_plugin_yaml_facade_validates() -> None:
         "budget_kind": "dataforseo",
         "enforce_budget": True,
     }
+    assert actions["serper.search"].config == {
+        "schema_version": "stackos.action.v1",
+        "connector": "serper",
+        "operation": "search",
+        "requires_credential": True,
+        "budget_kind": "serper",
+        "enforce_budget": False,
+    }
+    assert actions["serper.search"].input_schema["required"] == ["query"]
+    assert actions["serper.search"].input_schema["properties"]["num"]["maximum"] == 100
     assert actions["competitor.keywords"].config["connector"] == "ahrefs"
     assert actions["backlink.research"].config["connector"] == "ahrefs"
     assert actions["keyword.research"].input_schema["required"] == ["keywords"]

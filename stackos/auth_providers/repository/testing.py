@@ -191,6 +191,11 @@ class CredentialTestingMixin:
             extra["site_url"] = str(site_url)
             if config.get("api_version"):
                 extra["api_version"] = str(config["api_version"])
+        elif row.kind == "openrouter":
+            for key in ("http_referer", "app_title"):
+                value = config.get(key)
+                if isinstance(value, str) and value.strip():
+                    extra[key] = value.strip()
         elif row.kind in {"telegram-bot", "slack-bot"} and config.get("api_base_url"):
             extra["api_base_url"] = str(config["api_base_url"])
         elif row.kind in {"smtp", "imap"}:

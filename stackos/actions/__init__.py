@@ -50,6 +50,7 @@ from stackos.actions.repository import (
 )
 from stackos.actions.salesforce import SalesforceActionConnector
 from stackos.actions.salesloft import SalesloftActionConnector
+from stackos.actions.serper import SerperActionConnector
 from stackos.actions.sitemap import SitemapActionConnector
 from stackos.actions.slack_bot import SlackBotActionConnector
 from stackos.actions.smtp import SmtpActionConnector
@@ -63,6 +64,7 @@ DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(SitemapActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(DataForSeoActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(SerperActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(AhrefsActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(WordPressActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GhostActionConnector())
@@ -123,6 +125,7 @@ __all__ = [
     "RedditActionConnector",
     "SalesforceActionConnector",
     "SalesloftActionConnector",
+    "SerperActionConnector",
     "SitemapActionConnector",
     "SlackBotActionConnector",
     "SmtpActionConnector",

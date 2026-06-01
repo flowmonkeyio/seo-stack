@@ -390,6 +390,7 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "seo.keyword.research": ("dataforseo", True, "unknown"),
         "seo.serp.analyze": ("dataforseo", True, "unknown"),
         "seo.paa.extract": ("dataforseo", True, "unknown"),
+        "seo.serper.search": ("serper", True, "unknown"),
         "seo.competitor.keywords": ("ahrefs", True, "unknown"),
         "seo.backlink.research": ("ahrefs", True, "unknown"),
         "publishing.wordpress.post.create": ("wordpress", True, "unknown"),
@@ -1458,6 +1459,71 @@ def test_dataforseo_paa_action_uses_explicit_action_contract(
     assert out.output_json["tasks"][0]["result"][0]["items"][0]["title"] == "What is SEO?"
     assert "password" not in rendered
     assert "login@example.com" not in rendered
+
+
+def test_serper_action_executes_with_daemon_side_credential(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="serper",
+        secret_payload=b"serper-secret",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "serper")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://google.serper.dev/search",
+        json={"organic": [{"title": "StackOS"}], "credits": 1},
+    )
+
+    out = asyncio.run(
+        ActionRepository(session).execute(
+            project_id=project_id,
+            action_ref="seo.serper.search",
+            input_json={
+                "query": "stackos",
+                "num": 3,
+                "country": "us",
+                "language": "en",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    request = httpx_mock.get_requests()[0]
+    request_body = json.loads(request.content.decode("utf-8"))
+    rendered = json.dumps(out.model_dump(mode="json"))
+    assert request.headers["X-API-KEY"] == "serper-secret"
+    assert request_body == {"q": "stackos", "num": 3, "gl": "us", "hl": "en"}
+    assert out.action_call.provider_key == "serper"
+    assert out.action_call.connector_key == "serper"
+    assert out.output_json["organic"][0]["title"] == "StackOS"
+    assert "serper-secret" not in rendered
+
+
+def test_serper_action_validation_bounds_provider_inputs(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="serper",
+        secret_payload=b"serper-secret",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "serper")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="seo.serper.search",
+        input_json={"query": "stackos", "num": 101, "page": 11},
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.num" and issue.code == "range" for issue in validation.issues)
+    assert any(issue.path == "$.page" and issue.code == "range" for issue in validation.issues)
 
 
 def test_wordpress_post_create_action_uses_daemon_side_site_config(

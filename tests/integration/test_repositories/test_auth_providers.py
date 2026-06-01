@@ -225,6 +225,51 @@ def test_failed_credential_profile_can_be_revoked(
     assert revoked.credential_ref == credential.credential_ref
 
 
+def test_openrouter_auth_test_passes_safe_attribution_config(
+    session: Session,
+    project_id: int,
+    httpx_mock: HTTPXMock,
+) -> None:
+    repo = AuthRepository(session)
+    stored = repo.store_credential(
+        project_id=project_id,
+        provider_key="openrouter",
+        auth_method_key="api_key",
+        profile_key="default",
+        fields={
+            "api_key": "or-secret",
+            "http_referer": "https://stackos.local",
+            "app_title": "StackOS",
+        },
+    ).data
+    row = session.exec(
+        select(IntegrationCredential).where(
+            IntegrationCredential.project_id == project_id,
+            IntegrationCredential.kind == "openrouter",
+        )
+    ).one()
+    assert row.id is not None
+    assert IntegrationCredentialRepository(session).get_decrypted(row.id) == b"or-secret"
+    assert row.config_json["http_referer"] == "https://stackos.local"
+    assert row.config_json["app_title"] == "StackOS"
+    httpx_mock.add_response(
+        method="GET",
+        url="https://openrouter.ai/api/v1/models",
+        json={"data": [{"id": "openai/gpt-4.1"}]},
+    )
+
+    tested = asyncio.run(repo.test(project_id=project_id, credential_ref=stored.credential_ref))
+    request = httpx_mock.get_requests()[0]
+    rendered = json.dumps(tested.data.model_dump(mode="json"))
+
+    assert tested.data.ok is True
+    assert tested.data.metadata["models_count"] == 1
+    assert request.headers["Authorization"] == "Bearer or-secret"
+    assert request.headers["HTTP-Referer"] == "https://stackos.local"
+    assert request.headers["X-OpenRouter-Title"] == "StackOS"
+    assert "or-secret" not in rendered
+
+
 def test_telegram_status_excludes_global_credentials(
     session: Session,
     project_id: int,

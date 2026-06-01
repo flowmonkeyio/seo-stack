@@ -9,7 +9,7 @@ UV ?= uv
 .DEFAULT_GOAL := help
 
 .PHONY: help install serve dev-ui build-ui signoff register-codex register-claude \
-        install-skills-codex install-skills-claude \
+        install-agent-assets install-skills-codex install-skills-claude \
         install-plugins \
         install-launchd doctor test test-ui-unit test-ui-e2e migrate lint \
         format typecheck gen-types clean uninstall backup restore \
@@ -113,6 +113,13 @@ register-codex: ## Register bridge MCP server with Codex CLI
 
 register-claude: ## Register bridge MCP server with Claude Code
 	@bash scripts/register-mcp-claude.sh
+
+install-agent-assets: ## Refresh StackOS skills and plugin assets for local agent runtimes
+	@echo "==> Installing runtime skill mirrors"
+	@bash scripts/install-codex.sh
+	@bash scripts/install-claude.sh
+	@echo "==> Installing plugins"
+	@bash scripts/install-plugins.sh
 
 install-skills-codex: ## Install skills into ~/.codex/skills/stackos/
 	@bash scripts/install-codex.sh

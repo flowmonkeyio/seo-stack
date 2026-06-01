@@ -40,6 +40,31 @@ providers:
           type: secret
           secret: true
           required: true
+    config:
+      setup_note: DataForSEO uses HTTP Basic auth with the API login as username and API password as the daemon-held secret. Exposed StackOS actions stay limited to documented live SERP and keyword evidence endpoints.
+      docs:
+        - https://docs.dataforseo.com/v3/serp-se-type-live-advanced/
+        - https://docs.dataforseo.com/v3/keywords_data-google_ads-search_volume-live/
+  - key: serper
+    name: Serper.dev
+    description: Google Search/SERP provider for compact live search-result evidence.
+    auth_type: api-key
+    auth_methods:
+      - key: api_key
+        label: API key
+        auth_type: api-key
+        payload_format: raw
+        payload_field: api_key
+        fields:
+        - key: api_key
+          label: Serper API Key
+          type: secret
+          secret: true
+          required: true
+    config:
+      setup_note: Serper.dev Google Search requests use a daemon-held key in the provider header and consume provider credits. Keep searches bounded with explicit query, locale, page, and result-count inputs.
+      docs:
+        - https://serper.dev/
   - key: ahrefs
     name: Ahrefs
     description: Organic keyword and backlink research provider; requires eligible API access and API units.
@@ -92,7 +117,7 @@ actions:
       enforce_budget: true
   - key: serp.analyze
     name: Analyze SERP
-    description: Fetch live SERP result evidence for an agent-selected query through DataForSEO; depth is capped at the documented top 100 results.
+    description: Fetch live SERP result evidence for an agent-selected query through DataForSEO; StackOS caps depth at 100 results for bounded agent calls.
     provider: dataforseo
     capability: seo-research
     risk_level: cost
@@ -146,6 +171,45 @@ actions:
       requires_credential: true
       budget_kind: dataforseo
       enforce_budget: true
+  - key: serper.search
+    name: Search Google With Serper
+    description: Fetch live Google Search result evidence through Serper.dev using bounded query and locale inputs.
+    provider: serper
+    capability: seo-research
+    risk_level: cost
+    input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        num:
+          type: integer
+          minimum: 1
+          maximum: 100
+        country:
+          type: string
+          description: Optional Google country code sent as gl.
+        language:
+          type: string
+          description: Optional Google language code sent as hl.
+        page:
+          type: integer
+          minimum: 1
+          maximum: 10
+        tbs:
+          type: string
+          description: Optional Google time/filter expression.
+    output_schema: *object_schema
+    config:
+      schema_version: stackos.action.v1
+      connector: serper
+      operation: search
+      requires_credential: true
+      budget_kind: serper
+      enforce_budget: false
   - key: competitor.keywords
     name: Competitor Keywords
     description: Pull competitor organic keyword evidence for agent analysis; Ahrefs API-unit budget reconciliation is provider-side until unit headers are captured.
