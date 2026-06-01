@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 150
+    assert len(names) == 151
     assert {
         "action.execute",
         "auth.status",

@@ -304,6 +304,7 @@ The current core operation registry includes:
 - `runPlan.create`
 - `runPlan.start`
 - `runPlan.get`
+- `runPlan.checkConsistency`
 - `runPlan.list`
 - `runPlan.update`
 - `runPlan.claimStep`
@@ -399,8 +400,9 @@ Use `action.execute` when the action belongs to a workflow:
 
 `runPlan.*` keeps the same boundary everywhere:
 
-1. `runPlan.validate`, `runPlan.create`, `runPlan.start`, `runPlan.get`, and
-   `runPlan.list` are bootstrap/setup operations.
+1. `runPlan.validate`, `runPlan.create`, `runPlan.start`, `runPlan.get`,
+   `runPlan.checkConsistency`, and `runPlan.list` are bootstrap/setup
+   operations.
 2. `runPlan.claimStep` and `runPlan.recordStep` require the `run_token` returned
    by `runPlan.start`.
 3. `runPlan.claimStep` activates only the frozen grants for the claimed step.
@@ -411,6 +413,11 @@ Use `action.execute` when the action belongs to a workflow:
 6. `runPlan.update` records safe metadata or approval-gate decisions through
    the local REST/CLI admin surface. Direct MCP agents are not base-granted to
    approve their own gates.
+7. Stale-run reaping, explicit run aborts, and run-plan aborts reconcile the
+   linked run, plan, unfinished steps, pending approvals, and tracker mirror
+   through one lifecycle path. If old data or manual edits leave a mismatch,
+   `runPlan.get.consistency_issues` and `runPlan.checkConsistency` expose the
+   read-side diagnostics.
 
 `agentRequest.*` keeps the same boundary everywhere:
 

@@ -611,6 +611,23 @@ class TrackerBulkMixin:
                         message="ticket cannot depend on itself",
                     )
                 )
+            try:
+                self._validate_workflow_ticket_initial_status(
+                    key=spec["key"],
+                    status=spec["status"],
+                    run_plan_id=spec["run_plan_id"],
+                    run_plan_step_id=spec["run_plan_step_id"],
+                    allow_workflow_status_from_run_plan=False,
+                )
+            except ValidationError as exc:
+                errors.append(
+                    TrackerListIssueOut(
+                        index=spec["index"],
+                        key=spec["key"],
+                        field="status",
+                        message=str(exc),
+                    )
+                )
         return task, specs, errors, warnings
 
     def _list_enum(
@@ -731,6 +748,7 @@ class TrackerBulkMixin:
             try:
                 self._validate_ticket_patch_fields(patch_json)
                 ticket = self._ticket_from_list_update(tracker.id, item)
+                self._validate_workflow_ticket_patch_status(ticket, patch_json)
                 dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
                 if dependency_preview is not None:
                     total_added += len(dependency_preview.added_dependency_keys)

@@ -20,7 +20,8 @@ granted actions, and recording results.
 6. Start it with `runPlan.start` and keep the returned `run_token`.
 7. Claim and record steps through run-plan controller tools using that
    `run_token`.
-8. Inspect execution through `runPlan.get`, `run.get`, and `run.list`.
+8. Inspect execution through `runPlan.get`, `runPlan.checkConsistency`,
+   `run.get`, and `run.list`.
 
 `runPlan.create` also mirrors the plan into the project task tracker: one task
 for the run plan and one ticket per concrete step. Agents can use
@@ -32,6 +33,26 @@ For mirrored workflow tickets, `tracker.brief` includes a compact
 to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
 claim the matching step, inspect granted tools, then record the step result.
 The tracker packet does not grant execution by itself.
+
+Run-plan execution has one canonical lifecycle. If the linked audit run is
+reaped after a daemon restart, StackOS reconciles the linked run plan, unfinished
+steps, pending approvals, and tracker mirror together. A stale audit run must
+not leave `run_plans.status='started'` while the run is `aborted`.
+`runPlan.get` includes `consistency_issues` when the read side sees a mismatch,
+and `runPlan.checkConsistency` returns the same diagnostics as a compact
+agent-facing check.
+
+`runPlan.claimStep` and `runPlan.recordStep` refresh the linked audit run
+heartbeat. During long-running implementation between those calls, agents
+should call `run.heartbeat` with the active run id so the daemon does not treat
+the workflow controller as orphaned.
+
+Agents must not use tracker ticket status as a second workflow execution path.
+Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
+`runPlan.recordStep`. Child tickets attached to a workflow step may track
+delivery details, but status progress is only allowed while the canonical
+run-plan step and linked audit run are running. Evidence, metadata, dependencies,
+and references can still be edited without advancing workflow lifecycle.
 
 ## Grants
 

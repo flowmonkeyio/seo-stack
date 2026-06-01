@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, select
 
-from stackos.db.models import RunPlanStepStatus, TaskTracker, TrackerItemStatus
+from stackos.db.models import RunPlanStep, RunPlanStepStatus, TaskTracker, TrackerItemStatus
 from stackos.repositories.base import ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -855,3 +855,195 @@ def test_run_plan_lifecycle_mirrors_tracker(session: Session, project_id: int) -
     ).ticket
     assert complete_ticket.status == TrackerItemStatus.COMPLETE
     assert complete_ticket.outcome == "Prepared"
+
+
+def test_workflow_step_ticket_status_cannot_bypass_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-guard.run",
+                "title": "Tracker Workflow Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+    RunPlanRepository(session).start(plan.id, project_id=project_id)
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).update_ticket(
+            project_id=project_id,
+            ticket_key=f"workflow-{plan.id}-prepare",
+            patch_json={"status": "complete", "outcome": "Done outside runPlan.recordStep."},
+            actor="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["step_id"] == "prepare"
+    assert "runPlan.claimStep" in exc_info.value.data["next_operations"]
+
+
+def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-create-guard.run",
+                "title": "Tracker Workflow Create Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+    RunPlanRepository(session).start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            key="workflow-child-active",
+            title="Workflow child active",
+            status=TrackerItemStatus.IN_PROGRESS,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            created_by="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["step_id"] == "prepare"
+    assert exc_info.value.data["requested_status"] == "in-progress"
+
+
+def test_workflow_child_ticket_creation_rejects_terminal_run_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-terminal-create-guard.run",
+            "title": "Tracker Workflow Terminal Create Guard",
+            "steps": [{"id": "prepare", "title": "Prepare"}],
+        },
+        created_by="codex",
+    ).data
+    repo.start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+    repo.abort(run_plan_id=plan.id, project_id=project_id, reason="terminal create guard")
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            key="workflow-child-after-terminal",
+            title="Workflow child after terminal",
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            created_by="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["run_plan_status"] == "aborted"
+    assert "runPlan.checkConsistency" in exc_info.value.data["next_operations"]
+
+
+def test_workflow_task_status_cannot_bypass_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-task-guard.run",
+                "title": "Tracker Workflow Task Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        TrackerRepository(session).update_task(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            patch_json={"status": "complete"},
+            actor="codex",
+        )
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["requested_status"] == "complete"
+    assert "runPlan.recordStep" in exc_info.value.data["next_operations"]
+
+
+def test_workflow_ticket_list_update_dry_run_validates_run_plan_lifecycle(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "tracker.workflow-dry-run-guard.run",
+                "title": "Tracker Workflow Dry Run Guard",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+            created_by="codex",
+        )
+        .data
+    )
+    RunPlanRepository(session).start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+    TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        key="workflow-child-draft",
+        title="Workflow child draft",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        created_by="codex",
+    )
+
+    preview = (
+        TrackerRepository(session)
+        .update_ticket_list(
+            project_id=project_id,
+            updates_json=[
+                {
+                    "ticket_key": "workflow-child-draft",
+                    "patch_json": {"status": "complete"},
+                }
+            ],
+            dry_run=True,
+        )
+        .data
+    )
+
+    assert preview.dry_run is True
+    assert preview.valid is False
+    assert preview.results[0].action == "error"
+    assert "active run-plan step" in (preview.results[0].error or "")

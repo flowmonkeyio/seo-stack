@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from stackos.db.models import RunKind, RunStatus
+from stackos.db.models import Run, RunKind, RunPlan, RunPlanStep, RunPlanStepStatus, RunStatus
 from stackos.repositories.base import ConflictError
+from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.runs import RunRepository
+from stackos.repositories.tracker import TrackerRepository
 
 
 def _now() -> datetime:
@@ -79,6 +81,192 @@ def test_reap_stale_orphans(session: Session, project_id: int) -> None:
     assert repo.get(stale.id).status == RunStatus.ABORTED
     assert repo.get(stale.id).error == "daemon-restart-orphan"
     assert repo.get(fresh.id).status == RunStatus.RUNNING
+
+
+def test_reap_stale_run_reconciles_linked_run_plan(session: Session, project_id: int) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "stale.workflow.run",
+                "title": "Stale Workflow",
+                "steps": [
+                    {"id": "prepare", "title": "Prepare"},
+                    {"id": "deliver", "title": "Deliver"},
+                ],
+            },
+        )
+        .data
+    )
+    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
+
+    run = session.get(Run, started.run_id)
+    plan_row = session.get(RunPlan, plan.id)
+    assert run is not None and plan_row is not None
+    run.heartbeat_at = _now() - timedelta(minutes=10)
+    plan_row.updated_at = _now() - timedelta(minutes=10)
+    session.add(run)
+    session.add(plan_row)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    assert reaped == 1
+    plan_row = session.get(RunPlan, plan.id)
+    assert plan_row is not None
+    assert plan_row.status == "aborted"
+    assert plan_row.metadata_json is not None
+    assert plan_row.metadata_json["abort_reason"] == "daemon-restart-orphan"
+    steps = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).all()
+    assert {step.status for step in steps} == {RunPlanStepStatus.SKIPPED}
+    tracker_snapshot = TrackerRepository(session).get(project_id=project_id, run_plan_id=plan.id)
+    assert tracker_snapshot.tasks[0].status == "deferred"
+    assert {ticket.status for ticket in tracker_snapshot.tickets} == {"deferred"}
+
+
+def test_reap_stale_run_plan_respects_recent_plan_activity(
+    session: Session,
+    project_id: int,
+) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "recent-plan.workflow.run",
+                "title": "Recent Plan Workflow",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+        )
+        .data
+    )
+    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
+    run = session.get(Run, started.run_id)
+    plan_row = session.get(RunPlan, plan.id)
+    assert run is not None and plan_row is not None
+    run.heartbeat_at = _now() - timedelta(minutes=10)
+    plan_row.updated_at = _now()
+    session.add(run)
+    session.add(plan_row)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    assert reaped == 0
+    assert RunRepository(session).get(started.run_id).status == RunStatus.RUNNING
+
+
+def test_reap_stale_parent_reconciles_child_run_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    parent = RunRepository(session).start(project_id=project_id, kind=RunKind.RUN_PLAN).data
+    child_plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "child.workflow.run",
+                "title": "Child Workflow",
+                "steps": [{"id": "child-step", "title": "Child Step"}],
+            },
+        )
+        .data
+    )
+    child_started = RunPlanRepository(session).start(child_plan.id, project_id=project_id).data
+    parent_run = session.get(Run, parent.id)
+    child_run = session.get(Run, child_started.run_id)
+    assert parent_run is not None and child_run is not None
+    parent_run.heartbeat_at = _now() - timedelta(minutes=10)
+    child_run.parent_run_id = parent.id
+    session.add(parent_run)
+    session.add(child_run)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    assert reaped == 1
+    child_plan_row = session.get(RunPlan, child_plan.id)
+    child_run_row = session.get(Run, child_started.run_id)
+    assert child_plan_row is not None and child_run_row is not None
+    assert child_run_row.status == RunStatus.ABORTED
+    assert child_plan_row.status == "aborted"
+    assert child_plan_row.metadata_json is not None
+    assert child_plan_row.metadata_json["abort_reason"] == "parent-aborted"
+
+
+def test_reap_stale_historical_aborted_parent_reconciles_live_child_run_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    parent = RunRepository(session).start(project_id=project_id, kind=RunKind.RUN_PLAN).data
+    child_plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "historical-child.workflow.run",
+                "title": "Historical Child Workflow",
+                "steps": [{"id": "child-step", "title": "Child Step"}],
+            },
+        )
+        .data
+    )
+    child_started = RunPlanRepository(session).start(child_plan.id, project_id=project_id).data
+    parent_run = session.get(Run, parent.id)
+    child_run = session.get(Run, child_started.run_id)
+    assert parent_run is not None and child_run is not None
+    parent_run.status = RunStatus.ABORTED
+    parent_run.error = "daemon-restart-orphan"
+    parent_run.ended_at = _now() - timedelta(minutes=5)
+    child_run.parent_run_id = parent.id
+    child_run.heartbeat_at = _now()
+    session.add(parent_run)
+    session.add(child_run)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    child_plan_row = session.get(RunPlan, child_plan.id)
+    child_run_row = session.get(Run, child_started.run_id)
+    assert reaped == 0
+    assert child_plan_row is not None and child_run_row is not None
+    assert child_run_row.status == RunStatus.ABORTED
+    assert child_run_row.error == "parent-aborted"
+    assert child_plan_row.status == "aborted"
+    assert child_plan_row.metadata_json is not None
+    assert child_plan_row.metadata_json["abort_reason"] == "parent-aborted"
+
+
+def test_finish_rejects_live_run_plan_audit_run(session: Session, project_id: int) -> None:
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "finish-live.workflow.run",
+                "title": "Finish Live Workflow",
+                "steps": [{"id": "write", "title": "Write"}],
+            },
+        )
+        .data
+    )
+    started = RunPlanRepository(session).start(plan.id, project_id=project_id).data
+
+    with pytest.raises(ConflictError) as exc_info:
+        RunRepository(session).finish(started.run_id, status="success")
+
+    assert exc_info.value.data["run_plan_id"] == plan.id
+    assert exc_info.value.data["run_plan_status"] == "started"
+    assert "runPlan.recordStep" in exc_info.value.data["next_operations"]
+    assert session.get(Run, started.run_id).status == RunStatus.RUNNING
+    assert session.get(RunPlan, plan.id).status == "started"
 
 
 def test_cost_aggregation(session: Session, project_id: int) -> None:

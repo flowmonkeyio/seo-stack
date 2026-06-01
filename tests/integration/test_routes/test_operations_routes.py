@@ -227,6 +227,7 @@ def test_operation_docs_are_agent_readable(api: TestClient) -> None:
     assert listed.status_code == 200
     assert "action.execute" in {item["name"] for item in listed.json()["items"]}
     assert "runPlan.create" in {item["name"] for item in listed.json()["items"]}
+    assert "runPlan.checkConsistency" in {item["name"] for item in listed.json()["items"]}
     assert described.status_code == 200
     body = described.json()
     assert body["name"] == "action.execute"

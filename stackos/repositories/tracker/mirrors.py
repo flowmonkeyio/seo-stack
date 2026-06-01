@@ -174,6 +174,7 @@ class TrackerMirrorMixin:
                     created_by=created_by,
                     now=now,
                     order_index=step.position,
+                    allow_workflow_status_from_run_plan=True,
                 )
                 self._add_link(
                     tracker,

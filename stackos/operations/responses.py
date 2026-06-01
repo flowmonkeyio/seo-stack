@@ -51,6 +51,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "warning_count",
         "error_count",
         "connected_count",
+        "issue_count",
         "ready_count",
         "exposed_action_count",
         "executable_action_count",
@@ -73,6 +74,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "action_ref",
         "action_call_id",
         "message_ref",
+        "message",
         "operation",
         "thread_ref",
         "target_ref",
@@ -88,6 +90,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "artifact_ref",
         "learning_id",
         "category",
+        "code",
         "binding_was_created",
         "body_preview",
         "cron_expr",
@@ -113,6 +116,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "budget_state",
         "remaining_usd",
         "secret_policy",
+        "severity",
         "slug",
         "source",
         "source_kind",
@@ -130,6 +134,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "position",
         "project_scoped_tools_usable",
         "purpose",
+        "repairable",
         "repo_fingerprint",
         "runtime",
         "thread_id",
@@ -143,6 +148,7 @@ _LIST_KEEP_FIELDS = frozenset(
         "actions",
         "attachment_refs",
         "changed_fields",
+        "consistency_issues",
         "context_refs_json",
         "default_input_keys",
         "dependency_keys",
@@ -153,6 +159,8 @@ _LIST_KEEP_FIELDS = frozenset(
         "input_refs_json",
         "message_refs",
         "missing",
+        "issues",
+        "next_operations",
         "output_refs_json",
         "policy_refs_json",
         "provider_results",
@@ -436,6 +444,9 @@ def _compact_tracker_mutation(data: dict[str, Any]) -> dict[str, Any]:
 
 def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     out = _compact_mapping(data)
+    if data.get("id") is not None and data.get("key") is not None:
+        out["run_plan_id"] = data.get("id")
+        out["run_plan_key"] = data.get("key")
     plan = data.get("plan")
     if isinstance(plan, dict):
         out["plan"] = _compact_mapping(plan)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from stackos.db.models import RunPlanStatus
+from stackos.db.models import Run, RunPlanStatus, RunStatus
 from stackos.repositories.run_plans import RunPlanRepository
 
 
@@ -60,6 +60,26 @@ def test_get_run_plan_with_steps(api: TestClient, project_id: int) -> None:
     assert resp.status_code == 200
     assert resp.json()["id"] == run_plan_id
     assert resp.json()["steps"][0]["step_id"] == "review"
+
+
+def test_get_run_plan_includes_consistency_issues(api: TestClient, project_id: int) -> None:
+    run_plan_id = _seed_run_plan(api, project_id)
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        started = RunPlanRepository(session).start(run_plan_id, project_id=project_id).data
+        run = session.get(Run, started.run_id)
+        assert run is not None
+        run.status = RunStatus.ABORTED
+        run.error = "daemon-restart-orphan"
+        session.add(run)
+        session.commit()
+
+    resp = api.get(f"/api/v1/run-plans/{run_plan_id}")
+
+    assert resp.status_code == 200
+    issues = resp.json()["consistency_issues"]
+    assert issues[0]["code"] == "terminal-run-live-plan"
+    assert issues[0]["severity"] == "error"
 
 
 def test_get_run_plan_404_on_missing(api: TestClient) -> None:

@@ -167,6 +167,10 @@ class RunRepository:
             status = RunStatus(status)
         row = self._fetch(run_id)
         self._require_project_match(row, project_id)
+
+        from stackos.repositories.run_plan_lifecycle import RunPlanLifecycleReconciler
+
+        RunPlanLifecycleReconciler(self._s).validate_direct_run_finish(row, status)
         validate_transition(row.status, status, RUN_STATUS_TRANSITIONS, label="run.status")
         row.status = status
         row.ended_at = _utcnow()
@@ -224,6 +228,9 @@ class RunRepository:
         still in ``running``. Children that already terminated are left
         alone.
         """
+        from stackos.repositories.run_plan_lifecycle import RunPlanLifecycleReconciler
+
+        reconciler = RunPlanLifecycleReconciler(self._s)
         row = self._fetch(run_id)
         self._require_project_match(row, project_id)
         if row.status == RunStatus.RUNNING:
@@ -233,6 +240,8 @@ class RunRepository:
             row.status = RunStatus.ABORTED
             row.ended_at = _utcnow()
             self._s.add(row)
+        if row.status == RunStatus.ABORTED:
+            reconciler.reconcile_aborted_run_plan(row, reason=row.error or "run-aborted")
         if cascade:
             assert row.id is not None
             self._cascade_abort(row.id)
@@ -353,6 +362,13 @@ class RunRepository:
         Cascade abort is applied to each reaped run so live-orphan child
         chains are cleaned in the same sweep.
         """
+        from stackos.repositories.run_plan_lifecycle import (
+            STALE_RUN_ERROR,
+            RunPlanLifecycleReconciler,
+        )
+
+        reconciler = RunPlanLifecycleReconciler(self._s)
+        reconciler.reconcile_orphaned_run_plans(reason=STALE_RUN_ERROR)
         cutoff = _utcnow() - timedelta(seconds=stale_after_seconds)
         rows = self._s.exec(
             select(Run).where(
@@ -360,15 +376,22 @@ class RunRepository:
                 Run.heartbeat_at < cutoff,  # type: ignore[operator]
             )
         ).all()
+        reaped = 0
         for row in rows:
+            if reconciler.has_recent_run_plan_activity(row, cutoff):
+                row.heartbeat_at = _utcnow()
+                self._s.add(row)
+                continue
             row.status = RunStatus.ABORTED
-            row.error = "daemon-restart-orphan"
+            row.error = STALE_RUN_ERROR
             row.ended_at = _utcnow()
             self._s.add(row)
+            reconciler.reconcile_aborted_run_plan(row, reason=STALE_RUN_ERROR)
             assert row.id is not None
             self._cascade_abort(row.id)
+            reaped += 1
         self._s.commit()
-        return len(rows)
+        return reaped
 
     # -------- Internal --------
 
@@ -389,6 +412,9 @@ class RunRepository:
 
     def _cascade_abort(self, root_id: int) -> None:
         """Recursively abort children of ``root_id`` that are still running."""
+        from stackos.repositories.run_plan_lifecycle import RunPlanLifecycleReconciler
+
+        reconciler = RunPlanLifecycleReconciler(self._s)
         frontier = [root_id]
         while frontier:
             current = frontier.pop()
@@ -403,6 +429,7 @@ class RunRepository:
                 c.error = c.error or "parent-aborted"
                 c.ended_at = _utcnow()
                 self._s.add(c)
+                reconciler.reconcile_aborted_run_plan(c, reason=c.error)
                 if c.id is not None:
                     frontier.append(c.id)
 

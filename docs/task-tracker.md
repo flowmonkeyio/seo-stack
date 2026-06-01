@@ -120,6 +120,19 @@ runPlan.get
 The handoff is navigation context only. The run-plan token, active step, and
 grant snapshot remain the execution boundary.
 
+For workflow-backed tickets, tracker status is not an alternate run-plan
+lifecycle. The mirrored step ticket is owned by `runPlan.claimStep` and
+`runPlan.recordStep`. Child tickets can hold scoped implementation work and
+evidence, but `in-progress`/`complete` status advances require the attached
+run-plan step and linked audit run to be running. Non-status edits such as
+evidence, metadata, references, blockers, and dependency repair remain valid
+tracker operations.
+
+If the daemon reaps a stale workflow audit run, the reaper reconciles the linked
+run plan, unfinished steps, approvals, and tracker mirror together. If a caller
+finds split state from old data or manual repair, use `runPlan.checkConsistency`
+or inspect `runPlan.get.consistency_issues` before continuing.
+
 Lifecycle timestamps follow the visible state. Moving a task or ticket into
 `complete` or `deferred` sets `completed_at`; reopening it to `in-progress` or
 `not-started` clears `completed_at` so audits do not treat active work as

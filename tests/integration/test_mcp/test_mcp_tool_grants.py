@@ -76,6 +76,58 @@ def test_run_plan_controller_can_call_step_grant_tool(
     assert out["data"]["resource_key"] == "learning"
 
 
+def test_terminal_run_plan_token_cannot_mutate_tracker_state(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    pid = seeded_project["data"]["id"]
+    plan_json = {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "terminal-tracker-guard.run",
+        "title": "Terminal tracker guard",
+        "steps": [{"id": "write", "title": "Write"}],
+    }
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": pid, "run_plan_json": plan_json},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": pid, "run_plan_id": created["data"]["id"]},
+    )
+    token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "write",
+            "run_token": token,
+        },
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.abort",
+        {
+            "project_id": pid,
+            "run_plan_id": created["data"]["id"],
+            "reason": "test terminal guard",
+        },
+    )
+
+    err = mcp_client.call_tool_error(
+        "tracker.createTicket",
+        {
+            "project_id": pid,
+            "task_key": f"workflow-{created['data']['id']}",
+            "key": "terminal-token-mutation",
+            "title": "Terminal token mutation",
+            "run_token": token,
+        },
+    )
+
+    assert err["code"] == -32007
+    assert "running audit run" in err["data"]["detail"]
+
+
 def test_unknown_skill_with_provisioned_token_is_forbidden(
     mcp_client: MCPClient,
     seeded_project: dict,

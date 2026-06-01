@@ -1447,6 +1447,49 @@ export interface components {
              */
             risk_level: string;
         };
+        /**
+         * ActionExposureNextActionOut
+         * @description Safe repair pointer for hidden or blocked action exposure.
+         */
+        ActionExposureNextActionOut: {
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+            /** Reason */
+            reason: string;
+            /** Tool */
+            tool: string;
+            /** Ui Url */
+            ui_url?: string | null;
+        };
+        /**
+         * ActionExposureOut
+         * @description Agent-facing visibility classification for one action contract.
+         *
+         *     Availability answers "can the daemon execute this action right now?".
+         *     Exposure answers "should this action appear in normal agent discovery?".
+         *     Setup and readiness surfaces can still opt into hidden provider actions.
+         */
+        ActionExposureOut: {
+            /**
+             * External Provider
+             * @default false
+             */
+            external_provider: boolean;
+            /** Hidden Reason */
+            hidden_reason?: string | null;
+            next_action?: components["schemas"]["ActionExposureNextActionOut"] | null;
+            /**
+             * Requires Integration
+             * @default false
+             */
+            requires_integration: boolean;
+            /** State */
+            state: string;
+            /** Visible By Default */
+            visible_by_default: boolean;
+        };
         /** ActionOut */
         ActionOut: {
             /** Action Ref */
@@ -1474,6 +1517,7 @@ export interface components {
              * @default false
              */
             enforce_budget: boolean;
+            exposure: components["schemas"]["ActionExposureOut"];
             /** Id */
             id: number;
             /** Input Schema Json */
@@ -2829,6 +2873,7 @@ export interface components {
             purpose: string;
             /** Read Only */
             read_only: boolean;
+            response_policy: components["schemas"]["OperationResponsePolicyOut"];
             /** Returns */
             returns?: string[];
             /** Secret Policy */
@@ -2869,6 +2914,22 @@ export interface components {
             /** Items */
             items: components["schemas"]["OperationSummaryOut"][];
         };
+        /** OperationResponsePolicyOut */
+        OperationResponsePolicyOut: {
+            /** Ack Safe */
+            ack_safe: boolean;
+            /** Allowed Modes */
+            allowed_modes: OperationResponsePolicyOutAllowed_modes[];
+            /** Compact Notes */
+            compact_notes?: string[];
+            /**
+             * Default Mode
+             * @enum {string}
+             */
+            default_mode: OperationResponsePolicyOutDefault_mode;
+            /** Raw Only Reason */
+            raw_only_reason?: string | null;
+        };
         /** OperationSummaryOut */
         OperationSummaryOut: {
             /** Category */
@@ -2881,6 +2942,7 @@ export interface components {
             name: string;
             /** Read Only */
             read_only: boolean;
+            response_policy: components["schemas"]["OperationResponsePolicyOut"];
             /** Secret Policy */
             secret_policy: string;
             /** Summary */
@@ -3532,6 +3594,30 @@ export interface components {
             started_at: string;
             status: components["schemas"]["RunStatus"];
         };
+        /** RunPlanConsistencyIssueOut */
+        RunPlanConsistencyIssueOut: {
+            /** Code */
+            code: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Message */
+            message: string;
+            /** Run Id */
+            run_id?: number | null;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: RunPlanConsistencyIssueOutSeverity;
+            /** Step Id */
+            step_id?: string | null;
+            /** Ticket Key */
+            ticket_key?: string | null;
+        };
         /** RunPlanOut */
         RunPlanOut: {
             /** Approval Requests */
@@ -3542,6 +3628,8 @@ export interface components {
             } | null;
             /** Completed At */
             completed_at: string | null;
+            /** Consistency Issues */
+            consistency_issues?: components["schemas"]["RunPlanConsistencyIssueOut"][];
             /** Context Filters Json */
             context_filters_json: {
                 [key: string]: unknown;
@@ -4472,6 +4560,8 @@ export interface components {
 export type SchemaActionAvailabilityOut = components['schemas']['ActionAvailabilityOut'];
 export type SchemaActionCallAuditOut = components['schemas']['ActionCallAuditOut'];
 export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
+export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
+export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
@@ -4527,6 +4617,7 @@ export type SchemaOperationDescribeOut = components['schemas']['OperationDescrib
 export type SchemaOperationExampleOut = components['schemas']['OperationExampleOut'];
 export type SchemaOperationGroupOut = components['schemas']['OperationGroupOut'];
 export type SchemaOperationListOut = components['schemas']['OperationListOut'];
+export type SchemaOperationResponsePolicyOut = components['schemas']['OperationResponsePolicyOut'];
 export type SchemaOperationSummaryOut = components['schemas']['OperationSummaryOut'];
 export type SchemaOperationSurfaceOut = components['schemas']['OperationSurfaceOut'];
 export type SchemaPageResponseActionCallAuditOut = components['schemas']['PageResponse_ActionCallAuditOut_'];
@@ -4557,6 +4648,7 @@ export type SchemaResourceOut = components['schemas']['ResourceOut'];
 export type SchemaResourceRecordOut = components['schemas']['ResourceRecordOut'];
 export type SchemaResourceRecordUpsertRequest = components['schemas']['ResourceRecordUpsertRequest'];
 export type SchemaRunOut = components['schemas']['RunOut'];
+export type SchemaRunPlanConsistencyIssueOut = components['schemas']['RunPlanConsistencyIssueOut'];
 export type SchemaRunPlanOut = components['schemas']['RunPlanOut'];
 export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
 export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
@@ -7266,6 +7358,16 @@ export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
 }
+export enum OperationResponsePolicyOutAllowed_modes {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack"
+}
+export enum OperationResponsePolicyOutDefault_mode {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack"
+}
 export enum PluginSource {
     builtin = "builtin",
     repo = "repo",
@@ -7278,6 +7380,10 @@ export enum RunKind {
     action = "action",
     scheduled_job = "scheduled-job",
     maintenance = "maintenance"
+}
+export enum RunPlanConsistencyIssueOutSeverity {
+    warning = "warning",
+    error = "error"
 }
 export enum RunPlanStatus {
     draft = "draft",

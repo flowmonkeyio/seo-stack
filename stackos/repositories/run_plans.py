@@ -36,6 +36,12 @@ from stackos.repositories.base import (
     cursor_paginate,
     validate_transition,
 )
+from stackos.repositories.run_plan_lifecycle import (
+    RunPlanConsistencyIssueOut,
+    RunPlanConsistencyOut,
+    RunPlanLifecycleReconciler,
+)
+from stackos.repositories.run_plan_state import TERMINAL_STEP_STATUSES
 from stackos.repositories.runs import RunOut, RunRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.workflows.run_plan_grants import allowed_tools_for_run_plan_step
@@ -172,6 +178,7 @@ class RunPlanOut(RunPlanSummaryOut):
     metadata_json: dict[str, Any] | None
     steps: list[RunPlanStepOut] = Field(default_factory=list)
     approval_requests: list[ApprovalRequestOut] = Field(default_factory=list)
+    consistency_issues: list[RunPlanConsistencyIssueOut] = Field(default_factory=list)
 
 
 class RunPlanStartOut(BaseModel):
@@ -505,6 +512,16 @@ class RunPlanRepository:
         self._require_plan_project(row, project_id)
         return self._plan_out(row)
 
+    def check_consistency(
+        self,
+        run_plan_id: int,
+        *,
+        project_id: int | None = None,
+    ) -> RunPlanConsistencyOut:
+        row = self._fetch_plan(run_plan_id)
+        self._require_plan_project(row, project_id)
+        return RunPlanLifecycleReconciler(self._s).check_plan(row)
+
     def list(
         self,
         *,
@@ -592,95 +609,18 @@ class RunPlanRepository:
     ) -> Envelope[RunPlanOut]:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
-        if plan.status == RunPlanStatus.ABORTED:
-            return Envelope(
-                data=self._plan_out(plan),
-                run_id=plan.run_id,
-                project_id=plan.project_id,
-            )
         if plan.status in {RunPlanStatus.COMPLETED, RunPlanStatus.FAILED}:
             raise ConflictError(
                 "terminal run plans cannot be aborted",
                 data={"run_plan_id": run_plan_id, "status": plan.status.value},
             )
-        validate_transition(
-            plan.status,
-            RunPlanStatus.ABORTED,
-            RUN_PLAN_STATUS_TRANSITIONS,
-            label="run_plan.status",
-        )
         if reason is not None:
             _ensure_no_secrets({"reason": reason}, label="run plan abort reason")
-        now = _utcnow()
-        for step in self._step_rows(plan.id):
-            if step.status in {RunPlanStepStatus.PENDING, RunPlanStepStatus.BLOCKED}:
-                validate_transition(
-                    step.status,
-                    RunPlanStepStatus.SKIPPED,
-                    RUN_PLAN_STEP_STATUS_TRANSITIONS,
-                    label="run_plan_step.status",
-                )
-                step.status = RunPlanStepStatus.SKIPPED
-                step.result_json = {
-                    "summary": "Run plan aborted before this step executed.",
-                    **({"reason": reason} if reason else {}),
-                }
-                step.completed_at = now
-                step.updated_at = now
-                self._s.add(step)
-            elif step.status == RunPlanStepStatus.RUNNING:
-                validate_transition(
-                    step.status,
-                    RunPlanStepStatus.SKIPPED,
-                    RUN_PLAN_STEP_STATUS_TRANSITIONS,
-                    label="run_plan_step.status",
-                )
-                step.status = RunPlanStepStatus.SKIPPED
-                step.result_json = {
-                    "summary": "Run plan aborted while this step was running.",
-                    **({"reason": reason} if reason else {}),
-                }
-                step.error = None
-                step.completed_at = now
-                step.updated_at = now
-                self._s.add(step)
-        pending_approvals = self._s.exec(
-            select(ApprovalRequest).where(
-                ApprovalRequest.run_plan_id == plan.id,
-                ApprovalRequest.status == ApprovalRequestStatus.PENDING,
-            )
-        ).all()
-        for approval in pending_approvals:
-            validate_transition(
-                approval.status,
-                ApprovalRequestStatus.CANCELLED,
-                APPROVAL_REQUEST_STATUS_TRANSITIONS,
-                label="approval_request.status",
-            )
-            approval.status = ApprovalRequestStatus.CANCELLED
-            approval.decided_at = now
-            approval.decided_by = actor
-            approval.decision_json = {
-                "summary": "Run plan aborted before this approval was decided.",
-                **({"reason": reason} if reason else {}),
-            }
-            approval.updated_at = now
-            self._s.add(approval)
-        plan.status = RunPlanStatus.ABORTED
-        plan.completed_at = now
-        plan.updated_at = now
-        plan.metadata_json = {
-            **(plan.metadata_json or {}),
-            "aborted_at": now.isoformat(),
-            **({"aborted_by": actor} if actor else {}),
-            **({"abort_reason": reason} if reason else {}),
-        }
-        self._s.add(plan)
-        self._finish_linked_run(plan, RunStatus.ABORTED, error="run-plan-aborted")
-        TrackerRepository(self._s).mirror_run_plan_aborted(
-            plan=plan,
+        RunPlanLifecycleReconciler(self._s).abort_plan(
+            plan,
             reason=reason,
             actor=actor,
+            linked_run_error="run-plan-aborted",
         )
         if commit:
             self._s.commit()
@@ -751,6 +691,7 @@ class RunPlanRepository:
         plan.updated_at = now
         self._s.add(step)
         self._s.add(plan)
+        self._touch_linked_run(plan, step_id=step.step_id, now=now)
         TrackerRepository(self._s).mirror_run_plan_step_claimed(plan=plan, step=step)
         self._s.commit()
         self._s.refresh(step)
@@ -813,6 +754,7 @@ class RunPlanRepository:
         plan.updated_at = now
         self._s.add(step)
         self._s.add(plan)
+        self._touch_linked_run(plan, step_id=step.step_id, now=now)
         TrackerRepository(self._s).mirror_run_plan_step_recorded(plan=plan, step=step)
         self._sync_terminal_status(plan, status, now=now)
         self._s.commit()
@@ -827,52 +769,37 @@ class RunPlanRepository:
         now: datetime,
     ) -> None:
         if latest_step_status == RunPlanStepStatus.FAILED:
-            validate_transition(
-                plan.status,
-                RunPlanStatus.FAILED,
-                RUN_PLAN_STATUS_TRANSITIONS,
-                label="run_plan.status",
+            RunPlanLifecycleReconciler(self._s).complete_plan(
+                plan,
+                run_status=RunStatus.FAILED,
+                error="run-plan-step-failed",
+                now=now,
             )
-            plan.status = RunPlanStatus.FAILED
-            plan.completed_at = now
-            self._finish_linked_run(plan, RunStatus.FAILED, error="run-plan-step-failed")
             return
         steps = self._step_rows(plan.id)
-        terminal = {
-            RunPlanStepStatus.SUCCESS,
-            RunPlanStepStatus.FAILED,
-            RunPlanStepStatus.SKIPPED,
-        }
-        if steps and all(step.status in terminal for step in steps):
-            validate_transition(
-                plan.status,
-                RunPlanStatus.COMPLETED,
-                RUN_PLAN_STATUS_TRANSITIONS,
-                label="run_plan.status",
+        if steps and all(step.status in TERMINAL_STEP_STATUSES for step in steps):
+            RunPlanLifecycleReconciler(self._s).complete_plan(
+                plan,
+                run_status=RunStatus.SUCCESS,
+                now=now,
             )
-            plan.status = RunPlanStatus.COMPLETED
-            plan.completed_at = now
-            self._finish_linked_run(plan, RunStatus.SUCCESS)
 
-    def _finish_linked_run(
+    def _touch_linked_run(
         self,
         plan: RunPlan,
-        status: RunStatus,
         *,
-        error: str | None = None,
+        step_id: str | None,
+        now: datetime,
     ) -> None:
         if plan.run_id is None:
             return
         run = self._s.get(Run, plan.run_id)
         if run is None or run.status != RunStatus.RUNNING:
             return
-        RunRepository(self._s).finish(
-            plan.run_id,
-            status=status,
-            error=error,
-            metadata_json={"run_plan_id": plan.id, "stackos_type": "run-plan"},
-            _commit=False,
-        )
+        run.heartbeat_at = now
+        run.last_step = step_id
+        run.last_step_at = now
+        self._s.add(run)
 
     def _load_template(
         self,
@@ -922,6 +849,28 @@ class RunPlanRepository:
             raise ConflictError(
                 "run token is not bound to this run plan",
                 data={"run_plan_id": plan.id, "run_id": run_id, "expected_run_id": plan.run_id},
+            )
+        run = self._s.get(Run, plan.run_id)
+        if run is None:
+            raise ConflictError(
+                "linked run for this run plan is missing",
+                data={
+                    "run_plan_id": plan.id,
+                    "run_id": plan.run_id,
+                    "next_operations": ["runPlan.checkConsistency"],
+                },
+            )
+        if run.status != RunStatus.RUNNING:
+            raise ConflictError(
+                "linked run is not running; reconcile the run plan before recording "
+                "workflow progress",
+                data={
+                    "run_plan_id": plan.id,
+                    "run_id": run.id,
+                    "run_status": run.status.value,
+                    "run_error": run.error,
+                    "next_operations": ["runPlan.checkConsistency"],
+                },
             )
 
     def _fetch_plan(self, run_plan_id: int) -> RunPlan:
@@ -1054,12 +1003,15 @@ class RunPlanRepository:
         data.approval_requests = [
             ApprovalRequestOut.model_validate(item) for item in self._approval_rows(row.id)
         ]
+        data.consistency_issues = RunPlanLifecycleReconciler(self._s).consistency_issues(row)
         return data
 
 
 __all__ = [
     "RUN_PLAN_CONTROLLER_SKILL",
     "ApprovalRequestOut",
+    "RunPlanConsistencyIssueOut",
+    "RunPlanConsistencyOut",
     "RunPlanOut",
     "RunPlanRepository",
     "RunPlanStartOut",

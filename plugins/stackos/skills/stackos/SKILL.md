@@ -152,7 +152,10 @@ run token.
   sequencing/evidence matters.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
-  then `runPlan.recordStep`.
+  then `runPlan.recordStep`. For long implementation stretches between claim
+  and record, call `run.heartbeat` with the active `run_id`; claim and record
+  refresh heartbeat automatically, but an agent doing local work for several
+  minutes should keep the controller run alive explicitly.
 - Execute one direct action: describe/validate when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, call
   `toolbox.call` for `action.run`, and read the raw redacted provider result.

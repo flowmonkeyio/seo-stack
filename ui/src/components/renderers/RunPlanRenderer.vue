@@ -15,6 +15,11 @@ const props = withDefaults(defineProps<{
 
 const expandedStep = ref<string | null>(null)
 
+const issueTone: Record<string, 'danger' | 'warning'> = {
+  error: 'danger',
+  warning: 'warning',
+}
+
 function callsForStep(stepPk: number): SchemaActionCallAuditOut[] {
   return props.actionCalls.filter((call) => call.run_plan_step_id === stepPk)
 }
@@ -39,6 +44,30 @@ function toggleStep(stepId: string): void {
           <UiBadge v-if="plan.template_key">{{ plan.template_key }}</UiBadge>
         </template>
       </UiSectionHeader>
+
+      <div
+        v-if="(plan.consistency_issues ?? []).length > 0"
+        class="mb-4 space-y-2"
+      >
+        <UiCallout
+          v-for="issue in plan.consistency_issues"
+          :key="`${issue.code}-${issue.step_id ?? ''}-${issue.ticket_key ?? ''}`"
+          :tone="issueTone[issue.severity] ?? 'warning'"
+          density="compact"
+        >
+          <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-medium">{{ issue.message }}</span>
+              <UiBadge>{{ issue.code }}</UiBadge>
+            </div>
+            <div class="text-xs text-fg-muted">
+              <span v-if="issue.run_id">Run #{{ issue.run_id }}</span>
+              <span v-if="issue.step_id"> step {{ issue.step_id }}</span>
+              <span v-if="issue.ticket_key"> ticket {{ issue.ticket_key }}</span>
+            </div>
+          </div>
+        </UiCallout>
+      </div>
 
       <dl class="grid gap-3 text-sm md:grid-cols-3 xl:grid-cols-6">
         <div>

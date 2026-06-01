@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
 import pytest
 from sqlmodel import Session
 
@@ -10,9 +13,12 @@ from stackos.db.models import (
     ApprovalRequestStatus,
     ContextSnapshot,
     Run,
+    RunPlanStatus,
     RunPlanStepStatus,
     RunStatus,
 )
+from stackos.mcp.errors import ToolNotGrantedError
+from stackos.mcp.permissions import active_run_plan_step
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.workflows.template_loader import WorkflowTemplateLoader
@@ -37,6 +43,10 @@ def _run_plan_json() -> dict:
             }
         ],
     }
+
+
+def _now() -> datetime:
+    return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
 def _template(version: str = "0.1.0", *, name: str = "Company Review") -> WorkflowTemplateSpec:
@@ -294,6 +304,159 @@ def test_claimed_step_exposes_static_mcp_tool_grants(session: Session, project_i
 
     assert step.allowed_tools == ["resource.upsert"]
     assert fetched.steps[0].allowed_tools == ["resource.upsert"]
+
+
+def test_claim_step_refreshes_linked_run_heartbeat(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "heartbeat.claim.run",
+            "title": "Heartbeat Claim",
+            "steps": [{"id": "write", "title": "Write"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    stale_at = _now() - timedelta(minutes=10)
+    run.heartbeat_at = stale_at
+    session.add(run)
+    session.commit()
+
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="write")
+
+    refreshed = session.get(Run, started.run_id)
+    assert refreshed is not None
+    assert refreshed.heartbeat_at is not None
+    assert refreshed.heartbeat_at > stale_at
+
+
+def test_claim_step_rejects_terminal_linked_run(session: Session, project_id: int) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "terminal-run.claim.run",
+            "title": "Terminal Run Claim",
+            "steps": [{"id": "write", "title": "Write"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    run.status = RunStatus.ABORTED
+    run.error = "daemon-restart-orphan"
+    session.add(run)
+    session.commit()
+
+    with pytest.raises(ConflictError) as exc_info:
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="write")
+
+    assert exc_info.value.data["run_id"] == started.run_id
+    assert exc_info.value.data["run_status"] == "aborted"
+    assert "runPlan.checkConsistency" in exc_info.value.data["next_operations"]
+
+
+def test_record_step_rejects_terminal_linked_run(session: Session, project_id: int) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "terminal-run.record.run",
+            "title": "Terminal Run Record",
+            "steps": [{"id": "write", "title": "Write"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="write")
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    run.status = RunStatus.ABORTED
+    run.error = "daemon-restart-orphan"
+    session.add(run)
+    session.commit()
+
+    with pytest.raises(ConflictError) as exc_info:
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="write",
+            status=RunPlanStepStatus.SUCCESS,
+        )
+
+    assert exc_info.value.data["run_id"] == started.run_id
+    assert exc_info.value.data["run_status"] == "aborted"
+    assert session.get(Run, started.run_id).status == RunStatus.ABORTED
+    assert repo.get(plan.id).status == RunPlanStatus.STARTED
+
+
+def test_run_plan_grant_gate_rejects_terminal_linked_run(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "terminal-run.grant.run",
+            "title": "Terminal Run Grant",
+            "steps": [{"id": "write", "title": "Write"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="write")
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    run.status = RunStatus.ABORTED
+    run.error = "daemon-restart-orphan"
+    session.add(run)
+    session.commit()
+
+    with pytest.raises(ToolNotGrantedError) as exc_info:
+        active_run_plan_step(
+            SimpleNamespace(run=run, run_id=started.run_id, session=session),
+            "resource.upsert",
+        )
+
+    assert exc_info.value.data["run_id"] == started.run_id
+    assert "running audit run" in str(exc_info.value)
+
+
+def test_run_plan_get_surfaces_consistency_issues_for_terminal_run(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "terminal-run.diagnostic.run",
+            "title": "Terminal Run Diagnostic",
+            "steps": [{"id": "write", "title": "Write"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    run.status = RunStatus.ABORTED
+    run.error = "daemon-restart-orphan"
+    session.add(run)
+    session.commit()
+
+    fetched = repo.get(plan.id)
+
+    assert fetched.consistency_issues
+    assert fetched.consistency_issues[0].code == "terminal-run-live-plan"
+    assert fetched.consistency_issues[0].severity == "error"
 
 
 def test_step_linked_approval_gate_blocks_claim(session: Session, project_id: int) -> None:

@@ -22,6 +22,7 @@ from stackos.operations.spec import (
 )
 from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.run_plans import (
+    RunPlanConsistencyOut,
     RunPlanOut,
     RunPlanRepository,
     RunPlanStartOut,
@@ -90,6 +91,16 @@ class RunPlanStartInput(MCPInput):
 
 class RunPlanGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"run_plan_id": 1}})
+
+    run_plan_id: int
+    project_id: int | None = None
+
+
+class RunPlanCheckConsistencyInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"run_plan_id": 1}},
+    )
 
     run_plan_id: int
     project_id: int | None = None
@@ -249,6 +260,17 @@ async def run_plan_get(
     _emitter: ProgressEmitter,
 ) -> RunPlanOut:
     return RunPlanRepository(ctx.session).get(inp.run_plan_id, project_id=inp.project_id)
+
+
+async def run_plan_check_consistency(
+    inp: RunPlanCheckConsistencyInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> RunPlanConsistencyOut:
+    return RunPlanRepository(ctx.session).check_consistency(
+        inp.run_plan_id,
+        project_id=inp.project_id,
+    )
 
 
 async def run_plan_list(
@@ -484,6 +506,36 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=("Pass run_plan_id.",),
             returns=("The full run plan object, including steps and approval requests.",),
             examples=(OperationExample(title="Fetch a run plan", arguments={"run_plan_id": 42}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        OperationSpec(
+            name="runPlan.checkConsistency",
+            summary="Check one run plan for run, step, and tracker lifecycle mismatches.",
+            input_model=RunPlanCheckConsistencyInput,
+            output_model=RunPlanConsistencyOut,
+            handler=run_plan_check_consistency,
+            surfaces=_surfaces("runPlan.checkConsistency", "run-plans check-consistency"),
+            purpose=(
+                "Use this when run-plan, run audit, or tracker state looks inconsistent, "
+                "especially after daemon restart recovery or denied step/tracker writes."
+            ),
+            when_to_use=(
+                "A linked run is terminal while the run plan still looks live.",
+                "Tracker tickets show progress that does not match run-plan step state.",
+                "The UI or an agent needs model-readable repair guidance before continuing.",
+            ),
+            prerequisites=("Pass run_plan_id.",),
+            returns=(
+                "Structured consistency issues with severity, codes, affected ids, and "
+                "next operations.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Check run-plan consistency",
+                    arguments={"run_plan_id": 42},
+                ),
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),

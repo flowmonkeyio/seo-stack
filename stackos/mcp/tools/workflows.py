@@ -386,6 +386,7 @@ def _run_plan_operations() -> OperationRegistry:
         "runPlan.create",
         "runPlan.start",
         "runPlan.get",
+        "runPlan.checkConsistency",
         "runPlan.list",
         "runPlan.update",
         "runPlan.abort",

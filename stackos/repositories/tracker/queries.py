@@ -54,6 +54,7 @@ from stackos.repositories.tracker.utils import (
     TERMINAL_TICKET_STATUSES,
     _required_id,
 )
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 
 class TrackerQueryMixin:
@@ -936,11 +937,16 @@ class TrackerQueryMixin:
         ).first()
         if step is None:
             return None
+        expected_key = workflow_step_ticket_key(run_plan_id, step.step_id)
+        ticket = self._ticket_by_key(tracker_id, expected_key, missing_ok=True)
+        if ticket is not None and ticket.run_plan_step_id == step.id:
+            return ticket
         return self._s.exec(
             select(TrackerTicket).where(
                 TrackerTicket.tracker_id == tracker_id,
                 TrackerTicket.run_plan_id == run_plan_id,
                 TrackerTicket.run_plan_step_id == step.id,
+                col(TrackerTicket.parent_ticket_id).is_(None),
             )
         ).first()
 

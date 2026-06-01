@@ -11,6 +11,12 @@ from sqlmodel import col, select
 from stackos.artifacts import redact_secrets
 from stackos.db.models import (
     TRACKER_ITEM_STATUS_TRANSITIONS,
+    Run,
+    RunPlan,
+    RunPlanStatus,
+    RunPlanStep,
+    RunPlanStepStatus,
+    RunStatus,
     TaskTracker,
     TrackerItemStatus,
     TrackerRevision,
@@ -27,6 +33,7 @@ from stackos.repositories.base import (
     ValidationError,
     validate_transition,
 )
+from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
 from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
@@ -39,6 +46,10 @@ from stackos.repositories.tracker.utils import (
     _slug,
     _status_value,
     _utcnow,
+)
+from stackos.repositories.tracker.workflow import (
+    is_workflow_step_mirror_ticket,
+    workflow_step_ticket_key,
 )
 
 _TASK_PATCH_FIELDS = frozenset(
@@ -501,6 +512,7 @@ class TrackerMutationMixin:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
         self._validate_ticket_patch_fields(patch_json)
         if dry_run:
+            self._validate_workflow_ticket_patch_status(ticket, patch_json)
             dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
             warnings = dependency_preview.warnings if dependency_preview is not None else []
             return Envelope(
@@ -705,8 +717,16 @@ class TrackerMutationMixin:
         created_by: str | None = None,
         now: datetime | None = None,
         order_index: int | None = None,
+        allow_workflow_status_from_run_plan: bool = False,
     ) -> TrackerTicket:
         now = now or _utcnow()
+        self._validate_workflow_ticket_initial_status(
+            key=key,
+            status=status,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            allow_workflow_status_from_run_plan=allow_workflow_status_from_run_plan,
+        )
         row = TrackerTicket(
             tracker_id=tracker.id,
             project_id=tracker.project_id,
@@ -756,6 +776,7 @@ class TrackerMutationMixin:
 
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
+        self._validate_workflow_task_patch(task, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -800,6 +821,24 @@ class TrackerMutationMixin:
         task.updated_at = now
         self._s.add(task)
 
+    def _validate_workflow_task_patch(
+        self,
+        task: TrackerTask,
+        patch_json: dict[str, Any],
+    ) -> None:
+        run_plan_id = self._workflow_task_run_plan_id(task)
+        if run_plan_id is None or "status" not in patch_json:
+            return
+        raise ValidationError(
+            "workflow task status is controlled by runPlan.*",
+            data={
+                "task_key": task.key,
+                "run_plan_id": run_plan_id,
+                "requested_status": str(patch_json["status"]),
+                "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
+            },
+        )
+
     def _apply_ticket_patch(
         self,
         tracker: TaskTracker,
@@ -811,6 +850,7 @@ class TrackerMutationMixin:
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
             if ticket.status != new_status:
+                self._validate_workflow_ticket_status_change(ticket, new_status)
                 validate_transition(
                     ticket.status,
                     new_status,
@@ -913,6 +953,182 @@ class TrackerMutationMixin:
                 self._add_reference(tracker, ticket, reference)
         ticket.updated_at = now
         self._s.add(ticket)
+
+    def _validate_workflow_ticket_patch_status(
+        self,
+        ticket: TrackerTicket,
+        patch_json: dict[str, Any],
+    ) -> None:
+        if "status" not in patch_json:
+            return
+        new_status = _status_value(str(patch_json["status"]))
+        if ticket.status != new_status:
+            self._validate_workflow_ticket_status_change(ticket, new_status)
+
+    def _validate_workflow_ticket_initial_status(
+        self,
+        *,
+        key: str,
+        status: TrackerItemStatus,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+        allow_workflow_status_from_run_plan: bool,
+    ) -> None:
+        binding = self._workflow_ticket_binding(
+            ticket_key=key,
+            run_plan_id=run_plan_id,
+            run_plan_step_id=run_plan_step_id,
+            action="created",
+        )
+        if binding is None:
+            return
+        plan, step = binding
+        if allow_workflow_status_from_run_plan:
+            return
+        self._validate_workflow_ticket_can_be_created(key=key, plan=plan, step=step)
+        plan_id = plan.id if plan.id is not None else run_plan_id
+        assert plan_id is not None
+        self._validate_workflow_ticket_status_authority(
+            ticket_key=key,
+            requested_status=status,
+            plan=plan,
+            step=step,
+            is_mirror=key == workflow_step_ticket_key(plan_id, step.step_id),
+            action="created",
+        )
+
+    def _validate_workflow_ticket_status_change(
+        self,
+        ticket: TrackerTicket,
+        new_status: TrackerItemStatus,
+    ) -> None:
+        binding = self._workflow_ticket_binding(
+            ticket_key=ticket.key,
+            run_plan_id=ticket.run_plan_id,
+            run_plan_step_id=ticket.run_plan_step_id,
+            action="change status",
+        )
+        if binding is None:
+            return
+        plan, step = binding
+        self._validate_workflow_ticket_status_authority(
+            ticket_key=ticket.key,
+            requested_status=new_status,
+            plan=plan,
+            step=step,
+            is_mirror=is_workflow_step_mirror_ticket(ticket, step),
+            action="change status",
+        )
+
+    def _workflow_ticket_binding(
+        self,
+        *,
+        ticket_key: str,
+        run_plan_id: int | None,
+        run_plan_step_id: int | None,
+        action: str,
+    ) -> tuple[RunPlan, RunPlanStep] | None:
+        if run_plan_id is None or run_plan_step_id is None:
+            return None
+        plan = self._s.get(RunPlan, run_plan_id)
+        step = self._s.get(RunPlanStep, run_plan_step_id)
+        if plan is None or step is None:
+            raise ValidationError(
+                f"workflow-backed tracker ticket cannot {action} because its run-plan state "
+                "is missing",
+                data={
+                    "ticket_key": ticket_key,
+                    "run_plan_id": run_plan_id,
+                    "run_plan_step_id": run_plan_step_id,
+                    "next_operations": ["runPlan.checkConsistency"],
+                },
+            )
+        return plan, step
+
+    def _validate_workflow_ticket_can_be_created(
+        self,
+        *,
+        key: str,
+        plan: RunPlan,
+        step: RunPlanStep,
+    ) -> None:
+        run = self._s.get(Run, plan.run_id) if plan.run_id is not None else None
+        if plan.status not in TERMINAL_PLAN_STATUSES and (
+            run is None or run.status not in TERMINAL_RUN_STATUSES
+        ):
+            return
+        raise ValidationError(
+            "workflow-backed tracker ticket cannot be created after its run plan is terminal",
+            data={
+                "ticket_key": key,
+                "run_plan_id": plan.id,
+                "run_id": plan.run_id,
+                "run_plan_status": plan.status.value,
+                "run_status": run.status.value if run is not None else None,
+                "step_id": step.step_id,
+                "run_plan_step_id": step.id,
+                "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+            },
+        )
+
+    def _validate_workflow_ticket_status_authority(
+        self,
+        *,
+        ticket_key: str,
+        requested_status: TrackerItemStatus,
+        plan: RunPlan,
+        step: RunPlanStep,
+        is_mirror: bool,
+        action: str,
+    ) -> None:
+        plan_id = int(plan.id or 0)
+        if is_mirror:
+            raise ValidationError(
+                "workflow step mirror ticket status is controlled by runPlan.*",
+                data={
+                    "ticket_key": ticket_key,
+                    "run_plan_id": plan_id,
+                    "step_id": step.step_id,
+                    "run_plan_step_id": step.id,
+                    "next_operations": ["runPlan.claimStep", "runPlan.recordStep"],
+                },
+            )
+        if requested_status not in {TrackerItemStatus.IN_PROGRESS, TrackerItemStatus.COMPLETE}:
+            return
+        run = self._s.get(Run, plan.run_id) if plan.run_id is not None else None
+        if (
+            plan.status != RunPlanStatus.STARTED
+            or step.status != RunPlanStepStatus.RUNNING
+            or run is None
+            or run.status != RunStatus.RUNNING
+        ):
+            raise ValidationError(
+                f"workflow-backed tracker ticket status cannot {action} as active or complete "
+                "outside its active run-plan step",
+                data={
+                    "ticket_key": ticket_key,
+                    "run_plan_id": plan_id,
+                    "run_id": plan.run_id,
+                    "run_status": run.status.value if run is not None else None,
+                    "step_id": step.step_id,
+                    "step_status": step.status.value,
+                    "requested_status": requested_status.value,
+                    "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
+                },
+            )
+
+    @staticmethod
+    def _workflow_task_run_plan_id(task: TrackerTask) -> int | None:
+        source_json = task.source_json if isinstance(task.source_json, dict) else {}
+        raw = source_json.get("run_plan_id")
+        if isinstance(raw, int):
+            return raw
+        if task.source_kind == TrackerSourceKind.WORKFLOW and task.key.startswith("workflow-"):
+            try:
+                return int(task.key.removeprefix("workflow-"))
+            except ValueError:
+                return None
+        return None
 
     def _validate_task_patch_fields(self, patch_json: dict[str, Any]) -> None:
         self._validate_patch_fields(patch_json, allowed=_TASK_PATCH_FIELDS, entity_kind="task")

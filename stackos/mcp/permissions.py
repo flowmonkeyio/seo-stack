@@ -32,6 +32,7 @@ from stackos.db.models import (
     RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
+    RunStatus,
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.workflows.run_plan_grants import (
@@ -175,6 +176,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "run.recordStepCall",
         "run.start",
         "runPlan.abort",
+        "runPlan.checkConsistency",
         "runPlan.create",
         "runPlan.get",
         "runPlan.list",
@@ -213,6 +215,7 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "run.get",
         "run.heartbeat",
         "runPlan.claimStep",
+        "runPlan.checkConsistency",
         "runPlan.get",
         "runPlan.list",
         "runPlan.recordStep",
@@ -239,6 +242,19 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
     }
 )
 _RUN_PLAN_DYNAMIC_TOOLS: frozenset[str] = frozenset(RUN_PLAN_GRANTABLE_TOOL_NAMES)
+_RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
+    {
+        "tracker.createTask",
+        "tracker.createTicket",
+        "tracker.updateTask",
+        "tracker.updateTicket",
+        "tracker.patch",
+        "tracker.pick",
+        "tracker.rejectTask",
+        "tracker.release",
+        "tracker.linkRunPlan",
+    }
+)
 _RUN_PLAN_CONTROLLER_TOOLS: frozenset[str] = _RUN_PLAN_CONTROL | _RUN_PLAN_DYNAMIC_TOOLS
 
 
@@ -515,6 +531,12 @@ def _running_run_plan_step(ctx: Any, tool_name: str) -> tuple[RunPlan, RunPlanSt
         )
     assert run is not None
     assert session is not None
+    if run.status != RunStatus.RUNNING:
+        _deny_run_plan_tool(
+            tool_name,
+            reason="run-plan scoped tools require a running audit run",
+            run_id=run_id,
+        )
     metadata_json = getattr(run, "metadata_json", None)
     metadata: dict[str, Any] = metadata_json if isinstance(metadata_json, dict) else {}
     run_plan_id = metadata.get("run_plan_id")
@@ -679,6 +701,9 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
             _check_direct_context_fields(tool_name, arguments, source="decisions")
         return
     if skill_name != RUN_PLAN_CONTROLLER_SKILL:
+        return
+    if tool_name in _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS:
+        _running_run_plan_step(ctx, tool_name)
         return
     if tool_name not in _RUN_PLAN_DYNAMIC_TOOLS:
         return

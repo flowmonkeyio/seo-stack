@@ -91,6 +91,37 @@ def test_tracker_bulk_compact_keeps_counts_and_refs_without_full_rows() -> None:
     assert "context_json" not in str(compact)
 
 
+def test_run_plan_compact_keeps_consistency_issues() -> None:
+    spec = _spec("runPlan.get", mutating=False)
+    payload = {
+        "project_id": 1,
+        "data": {
+            "id": 42,
+            "project_id": 1,
+            "run_id": 9,
+            "key": "demo.run",
+            "title": "Demo",
+            "status": "started",
+            "consistency_issues": [
+                {
+                    "code": "terminal-run-live-plan",
+                    "severity": "error",
+                    "message": "Linked audit run is terminal while run plan is still live.",
+                    "run_plan_id": 42,
+                    "run_id": 9,
+                    "data": {"run_status": "aborted"},
+                }
+            ],
+        },
+    }
+
+    compact = shape_operation_response(spec, payload, response_mode="compact")
+
+    assert compact["data"]["run_plan_id"] == 42
+    assert compact["data"]["consistency_issues"][0]["code"] == "terminal-run-live-plan"
+    assert compact["data"]["consistency_issues"][0]["run_id"] == 9
+
+
 def test_tracker_get_compact_summarizes_snapshot_without_full_rows() -> None:
     spec = _spec("tracker.get", mutating=False)
     payload = {

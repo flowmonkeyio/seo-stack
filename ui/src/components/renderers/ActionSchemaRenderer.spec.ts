@@ -27,6 +27,14 @@ describe('ActionSchemaRenderer', () => {
       allows_credential: true,
       budget_kind: 'openai-images',
       enforce_budget: true,
+      exposure: {
+        state: 'hidden',
+        visible_by_default: false,
+        hidden_reason: 'integration_not_connected',
+        external_provider: true,
+        requires_integration: true,
+        next_action: null,
+      },
       availability: {
         action_ref: 'utils.image.generate',
         status: 'missing_credential',
