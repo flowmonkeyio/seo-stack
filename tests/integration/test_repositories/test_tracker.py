@@ -1015,7 +1015,7 @@ def test_workflow_step_mirror_owned_fields_cannot_bypass_run_plan_lifecycle(
     assert "runPlan.claimStep" in exc_info.value.data["next_operations"]
 
 
-def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
+def test_workflow_child_ticket_creation_can_start_as_normal_tracker_work(
     session: Session,
     project_id: int,
 ) -> None:
@@ -1037,8 +1037,9 @@ def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
     step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
     assert step is not None
 
-    with pytest.raises(ValidationError) as exc_info:
-        TrackerRepository(session).create_ticket(
+    created = (
+        TrackerRepository(session)
+        .create_ticket(
             project_id=project_id,
             task_key=f"workflow-{plan.id}",
             key="workflow-child-active",
@@ -1048,10 +1049,11 @@ def test_workflow_child_ticket_creation_cannot_bypass_run_plan_lifecycle(
             run_plan_step_id=step.id,
             created_by="codex",
         )
+        .data
+    )
 
-    assert exc_info.value.data["run_plan_id"] == plan.id
-    assert exc_info.value.data["step_id"] == "prepare"
-    assert exc_info.value.data["requested_status"] == "in-progress"
+    assert created.ticket is not None
+    assert created.ticket.status == TrackerItemStatus.IN_PROGRESS
 
 
 def test_workflow_child_ticket_can_complete_inside_running_step(
@@ -1169,6 +1171,141 @@ def test_completed_workflow_suppresses_historical_topology_warnings(
     check_keys = {check["key"] for check in step_verify.checks}
     assert "workflow-step-child-bridge" not in check_keys
     assert "workflow-step-children-reachable" not in check_keys
+
+
+def test_pending_workflow_step_with_bridged_open_child_does_not_warn_closeout(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-pending-child.run",
+            "title": "Tracker Workflow Pending Child",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=f"workflow-{plan.id}-plan",
+        key="pending-child",
+        title="Pending child",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[f"workflow-{plan.id}-plan"],
+        created_by="codex",
+    )
+
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+
+def test_pending_workflow_step_with_docs_child_does_not_warn_bypass(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-pending-docs.run",
+            "title": "Tracker Workflow Pending Docs",
+            "steps": [{"id": "deliver", "title": "Deliver"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=f"workflow-{plan.id}-deliver",
+        key="delivery-runtime",
+        title="Delivery runtime",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[f"workflow-{plan.id}-deliver"],
+        created_by="codex",
+    )
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=f"workflow-{plan.id}-deliver",
+        key="delivery-docs",
+        title="Delivery docs",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[f"workflow-{plan.id}-deliver"],
+        created_by="codex",
+    )
+
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+
+def test_completed_workflow_step_with_open_child_warns_closeout(
+    session: Session,
+    project_id: int,
+) -> None:
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.workflow-open-child.run",
+            "title": "Tracker Workflow Open Child",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+        created_by="codex",
+    ).data
+    run_plans.start(plan.id, project_id=project_id)
+    step = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)).first()
+    assert step is not None
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=f"workflow-{plan.id}-plan",
+        key="open-child",
+        title="Open child",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[f"workflow-{plan.id}-plan"],
+        created_by="codex",
+    )
+
+    mirror = tracker._ticket_by_key(
+        tracker.ensure_tracker(project_id=project_id).id,
+        f"workflow-{plan.id}-plan",
+    )
+    mirror.status = TrackerItemStatus.COMPLETE
+    session.add(mirror)
+    session.commit()
+
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == [
+        f"Workflow step workflow-{plan.id}-plan is complete while attached child tickets "
+        "remain open (open-child)."
+    ]
 
 
 def test_workflow_child_ticket_creation_rejects_terminal_run_plan(
@@ -1428,8 +1565,5 @@ def test_workflow_ticket_list_update_dry_run_validates_run_plan_lifecycle(
     )
 
     assert preview.dry_run is True
-    assert preview.valid is False
-    assert preview.results[0].action == "error"
-    assert "terminal status requires the owning run-plan step to be running" in (
-        preview.results[0].error or ""
-    )
+    assert preview.valid is True
+    assert preview.results[0].action == "validated"

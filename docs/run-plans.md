@@ -50,12 +50,31 @@ agent-facing check.
 heartbeat, but agents do not need to keep calling `run.heartbeat` during normal
 workflow-backed delivery.
 
-Agents must not use tracker ticket status as a second workflow execution path.
-Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
+`runPlan.recordStep(blocked)` is a recoverable pause. It keeps the run plan and
+linked run active, mirrors the step ticket as an active blocker, and lets the
+same step be claimed again after the blocker is repaired. Use `failed` only
+when the step should terminally fail the run plan. `runPlan.recordStep(success)`
+enforces lifecycle, approvals, and transitive run-plan step dependencies. It
+does not hard-block on tracker graph warnings; agents should use graph warnings
+as planning and audit signals, and only block intentionally when a warning is
+material to the current step's definition of done.
+
+`runPlan.recover` is the self-healing path for system-recoverable terminal
+states, not a general history rewrite. Use it after `runPlan.get` or
+`runPlan.checkConsistency` when an old daemon/controller bug terminally failed
+a step that should have been `blocked`, or when a `daemon-restart-orphan` abort
+closed the canonical workflow that should continue. It restores the same
+run-plan/run audit row to `started`/`running`, reopens stale-aborted future
+steps and approvals, and mirrors tracker state back to active work. It can also
+reset safely recoverable live blocked steps to pending when no child work has
+progressed or when an out-of-order blocker must be unwound.
+
+Agents must not use tracker mirror ticket status as a second workflow execution
+path. Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
 `runPlan.recordStep`. Child tickets attached to a workflow step may track
-delivery details, but status progress is only allowed while the canonical
-run-plan step and linked audit run are running. Evidence, metadata, dependencies,
-and references can still be edited without advancing workflow lifecycle.
+delivery details and can progress as tracker work with normal provenance.
+Evidence, metadata, dependencies, and references can be edited without
+advancing workflow lifecycle.
 Completed or failed run plans cannot be converted to rejected tracker tasks.
 Use follow-up tracker work for rejected outcomes after terminal execution.
 `tracker.rejectTask` may retire a draft/started workflow only by aborting the

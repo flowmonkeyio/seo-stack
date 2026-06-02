@@ -15,8 +15,6 @@ from stackos.db.models import (
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
-    RunPlanStepStatus,
-    RunStatus,
     TaskTracker,
     TrackerItemStatus,
     TrackerRevision,
@@ -1189,43 +1187,7 @@ class TrackerMutationMixin:
                     "next_operations": ["runPlan.claimStep", "runPlan.recordStep"],
                 },
             )
-        requires_active_step = (
-            requested_status == TrackerItemStatus.IN_PROGRESS
-            or requested_status in TERMINAL_TRACKER_STATUSES
-        )
-        if not requires_active_step:
-            return
-        run = self._s.get(Run, plan.run_id) if plan.run_id is not None else None
-        if (
-            plan.status == RunPlanStatus.STARTED
-            and step.status == RunPlanStepStatus.RUNNING
-            and run is not None
-            and run.status == RunStatus.RUNNING
-        ):
-            return
-        if requested_status in TERMINAL_TRACKER_STATUSES:
-            message = (
-                "workflow-backed tracker ticket terminal status requires the owning "
-                "run-plan step to be running"
-            )
-        else:
-            message = (
-                "workflow-backed tracker ticket cannot be marked in-progress before "
-                "its run-plan step is running"
-            )
-        raise ValidationError(
-            message,
-            data={
-                "ticket_key": ticket_key,
-                "run_plan_id": plan_id,
-                "run_id": plan.run_id,
-                "run_status": run.status.value if run is not None else None,
-                "step_id": step.step_id,
-                "step_status": step.status.value,
-                "requested_status": requested_status.value,
-                "next_operations": ["runPlan.get", "runPlan.claimStep", "runPlan.recordStep"],
-            },
-        )
+        return
 
     @staticmethod
     def _workflow_task_run_plan_id(task: TrackerTask) -> int | None:

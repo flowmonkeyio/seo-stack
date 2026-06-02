@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 151
+    assert len(names) == 152
     assert {
         "action.execute",
         "auth.status",
@@ -26,6 +26,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "workflowExtension.upsert",
         "workflowExtension.delete",
         "tracker.rejectTask",
+        "runPlan.recover",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -231,6 +232,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert run_plan.surfaces["cli"].command == "run-plans claim-step"
     assert run_plan.grant_policy == "run-plan-controller"
     assert any("run_token" in item for item in run_plan.prerequisites)
+
+    run_plan_recover = registry.get("runPlan.recover").describe_out()
+    assert run_plan_recover.surfaces["mcp"].enabled is True
+    assert run_plan_recover.surfaces["rest"].enabled is True
+    assert run_plan_recover.surfaces["cli"].command == "run-plans recover"
+    assert run_plan_recover.grant_policy == "direct-run-audit-write"
+    assert any("system-recoverable" in item for item in run_plan_recover.prerequisites)
 
     tracker_next = registry.get("tracker.next").describe_out()
     assert tracker_next.surfaces["mcp"].enabled is True

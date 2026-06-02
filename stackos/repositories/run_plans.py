@@ -36,6 +36,11 @@ from stackos.repositories.base import (
     cursor_paginate,
     validate_transition,
 )
+from stackos.repositories.run_plan_dependencies import (
+    completed_dependency_step_ids,
+    incomplete_step_dependencies,
+    transitive_step_dependencies,
+)
 from stackos.repositories.run_plan_lifecycle import (
     RunPlanConsistencyIssueOut,
     RunPlanConsistencyOut,
@@ -522,6 +527,44 @@ class RunPlanRepository:
         self._require_plan_project(row, project_id)
         return RunPlanLifecycleReconciler(self._s).check_plan(row)
 
+    def recover(
+        self,
+        *,
+        run_plan_id: int,
+        step_id: str,
+        step_status: RunPlanStepStatus = RunPlanStepStatus.BLOCKED,
+        project_id: int | None = None,
+        reason: str | None = None,
+        actor: str | None = None,
+        result_json: dict[str, Any] | None = None,
+        error: str | None = None,
+        commit: bool = True,
+    ) -> Envelope[RunPlanOut]:
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        step = self._fetch_step(run_plan_id, step_id)
+        if result_json is not None:
+            _ensure_no_secrets(result_json, label="run plan recovery result")
+        if error is not None:
+            _ensure_no_secrets({"error": error}, label="run plan recovery error")
+        if reason is not None:
+            _ensure_no_secrets({"reason": reason}, label="run plan recovery reason")
+        RunPlanLifecycleReconciler(self._s).recover_plan(
+            plan,
+            step=step,
+            step_status=step_status,
+            result_json=_jsonable(result_json) if result_json is not None else None,
+            error=error,
+            reason=reason,
+            actor=actor,
+        )
+        if commit:
+            self._s.commit()
+            self._s.refresh(plan)
+        else:
+            self._s.flush()
+        return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
+
     def list(
         self,
         *,
@@ -730,11 +773,14 @@ class RunPlanRepository:
             RunPlanStepStatus.SUCCESS,
             RunPlanStepStatus.FAILED,
             RunPlanStepStatus.SKIPPED,
+            RunPlanStepStatus.BLOCKED,
         }:
             raise ValidationError(
-                "record_step status must be success, failed, or skipped",
+                "record_step status must be success, failed, skipped, or blocked",
                 data={"status": status.value},
             )
+        if status == RunPlanStepStatus.SUCCESS:
+            self._ensure_dependencies_complete(run_plan_id, step)
         validate_transition(
             step.status,
             status,
@@ -749,7 +795,7 @@ class RunPlanRepository:
         step.status = status
         step.result_json = _jsonable(result_json) if result_json is not None else None
         step.error = error
-        step.completed_at = now
+        step.completed_at = None if status == RunPlanStepStatus.BLOCKED else now
         step.updated_at = now
         plan.updated_at = now
         self._s.add(step)
@@ -913,15 +959,11 @@ class RunPlanRepository:
             self._ensure_dependencies_complete(run_plan_id, step)
             return step
         rows = self._step_rows(run_plan_id)
-        completed = {
-            step.step_id
-            for step in rows
-            if step.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}
-        }
+        completed = completed_dependency_step_ids(rows)
         for step in rows:
             if step.status != RunPlanStepStatus.PENDING:
                 continue
-            if all(dep in completed for dep in (step.depends_on_json or [])):
+            if all(dep in completed for dep in transitive_step_dependencies(rows, step)):
                 return step
         raise NotFoundError(
             "no claimable run plan step found",
@@ -929,12 +971,8 @@ class RunPlanRepository:
         )
 
     def _ensure_dependencies_complete(self, run_plan_id: int, step: RunPlanStep) -> None:
-        completed = {
-            item.step_id
-            for item in self._step_rows(run_plan_id)
-            if item.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}
-        }
-        missing = [dep for dep in (step.depends_on_json or []) if dep not in completed]
+        rows = self._step_rows(run_plan_id)
+        missing = incomplete_step_dependencies(rows, step)
         if missing:
             raise ConflictError(
                 "run plan step dependencies are not complete",

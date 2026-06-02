@@ -709,6 +709,69 @@ def test_cli_run_plans_abort_alias_calls_operation(monkeypatch) -> None:  # type
     assert json.loads(result.stdout)["data"]["status"] == "aborted"
 
 
+def test_cli_run_plans_recover_alias_calls_operation(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {"data": {"status": "started"}}
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+    result_path = tmp_path / "recover-result.json"
+    result_path.write_text(json.dumps({"blocking_issue": "graph warnings"}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run-plans",
+            "recover",
+            "9",
+            "--project",
+            "7",
+            "--step-id",
+            "plan-tickets",
+            "--step-status",
+            "blocked",
+            "--reason",
+            "daemon-restart-orphan",
+            "--actor",
+            "codex",
+            "--error",
+            "tracker graph warnings",
+            "--result",
+            str(result_path),
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/runPlan.recover/call",
+            {
+                "arguments": {
+                    "run_plan_id": 9,
+                    "step_id": "plan-tickets",
+                    "step_status": "blocked",
+                    "reason": "daemon-restart-orphan",
+                    "actor": "codex",
+                    "result_json": {"blocking_issue": "graph warnings"},
+                    "error": "tracker graph warnings",
+                    "project_id": 7,
+                }
+            },
+        )
+    ]
+    assert json.loads(result.stdout)["data"]["status"] == "started"
+
+
 def test_cli_agent_requests_claim_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any] | None]] = []
 

@@ -357,7 +357,9 @@ class TrackerQueryMixin:
                         "detail": (
                             "Workflow-backed child tickets need an execution dependency bridge: "
                             f"the first executable child under {parent.key} must depend on "
-                            f"{parent.key}. Passing run_plan_id and step_id is attachment only."
+                            f"{parent.key}. Passing run_plan_id and step_id is "
+                            "attachment/provenance only; update child ticket status and "
+                            "evidence with tracker.updateTicket."
                         ),
                     }
                 )
@@ -413,7 +415,9 @@ class TrackerQueryMixin:
                                 "Workflow-backed child tickets need an execution dependency "
                                 "bridge: "
                                 f"the first executable child under {ticket.key} must depend on "
-                                f"{ticket.key}. Passing run_plan_id and step_id is attachment only."
+                                f"{ticket.key}. Passing run_plan_id and step_id is "
+                                "attachment/provenance only; update child ticket status and "
+                                "evidence with tracker.updateTicket."
                             ),
                         }
                     )

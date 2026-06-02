@@ -169,6 +169,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "runPlan.create",
         "runPlan.get",
         "runPlan.list",
+        "runPlan.recover",
         "runPlan.start",
         "runPlan.validate",
         "schedule.list",

@@ -180,6 +180,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "runPlan.create",
         "runPlan.get",
         "runPlan.list",
+        "runPlan.recover",
         "runPlan.start",
         "runPlan.validate",
         "provider.describe",

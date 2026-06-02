@@ -147,14 +147,30 @@ run token.
   attempted unsuccessful work, and `skipped` for intentionally not executed
   work. `tracker.rejectTask` is an operator rejection override: it marks the
   task and all child tickets `aborted`. For workflow-backed tasks, do not patch
-  task or mirror-ticket lifecycle directly. `runPlan.create` creates the
+  task or mirror-ticket lifecycle directly. Mirror tickets are the generated
+  `workflow-{run_plan_id}-{step_id}` tickets; attached child tickets such as
+  implementation, docs, verification, and audit tickets remain tracker-owned
+  work items and should be updated with `tracker.updateTicket` when their
+  evidence/status changes. `runPlan.create` creates the
   workflow task and step tickets; `runPlan.start` marks the task
   `in-progress`; `runPlan.claimStep` marks the step ticket `in-progress`;
-  `runPlan.recordStep` marks the step ticket `complete`, `failed`, or
-  `skipped`; `runPlan.abort` marks the workflow task and unfinished linked
-  tickets `aborted`. Completed or failed workflow run plans cannot be rejected
-  through tracker state. `tracker.linkRunPlan` is provenance only; it does not
-  transfer lifecycle ownership from tracker to run plan.
+  `runPlan.recordStep` marks the step ticket `complete`, `failed`, `skipped`,
+  or `blocked`. `runPlan.recordStep(success)` enforces lifecycle, approvals,
+  and transitive run-plan step dependencies. It does not hard-block on tracker
+  graph warnings. Treat graph warnings as planning/audit signals: repair them
+  when they hide required work or affect the current definition of done, record
+  them as follow-up cleanup when they do not, and keep moving. `blocked` is
+  recoverable and keeps the run plan started until the blocker is repaired and
+  the same step is reclaimed. If an old daemon or controller bug already made a
+  recoverable blocker terminal, call `runPlan.get` or
+  `runPlan.checkConsistency`, then use `runPlan.recover` only when the
+  diagnostics/history show a system-recoverable failed, aborted, or safely
+  recoverable live workflow. Do not create a duplicate replacement plan just to
+  escape stale lifecycle state. `runPlan.abort` marks the workflow task and
+  unfinished linked tickets `aborted`. Completed or failed workflow run plans
+  cannot be rejected through tracker state.
+  `tracker.linkRunPlan` is provenance only; it does not transfer lifecycle
+  ownership from tracker to run plan.
 - Execute workflow work: use a workflow template when work should follow a
   reusable contract or when the operator explicitly asks to use a workflow,
   engineering workflow, StackOS workflow, or "the workflow". Create or resolve
@@ -166,11 +182,15 @@ run token.
   enabled extension defaults and the effective template, then turns it into
   concrete state; `runPlan.start` and step grants control which tools/actions
   are available. Mirror or link tracker tickets when human-visible
-  sequencing/evidence matters. For workflow-backed tickets, `run_plan_id` and
-  `step_id` are attachment only. Add dependency edges into the mirrored workflow
+  sequencing/evidence matters. For workflow-backed child tickets,
+  `run_plan_id` and `step_id` are attachment/provenance only, not lifecycle
+  ownership transfer. Use `tracker.updateTicket` for those child tickets;
+  use `runPlan.claimStep`/`runPlan.recordStep` only for the generated workflow
+  step mirror tickets. Add dependency edges into the mirrored workflow
   spine, then immediately call `tracker.get` with `run_plan_id` and
-  `include_graph=true`. Treat workflow-spine warnings as blockers before
-  recording planning, delivery, verification, or closeout steps as successful.
+  `include_graph=true`. Review workflow-spine warnings, repair material issues,
+  and record non-blocking cleanup explicitly instead of treating every warning
+  as an execution blocker.
 - Execute a step: claim the run-plan step, follow the referenced guidance, call
   `toolbox.describe` for needed granted tools, invoke them with `toolbox.call`,
   then `runPlan.recordStep`. For long implementation stretches between claim

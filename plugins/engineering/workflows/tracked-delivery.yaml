@@ -175,13 +175,6 @@ policies:
   - key: main_agent_accountability
     kind: orchestration
     description: The curated SDLC subset supports the work; the main agent remains responsible for integration, final decisions, and user-facing truth.
-approval_gates:
-  - key: human_scope_review
-    description: Required when scope, architecture, migration, provider behavior, security posture, or release risk is ambiguous.
-    required_when: unclear_scope_or_material_risk
-  - key: release_review
-    description: Required before claiming release readiness or pushing externally visible changes.
-    required_when: release_or_push
 steps:
   - id: scope-work
     title: Scope Work
@@ -205,8 +198,6 @@ steps:
       - project_adaptation_required
       - workflow_selection_precedence
       - main_agent_accountability
-    approval_refs:
-      - human_scope_review
     output_refs:
       - scope_summary
     success_criteria:
@@ -258,10 +249,11 @@ steps:
       - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
       - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket dependencies, likely files or operation surfaces, acceptance criteria, and completion evidence expectations.
-      - For workflow-backed tickets, treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
+      - For workflow-backed child tickets, treat run_plan_id and step_id as attachment/provenance only; update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets.
+      - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
       - Make the first executable child of a workflow step depend on the workflow step ticket, and make the next workflow step depend on the terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
-      - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; treat graph warnings as blockers before recording this step successful.
+      - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
       - truthful_tracker_state
@@ -277,8 +269,8 @@ steps:
       - No delivery truth is split across a direct tracker task and a later workflow task when the operator requested a workflow.
       - Dependencies match the actual delivery order and no loose ends are hidden.
       - Workflow-backed work includes an explicit graph check covering parent step ticket, first child dependency, terminal child tickets, next-step handoff, and detached branches.
-      - tracker.get include_graph=true returns no workflow-spine warnings for the planned run plan.
-      - No detached delivery, verification, docs, signoff, or release branch can become ready independently of the workflow.
+      - tracker.get include_graph=true has been reviewed, with material workflow-spine warnings repaired or captured as explicit follow-up risk.
+      - Detached delivery, verification, docs, signoff, or release branches are either repaired or explicitly tracked as non-blocking cleanup.
   - id: design-approach
     title: Design Approach
     purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications.
@@ -305,8 +297,6 @@ steps:
       - Review from behavior, contract, security, grant, migration, UI, docs, tracker, and release perspectives.
       - Lead with blocking issues and distinguish non-blocking risks from preferences.
       - Do not begin implementation until blocking design gaps are resolved or explicitly deferred.
-    approval_refs:
-      - human_scope_review
     policy_refs:
       - evidence_over_assertion
       - main_agent_accountability
@@ -381,8 +371,6 @@ steps:
       - Reconstruct user/agent/operator flow, data flow, permission/grant boundary, and mutation safety before findings.
       - Review tests, fixtures, docs, tracker updates, and implementation together.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
-    approval_refs:
-      - release_review
     policy_refs:
       - evidence_over_assertion
       - one_brain_delivery
@@ -427,8 +415,6 @@ steps:
       - Keep release messaging provider-neutral and evidence-bound.
     input_refs:
       - release_intent
-    approval_refs:
-      - release_review
     policy_refs:
       - truthful_tracker_state
       - evidence_over_assertion

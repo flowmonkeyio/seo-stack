@@ -68,17 +68,34 @@ Lifecycle mirroring is mechanical:
 | `runPlan.create` | creates `workflow-{run_plan_id}` task and `workflow-{run_plan_id}-{step_id}` tickets |
 | `runPlan.start` | marks workflow task `in-progress` and links the run id |
 | `runPlan.claimStep` | marks the matching ticket `in-progress`, assigns the claimer, and stores run id |
-| `runPlan.recordStep(success)` | marks the ticket `complete` and stores the step outcome |
+| `runPlan.recordStep(success)` | marks the step mirror ticket `complete` and stores the step outcome |
 | `runPlan.recordStep(skipped)` | marks the ticket `skipped` |
 | `runPlan.recordStep(failed)` | marks the ticket `failed` with `blocker_reason` |
+| `runPlan.recordStep(blocked)` | keeps the ticket active with `blocker_reason`; the step can be reclaimed after repair |
+| `runPlan.recover` | reopens a system-recoverable failed/aborted workflow or safely recoverable live step into the same live run-plan task |
 | `runPlan.abort` / stale abort reconciliation | marks the workflow task and unfinished linked tickets `aborted` |
 
+Only generated workflow step mirror tickets are lifecycle-owned by run-plan
+operations. These tickets use the key shape `workflow-{run_plan_id}-{step_id}`.
+Child tickets attached to a step with `run_plan_id` and `step_id` remain
+tracker-owned work items. Agents should update their status, evidence, outcome,
+and blockers with `tracker.updateTicket` when the work changes; reserve
+`runPlan.claimStep` and `runPlan.recordStep` for the mirrored step ticket and
+run-plan lifecycle.
+
 StackOS only mirrors state. It does not invent tickets beyond the concrete
-run-plan steps and it does not decide how to repair failures.
+run-plan steps and it does not decide how to repair failures. Use `blocked`
+for real execution blockers; graph warnings should usually be reviewed,
+triaged, and repaired as tracker hygiene without freezing unrelated progress.
+Use `failed` only for attempted unsuccessful work that should terminally fail
+the run plan.
 Completed or failed workflow run plans cannot be rejected through tracker
 state; create follow-up work or inspect `runPlan.get`/`runPlan.checkConsistency`
-instead. `tracker.rejectTask` is a rejection override for independent tasks or
-draft/started workflow plans that should first abort through `runPlan.abort`.
+instead. If diagnostics show a system-recoverable lifecycle failure, use
+`runPlan.recover` to restore the same canonical workflow before creating any
+replacement plan. `tracker.rejectTask` is a rejection override for independent
+tasks or draft/started workflow plans that should first abort through
+`runPlan.abort`.
 `tracker.linkRunPlan` adds provenance only. It does not make a manual task's
 lifecycle follow the linked run plan.
 
@@ -91,7 +108,7 @@ mirrored workflow step but does not add dependency edges. Agents must still add
 `dependency_keys` or `dependencies_json` so workflow-backed tickets are
 dependency-bridged into the workflow spine.
 
-For workflow-backed delivery, graph readiness must be explicit:
+For workflow-backed delivery, graph readiness should be visible:
 
 - the first executable child ticket for a workflow step depends on the mirrored
   step ticket
@@ -102,7 +119,13 @@ For workflow-backed delivery, graph readiness must be explicit:
 - no detached delivery, test, docs, or signoff branch can become ready
   independently of the workflow order
 - completing a mirrored workflow step while attached child tickets remain open
-  is a tracker-truth blocker, not a cosmetic graph issue
+  is an important tracker-truth signal, not an automatic execution blocker
+
+`runPlan.claimStep` and `runPlan.recordStep(success)` enforce run-plan
+lifecycle, approvals, and transitive step dependencies. They do not hard-block
+on tracker graph warnings. Agents should use graph warnings to improve
+sequencing, record follow-up cleanup, or block intentionally when the warning
+is material to the current step's definition of done.
 
 For customer feedback, tracker-backed delivery starts after support
 investigation, not during intake. `communications.customer-feedback-intake`
@@ -300,7 +323,7 @@ workflowTemplate.describe
 -> tracker.status or tracker.brief
 -> tracker.createTicket(run_plan_id=..., step_id=...) when extra delivery tickets are needed
 -> bridge workflow-backed tickets with explicit dependency_keys or dependencies_json
--> tracker.get(run_plan_id=..., include_graph=true) and fix workflow-spine warnings
+-> tracker.get(run_plan_id=..., include_graph=true) and review workflow-spine warnings
 -> runPlan.start
 -> runPlan.claimStep
 -> do the step
@@ -333,11 +356,11 @@ docs, run-plan steps, artifacts, or reviewed decisions that make a ticket true.
 If the evidence is missing, the ticket should remain open or move to the
 specific terminal status that matches reality.
 
-For workflow-backed work, a clean graph is part of planning truth. After
+For workflow-backed work, graph warnings are planning and audit signals. After
 creating or updating child tickets under a workflow step, run `tracker.get` with
-`include_graph=true` for the run plan and repair workflow-spine warnings before
-recording planning, delivery, verification, tracker audit, or release closeout
-as successful.
+`include_graph=true` for the run plan and triage workflow-spine warnings.
+Repair material warnings when they hide required work or make ready-state
+misleading; otherwise record the risk or cleanup item and keep moving.
 
 For direct/manual work:
 
@@ -382,8 +405,8 @@ review issues such as sparse dependency plans, many isolated active tickets,
 likely pre-implementation gate direction mistakes, or large dependency removals
 surfaced by dry-run preview. Workflow-spine warnings are stronger tracker-truth
 signals: missing child bridges, detached child branches, next-step handoff gaps,
-and open children under a workflow step should be treated as blocking findings
-before closeout.
+and open children under a workflow step should be investigated and may be
+blocking for tracker audit or release closeout when they hide required work.
 
 ## UI
 

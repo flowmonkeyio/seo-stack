@@ -172,8 +172,11 @@ All presets are expected to work through the existing StackOS tracker:
 - support investigation tasks/tickets preserve source, thread, conclusion,
   instruction, handoff, and delivery refs in tracker context or references
 - dependencies are encoded so ready work and blockers are visible
-- for workflow-backed work, `run_plan_id` and `step_id` are attachment only;
-  planning agents must dependency-bridge child tickets into the mirrored
+- for workflow-backed child tickets, `run_plan_id` and `step_id` are
+  attachment/provenance only; agents update child ticket status and evidence
+  with `tracker.updateTicket` while reserving `runPlan.claimStep` and
+  `runPlan.recordStep` for generated workflow step mirror tickets
+- planning agents must dependency-bridge child tickets into the mirrored
   workflow step chain
 - delivery agents claim/update tickets as work starts and completes
 - verifier and reviewer agents compare completion claims with actual evidence
@@ -189,9 +192,9 @@ clear dependencies, no dangling loose ends, and concrete definition of done.
 For workflow-backed work, their plan must include a graph check covering the
 parent step ticket, first executable child, terminal children, next-step
 handoff, and detached branches. After creating or changing workflow-backed
-tickets, call `tracker.get` with `run_plan_id` and `include_graph=true`; fix
-workflow-spine warnings before recording planning, delivery, verification,
-tracker audit, or release closeout as successful.
+tickets, call `tracker.get` with `run_plan_id` and `include_graph=true`;
+repair warnings that hide required work or invalidate readiness claims, and
+record non-blocking cleanup explicitly instead of freezing progress.
 
 ## Operations
 

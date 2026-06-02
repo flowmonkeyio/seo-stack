@@ -7,7 +7,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlmodel import Session, select
 
-from stackos.db.models import Run, RunKind, RunPlan, RunPlanStep, RunPlanStepStatus, RunStatus
+from stackos.db.models import (
+    Run,
+    RunKind,
+    RunPlan,
+    RunPlanStatus,
+    RunPlanStep,
+    RunPlanStepStatus,
+    RunStatus,
+)
 from stackos.repositories.base import ConflictError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.runs import RunRepository
@@ -166,6 +174,55 @@ def test_reap_stale_preserves_started_run_plan_with_recent_activity(
     assert run_out.heartbeat_at > _now() - timedelta(minutes=1)
 
 
+def test_reap_stale_preserves_started_run_plan_with_blocked_step(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "blocked-plan.workflow.run",
+            "title": "Blocked Plan Workflow",
+            "steps": [{"id": "graph-check", "title": "Graph Check"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="graph-check")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        status=RunPlanStepStatus.BLOCKED,
+        result_json={"blocking_issue": "tracker graph warnings"},
+        error="tracker-graph-warning",
+    )
+
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    stale_at = _now() - timedelta(minutes=10)
+    run.heartbeat_at = stale_at
+    session.add(run)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    assert reaped == 0
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    assert run.error is None
+    assert run.heartbeat_at is not None
+    assert run.heartbeat_at > stale_at
+    recovered_plan = repo.get(plan.id)
+    assert recovered_plan.status == "started"
+    assert recovered_plan.steps[0].status == RunPlanStepStatus.BLOCKED
+    tracker_snapshot = TrackerRepository(session).get(project_id=project_id, run_plan_id=plan.id)
+    assert tracker_snapshot.tasks[0].status == "in-progress"
+    assert tracker_snapshot.tickets[0].status == "in-progress"
+
+
 def test_reap_stale_parent_reconciles_child_run_plan(
     session: Session,
     project_id: int,
@@ -248,6 +305,57 @@ def test_reap_stale_historical_aborted_parent_reconciles_live_child_run_plan(
     assert child_plan_row.status == "aborted"
     assert child_plan_row.metadata_json is not None
     assert child_plan_row.metadata_json["abort_reason"] == "parent-aborted"
+
+
+def test_reap_stale_ignores_historical_run_metadata_when_plan_has_new_run(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recovered.workflow.run",
+            "title": "Recovered Workflow",
+            "steps": [{"id": "repair", "title": "Repair"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    historical = (
+        RunRepository(session)
+        .start(
+            project_id=project_id,
+            kind=RunKind.RUN_PLAN,
+            metadata_json={
+                "stackos_type": "run-plan",
+                "run_plan_id": plan.id,
+                "template_key": "legacy",
+            },
+        )
+        .data
+    )
+    historical_row = session.get(Run, historical.id)
+    live_run = session.get(Run, started.run_id)
+    assert historical_row is not None and live_run is not None
+    historical_row.status = RunStatus.ABORTED
+    historical_row.error = "daemon-restart-orphan"
+    historical_row.ended_at = _now()
+    live_run.heartbeat_at = _now()
+    session.add(historical_row)
+    session.add(live_run)
+    session.commit()
+
+    reaped = RunRepository(session).reap_stale(stale_after_seconds=300)
+
+    plan_row = session.get(RunPlan, plan.id)
+    live_run_row = session.get(Run, started.run_id)
+    assert reaped == 0
+    assert plan_row is not None and live_run_row is not None
+    assert plan_row.run_id == started.run_id
+    assert plan_row.status == RunPlanStatus.STARTED
+    assert live_run_row.status == RunStatus.RUNNING
+    assert live_run_row.error is None
 
 
 def test_finish_rejects_live_run_plan_audit_run(session: Session, project_id: int) -> None:

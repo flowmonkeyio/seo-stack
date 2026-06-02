@@ -176,12 +176,15 @@ RUN_PLAN_STEP_STATUS_TRANSITIONS: dict[RunPlanStepStatus, frozenset[RunPlanStepS
             RunPlanStepStatus.BLOCKED,
         }
     ),
-    RunPlanStepStatus.BLOCKED: frozenset({RunPlanStepStatus.PENDING, RunPlanStepStatus.SKIPPED}),
+    RunPlanStepStatus.BLOCKED: frozenset(
+        {RunPlanStepStatus.PENDING, RunPlanStepStatus.RUNNING, RunPlanStepStatus.SKIPPED}
+    ),
     RunPlanStepStatus.RUNNING: frozenset(
         {
             RunPlanStepStatus.SUCCESS,
             RunPlanStepStatus.FAILED,
             RunPlanStepStatus.SKIPPED,
+            RunPlanStepStatus.BLOCKED,
         }
     ),
     RunPlanStepStatus.SUCCESS: frozenset(),

@@ -188,6 +188,71 @@ def test_run_plan_failed_step_marks_tracker_mirror_failed(
     assert tracker["tickets"][0]["blocker_reason"] == "contract check failed"
 
 
+def test_run_plan_recover_restores_failed_blocker_through_mcp(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _plan_json()},
+    )
+    run_plan_id = created["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": run_plan_id},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "review", "run_token": run_token},
+    )
+    mcp_client.call_tool_structured(
+        "runPlan.recordStep",
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": "review",
+            "status": "failed",
+            "result_json": {"blocking_issue": "tracker graph has warnings"},
+            "error": "Blocked by tracker graph warnings; daemon rejects blocked status.",
+            "run_token": run_token,
+        },
+    )
+
+    recovered = mcp_client.call_tool_structured(
+        "runPlan.recover",
+        {
+            "project_id": project_id,
+            "run_plan_id": run_plan_id,
+            "step_id": "review",
+            "step_status": "blocked",
+            "reason": "Recover old daemon blocked-status bug.",
+            "error": "tracker graph warnings",
+            "actor": "mcp-test",
+        },
+    )
+    tracker = mcp_client.call_tool_structured(
+        "tracker.get",
+        {
+            "project_id": project_id,
+            "task_key": f"workflow-{run_plan_id}",
+            "include_graph": False,
+            "response_mode": "raw",
+        },
+    )
+    reclaimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {"run_plan_id": run_plan_id, "step_id": "review", "run_token": run_token},
+    )
+
+    assert recovered["data"]["status"] == "started"
+    assert recovered["data"]["steps"][0]["status"] == "blocked"
+    assert tracker["tasks"][0]["status"] == "in-progress"
+    assert tracker["tickets"][0]["status"] == "in-progress"
+    assert tracker["tickets"][0]["blocker_reason"] == "tracker graph warnings"
+    assert reclaimed["data"]["status"] == "running"
+
+
 def test_run_plan_grant_allows_only_active_claimed_step_tool(
     mcp_client: MCPClient,
     seeded_project: dict,

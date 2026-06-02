@@ -209,7 +209,11 @@ class TrackerGraphMixin:
                 "before" in text or "pre-" in text or "pre " in text
             )
             dependency_count = len(dependencies_by_ticket.get(ticket.key, []))
-            if looks_like_pre_gate and dependency_count >= 2:
+            if (
+                looks_like_pre_gate
+                and dependency_count >= 2
+                and (ticket.run_plan_id is None or ticket.status != TrackerItemStatus.NOT_STARTED)
+            ):
                 warnings.append(
                     "Review/gate ticket "
                     f"{ticket.key} depends on {dependency_count} tickets; confirm dependency "
@@ -242,13 +246,13 @@ class TrackerGraphMixin:
             open_children = [
                 child.key for child in children if not _is_terminal_tracker_status(child.status)
             ]
-            if open_children:
+            if open_children and _is_terminal_tracker_status(parent.status):
                 sample = ", ".join(open_children[:3])
                 suffix = "..." if len(open_children) > 3 else ""
                 state = (
                     "is complete while"
                     if parent.status.value == TrackerItemStatus.COMPLETE.value
-                    else "is not ready for closeout while"
+                    else f"is {parent.status.value} while"
                 )
                 warnings.append(
                     "Workflow step "
@@ -278,7 +282,7 @@ class TrackerGraphMixin:
                 children=children,
                 dependency_edges=dependency_edges,
             )
-            if bypassing_gate_children:
+            if bypassing_gate_children and parent.status != TrackerItemStatus.NOT_STARTED:
                 sample = ", ".join(bypassing_gate_children[:3])
                 suffix = "..." if len(bypassing_gate_children) > 3 else ""
                 warnings.append(

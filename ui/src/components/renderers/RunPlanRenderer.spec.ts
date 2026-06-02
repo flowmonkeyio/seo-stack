@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 
 import {
   ActionCallStatus,
+  ApprovalRequestStatus,
   RunPlanConsistencyIssueOutSeverity,
   RunPlanStatus,
   RunPlanStepStatus,
@@ -109,8 +110,71 @@ describe('RunPlanRenderer', () => {
 
     expect(w.text()).toContain('Demo Run')
     expect(w.text()).toContain('action.execute')
+    expect(w.text()).not.toContain('Approvals')
     expect(w.text()).not.toContain('secret')
     expect(w.text()).toContain('[redacted]')
+  })
+
+  it('renders approval requests only when the run plan has them', () => {
+    const plan: SchemaRunPlanOut = {
+      id: 1,
+      project_id: 1,
+      run_id: 22,
+      template_id: null,
+      template_version_id: null,
+      context_snapshot_id: null,
+      key: 'demo.run',
+      title: 'Demo Run',
+      goal: 'Execute explicit steps.',
+      status: RunPlanStatus.started,
+      template_key: null,
+      template_version: null,
+      template_source: null,
+      template_origin_path: null,
+      template_snapshot_json: null,
+      inputs_json: {},
+      selected_context_json: null,
+      context_filters_json: null,
+      grant_snapshot_json: null,
+      budget_snapshot_json: null,
+      policy_snapshot_json: null,
+      output_contract_json: null,
+      metadata_json: null,
+      created_by: 'agent',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      started_at: '2026-01-01T00:01:00Z',
+      completed_at: null,
+      steps: [],
+      approval_requests: [
+        {
+          id: 4,
+          project_id: 1,
+          run_plan_id: 1,
+          run_plan_step_id: null,
+          approval_key: 'operator-review',
+          title: 'Operator Review',
+          description: 'Approve the external spend.',
+          status: ApprovalRequestStatus.pending,
+          approver: null,
+          requested_by: 'agent',
+          requested_at: '2026-01-01T00:01:00Z',
+          required_when: 'before-step',
+          decided_by: null,
+          decided_at: null,
+          decision_json: null,
+          metadata_json: null,
+          created_at: '2026-01-01T00:01:00Z',
+          updated_at: '2026-01-01T00:01:00Z',
+        },
+      ],
+      consistency_issues: [],
+    }
+
+    const w = mount(RunPlanRenderer, { props: { plan } })
+
+    expect(w.text()).toContain('Approvals')
+    expect(w.text()).toContain('operator-review')
   })
 
   it('renders consistency warnings from the backend', () => {

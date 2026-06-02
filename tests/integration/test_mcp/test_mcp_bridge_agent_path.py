@@ -928,6 +928,146 @@ def test_bridge_allows_started_run_plan_controller_tools(mcp_client: MCPClient) 
     assert completed["data"]["status"] == "completed"
 
 
+def test_bridge_resumes_started_run_plan_controller_tools_in_new_session(
+    mcp_client: MCPClient,
+) -> None:
+    starter_proxy, starter_client = _bridge(mcp_client)
+    _initialize(starter_proxy, starter_client)
+    _send(starter_proxy, starter_client, method="tools/list", request_id="starter-tools")
+
+    project_id = _create_project(mcp_client, "bridge-run-plan-resume")
+    created_plan = _structured(
+        _toolbox_call(
+            starter_proxy,
+            starter_client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.resume.run",
+                    "title": "Bridge resume",
+                    "steps": [{"id": "review", "title": "Review"}],
+                },
+            },
+            request_id="run-plan-create",
+        )
+    )
+    run_plan_id = created_plan["data"]["id"]
+    started = _structured(
+        _toolbox_call(
+            starter_proxy,
+            starter_client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": run_plan_id},
+            request_id="run-plan-start",
+        )
+    )
+    run_id = started["data"]["run_id"]
+
+    resume_proxy, resume_client = _bridge(mcp_client)
+    _initialize(resume_proxy, resume_client)
+    _send(resume_proxy, resume_client, method="tools/list", request_id="resume-tools")
+    described = _structured(
+        _tool_call(
+            resume_proxy,
+            resume_client,
+            "toolbox.describe",
+            {"run_id": run_id, "tool_names": ["runPlan.claimStep"]},
+            request_id="describe-resume-run-plan",
+        )
+    )
+    claimed = _structured(
+        _tool_call(
+            resume_proxy,
+            resume_client,
+            "toolbox.call",
+            {
+                "run_id": run_id,
+                "tool_name": "runPlan.claimStep",
+                "arguments": {
+                    "project_id": project_id,
+                    "run_plan_id": run_plan_id,
+                    "step_id": "review",
+                },
+            },
+            request_id="claim-resume-run-plan",
+        )
+    )
+
+    assert [tool["name"] for tool in described["described_tools"]] == ["runPlan.claimStep"]
+    assert claimed["data"]["status"] == "running"
+
+
+def test_bridge_resumes_started_run_plan_controller_tools_from_run_plan_id(
+    mcp_client: MCPClient,
+) -> None:
+    starter_proxy, starter_client = _bridge(mcp_client)
+    _initialize(starter_proxy, starter_client)
+    _send(starter_proxy, starter_client, method="tools/list", request_id="starter-tools")
+
+    project_id = _create_project(mcp_client, "bridge-run-plan-resume-plan-id")
+    created_plan = _structured(
+        _toolbox_call(
+            starter_proxy,
+            starter_client,
+            "runPlan.create",
+            {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "bridge.resume.plan.id.run",
+                    "title": "Bridge resume by plan id",
+                    "steps": [{"id": "review", "title": "Review"}],
+                },
+            },
+            request_id="run-plan-create",
+        )
+    )
+    run_plan_id = created_plan["data"]["id"]
+    _structured(
+        _toolbox_call(
+            starter_proxy,
+            starter_client,
+            "runPlan.start",
+            {"project_id": project_id, "run_plan_id": run_plan_id},
+            request_id="run-plan-start",
+        )
+    )
+
+    resume_proxy, resume_client = _bridge(mcp_client)
+    _initialize(resume_proxy, resume_client)
+    _send(resume_proxy, resume_client, method="tools/list", request_id="resume-tools")
+    described = _structured(
+        _tool_call(
+            resume_proxy,
+            resume_client,
+            "toolbox.describe",
+            {"run_plan_id": run_plan_id, "tool_names": ["runPlan.claimStep"]},
+            request_id="describe-resume-plan-id",
+        )
+    )
+    claimed = _structured(
+        _tool_call(
+            resume_proxy,
+            resume_client,
+            "toolbox.call",
+            {
+                "tool_name": "runPlan.claimStep",
+                "arguments": {
+                    "project_id": project_id,
+                    "run_plan_id": run_plan_id,
+                    "step_id": "review",
+                },
+            },
+            request_id="claim-resume-plan-id",
+        )
+    )
+
+    assert [tool["name"] for tool in described["described_tools"]] == ["runPlan.claimStep"]
+    assert claimed["data"]["status"] == "running"
+
+
 def test_bridge_exposes_run_plan_granted_generic_tool_after_claim(
     mcp_client: MCPClient,
 ) -> None:

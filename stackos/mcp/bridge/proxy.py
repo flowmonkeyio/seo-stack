@@ -31,6 +31,7 @@ from .response import (
 )
 from .toolbox import (
     _bridge_allowed_tool_names,
+    _bridge_cache_controller_run_context,
     _bridge_cache_step_context,
     _bridge_toolbox_describe,
 )
@@ -276,15 +277,53 @@ class AgentBridgeProxy:
             }
         )
 
-    def _refresh_run_context(self, client: Any, run_id: int | None) -> None:
-        if run_id is None:
-            return
+    def _refresh_run_context(
+        self,
+        client: Any,
+        run_id: int | None,
+        *,
+        run_plan_id: int | None = None,
+    ) -> int | None:
         scope_args: dict[str, Any] = {}
         if self.scoped_project_id is not None:
             scope_args["project_id"] = self.scoped_project_id
+        if run_id is None and run_plan_id is not None:
+            body = _bridge_make_tool_call_payload(
+                f"stackos-bridge-plan-{run_plan_id}",
+                "runPlan.get",
+                {"run_plan_id": run_plan_id, **scope_args},
+            )
+            try:
+                out = self.request_daemon(client, body)
+            except Exception:
+                out = ""
+            if out:
+                self._cache_step_context(out)
+                run_id = _bridge_plan_run_id(out)
+                if run_id is not None:
+                    self.plans_by_run[run_id] = run_plan_id
+        if run_id is None:
+            return None
+        if run_id not in self.tokens_by_run:
+            body = _bridge_make_tool_call_payload(
+                f"stackos-bridge-run-{run_id}",
+                "run.get",
+                {"run_id": run_id, **scope_args},
+            )
+            try:
+                out = self.request_daemon(client, body)
+            except Exception:
+                out = ""
+            if out:
+                _bridge_cache_controller_run_context(
+                    out,
+                    allowed_by_run=self.allowed_by_run,
+                    tokens_by_run=self.tokens_by_run,
+                    plans_by_run=self.plans_by_run,
+                )
         run_plan_id = self.plans_by_run.get(run_id)
         if run_plan_id is None and run_id in self.allowed_by_run and run_id in self.tokens_by_run:
-            return
+            return run_id
         if run_plan_id is None:
             body = _bridge_make_tool_call_payload(
                 f"stackos-bridge-plan-for-run-{run_id}",
@@ -294,12 +333,12 @@ class AgentBridgeProxy:
             try:
                 out = self.request_daemon(client, body)
             except Exception:
-                return
+                return run_id
             run_plan_id = _bridge_first_run_plan_id(out)
             if run_plan_id is not None:
                 self.plans_by_run[run_id] = run_plan_id
         if run_plan_id is None:
-            return
+            return run_id
         body = _bridge_make_tool_call_payload(
             f"stackos-bridge-plan-{run_plan_id}",
             "runPlan.get",
@@ -308,8 +347,9 @@ class AgentBridgeProxy:
         try:
             out = self.request_daemon(client, body)
         except Exception:
-            return
+            return run_id
         self._cache_step_context(out)
+        return run_id
 
     def _cache_step_context(self, response_text: str) -> None:
         _bridge_cache_step_context(
@@ -333,7 +373,8 @@ class AgentBridgeProxy:
         ):
             self._ensure_tool_catalog(client, refresh=True)
         run_id = _bridge_as_int(arguments.get("run_id"))
-        self._refresh_run_context(client, run_id)
+        run_plan_id = _bridge_as_int(arguments.get("run_plan_id"))
+        run_id = self._refresh_run_context(client, run_id, run_plan_id=run_plan_id)
         return _bridge_toolbox_describe(
             request_id,
             catalog=self.tool_catalog,
@@ -353,9 +394,12 @@ class AgentBridgeProxy:
         target_name = arguments.get("tool_name")
         target_args = arguments.get("arguments")
         run_id = _bridge_as_int(arguments.get("run_id"))
+        run_plan_id = None
         if run_id is None and isinstance(target_args, dict):
             run_id = _bridge_as_int(target_args.get("run_id"))
-        self._refresh_run_context(client, run_id)
+        if isinstance(target_args, dict):
+            run_plan_id = _bridge_as_int(target_args.get("run_plan_id"))
+        run_id = self._refresh_run_context(client, run_id, run_plan_id=run_plan_id)
 
         if not isinstance(target_name, str) or not target_name:
             return _bridge_call_error(
@@ -542,6 +586,28 @@ def _bridge_first_run_plan_id(response_text: str) -> int | None:
     if not isinstance(first, dict):
         return None
     return _bridge_as_int(first.get("id"))
+
+
+def _bridge_plan_run_id(response_text: str) -> int | None:
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return None
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        return None
+    run_id = _bridge_as_int(structured.get("run_id"))
+    if run_id is not None:
+        return run_id
+    data = structured.get("data")
+    if isinstance(data, dict):
+        return _bridge_as_int(data.get("run_id"))
+    return None
 
 
 def _bridge_tool_grant_policy(tool: dict[str, Any] | None) -> str | None:

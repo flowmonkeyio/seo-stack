@@ -16,6 +16,7 @@ from stackos.mcp.bridge import (
     _AGENT_VISIBLE_TOOL_NAMES,
     _AGENT_VISIBLE_TOOL_ORDER,
     AgentBridgeProxy,
+    _bridge_cache_controller_run_context,
     _bridge_cache_step_context,
     _bridge_compact_profile,
     _bridge_compact_structured,
@@ -351,6 +352,41 @@ def test_bridge_caches_run_plan_controller_grants() -> None:
     assert plans_by_run == {9: 3}
 
 
+def test_bridge_recovers_controller_grants_from_run_record() -> None:
+    response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "structuredContent": {
+                    "id": 9,
+                    "project_id": 2,
+                    "status": "running",
+                    "client_session_id": "tok-resume",
+                    "metadata_json": {
+                        "skill_name": "stackos/run-plan-controller",
+                        "run_plan_id": 22,
+                    },
+                }
+            },
+        }
+    )
+    allowed_by_run: dict[int, set[str]] = {}
+    tokens_by_run: dict[int, str] = {}
+    plans_by_run: dict[int, int] = {}
+
+    _bridge_cache_controller_run_context(
+        response,
+        allowed_by_run=allowed_by_run,
+        tokens_by_run=tokens_by_run,
+        plans_by_run=plans_by_run,
+    )
+
+    assert tokens_by_run == {9: "tok-resume"}
+    assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES)}
+    assert plans_by_run == {9: 22}
+
+
 def test_bridge_caches_claimed_run_plan_step_grants() -> None:
     response = json.dumps(
         {
@@ -370,7 +406,7 @@ def test_bridge_caches_claimed_run_plan_step_grants() -> None:
         }
     )
     allowed_by_run: dict[int, set[str]] = {}
-    tokens_by_run: dict[int, str] = {}
+    tokens_by_run: dict[int, str] = {9: "tok"}
 
     _bridge_cache_step_context(
         response,
@@ -379,6 +415,41 @@ def test_bridge_caches_claimed_run_plan_step_grants() -> None:
     )
 
     assert allowed_by_run == {9: set(_AGENT_STEP_GATED_TOOL_NAMES) | {"resource.upsert"}}
+
+
+def test_bridge_does_not_advertise_step_tools_without_cached_token() -> None:
+    response = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "structuredContent": {
+                    "data": {
+                        "id": 3,
+                        "run_id": 9,
+                        "steps": [
+                            {
+                                "step_id": "write",
+                                "status": "running",
+                                "allowed_tools": ["resource.upsert"],
+                            }
+                        ],
+                    },
+                    "run_id": 9,
+                }
+            },
+        }
+    )
+    allowed_by_run: dict[int, set[str]] = {}
+    tokens_by_run: dict[int, str] = {}
+
+    _bridge_cache_step_context(
+        response,
+        allowed_by_run=allowed_by_run,
+        tokens_by_run=tokens_by_run,
+    )
+
+    assert allowed_by_run == {}
 
 
 def test_bridge_base_toolbox_includes_product_state_but_not_vendor_surface() -> None:

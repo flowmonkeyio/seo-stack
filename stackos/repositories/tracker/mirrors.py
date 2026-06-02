@@ -26,6 +26,7 @@ from stackos.repositories.tracker.utils import (
     _slug,
     _utcnow,
 )
+from stackos.repositories.tracker.workflow import is_workflow_step_mirror_ticket
 
 
 class TrackerMirrorMixin:
@@ -308,6 +309,79 @@ class TrackerMirrorMixin:
             commit=False,
         )
 
+    def mirror_run_plan_recovered(
+        self,
+        *,
+        plan: RunPlan,
+        steps: list[RunPlanStep],
+        actor: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        if plan.id is None:
+            return
+        tracker = self.ensure_tracker(project_id=plan.project_id)
+        task = self._task_by_key(tracker.id, f"workflow-{plan.id}", missing_ok=True)
+        if task is None:
+            return
+        now = _utcnow()
+        before = self._task_snapshot(task)
+        task.status = TrackerItemStatus.IN_PROGRESS
+        task.lane_key = "planning"
+        task.started_at = task.started_at or now
+        task.completed_at = None
+        task.completion_evidence_json = None
+        task.updated_at = now
+        self._s.add(task)
+
+        step_by_pk = {step.id: step for step in steps if step.id is not None}
+        for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
+            ticket.run_id = plan.run_id
+            if ticket.run_plan_step_id is None:
+                if self._is_auto_abort_ticket(ticket):
+                    ticket.status = TrackerItemStatus.NOT_STARTED
+                    ticket.lane_key = "planning"
+                    ticket.blocker_reason = None
+                    ticket.outcome = None
+                    ticket.completed_at = None
+                ticket.updated_at = now
+                self._s.add(ticket)
+                continue
+            step = step_by_pk.get(ticket.run_plan_step_id)
+            if step is None:
+                continue
+            if is_workflow_step_mirror_ticket(ticket, step):
+                ticket.status = self._ticket_status_from_step(step)
+                ticket.blocker_reason = self._step_blocker_reason(step)
+                ticket.outcome = (
+                    None if step.status == RunPlanStepStatus.PENDING else self._step_outcome(step)
+                )
+                ticket.completed_at = now if ticket.status in TERMINAL_TRACKER_STATUSES else None
+                ticket.lane_key = (
+                    "done" if ticket.status in TERMINAL_TRACKER_STATUSES else "planning"
+                )
+            elif self._is_auto_abort_ticket(ticket):
+                ticket.status = TrackerItemStatus.NOT_STARTED
+                ticket.lane_key = "planning"
+                ticket.blocker_reason = None
+                ticket.outcome = None
+                ticket.completed_at = None
+            ticket.updated_at = now
+            self._s.add(ticket)
+
+        self._sync_task_status(task, now=now)
+        self._record_revision(
+            tracker,
+            actor=actor,
+            change_kind="workflow-recovery",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Run plan {plan.id} recovered.",
+            before_json=before,
+            after_json=self._task_snapshot(task),
+            commit=False,
+        )
+
     def mirror_run_plan_status(self, *, plan: RunPlan) -> None:
         if plan.id is None:
             return
@@ -378,7 +452,7 @@ class TrackerMirrorMixin:
         before = self._ticket_snapshot(ticket)
         ticket.status = self._ticket_status_from_step(step)
         ticket.outcome = self._step_outcome(step)
-        ticket.blocker_reason = step.error if step.status == RunPlanStepStatus.FAILED else None
+        ticket.blocker_reason = self._step_blocker_reason(step)
         ticket.completed_at = now if ticket.status in TERMINAL_TRACKER_STATUSES else None
         ticket.lane_key = "done" if ticket.status in TERMINAL_TRACKER_STATUSES else ticket.lane_key
         ticket.run_id = plan.run_id
@@ -442,6 +516,8 @@ class TrackerMirrorMixin:
             return TrackerItemStatus.SKIPPED
         if status == RunPlanStepStatus.FAILED:
             return TrackerItemStatus.FAILED
+        if status == RunPlanStepStatus.BLOCKED:
+            return TrackerItemStatus.IN_PROGRESS
         return TrackerItemStatus.NOT_STARTED
 
     def _step_was_skipped_by_abort(self, step: RunPlanStep) -> bool:
@@ -453,6 +529,8 @@ class TrackerMirrorMixin:
 
     def _step_outcome(self, step: RunPlanStep) -> str | None:
         if step.error:
+            if step.status == RunPlanStepStatus.BLOCKED:
+                return f"blocked: {redact_secret_text(step.error)}"
             return f"failed: {redact_secret_text(step.error)}"
         if isinstance(step.result_json, dict):
             for key in ("summary", "message", "status"):
@@ -460,6 +538,26 @@ class TrackerMirrorMixin:
                 if value:
                     return redact_secret_text(str(value))
         return step.status.value
+
+    def _step_blocker_reason(self, step: RunPlanStep) -> str | None:
+        if step.status not in {RunPlanStepStatus.BLOCKED, RunPlanStepStatus.FAILED}:
+            return None
+        if step.error:
+            return redact_secret_text(step.error)
+        if isinstance(step.result_json, dict):
+            for key in ("blocker", "blocking_issue", "reason", "summary", "message"):
+                value = step.result_json.get(key)
+                if value:
+                    return redact_secret_text(str(value))
+        return step.status.value
+
+    @staticmethod
+    def _is_auto_abort_ticket(ticket: TrackerTicket) -> bool:
+        return (
+            ticket.status == TrackerItemStatus.ABORTED
+            and bool(ticket.outcome)
+            and str(ticket.outcome).startswith("Run plan aborted before this step completed.")
+        )
 
 
 __all__ = [

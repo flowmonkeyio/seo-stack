@@ -106,6 +106,30 @@ class RunPlanCheckConsistencyInput(MCPInput):
     project_id: int | None = None
 
 
+class RunPlanRecoverInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "run_plan_id": 1,
+                "step_id": "plan-tickets",
+                "step_status": "blocked",
+                "reason": "Recover stale daemon/controller failure as a live blocker.",
+                "error": "Recoverable controller failure needs review.",
+            }
+        },
+    )
+
+    run_plan_id: int
+    project_id: int | None = None
+    step_id: str
+    step_status: RunPlanStepStatus = RunPlanStepStatus.BLOCKED
+    reason: str | None = None
+    actor: str | None = None
+    result_json: dict[str, Any] | None = None
+    error: str | None = None
+
+
 class RunPlanListInput(MCPInput):
     model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
 
@@ -271,6 +295,24 @@ async def run_plan_check_consistency(
         inp.run_plan_id,
         project_id=inp.project_id,
     )
+
+
+async def run_plan_recover(
+    inp: RunPlanRecoverInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[RunPlanOut]:
+    env = RunPlanRepository(ctx.session).recover(
+        run_plan_id=inp.run_plan_id,
+        project_id=inp.project_id,
+        step_id=inp.step_id,
+        step_status=inp.step_status,
+        reason=inp.reason,
+        actor=inp.actor,
+        result_json=inp.result_json,
+        error=inp.error,
+    )
+    return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
 
 
 async def run_plan_list(
@@ -540,6 +582,51 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-read",
         ),
         OperationSpec(
+            name="runPlan.recover",
+            summary="Recover a system-failed run plan into a live blocked or pending step.",
+            input_model=RunPlanRecoverInput,
+            output_model=WriteEnvelope[RunPlanOut],
+            handler=run_plan_recover,
+            surfaces=_surfaces("runPlan.recover", "run-plans recover"),
+            purpose=(
+                "Use this for daemon/controller lifecycle failures where the existing run "
+                "plan remains the canonical workflow and should continue in-place rather "
+                "than being replaced by a duplicate plan."
+            ),
+            when_to_use=(
+                "A run plan was failed because an older daemon rejected a recoverable "
+                "blocked step.",
+                "A daemon-restart orphan abort closed a workflow that should remain a "
+                "live recoverable blocker.",
+                "runPlan.checkConsistency shows terminal state but the project should "
+                "continue the same workflow audit trail.",
+            ),
+            prerequisites=(
+                "Pass run_plan_id and the step_id to restore.",
+                "The plan must be failed or aborted for a system-recoverable reason.",
+                "Use step_status=blocked when the agent must repair a blocker before "
+                "continuing; use pending only when the step should be cleanly re-run.",
+            ),
+            returns=(
+                "A WriteEnvelope containing the recovered started run plan.",
+                "The linked audit run is put back into running state and tracker mirrors "
+                "are reopened consistently.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Recover a controller blocker",
+                    arguments={
+                        "run_plan_id": 42,
+                        "step_id": "plan-tickets",
+                        "step_status": "blocked",
+                        "reason": "Recover old daemon blocked-status bug.",
+                        "error": "Recoverable controller failure needs review.",
+                    },
+                ),
+            ),
+            grant_policy="direct-run-audit-write",
+        ),
+        OperationSpec(
             name="runPlan.list",
             summary="List run plans with cursor pagination and optional filters.",
             input_model=RunPlanListInput,
@@ -677,22 +764,24 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="runPlan.recordStep",
-            summary="Record a terminal result for the active running run-plan step.",
+            summary="Record a result for the active running run-plan step.",
             input_model=RunPlanRecordStepInput,
             output_model=WriteEnvelope[RunPlanOut],
             handler=run_plan_record_step,
             surfaces=_surfaces("runPlan.recordStep", "run-plans record-step"),
             purpose=(
-                "Use this when the current step is done. Recording the final step closes the "
-                "plan and linked run audit row."
+                "Use this when the current step is done or blocked. Recording the final "
+                "terminal step closes the plan and linked run audit row."
             ),
             when_to_use=(
                 "The agent completed, failed, or intentionally skipped the claimed step.",
+                "The agent hit a recoverable blocker that should pause the step without "
+                "terminally failing the run plan.",
                 "A controller must persist structured step output for future context retrieval.",
             ),
             prerequisites=(
                 "Pass run_token from runPlan.start.",
-                "Pass run_plan_id, step_id, and status success, failed, or skipped.",
+                "Pass run_plan_id, step_id, and status success, failed, skipped, or blocked.",
                 "Keep result_json concise and free of secrets.",
             ),
             returns=(
@@ -722,6 +811,7 @@ __all__ = [
     "RunPlanGetInput",
     "RunPlanListInput",
     "RunPlanRecordStepInput",
+    "RunPlanRecoverInput",
     "RunPlanStartInput",
     "RunPlanUpdateInput",
     "RunPlanValidateInput",
@@ -731,6 +821,7 @@ __all__ = [
     "run_plan_get",
     "run_plan_list",
     "run_plan_record_step",
+    "run_plan_recover",
     "run_plan_start",
     "run_plan_update",
     "run_plan_validate",

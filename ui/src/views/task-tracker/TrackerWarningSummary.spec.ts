@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import TrackerWarningSummary from './TrackerWarningSummary.vue'
 
 describe('TrackerWarningSummary', () => {
-  it('summarizes graph warnings and workflow blockers by severity', () => {
+  it('summarizes graph warnings as advisory signals', () => {
     const wrapper = mount(TrackerWarningSummary, {
       props: {
         warnings: [
@@ -15,9 +15,9 @@ describe('TrackerWarningSummary', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('This task has 2 errors and 1 warning.')
-    expect(wrapper.text()).toContain('2 errors')
-    expect(wrapper.text()).toContain('1 warning')
+    expect(wrapper.text()).toContain('This task has 3 warnings.')
+    expect(wrapper.text()).toContain('3 warnings')
+    expect(wrapper.text()).not.toContain('error')
     expect(wrapper.findAll('.tracker-warning-summary__item')).toHaveLength(3)
     expect(wrapper.find('details').attributes('open')).toBeUndefined()
   })

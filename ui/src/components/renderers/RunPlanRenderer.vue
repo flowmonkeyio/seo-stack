@@ -225,7 +225,10 @@ function toggleStep(stepId: string): void {
     </UiPanel>
 
     <div class="grid gap-4 lg:grid-cols-2">
-      <UiPanel class="p-4">
+      <UiPanel
+        v-if="(plan.approval_requests ?? []).length > 0"
+        class="p-4"
+      >
         <UiSectionHeader title="Approvals" as="h3" />
         <UiJsonBlock
           :data="sanitizeForDisplay(plan.approval_requests)"

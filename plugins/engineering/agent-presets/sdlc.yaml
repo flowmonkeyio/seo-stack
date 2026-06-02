@@ -168,9 +168,10 @@ presets:
         - Create discovery, design, delivery, verification, and closeout tickets under the workflow task/run plan from the start when workflow intent is explicit.
         - Use direct tracker tasks only when the operator asks for task/dependency tracking without invoking a workflow.
         - Encode dependencies explicitly so ready work and blockers are visible.
-        - Treat run_plan_id and step_id as attachment only; add dependency edges that bridge child tickets into the mirrored workflow step chain.
+        - Treat run_plan_id and step_id on child tickets as attachment/provenance only; update child ticket status/evidence with tracker.updateTicket, and reserve runPlan.claimStep/runPlan.recordStep for generated workflow step mirror tickets.
+        - Add dependency edges that bridge child tickets into the mirrored workflow step chain.
         - Make the first executable child depend on the workflow step ticket and the next workflow step depend on terminal children from the prior step.
-        - After creating or changing workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true, then fix workflow-spine warnings before handoff.
+        - After creating or changing workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true, then triage workflow-spine warnings before handoff. Fix material sequencing issues and record non-blocking cleanup explicitly.
         - Review the plan for dangling tickets, missing blockers, hidden handoffs, and missing verification before delivery starts.
         - Include manual verification expectations when UI, MCP, provider, release, or operator-facing behavior changes.
       must_not_do:
@@ -371,7 +372,8 @@ presets:
         - Lead with bugs, regressions, missing tests, contract mismatches, and security concerns.
         - Check that tracker completion evidence is specific and true.
         - Check workflow-backed ticket graphs for step attachment versus dependency readiness, first-child bridges, terminal-child handoff edges, and detached branches.
-        - Use tracker.get with run_plan_id and include_graph=true for workflow-backed delivery; treat workflow-spine warnings as blocking findings.
+        - Distinguish generated workflow step mirror tickets from attached child tickets; child ticket status/evidence is tracker-owned and should be corrected with tracker.updateTicket when stale.
+        - Use tracker.get with run_plan_id and include_graph=true for workflow-backed delivery; classify workflow-spine warnings as blockers only when they hide required work or invalidate release/readiness claims.
         - Check runPlan.get consistency_issues or runPlan.checkConsistency when run-plan, run audit, and tracker state may have diverged.
         - Separate confirmed findings, project decisions, false positives, and residual risks.
         - "Verify one-brain reuse: one operation/spec/source of truth, multiple adapters."

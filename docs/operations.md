@@ -413,12 +413,23 @@ Use `action.execute` when the action belongs to a workflow:
 3. `runPlan.claimStep` activates only the frozen grants for the claimed step.
 4. A run plan may have only one running step. Record the running step before
    claiming another.
-5. `runPlan.recordStep` persists the terminal result and closes the plan/run
-   when the last step finishes.
-6. `runPlan.update` records safe metadata or approval-gate decisions through
+5. `runPlan.recordStep(blocked)` records a recoverable blocker and keeps the
+   plan started so the same step can be reclaimed after repair.
+6. `runPlan.recordStep(success)` enforces run-plan lifecycle and transitive
+   step dependencies. Tracker graph warnings stay visible through
+   `tracker.get(include_graph=true)` and `runPlan.get.consistency_issues`, but
+   do not by themselves reject a valid step result.
+7. `runPlan.recordStep(success|failed|skipped)` persists a terminal step result
+   and closes the plan/run when the last step finishes or a step fails.
+8. `runPlan.update` records safe metadata or approval-gate decisions through
    the local REST/CLI admin surface. Direct MCP agents are not base-granted to
    approve their own gates.
-7. Stale-run reaping, explicit run aborts, and run-plan aborts reconcile the
+9. `runPlan.recover` is a narrow lifecycle repair for system-recoverable
+   terminal states, such as an old daemon rejecting a recoverable blocked step
+   or a daemon-restart orphan aborting the canonical workflow. It restores the
+   same plan/run into a live blocked or pending step instead of creating a
+   duplicate replacement workflow.
+10. Stale-run reaping, explicit run aborts, and run-plan aborts reconcile the
    linked run, plan, unfinished steps, pending approvals, and tracker mirror
    through one lifecycle path. If old data or manual edits leave a mismatch,
    `runPlan.get.consistency_issues` and `runPlan.checkConsistency` expose the

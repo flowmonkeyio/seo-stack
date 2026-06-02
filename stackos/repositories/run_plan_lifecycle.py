@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
@@ -25,6 +27,7 @@ from stackos.db.models import (
     TrackerTicket,
 )
 from stackos.repositories.base import ConflictError, validate_transition
+from stackos.repositories.run_plan_dependencies import incomplete_step_dependencies
 from stackos.repositories.run_plan_state import (
     PLAN_TO_RUN_TERMINAL_STATUS,
     TERMINAL_PLAN_STATUSES,
@@ -180,7 +183,9 @@ class RunPlanLifecycleReconciler:
                 step.updated_at = now
                 self._s.add(step)
 
-        for approval in self._pending_approvals(plan.id):
+        for approval in self._approval_rows(plan.id):
+            if approval.status != ApprovalRequestStatus.PENDING:
+                continue
             validate_transition(
                 approval.status,
                 ApprovalRequestStatus.CANCELLED,
@@ -201,12 +206,13 @@ class RunPlanLifecycleReconciler:
         plan.completed_at = now
         plan.updated_at = now
         plan.metadata_json = {
-            **(plan.metadata_json or {}),
+            **self._json_dict(plan.metadata_json),
             "aborted_at": now.isoformat(),
             **({"aborted_by": actor} if actor else {}),
             **({"abort_reason": reason} if reason else {}),
             **({"linked_run_error": linked_run_error} if linked_run_error else {}),
         }
+        flag_modified(plan, "metadata_json")
         self._s.add(plan)
         self.finish_linked_run(plan, status=RunStatus.ABORTED, error=linked_run_error)
         TrackerRepository(self._s).mirror_run_plan_aborted(
@@ -259,6 +265,170 @@ class RunPlanLifecycleReconciler:
                 )
         return count
 
+    def recover_plan(
+        self,
+        plan: RunPlan,
+        *,
+        step: RunPlanStep,
+        step_status: RunPlanStepStatus,
+        result_json: dict[str, Any] | None = None,
+        error: str | None = None,
+        reason: str | None = None,
+        actor: str | None = "system",
+    ) -> bool:
+        """Restore a system-recoverable plan or step to started state.
+
+        This is intentionally narrower than a generic "unfail" primitive. It
+        exists for daemon/controller lifecycle failures and safe live-step
+        cleanup where the workflow is still the canonical work record and the
+        agent should continue in-place instead of creating a duplicate
+        replacement run plan.
+        """
+        if plan.id is None:
+            return False
+        if plan.status == RunPlanStatus.COMPLETED:
+            raise ConflictError(
+                "completed run plans cannot be recovered",
+                data={"run_plan_id": plan.id, "status": plan.status.value},
+            )
+        terminal_plan_recovery = plan.status in {RunPlanStatus.ABORTED, RunPlanStatus.FAILED}
+        live_step_recovery = plan.status == RunPlanStatus.STARTED
+        if not terminal_plan_recovery and not live_step_recovery:
+            raise ConflictError(
+                "only failed, aborted, or safely recoverable started run plans can be recovered",
+                data={"run_plan_id": plan.id, "status": plan.status.value},
+            )
+        if step.run_plan_id != plan.id:
+            raise ConflictError(
+                "recovery step does not belong to the run plan",
+                data={"run_plan_id": plan.id, "step_id": step.step_id},
+            )
+        if step_status not in {RunPlanStepStatus.BLOCKED, RunPlanStepStatus.PENDING}:
+            raise ConflictError(
+                "recovery step status must be blocked or pending",
+                data={
+                    "run_plan_id": plan.id,
+                    "step_id": step.step_id,
+                    "requested_status": step_status.value,
+                },
+            )
+        run = self._s.get(Run, plan.run_id) if plan.run_id is not None else None
+        recoverable = (
+            self._is_recoverable_terminal_state(plan, run, step, reason=reason)
+            if terminal_plan_recovery
+            else self._is_recoverable_live_step_state(
+                plan,
+                step,
+                requested_status=step_status,
+                reason=reason,
+            )
+        )
+        if not recoverable:
+            raise ConflictError(
+                "run plan state is not marked as system-recoverable",
+                data={
+                    "run_plan_id": plan.id,
+                    "status": plan.status.value,
+                    "run_id": plan.run_id,
+                    "run_status": run.status.value if run is not None else None,
+                    "run_error": run.error if run is not None else None,
+                    "step_id": step.step_id,
+                    "step_status": step.status.value,
+                    "next_operations": ["runPlan.checkConsistency"],
+                },
+            )
+
+        now = _utcnow()
+        previous_plan_status = plan.status.value
+        previous_run_status = run.status.value if run is not None else None
+        skipped_restore_reason = self._skipped_restore_reason(plan.metadata_json, reason)
+        plan.status = RunPlanStatus.STARTED
+        plan.completed_at = None
+        plan.updated_at = now
+        plan.metadata_json = self._recovered_plan_metadata(
+            plan.metadata_json,
+            actor=actor,
+            reason=reason,
+            recovered_at=now,
+            previous_plan_status=previous_plan_status,
+            previous_run_status=previous_run_status,
+            step_id=step.step_id,
+            step_status=step_status,
+        )
+        flag_modified(plan, "metadata_json")
+        self._s.add(plan)
+
+        if run is not None:
+            run.status = RunStatus.RUNNING
+            run.error = None
+            run.ended_at = None
+            run.heartbeat_at = now
+            run.last_step = step.step_id
+            run.last_step_at = now
+            run.metadata_json = {
+                **self._json_dict(run.metadata_json),
+                "run_plan_id": plan.id,
+                "stackos_type": "run-plan",
+                "recovered_at": now.isoformat(),
+                **({"recovered_by": actor} if actor else {}),
+                **({"recovery_reason": reason} if reason else {}),
+            }
+            flag_modified(run, "metadata_json")
+            self._s.add(run)
+
+        for item in self._step_rows(plan.id):
+            if item.id == step.id:
+                item.status = step_status
+                item.result_json = result_json
+                item.error = error
+                item.completed_at = None
+                if step_status == RunPlanStepStatus.PENDING:
+                    item.claimed_by = None
+                    item.claimed_at = None
+                    item.started_at = None
+                else:
+                    item.claimed_by = actor or item.claimed_by
+                    item.claimed_at = item.claimed_at or now
+                    item.started_at = item.started_at or now
+                item.updated_at = now
+                self._s.add(item)
+                continue
+            if (
+                item.position > step.position
+                and item.status == RunPlanStepStatus.SKIPPED
+                and self._step_was_skipped_by_reason(item, skipped_restore_reason)
+            ):
+                item.status = RunPlanStepStatus.PENDING
+                item.result_json = None
+                item.error = None
+                item.claimed_by = None
+                item.claimed_at = None
+                item.started_at = None
+                item.completed_at = None
+                item.updated_at = now
+                self._s.add(item)
+
+        for approval in self._approval_rows(plan.id):
+            if str(approval.status) != ApprovalRequestStatus.CANCELLED.value:
+                continue
+            if not self._approval_cancelled_by_reason(approval, skipped_restore_reason):
+                continue
+            approval.status = ApprovalRequestStatus.PENDING
+            approval.decided_at = None
+            approval.decided_by = None
+            approval.decision_json = None
+            approval.updated_at = now
+            self._s.add(approval)
+
+        TrackerRepository(self._s).mirror_run_plan_recovered(
+            plan=plan,
+            steps=self._step_rows(plan.id),
+            actor=actor,
+            reason=reason,
+        )
+        self._s.flush()
+        return True
+
     def cascade_aborted_children(
         self,
         root_run_id: int,
@@ -290,6 +460,167 @@ class RunPlanLifecycleReconciler:
     def should_preserve_live_run_plan(self, run: Run) -> bool:
         plan = self._plan_for_run(run)
         return plan is not None and plan.id is not None and plan.status == RunPlanStatus.STARTED
+
+    def _is_recoverable_terminal_state(
+        self,
+        plan: RunPlan,
+        run: Run | None,
+        step: RunPlanStep,
+        *,
+        reason: str | None,
+    ) -> bool:
+        if plan.status == RunPlanStatus.ABORTED:
+            metadata = self._json_dict(plan.metadata_json)
+            values = {
+                str(metadata.get("abort_reason") or ""),
+                str(metadata.get("linked_run_error") or ""),
+                str(run.error or "") if run is not None else "",
+                str(reason or ""),
+            }
+            return STALE_RUN_ERROR in values
+        if plan.status == RunPlanStatus.FAILED and step.status == RunPlanStepStatus.FAILED:
+            text = " ".join(
+                (
+                    str(reason or ""),
+                    str(step.error or ""),
+                    str(step.result_json or ""),
+                )
+            ).lower()
+            return any(
+                marker in text
+                for marker in (
+                    "blocked",
+                    "blocking",
+                    "recoverable",
+                    "daemon rejects blocked",
+                    "tracker graph",
+                )
+            )
+        return False
+
+    def _is_recoverable_live_step_state(
+        self,
+        plan: RunPlan,
+        step: RunPlanStep,
+        *,
+        requested_status: RunPlanStepStatus,
+        reason: str | None,
+    ) -> bool:
+        if plan.id is None or plan.status != RunPlanStatus.STARTED:
+            return False
+        if (
+            step.status == RunPlanStepStatus.BLOCKED
+            and requested_status == RunPlanStepStatus.PENDING
+            and self._blocked_step_has_no_child_progress(plan, step)
+        ):
+            return True
+        if (
+            step.status == RunPlanStepStatus.BLOCKED
+            and requested_status == RunPlanStepStatus.PENDING
+            and incomplete_step_dependencies(self._step_rows(plan.id), step)
+        ):
+            return True
+        if step.status in {RunPlanStepStatus.BLOCKED, RunPlanStepStatus.PENDING}:
+            restore_reason = self._skipped_restore_reason(plan.metadata_json, reason)
+            return any(
+                item.position > step.position
+                and item.status == RunPlanStepStatus.SKIPPED
+                and self._step_was_skipped_by_reason(item, restore_reason)
+                for item in self._step_rows(plan.id)
+            )
+        return False
+
+    def _blocked_step_has_no_child_progress(self, plan: RunPlan, step: RunPlanStep) -> bool:
+        if plan.id is None or step.id is None:
+            return False
+        child = self._s.exec(
+            select(TrackerTicket).where(
+                TrackerTicket.run_plan_id == plan.id,
+                TrackerTicket.run_plan_step_id == step.id,
+                col(TrackerTicket.parent_ticket_id).is_not(None),
+                TrackerTicket.status != TrackerItemStatus.NOT_STARTED,
+            )
+        ).first()
+        return child is None
+
+    @staticmethod
+    def _recovered_plan_metadata(
+        metadata_json: dict[str, Any] | None,
+        *,
+        actor: str | None,
+        reason: str | None,
+        recovered_at: datetime,
+        previous_plan_status: str,
+        previous_run_status: str | None,
+        step_id: str,
+        step_status: RunPlanStepStatus,
+    ) -> dict[str, Any]:
+        metadata = RunPlanLifecycleReconciler._json_dict(metadata_json)
+        previous_abort = {
+            key: metadata.pop(key)
+            for key in ("aborted_at", "aborted_by", "abort_reason", "linked_run_error")
+            if key in metadata
+        }
+        events = list(metadata.get("recovery_events") or [])
+        events.append(
+            {
+                "recovered_at": recovered_at.isoformat(),
+                "step_id": step_id,
+                "step_status": step_status.value,
+                "previous_plan_status": previous_plan_status,
+                "previous_run_status": previous_run_status,
+                **({"actor": actor} if actor else {}),
+                **({"reason": reason} if reason else {}),
+                **({"previous_abort": previous_abort} if previous_abort else {}),
+            }
+        )
+        metadata["recovery_events"] = events
+        metadata["last_recovered_at"] = recovered_at.isoformat()
+        metadata["last_recovery_step_id"] = step_id
+        return metadata
+
+    @staticmethod
+    def _skipped_restore_reason(metadata_json: dict[str, Any] | None, reason: str | None) -> str:
+        metadata = RunPlanLifecycleReconciler._json_dict(metadata_json)
+        for key in ("abort_reason", "linked_run_error"):
+            value = metadata.get(key)
+            if value:
+                return str(value)
+        events = metadata.get("recovery_events")
+        if isinstance(events, list):
+            for event in reversed(events):
+                if not isinstance(event, dict):
+                    continue
+                previous_abort = event.get("previous_abort")
+                if not isinstance(previous_abort, dict):
+                    continue
+                for key in ("abort_reason", "linked_run_error"):
+                    value = previous_abort.get(key)
+                    if value:
+                        return str(value)
+        return reason or STALE_RUN_ERROR
+
+    @staticmethod
+    def _step_was_skipped_by_reason(step: RunPlanStep, reason: str) -> bool:
+        data = RunPlanLifecycleReconciler._json_dict(step.result_json)
+        return str(data.get("reason") or "") == reason
+
+    @staticmethod
+    def _approval_cancelled_by_reason(approval: ApprovalRequest, reason: str) -> bool:
+        data = RunPlanLifecycleReconciler._json_dict(approval.decision_json)
+        return str(data.get("reason") or "") == reason
+
+    @staticmethod
+    def _json_dict(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                loaded = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+            return loaded if isinstance(loaded, dict) else {}
+        return {}
 
     def check_plan(self, plan: RunPlan) -> RunPlanConsistencyOut:
         issues = self.consistency_issues(plan)
@@ -358,6 +689,7 @@ class RunPlanLifecycleReconciler:
                     run_id=plan.run_id,
                 )
             )
+        issues.extend(self._step_dependency_issues(plan, steps))
         issues.extend(self._tracker_step_issues(plan, steps))
         return issues
 
@@ -384,9 +716,10 @@ class RunPlanLifecycleReconciler:
             run.ended_at = _utcnow()
         if error is not None and not run.error:
             run.error = error
-        metadata = dict(run.metadata_json or {})
+        metadata = self._json_dict(run.metadata_json)
         metadata.update({"run_plan_id": plan.id, "stackos_type": "run-plan"})
         run.metadata_json = metadata
+        flag_modified(run, "metadata_json")
         self._s.add(run)
 
     def _plan_for_run(self, run: Run) -> RunPlan | None:
@@ -394,10 +727,14 @@ class RunPlanLifecycleReconciler:
             plan = self._s.exec(select(RunPlan).where(RunPlan.run_id == run.id)).first()
             if plan is not None:
                 return plan
-        metadata = run.metadata_json or {}
+        metadata = self._json_dict(run.metadata_json)
         run_plan_id = metadata.get("run_plan_id")
         if isinstance(run_plan_id, int):
-            return self._s.get(RunPlan, run_plan_id)
+            plan = self._s.get(RunPlan, run_plan_id)
+            if plan is None:
+                return None
+            if plan.run_id is None or plan.run_id == run.id:
+                return plan
         return None
 
     def plan_for_run(self, run: Run) -> RunPlan | None:
@@ -419,6 +756,13 @@ class RunPlanLifecycleReconciler:
                     ApprovalRequest.run_plan_id == run_plan_id,
                     ApprovalRequest.status == ApprovalRequestStatus.PENDING,
                 )
+            ).all()
+        )
+
+    def _approval_rows(self, run_plan_id: int) -> list[ApprovalRequest]:
+        return list(
+            self._s.exec(
+                select(ApprovalRequest).where(ApprovalRequest.run_plan_id == run_plan_id)
             ).all()
         )
 
@@ -496,6 +840,40 @@ class RunPlanLifecycleReconciler:
                         },
                     )
                 )
+        return issues
+
+    def _step_dependency_issues(
+        self,
+        plan: RunPlan,
+        steps: list[RunPlanStep],
+    ) -> list[RunPlanConsistencyIssueOut]:
+        if plan.id is None:
+            return []
+        issues: list[RunPlanConsistencyIssueOut] = []
+        for step in steps:
+            if step.status == RunPlanStepStatus.PENDING:
+                continue
+            missing = incomplete_step_dependencies(steps, step)
+            if not missing:
+                continue
+            issues.append(
+                RunPlanConsistencyIssueOut(
+                    code="step-progress-incomplete-dependencies",
+                    severity="error",
+                    message=(
+                        "Run-plan step has progress while a transitive dependency is not complete."
+                    ),
+                    run_plan_id=plan.id,
+                    run_id=plan.run_id,
+                    step_id=step.step_id,
+                    data={
+                        "step_status": step.status.value,
+                        "missing_dependencies": missing,
+                        "repairable": step.status == RunPlanStepStatus.BLOCKED,
+                        "next_operations": ["runPlan.recover", "runPlan.checkConsistency"],
+                    },
+                )
+            )
         return issues
 
 

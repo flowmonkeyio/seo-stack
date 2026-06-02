@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.context.repository import ContextRepository
 from stackos.db.models import (
@@ -14,13 +14,17 @@ from stackos.db.models import (
     ContextSnapshot,
     Run,
     RunPlanStatus,
+    RunPlanStep,
     RunPlanStepStatus,
     RunStatus,
+    TrackerItemStatus,
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.permissions import active_run_plan_step
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
+from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
 
@@ -283,6 +287,961 @@ def test_approval_gate_transition_then_step_completion(
     assert completed.steps[0].result_json == {"campaign_id": "cmp_123"}
     assert run is not None
     assert run.status == RunStatus.SUCCESS
+
+
+def test_blocked_step_keeps_run_plan_recoverable(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recoverable.blocked.run",
+            "title": "Recoverable blocked run",
+            "steps": [{"id": "graph-check", "title": "Graph check"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        claimed_by="agent",
+    )
+
+    blocked = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        status=RunPlanStepStatus.BLOCKED,
+        result_json={"blocking_issue": "tracker graph has warnings"},
+        error="tracker-graph-warning",
+    ).data
+    run = session.get(Run, started.run_id)
+
+    assert blocked.status == RunPlanStatus.STARTED
+    assert blocked.steps[0].status == RunPlanStepStatus.BLOCKED
+    assert blocked.steps[0].completed_at is None
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    blocked_ticket = next(
+        ticket for ticket in snapshot.tickets if ticket.key.endswith("graph-check")
+    )
+    assert blocked_ticket.status == "in-progress"
+    assert blocked_ticket.blocker_reason == "tracker-graph-warning"
+    assert blocked_ticket.outcome == "blocked: tracker-graph-warning"
+
+    reclaimed = repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        claimed_by="agent",
+    ).data
+    completed = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "graph repaired"},
+    ).data
+
+    assert reclaimed.status == RunPlanStepStatus.RUNNING
+    assert completed.status == RunPlanStatus.COMPLETED
+
+
+def test_record_step_success_allows_open_workflow_child_warnings(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.child.closeout.run",
+            "title": "Workflow child closeout run",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    step = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan").data
+
+    TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+        key="plan-child",
+        title="Plan child",
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        dependency_keys=[workflow_step_ticket_key(plan.id, "plan")],
+    )
+
+    completed = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="plan",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "closing step; child remains visible in tracker"},
+    ).data
+
+    assert completed.status == RunPlanStatus.COMPLETED
+    assert completed.steps[0].status == RunPlanStepStatus.SUCCESS
+    after = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=True,
+    )
+    assert after.graph is not None
+    assert any(
+        f"Workflow step {workflow_step_ticket_key(plan.id, 'plan')} is complete while" in warning
+        for warning in after.graph.warnings
+    )
+    child = next(ticket for ticket in after.tickets if ticket.key == "plan-child")
+    assert child.status == TrackerItemStatus.NOT_STARTED
+
+
+def test_claim_step_allows_missing_terminal_child_handoff_warning(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.child.handoff.run",
+            "title": "Workflow child handoff run",
+            "steps": [
+                {"id": "plan", "title": "Plan"},
+                {"id": "deliver", "title": "Deliver", "depends_on": ["plan"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    plan_step = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan").data
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+        key="plan-terminal-child",
+        title="Plan terminal child",
+        run_plan_id=plan.id,
+        run_plan_step_id=plan_step.id,
+        dependency_keys=[workflow_step_ticket_key(plan.id, "plan")],
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="plan-terminal-child",
+        patch_json={"status": "in-progress"},
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="plan-terminal-child",
+        patch_json={"status": "complete", "completion_evidence_json": {"summary": "done"}},
+    )
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="plan",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "plan child complete"},
+    )
+
+    snapshot = tracker.get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=True,
+    )
+    assert snapshot.graph is not None
+    deliver_ticket_key = workflow_step_ticket_key(plan.id, "deliver")
+    assert any(
+        (
+            f"Workflow step {deliver_ticket_key} depends on prior step "
+            f"{workflow_step_ticket_key(plan.id, 'plan')} but not its terminal child tickets"
+        )
+        in warning
+        for warning in snapshot.graph.warnings
+    )
+
+    deliver = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="deliver").data
+
+    assert deliver.status == RunPlanStepStatus.RUNNING
+
+
+def test_claim_step_rejects_incomplete_transitive_dependency(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.transitive.claim.run",
+            "title": "Workflow transitive claim run",
+            "steps": [
+                {"id": "scope", "title": "Scope"},
+                {"id": "discover", "title": "Discover", "depends_on": ["scope"]},
+                {"id": "plan", "title": "Plan", "depends_on": ["discover"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="scope")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="scope",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "scope ok"},
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="discover")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="discover",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "discover ok"},
+    )
+
+    # Simulate legacy graph repair reopening an ancestor after a later direct
+    # dependency was already marked successful.
+    scope = session.exec(
+        select(RunPlanStep).where(
+            RunPlanStep.run_plan_id == plan.id,
+            RunPlanStep.step_id == "scope",
+        )
+    ).one()
+    scope.status = RunPlanStepStatus.BLOCKED
+    scope.error = "legacy graph repair needed"
+    scope.completed_at = None
+    session.add(scope)
+    session.commit()
+
+    with pytest.raises(ConflictError, match="dependencies are not complete") as exc_info:
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan")
+
+    assert exc_info.value.data["missing"] == ["scope"]
+
+    plan_step = session.exec(
+        select(RunPlanStep).where(
+            RunPlanStep.run_plan_id == plan.id,
+            RunPlanStep.step_id == "plan",
+        )
+    ).one()
+    plan_step.status = RunPlanStepStatus.RUNNING
+    plan_step.started_at = _now()
+    session.add(plan_step)
+    session.commit()
+
+    with pytest.raises(ConflictError, match="dependencies are not complete"):
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="plan",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"summary": "incorrectly succeeding out of order"},
+        )
+
+
+def test_recover_blocked_step_with_incomplete_dependencies_to_pending(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.out-of-order.recover.run",
+            "title": "Workflow out-of-order recover run",
+            "steps": [
+                {"id": "scope", "title": "Scope"},
+                {"id": "discover", "title": "Discover", "depends_on": ["scope"]},
+                {"id": "plan", "title": "Plan", "depends_on": ["discover"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    steps = {
+        step.step_id: step
+        for step in session.exec(
+            select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)
+        ).all()
+    }
+    steps["scope"].status = RunPlanStepStatus.BLOCKED
+    steps["scope"].error = "legacy graph repair needed"
+    steps["scope"].started_at = _now()
+    steps["discover"].status = RunPlanStepStatus.SUCCESS
+    steps["discover"].completed_at = _now()
+    steps["plan"].status = RunPlanStepStatus.BLOCKED
+    steps["plan"].error = "claimed out of order before upstream repair finished"
+    steps["plan"].started_at = _now()
+    for step in steps.values():
+        session.add(step)
+    session.commit()
+    TrackerRepository(session).mirror_run_plan_recovered(
+        plan=repo._fetch_plan(plan.id),
+        steps=list(steps.values()),
+        actor="legacy",
+    )
+    session.commit()
+
+    check = repo.check_consistency(plan.id, project_id=project_id)
+    assert any(
+        issue.code == "step-progress-incomplete-dependencies"
+        and issue.step_id == "plan"
+        and issue.data["repairable"] is True
+        for issue in check.issues
+    )
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.PENDING,
+        reason="out-of-order blocked step repair",
+        actor="codex",
+    ).data
+
+    assert recovered.steps[2].status == RunPlanStepStatus.PENDING
+    assert recovered.steps[2].error is None
+    assert recovered.steps[2].claimed_at is None
+    assert recovered.steps[2].started_at is None
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    tickets = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert tickets[workflow_step_ticket_key(plan.id, "plan")].status == "not-started"
+
+
+def test_recover_blocked_step_without_child_progress_to_pending(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.probe-cleanup.run",
+            "title": "Workflow probe cleanup run",
+            "steps": [{"id": "design", "title": "Design"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="design",
+        claimed_by="probe",
+    )
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="design",
+        status=RunPlanStepStatus.BLOCKED,
+        result_json={"summary": "probe cleanup"},
+        error="probe cleanup",
+    )
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="design",
+        step_status=RunPlanStepStatus.PENDING,
+        reason="probe cleanup",
+        actor="codex",
+    ).data
+
+    assert recovered.steps[0].status == RunPlanStepStatus.PENDING
+    assert recovered.steps[0].started_at is None
+    assert recovered.steps[0].claimed_at is None
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    assert snapshot.tickets[0].status == "not-started"
+
+
+def test_recover_started_plan_rejects_graph_warning_only_success_reopen(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "workflow.success.recover.run",
+            "title": "Workflow success recover run",
+            "steps": [
+                {"id": "plan", "title": "Plan"},
+                {"id": "deliver", "title": "Deliver", "depends_on": ["plan"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    plan_step = repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan").data
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+        key="legacy-open-child",
+        title="Legacy open child",
+        run_plan_id=plan.id,
+        run_plan_step_id=plan_step.id,
+        dependency_keys=[workflow_step_ticket_key(plan.id, "plan")],
+    )
+
+    step_row = session.get(RunPlanStep, plan_step.id)
+    assert step_row is not None
+    step_row.status = RunPlanStepStatus.SUCCESS
+    step_row.completed_at = _now()
+    session.add(step_row)
+    tracker_row = tracker.ensure_tracker(project_id=project_id)
+    mirror = tracker._ticket_by_key(
+        tracker_row.id,
+        workflow_step_ticket_key(plan.id, "plan"),
+    )
+    mirror.status = TrackerItemStatus.COMPLETE
+    mirror.completed_at = _now()
+    session.add(mirror)
+    session.commit()
+
+    snapshot = tracker.get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=True,
+    )
+    assert snapshot.graph is not None
+    assert any(
+        "attached child tickets remain open" in warning for warning in snapshot.graph.warnings
+    )
+
+    with pytest.raises(ConflictError, match="not marked as system-recoverable"):
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="plan",
+            step_status=RunPlanStepStatus.BLOCKED,
+            reason="tracker graph topology repair",
+            actor="codex",
+            result_json={"blocking_issue": "legacy child ticket remains open"},
+            error="tracker graph warnings",
+        )
+
+    snapshot = tracker.get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    ticket_by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert ticket_by_key[workflow_step_ticket_key(plan.id, "plan")].status == "complete"
+    assert ticket_by_key["legacy-open-child"].status == "not-started"
+
+
+def test_recover_failed_blocker_restores_live_run_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.failed.blocker.run",
+            "title": "Recover failed blocker",
+            "steps": [
+                {"id": "scope", "title": "Scope"},
+                {"id": "graph-check", "title": "Graph Check", "depends_on": ["scope"]},
+                {"id": "deliver", "title": "Deliver", "depends_on": ["graph-check"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="scope")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="scope",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "scoped"},
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="graph-check")
+    failed = repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        status=RunPlanStepStatus.FAILED,
+        result_json={"blocking_issue": "tracker graph has warnings"},
+        error="Blocked by tracker graph warnings; daemon rejects blocked status.",
+    ).data
+
+    assert failed.status == RunPlanStatus.FAILED
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="graph-check",
+        step_status=RunPlanStepStatus.BLOCKED,
+        reason="Recover old daemon blocked-status bug.",
+        actor="codex",
+        result_json={"blocking_issue": "tracker graph still has warnings"},
+        error="tracker graph warnings",
+    ).data
+
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert recovered.status == RunPlanStatus.STARTED
+    assert recovered.completed_at is None
+    assert run.status == RunStatus.RUNNING
+    assert run.error is None
+    assert run.ended_at is None
+    assert run.last_step == "graph-check"
+    statuses = {step.step_id: step.status for step in recovered.steps}
+    assert statuses == {
+        "scope": RunPlanStepStatus.SUCCESS,
+        "graph-check": RunPlanStepStatus.BLOCKED,
+        "deliver": RunPlanStepStatus.PENDING,
+    }
+    graph_step = next(step for step in recovered.steps if step.step_id == "graph-check")
+    assert graph_step.completed_at is None
+    assert recovered.metadata_json is not None
+    assert recovered.metadata_json["last_recovery_step_id"] == "graph-check"
+    assert recovered.metadata_json["recovery_events"][0]["previous_plan_status"] == "failed"
+
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    workflow_task = snapshot.tasks[0]
+    assert workflow_task.status == "in-progress"
+    assert workflow_task.lane_key == "planning"
+    ticket_by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    graph_ticket = ticket_by_key[workflow_step_ticket_key(plan.id, "graph-check")]
+    assert graph_ticket.status == "in-progress"
+    assert graph_ticket.blocker_reason == "tracker graph warnings"
+    assert graph_ticket.outcome == "blocked: tracker graph warnings"
+    assert graph_ticket.completed_at is None
+    deliver_ticket = ticket_by_key[workflow_step_ticket_key(plan.id, "deliver")]
+    assert deliver_ticket.status == "not-started"
+    assert deliver_ticket.outcome is None
+
+    reclaimed = repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="graph-check",
+        claimed_by="agent",
+    ).data
+    assert reclaimed.status == RunPlanStepStatus.RUNNING
+
+
+def test_recover_daemon_orphan_abort_restores_steps_approvals_and_child_tickets(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.orphan.abort.run",
+            "title": "Recover orphan abort",
+            "approvals": [
+                {"key": "scope-review", "title": "Scope Review", "step_id": "scope"},
+                {"key": "release-review", "title": "Release Review", "step_id": "release"},
+            ],
+            "steps": [
+                {"id": "scope", "title": "Scope"},
+                {"id": "plan", "title": "Plan", "depends_on": ["scope"]},
+                {"id": "release", "title": "Release", "depends_on": ["plan"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.update(
+        run_plan_id=plan.id,
+        approval_key="scope-review",
+        approval_status=ApprovalRequestStatus.APPROVED,
+        decided_by="operator",
+        decision_json={"approved": True},
+    )
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="scope")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="scope",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "scope ok"},
+    )
+    plan_step = next(step for step in repo.get(plan.id).steps if step.step_id == "plan")
+    tracker = TrackerRepository(session)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=workflow_step_ticket_key(plan.id, "plan"),
+        key="plan-child",
+        title="Plan child",
+        run_plan_id=plan.id,
+        run_plan_step_id=plan_step.id,
+        lane_key="planning",
+        commit=False,
+    )
+    session.commit()
+
+    repo.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="daemon-restart-orphan",
+        actor="system",
+    )
+
+    aborted = repo.get(plan.id)
+    assert aborted.status == RunPlanStatus.ABORTED
+    assert {step.step_id: step.status for step in aborted.steps} == {
+        "scope": RunPlanStepStatus.SUCCESS,
+        "plan": RunPlanStepStatus.SKIPPED,
+        "release": RunPlanStepStatus.SKIPPED,
+    }
+    approval_status = {item.approval_key: item.status for item in aborted.approval_requests}
+    assert approval_status == {"scope-review": "approved", "release-review": "cancelled"}
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.BLOCKED,
+        reason="tracker graph topology repair",
+        actor="codex",
+        result_json={"blocking_issue": "topology repair needed"},
+        error="topology warnings",
+    ).data
+
+    assert recovered.status == RunPlanStatus.STARTED
+    assert {step.step_id: step.status for step in recovered.steps} == {
+        "scope": RunPlanStepStatus.SUCCESS,
+        "plan": RunPlanStepStatus.BLOCKED,
+        "release": RunPlanStepStatus.PENDING,
+    }
+    approval_by_key = {item.approval_key: item for item in recovered.approval_requests}
+    assert approval_by_key["scope-review"].status == "approved"
+    assert approval_by_key["release-review"].status == "pending"
+    assert approval_by_key["release-review"].decided_at is None
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    assert run.error is None
+    assert run.ended_at is None
+
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    ticket_by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert ticket_by_key[workflow_step_ticket_key(plan.id, "plan")].status == "in-progress"
+    assert ticket_by_key[workflow_step_ticket_key(plan.id, "release")].status == "not-started"
+    child_ticket = ticket_by_key["plan-child"]
+    assert child_ticket.status == "not-started"
+    assert child_ticket.completed_at is None
+    assert child_ticket.outcome is None
+    assert child_ticket.blocker_reason is None
+
+
+def test_recover_live_orphan_recovery_restores_future_steps_from_previous_abort_metadata(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.live.orphan.run",
+            "title": "Recover live orphan",
+            "steps": [
+                {"id": "scope", "title": "Scope"},
+                {"id": "plan", "title": "Plan", "depends_on": ["scope"]},
+                {"id": "deliver", "title": "Deliver", "depends_on": ["plan"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="scope")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="scope",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "scope ok"},
+    )
+    repo.abort(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="daemon-restart-orphan",
+        actor="system",
+    )
+
+    # Simulate the legacy bad recovery shape observed in project 2: the plan
+    # was made live again and the current step was blocked, but later skipped
+    # steps and tracker mirrors still carried the original orphan abort state.
+    plan_row = repo._fetch_plan(plan.id)
+    steps = {
+        step.step_id: step
+        for step in session.exec(
+            select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)
+        ).all()
+    }
+    run = session.get(Run, started.run_id)
+    assert run is not None
+    plan_row.status = RunPlanStatus.STARTED
+    plan_row.completed_at = None
+    plan_row.metadata_json = {
+        "recovery_events": [
+            {
+                "recovered_at": _now().isoformat(),
+                "step_id": "plan",
+                "step_status": "blocked",
+                "previous_plan_status": "aborted",
+                "previous_run_status": "aborted",
+                "actor": "codex",
+                "reason": "tracker graph topology repair",
+                "previous_abort": {
+                    "abort_reason": "daemon-restart-orphan",
+                    "linked_run_error": "daemon-restart-orphan",
+                },
+            }
+        ],
+        "last_recovered_at": _now().isoformat(),
+        "last_recovery_step_id": "plan",
+    }
+    run.status = RunStatus.RUNNING
+    run.error = None
+    run.ended_at = None
+    steps["plan"].status = RunPlanStepStatus.BLOCKED
+    steps["plan"].error = "Legacy live step remained blocked after daemon restart."
+    steps["plan"].completed_at = None
+    session.add(plan_row)
+    session.add(run)
+    for step in steps.values():
+        session.add(step)
+    session.commit()
+
+    tracker = TrackerRepository(session)
+    tracker.mirror_run_plan_recovered(plan=plan_row, steps=list(steps.values()), actor="legacy")
+    session.commit()
+    legacy_snapshot = tracker.get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    legacy_tickets = {ticket.key: ticket for ticket in legacy_snapshot.tickets}
+    assert legacy_tickets[workflow_step_ticket_key(plan.id, "deliver")].status == "aborted"
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.BLOCKED,
+        reason="tracker graph topology repair",
+        actor="codex",
+        result_json={"blocking_issue": "topology repair still needed"},
+        error="tracker graph warnings",
+    ).data
+
+    statuses = {step.step_id: step.status for step in recovered.steps}
+    assert statuses == {
+        "scope": RunPlanStepStatus.SUCCESS,
+        "plan": RunPlanStepStatus.BLOCKED,
+        "deliver": RunPlanStepStatus.PENDING,
+    }
+    snapshot = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    ticket_by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert ticket_by_key[workflow_step_ticket_key(plan.id, "plan")].status == "in-progress"
+    assert ticket_by_key[workflow_step_ticket_key(plan.id, "deliver")].status == "not-started"
+
+
+def test_recover_can_restore_failed_blocker_to_pending_for_clean_rerun(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.pending.run",
+            "title": "Recover Pending",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="plan",
+        status=RunPlanStepStatus.FAILED,
+        result_json={"blocking_issue": "recoverable setup issue"},
+        error="blocked by setup issue",
+    )
+
+    recovered = repo.recover(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        step_id="plan",
+        step_status=RunPlanStepStatus.PENDING,
+        reason="recoverable setup issue",
+        actor="codex",
+    ).data
+
+    assert recovered.status == RunPlanStatus.STARTED
+    assert recovered.steps[0].status == RunPlanStepStatus.PENDING
+    assert recovered.steps[0].claimed_at is None
+    assert recovered.steps[0].started_at is None
+    assert recovered.steps[0].completed_at is None
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    assert snapshot.tickets[0].status == "not-started"
+    assert snapshot.tickets[0].outcome is None
+    assert repo.claim_step(run_plan_id=plan.id, run_id=started.run_id).data.step_id == "plan"
+
+
+def test_recover_rejects_nonrecoverable_failed_step(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.reject.failed.run",
+            "title": "Recover Reject Failed",
+            "steps": [{"id": "test", "title": "Test"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="test")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="test",
+        status=RunPlanStepStatus.FAILED,
+        result_json={"summary": "tests failed"},
+        error="unit test failed",
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="test",
+            step_status=RunPlanStepStatus.BLOCKED,
+            reason="operator regret",
+        )
+
+    assert "system-recoverable" in str(exc_info.value)
+    assert repo.get(plan.id).status == RunPlanStatus.FAILED
+
+
+def test_recover_rejects_completed_plan(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.reject.completed.run",
+            "title": "Recover Reject Completed",
+            "steps": [{"id": "done", "title": "Done"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="done")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="done",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "done"},
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="done",
+            step_status=RunPlanStepStatus.BLOCKED,
+            reason="not allowed",
+        )
+
+    assert "completed run plans cannot be recovered" in str(exc_info.value)
+    assert repo.get(plan.id).status == RunPlanStatus.COMPLETED
+
+
+def test_recover_rejects_terminal_step_status_request(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "recover.reject.status.run",
+            "title": "Recover Reject Status",
+            "steps": [{"id": "plan", "title": "Plan"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="plan")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="plan",
+        status=RunPlanStepStatus.FAILED,
+        result_json={"blocking_issue": "recoverable"},
+        error="blocked",
+    )
+
+    with pytest.raises(ConflictError) as exc_info:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="plan",
+            step_status=RunPlanStepStatus.SUCCESS,
+            reason="recoverable",
+        )
+
+    assert "blocked or pending" in str(exc_info.value)
+    assert repo.get(plan.id).status == RunPlanStatus.FAILED
 
 
 def test_claimed_step_exposes_static_mcp_tool_grants(session: Session, project_id: int) -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from stackos.mcp.permissions import RUN_PLAN_CONTROLLER_SKILL
+
 from .catalog import _bridge_agent_tool_schema
 from .constants import (
     _AGENT_ADMIN_GATED_TOOL_NAMES,
@@ -37,6 +39,53 @@ def _bridge_step_context(structured: object) -> dict[str, Any] | None:
     return None
 
 
+def _bridge_structured_content(response_text: str) -> dict[str, Any] | None:
+    try:
+        envelope = json.loads(response_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    result = envelope.get("result")
+    if not isinstance(result, dict):
+        return None
+    structured = result.get("structuredContent")
+    return structured if isinstance(structured, dict) else None
+
+
+def _bridge_cache_controller_run_context(
+    response_text: str,
+    *,
+    allowed_by_run: dict[int, set[str]],
+    tokens_by_run: dict[int, str],
+    plans_by_run: dict[int, int] | None = None,
+) -> None:
+    structured = _bridge_structured_content(response_text)
+    if structured is None:
+        return
+    data = structured.get("data") if isinstance(structured.get("data"), dict) else structured
+    if not isinstance(data, dict):
+        return
+    run_id = _bridge_as_int(data.get("id")) or _bridge_as_int(structured.get("run_id"))
+    if run_id is None:
+        return
+    metadata = data.get("metadata_json")
+    if not isinstance(metadata, dict):
+        return
+    if metadata.get("skill_name") != RUN_PLAN_CONTROLLER_SKILL:
+        return
+    if data.get("status") != "running":
+        return
+    token = data.get("client_session_id")
+    if not isinstance(token, str) or not token:
+        return
+    tokens_by_run[run_id] = token
+    allowed_by_run.setdefault(run_id, set()).update(_AGENT_STEP_GATED_TOOL_NAMES)
+    plan_id = _bridge_as_int(metadata.get("run_plan_id"))
+    if plan_id is not None and plans_by_run is not None:
+        plans_by_run[run_id] = plan_id
+
+
 def _bridge_cache_step_context(
     response_text: str,
     *,
@@ -44,21 +93,15 @@ def _bridge_cache_step_context(
     tokens_by_run: dict[int, str],
     plans_by_run: dict[int, int] | None = None,
 ) -> None:
-    try:
-        envelope = json.loads(response_text)
-    except json.JSONDecodeError:
+    structured = _bridge_structured_content(response_text)
+    if structured is None:
         return
-    if not isinstance(envelope, dict):
-        return
-    result = envelope.get("result")
-    if not isinstance(result, dict):
-        return
-    context = _bridge_step_context(result.get("structuredContent"))
+    context = _bridge_step_context(structured)
     if context is None:
         return
     run_id = _bridge_as_int(context.get("run_id"))
     if run_id is None:
-        run_id = _bridge_as_int(result.get("run_id"))
+        run_id = _bridge_as_int(structured.get("run_id"))
     data = context.get("data")
     if isinstance(data, dict) and run_id is None:
         run_id = _bridge_as_int(data.get("run_id"))
@@ -69,6 +112,7 @@ def _bridge_cache_step_context(
         run_token = data.get("run_token")
     if isinstance(run_token, str) and run_token:
         tokens_by_run[run_id] = run_token
+    has_run_token = run_id in tokens_by_run
     plan = context.get("plan")
     if not isinstance(plan, dict) and isinstance(data, dict):
         plan = data.get("plan")
@@ -78,6 +122,8 @@ def _bridge_cache_step_context(
             plans_by_run[run_id] = plan_id
     step_package = data if isinstance(data, dict) else context
     if isinstance(step_package, dict) and isinstance(step_package.get("step_id"), str):
+        if not has_run_token:
+            return
         allowed_tools = step_package.get("allowed_tools")
         if isinstance(allowed_tools, list):
             allowed_by_run[run_id] = set(_AGENT_STEP_GATED_TOOL_NAMES) | {
@@ -86,6 +132,8 @@ def _bridge_cache_step_context(
             return
     plan_package = data if isinstance(data, dict) and "steps" in data else context
     if isinstance(plan_package, dict) and isinstance(plan_package.get("steps"), list):
+        if not has_run_token:
+            return
         running_step_tools: set[str] = set()
         for step in plan_package["steps"]:
             if not isinstance(step, dict) or step.get("status") != "running":

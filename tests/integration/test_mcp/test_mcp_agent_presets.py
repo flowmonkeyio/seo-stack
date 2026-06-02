@@ -56,7 +56,9 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert described["preset"]["summary"]["plugin_slug"] == "engineering"
     planning_contract = described["preset"]["preset"]["prompt_contract"]
     assert "workflow graph check" in " ".join(planning_contract["responsibilities"])
-    assert "attachment only" in " ".join(planning_contract["must_do"])
+    planning_text = " ".join(planning_contract["must_do"])
+    assert "attachment/provenance only" in planning_text
+    assert "tracker.updateTicket" in planning_text
     planning_text = " ".join(
         [
             *planning_contract["responsibilities"],

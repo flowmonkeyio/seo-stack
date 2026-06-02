@@ -508,6 +508,47 @@ def run_plans_abort(
     _echo_json(_operation_call("runPlan.abort", arguments))
 
 
+@run_plans_app.command(name="recover")
+def run_plans_recover(
+    run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
+    step_id: Annotated[str, typer.Option("--step-id", help="Step id to restore.")],
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    step_status: Annotated[
+        str,
+        typer.Option("--step-status", help="Recovered step status: blocked or pending."),
+    ] = "blocked",
+    reason: Annotated[
+        str | None,
+        typer.Option("--reason", help="System recovery reason."),
+    ] = None,
+    actor: Annotated[str | None, typer.Option("--actor", help="Operator/agent label.")] = None,
+    result_path: Annotated[
+        str | None,
+        typer.Option("--result", help="JSON recovery result payload, or '-' for stdin."),
+    ] = None,
+    error: Annotated[str | None, typer.Option("--error", help="Recoverable blocker text.")] = None,
+    idempotency_key: Annotated[
+        str | None,
+        typer.Option("--idempotency-key", help="24h dedupe token for recovery."),
+    ] = None,
+) -> None:
+    """Recover a system-failed run plan into a live blocked or pending step."""
+    arguments = _merge_common_arguments(
+        {
+            "run_plan_id": run_plan_id,
+            "step_id": step_id,
+            "step_status": step_status,
+            "reason": reason,
+            "actor": actor,
+            "result_json": _load_operation_arguments(result_path) if result_path else None,
+            "error": error,
+        },
+        project_id=project_id,
+        idempotency_key=idempotency_key,
+    )
+    _echo_json(_operation_call("runPlan.recover", arguments))
+
+
 @run_plans_app.command(name="claim-step")
 def run_plans_claim_step(
     run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
@@ -532,7 +573,10 @@ def run_plans_claim_step(
 def run_plans_record_step(
     run_plan_id: Annotated[int, typer.Argument(help="Run plan id.")],
     step_id: Annotated[str, typer.Option("--step-id", help="Step id to record.")],
-    status: Annotated[str, typer.Option("--status", help="success, failed, or skipped.")],
+    status: Annotated[
+        str,
+        typer.Option("--status", help="success, failed, skipped, or blocked."),
+    ],
     result_path: Annotated[
         str | None,
         typer.Option("--result", help="JSON result payload, or '-' for stdin."),

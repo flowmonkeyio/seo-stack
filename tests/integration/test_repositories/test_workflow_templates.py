@@ -239,6 +239,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "audit-tracker",
         "release-closeout",
     ]
+    assert engineering_described.spec.approval_gates == []
+    assert all(not step.approval_refs for step in engineering_described.spec.steps)
     assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
     assert engineering_described.spec.metadata_json["workflow_selection_invariant"] == (
         "explicit_workflow_intent_requires_run_plan_before_tracker_tickets"
@@ -250,7 +252,8 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
     plan_text = plan_step.model_dump_json()
     assert "workflow task/run plan from the start" in plan_text
-    assert "attachment only" in plan_text
+    assert "attachment/provenance only" in plan_text
+    assert "tracker.updateTicket" in plan_text
     assert "bridge child tickets" in plan_text
     assert "detached branches" in plan_text
     audit_step = next(
