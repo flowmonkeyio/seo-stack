@@ -193,6 +193,16 @@ class RunPlanStartOut(BaseModel):
     run_id: int
 
 
+class RunPlanReopenOut(BaseModel):
+    plan: RunPlanOut
+    run: RunOut
+    run_token: str
+    run_id: int
+    reopened_step_id: str
+    reset_step_ids: list[str]
+    next_operations: list[str] = Field(default_factory=list)
+
+
 class RunPlanRepository:
     """Concrete run-plan storage and lifecycle.
 
@@ -565,6 +575,122 @@ class RunPlanRepository:
             self._s.flush()
         return Envelope(data=self._plan_out(plan), run_id=plan.run_id, project_id=plan.project_id)
 
+    def reopen(
+        self,
+        *,
+        run_plan_id: int,
+        project_id: int | None = None,
+        step_id: str | None = None,
+        reason: str,
+        actor: str | None = None,
+        commit: bool = True,
+    ) -> Envelope[RunPlanReopenOut]:
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ValidationError("reason is required to reopen a run plan")
+        _ensure_no_secrets({"reason": reason}, label="run plan reopen reason")
+        if actor is not None:
+            _ensure_no_secrets({"actor": actor}, label="run plan reopen actor")
+        if plan.status == RunPlanStatus.DRAFT:
+            raise ConflictError(
+                "draft run plans have not started; use runPlan.start",
+                data={
+                    "run_plan_id": run_plan_id,
+                    "status": plan.status.value,
+                    "next_operations": ["runPlan.start"],
+                },
+            )
+
+        steps = self._step_rows(plan.id)
+        if not steps:
+            raise ConflictError(
+                "run plan has no steps to reopen",
+                data={"run_plan_id": run_plan_id},
+            )
+        step = self._reopen_step(steps, step_id=step_id)
+        run = self._linked_run_for_reopen(plan)
+        now = _utcnow()
+
+        previous_plan_status = plan.status.value
+        previous_run_status = run.status.value
+        plan.status = RunPlanStatus.STARTED
+        plan.completed_at = None
+        plan.updated_at = now
+        plan.metadata_json = self._reopen_plan_metadata(
+            plan.metadata_json,
+            reason=reason,
+            actor=actor,
+            reopened_at=now,
+            previous_plan_status=previous_plan_status,
+            previous_run_status=previous_run_status,
+            step_id=step.step_id,
+        )
+        self._s.add(plan)
+
+        if not run.client_session_id:
+            run.client_session_id = _token()
+        run.status = RunStatus.RUNNING
+        run.error = None
+        run.ended_at = None
+        run.heartbeat_at = now
+        run.last_step = step.step_id
+        run.last_step_at = now
+        run.metadata_json = self._reopen_run_metadata(
+            run.metadata_json,
+            plan=plan,
+            reason=reason,
+            actor=actor,
+            reopened_at=now,
+        )
+        self._s.add(run)
+
+        reset_step_ids: list[str] = []
+        for item in steps:
+            if item.position < step.position:
+                continue
+            reset_step_ids.append(item.step_id)
+            item.status = RunPlanStepStatus.PENDING
+            item.result_json = None
+            item.error = None
+            item.claimed_by = None
+            item.claimed_at = None
+            item.started_at = None
+            item.completed_at = None
+            item.updated_at = now
+            self._s.add(item)
+
+        TrackerRepository(self._s).mirror_run_plan_reopened(
+            plan=plan,
+            steps=steps,
+            actor=actor,
+            reason=reason,
+        )
+        if commit:
+            self._s.commit()
+            self._s.refresh(plan)
+            self._s.refresh(run)
+        else:
+            self._s.flush()
+        return Envelope(
+            data=RunPlanReopenOut(
+                plan=self._plan_out(plan),
+                run=RunOut.model_validate(run),
+                run_token=run.client_session_id or "",
+                run_id=_required_id(run.id),
+                reopened_step_id=step.step_id,
+                reset_step_ids=reset_step_ids,
+                next_operations=[
+                    "runPlan.claimStep",
+                    "tracker.get",
+                    "tracker.createTicket",
+                ],
+            ),
+            run_id=run.id,
+            project_id=plan.project_id,
+        )
+
     def list(
         self,
         *,
@@ -847,6 +973,114 @@ class RunPlanRepository:
         run.last_step_at = now
         self._s.add(run)
 
+    def _linked_run_for_reopen(self, plan: RunPlan) -> Run:
+        if plan.run_id is None:
+            raise ConflictError(
+                "run plan has no linked audit run to reopen",
+                data={
+                    "run_plan_id": plan.id,
+                    "status": plan.status.value,
+                    "next_operations": ["runPlan.get", "runPlan.start"],
+                },
+            )
+        run = self._s.get(Run, plan.run_id)
+        if run is None:
+            raise ConflictError(
+                "linked audit run was not found",
+                data={
+                    "run_plan_id": plan.id,
+                    "run_id": plan.run_id,
+                    "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
+                },
+            )
+        return run
+
+    def _reopen_step(
+        self,
+        steps: list[RunPlanStep],
+        *,
+        step_id: str | None,
+    ) -> RunPlanStep:
+        if step_id is not None:
+            for step in steps:
+                if step.step_id == step_id:
+                    return step
+            raise NotFoundError(
+                "run plan step not found",
+                data={"step_id": step_id, "available_step_ids": [step.step_id for step in steps]},
+            )
+        failed_or_blocked = next(
+            (
+                step
+                for step in sorted(steps, key=lambda item: item.position)
+                if step.status in {RunPlanStepStatus.FAILED, RunPlanStepStatus.BLOCKED}
+            ),
+            None,
+        )
+        if failed_or_blocked is not None:
+            return failed_or_blocked
+        delivery = next((step for step in steps if step.step_id == "deliver-tickets"), None)
+        if delivery is not None:
+            return delivery
+        return max(steps, key=lambda item: item.position)
+
+    def _reopen_plan_metadata(
+        self,
+        metadata_json: dict[str, Any] | None,
+        *,
+        reason: str,
+        actor: str | None,
+        reopened_at: datetime,
+        previous_plan_status: str,
+        previous_run_status: str,
+        step_id: str,
+    ) -> dict[str, Any]:
+        current = _jsonable(metadata_json or {})
+        history = current.get("reopen_history")
+        if not isinstance(history, list):
+            history = []
+        history.append(
+            {
+                "reopened_at": reopened_at.isoformat(),
+                "reason": reason,
+                "actor": actor,
+                "previous_plan_status": previous_plan_status,
+                "previous_run_status": previous_run_status,
+                "step_id": step_id,
+            }
+        )
+        current.update(
+            {
+                "reopen_history": history[-25:],
+                "last_reopened_at": reopened_at.isoformat(),
+                "last_reopen_reason": reason,
+                "last_reopened_by": actor,
+                "last_reopened_step_id": step_id,
+            }
+        )
+        return current
+
+    def _reopen_run_metadata(
+        self,
+        metadata_json: dict[str, Any] | None,
+        *,
+        plan: RunPlan,
+        reason: str,
+        actor: str | None,
+        reopened_at: datetime,
+    ) -> dict[str, Any]:
+        current = _jsonable(metadata_json or {})
+        current.update(
+            {
+                "stackos_type": "run-plan",
+                "run_plan_id": plan.id,
+                "reopened_at": reopened_at.isoformat(),
+                "reopen_reason": reason,
+                "reopened_by": actor,
+            }
+        )
+        return current
+
     def _load_template(
         self,
         *,
@@ -1051,6 +1285,7 @@ __all__ = [
     "RunPlanConsistencyIssueOut",
     "RunPlanConsistencyOut",
     "RunPlanOut",
+    "RunPlanReopenOut",
     "RunPlanRepository",
     "RunPlanStartOut",
     "RunPlanStepOut",

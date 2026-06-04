@@ -343,6 +343,66 @@ class TrackerRejectTaskInput(MCPInput):
     actor: str | None = None
 
 
+class TrackerReopenInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "project_id": 2,
+                    "task_key": "workflow-27",
+                    "reason": "More follow-up work was found after closeout.",
+                    "actor": "codex",
+                },
+                {
+                    "project_id": 2,
+                    "run_plan_id": 27,
+                    "reason": "Operator wants the same workflow continued.",
+                },
+                {
+                    "project_id": 2,
+                    "run_id": 21,
+                    "reason": "The linked workflow needs follow-up work.",
+                },
+                {
+                    "project_id": 1,
+                    "task_key": "manual-comms",
+                    "reason": "New requirements were discovered.",
+                },
+            ]
+        },
+    )
+
+    project_id: int
+    task_key: str | None = Field(
+        default=None,
+        description="Task key to reopen. For workflow mirrors, workflow-{run_plan_id} is resolved.",
+    )
+    run_plan_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional run-plan id. When supplied, StackOS reopens the canonical "
+            "run plan, linked audit run, and mirrored workflow task together."
+        ),
+    )
+    run_id: int | None = Field(
+        default=None,
+        description=(
+            "Optional linked audit run id. StackOS resolves it to the owning run plan "
+            "when one exists."
+        ),
+    )
+    step_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional workflow step id to resume from. Omit it and StackOS chooses "
+            "the failed/blocked step, deliver-tickets, or the last step."
+        ),
+    )
+    reason: str
+    actor: str | None = None
+
+
 class TrackerUpdateTicketInput(MCPInput):
     model_config = ConfigDict(
         extra="forbid",
@@ -481,6 +541,7 @@ __all__ = [
     "TrackerPickInput",
     "TrackerProjectInput",
     "TrackerRejectTaskInput",
+    "TrackerReopenInput",
     "TrackerReleaseInput",
     "TrackerResponseMode",
     "TrackerSearchInput",

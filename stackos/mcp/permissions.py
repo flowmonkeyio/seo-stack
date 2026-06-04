@@ -137,6 +137,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.patch",
         "tracker.pick",
         "tracker.rejectTask",
+        "tracker.reopen",
         "tracker.release",
         "tracker.linkRunPlan",
         "budget.list",
@@ -181,6 +182,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "runPlan.get",
         "runPlan.list",
         "runPlan.recover",
+        "runPlan.reopen",
         "runPlan.start",
         "runPlan.validate",
         "provider.describe",
@@ -238,6 +240,7 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "tracker.patch",
         "tracker.pick",
         "tracker.rejectTask",
+        "tracker.reopen",
         "tracker.release",
         "tracker.linkRunPlan",
     }
@@ -252,6 +255,7 @@ _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
         "tracker.patch",
         "tracker.pick",
         "tracker.rejectTask",
+        "tracker.reopen",
         "tracker.release",
         "tracker.linkRunPlan",
     }

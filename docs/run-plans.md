@@ -69,6 +69,13 @@ steps and approvals, and mirrors tracker state back to active work. It can also
 reset safely recoverable live blocked steps to pending when no child work has
 progressed or when an out-of-order blocker must be unwound.
 
+Use `tracker.reopen` for normal operational follow-up after closeout. It accepts
+`task_key`, `run_plan_id`, or linked `run_id`; for workflow-backed tasks it
+delegates to `runPlan.reopen`, revives the linked audit run, resets the selected
+step and later steps to pending, and mirrors `workflow-{run_plan_id}` back to
+`in-progress`. If the target is a manual tracker task with no run plan, only the
+task is reopened. Agents should not decide which side of the mirror to patch.
+
 Agents must not use tracker mirror ticket status as a second workflow execution
 path. Mirrored workflow step tickets are controlled by `runPlan.claimStep` and
 `runPlan.recordStep`. Child tickets attached to a workflow step may track

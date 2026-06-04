@@ -166,9 +166,12 @@ run token.
   `runPlan.checkConsistency`, then use `runPlan.recover` only when the
   diagnostics/history show a system-recoverable failed, aborted, or safely
   recoverable live workflow. Do not create a duplicate replacement plan just to
-  escape stale lifecycle state. `runPlan.abort` marks the workflow task and
-  unfinished linked tickets `aborted`. Completed or failed workflow run plans
-  cannot be rejected through tracker state.
+  escape stale lifecycle state. When the operator wants normal follow-up work
+  after closeout, call `tracker.reopen` with `task_key`, `run_plan_id`, or
+  linked `run_id` and a reason; StackOS reopens the task or the mirrored
+  plan/run/task lifecycle as needed. `runPlan.abort` marks the workflow task and unfinished linked tickets
+  `aborted`. Completed or failed workflow run plans cannot be rejected through
+  tracker state.
   `tracker.linkRunPlan` is provenance only; it does not transfer lifecycle
   ownership from tracker to run plan.
 - Execute workflow work: use a workflow template when work should follow a

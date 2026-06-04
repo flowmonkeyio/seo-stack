@@ -35,6 +35,7 @@ from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL
 from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
+    TrackerReopenOut,
 )
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
@@ -368,6 +369,92 @@ class TrackerMutationMixin:
                 tracker=self._tracker_out(tracker),
                 task=self._task_out(task),
                 rev=tracker.rev,
+            ),
+            project_id=project_id,
+        )
+
+    def reopen_task(
+        self,
+        *,
+        project_id: int,
+        task_key: str,
+        reason: str,
+        actor: str | None = None,
+        commit: bool = True,
+    ) -> Envelope[TrackerReopenOut]:
+        tracker = self.ensure_tracker(project_id=project_id)
+        task = self._task_by_key(tracker.id, task_key)
+        workflow_run_plan_id = self._workflow_task_run_plan_id(task)
+        if workflow_run_plan_id is not None:
+            raise ValidationError(
+                "workflow task reopen is controlled by runPlan.reopen",
+                data={
+                    "task_key": task.key,
+                    "run_plan_id": workflow_run_plan_id,
+                    "next_operations": ["tracker.reopen", "runPlan.reopen"],
+                },
+            )
+        reason = _clean_text(reason)
+        if not reason:
+            raise ValidationError("reason is required to reopen a task")
+        before = self._task_snapshot(task)
+        now = _utcnow()
+        task.status = TrackerItemStatus.IN_PROGRESS
+        task.started_at = task.started_at or now
+        task.completed_at = None
+        if task.lane_key == "done":
+            task.lane_key = "implementation"
+        metadata = dict(task.metadata_json or {})
+        history = metadata.get("reopen_history")
+        if not isinstance(history, list):
+            history = []
+        history.append(
+            {
+                "reopened_at": now.isoformat(),
+                "reason": reason,
+                "actor": actor,
+                "previous_status": before.get("status"),
+            }
+        )
+        metadata.update(
+            {
+                "reopen_history": history[-25:],
+                "last_reopened_at": now.isoformat(),
+                "last_reopen_reason": reason,
+                "last_reopened_by": actor,
+            }
+        )
+        task.metadata_json = redact_secrets(metadata)
+        task.updated_at = now
+        self._s.add(task)
+        self._record_revision(
+            tracker,
+            actor=actor,
+            change_kind="reopen",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Reopened task {task.key}.",
+            before_json=before,
+            after_json=self._task_snapshot(task),
+            patch_json={"reason": reason},
+            commit=False,
+        )
+        if commit:
+            self._s.commit()
+            self._s.refresh(task)
+        else:
+            self._s.flush()
+        return Envelope(
+            data=TrackerReopenOut(
+                tracker=self._tracker_out(tracker),
+                task=self._task_out(task),
+                rev=tracker.rev,
+                next_operations=[
+                    "tracker.createTicket",
+                    "tracker.updateTicket",
+                    "tracker.get",
+                ],
             ),
             project_id=project_id,
         )

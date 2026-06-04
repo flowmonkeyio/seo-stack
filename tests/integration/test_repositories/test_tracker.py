@@ -119,6 +119,43 @@ def test_manual_task_ticket_lifecycle_and_graph(session: Session, project_id: in
     assert any(edge.type == "dependency" for edge in snapshot.graph.edges)
 
 
+def test_reopen_manual_task_without_run(session: Session, project_id: int) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(
+        project_id=project_id,
+        key="manual-reopen",
+        title="Manual reopen",
+        status=TrackerItemStatus.COMPLETE,
+        lane_key="done",
+        completion_evidence_json={"summary": "Previously closed."},
+        metadata_json={"closed_by": "codex"},
+        created_by="codex",
+    )
+
+    reopened = repo.reopen_task(
+        project_id=project_id,
+        task_key="manual-reopen",
+        reason="New follow-up work was found.",
+        actor="codex",
+    ).data
+
+    assert reopened.task is not None
+    assert reopened.task.status == TrackerItemStatus.IN_PROGRESS
+    assert reopened.task.lane_key == "implementation"
+    assert reopened.task.completed_at is None
+    assert reopened.task.completion_evidence_json == {"summary": "Previously closed."}
+    assert reopened.run_plan_id is None
+    assert reopened.run_id is None
+    assert reopened.run_token is None
+    assert reopened.task.metadata_json is not None
+    assert reopened.task.metadata_json["last_reopen_reason"] == "New follow-up work was found."
+    assert reopened.next_operations == [
+        "tracker.createTicket",
+        "tracker.updateTicket",
+        "tracker.get",
+    ]
+
+
 def test_terminal_status_patches_force_done_lane(session: Session, project_id: int) -> None:
     repo = TrackerRepository(session)
     repo.create_task(

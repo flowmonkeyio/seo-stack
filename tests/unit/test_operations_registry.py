@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 152
+    assert len(names) == 154
     assert {
         "action.execute",
         "auth.status",
@@ -26,7 +26,9 @@ def test_operation_registry_documents_core_operations() -> None:
         "workflowExtension.upsert",
         "workflowExtension.delete",
         "tracker.rejectTask",
+        "tracker.reopen",
         "runPlan.recover",
+        "runPlan.reopen",
     } <= names
 
     described = registry.get("action.execute").describe_out()
@@ -240,6 +242,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert run_plan_recover.grant_policy == "direct-run-audit-write"
     assert any("system-recoverable" in item for item in run_plan_recover.prerequisites)
 
+    run_plan_reopen = registry.get("runPlan.reopen").describe_out()
+    assert run_plan_reopen.surfaces["mcp"].enabled is True
+    assert run_plan_reopen.surfaces["rest"].enabled is True
+    assert run_plan_reopen.surfaces["cli"].command == "run-plans reopen"
+    assert run_plan_reopen.grant_policy == "direct-run-audit-write"
+    assert any("human-readable reason" in item for item in run_plan_reopen.prerequisites)
+
     tracker_next = registry.get("tracker.next").describe_out()
     assert tracker_next.surfaces["mcp"].enabled is True
     assert tracker_next.surfaces["rest"].enabled is True
@@ -266,6 +275,13 @@ def test_operation_registry_documents_core_operations() -> None:
     assert tracker_reject.surfaces["cli"].command == "tracker reject-task"
     assert tracker_reject.grant_policy == "direct-tracker-write"
     assert "one clear terminal state" in tracker_reject.purpose
+
+    tracker_reopen = registry.get("tracker.reopen").describe_out()
+    assert tracker_reopen.surfaces["mcp"].enabled is True
+    assert tracker_reopen.surfaces["rest"].enabled is True
+    assert tracker_reopen.surfaces["cli"].command == "tracker reopen"
+    assert tracker_reopen.grant_policy == "direct-tracker-write"
+    assert "plain tracker task or a mirrored workflow run plan" in tracker_reopen.purpose
 
 
 def test_operation_registry_surface_filter() -> None:

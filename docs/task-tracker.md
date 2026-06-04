@@ -73,6 +73,7 @@ Lifecycle mirroring is mechanical:
 | `runPlan.recordStep(failed)` | marks the ticket `failed` with `blocker_reason` |
 | `runPlan.recordStep(blocked)` | keeps the ticket active with `blocker_reason`; the step can be reclaimed after repair |
 | `runPlan.recover` | reopens a system-recoverable failed/aborted workflow or safely recoverable live step into the same live run-plan task |
+| `tracker.reopen` / `runPlan.reopen` | reopens normal follow-up work after closeout, revives the linked run, and mirrors the workflow task back to active state |
 | `runPlan.abort` / stale abort reconciliation | marks the workflow task and unfinished linked tickets `aborted` |
 
 Only generated workflow step mirror tickets are lifecycle-owned by run-plan
@@ -90,8 +91,9 @@ triaged, and repaired as tracker hygiene without freezing unrelated progress.
 Use `failed` only for attempted unsuccessful work that should terminally fail
 the run plan.
 Completed or failed workflow run plans cannot be rejected through tracker
-state; create follow-up work or inspect `runPlan.get`/`runPlan.checkConsistency`
-instead. If diagnostics show a system-recoverable lifecycle failure, use
+state; call `tracker.reopen` when more work should continue in the same
+canonical workflow, or inspect `runPlan.get`/`runPlan.checkConsistency` when the
+state looks inconsistent. If diagnostics show a system-recoverable lifecycle failure, use
 `runPlan.recover` to restore the same canonical workflow before creating any
 replacement plan. `tracker.rejectTask` is a rejection override for independent
 tasks or draft/started workflow plans that should first abort through
@@ -212,6 +214,7 @@ Agent write operations:
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
+- `tracker.reopen`
 - `tracker.pick`
 - `tracker.release`
 - `tracker.linkRunPlan`
@@ -222,6 +225,7 @@ REST callers use the generic operation adapter:
 POST /api/v1/operations/tracker.get/call
 POST /api/v1/operations/tracker.patch/call
 POST /api/v1/operations/tracker.rejectTask/call
+POST /api/v1/operations/tracker.reopen/call
 ```
 
 Ticket list creation and review reuse the same operation names. Do not add
@@ -251,6 +255,10 @@ parallel tracker endpoints for list behavior.
    `tracker.rejectTask` with either `task_key` or `run_plan_id` plus a reason.
    It is a task-level operation: the task is marked aborted/rejected and every
    child ticket is closed aborted with rejection outcome and metadata.
+7. When an operator wants closed work reopened, call `tracker.reopen` with
+   `task_key`, `run_plan_id`, or linked `run_id` plus a reason. StackOS decides
+   whether to reopen only the task or the mirrored run-plan/run/task lifecycle
+   together.
 
 ```json
 {

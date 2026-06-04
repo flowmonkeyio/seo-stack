@@ -29,6 +29,7 @@ def _tracker_operations() -> OperationRegistry:
         "tracker.patch",
         "tracker.pick",
         "tracker.rejectTask",
+        "tracker.reopen",
         "tracker.release",
         "tracker.linkRunPlan",
     ):

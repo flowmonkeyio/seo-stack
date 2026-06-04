@@ -382,6 +382,80 @@ class TrackerMirrorMixin:
             commit=False,
         )
 
+    def mirror_run_plan_reopened(
+        self,
+        *,
+        plan: RunPlan,
+        steps: list[RunPlanStep],
+        actor: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        if plan.id is None:
+            return
+        tracker = self.ensure_tracker(project_id=plan.project_id)
+        task = self._task_by_key(tracker.id, f"workflow-{plan.id}", missing_ok=True)
+        if task is None:
+            return
+        now = _utcnow()
+        before = self._task_snapshot(task)
+        task.status = TrackerItemStatus.IN_PROGRESS
+        task.lane_key = "implementation"
+        task.started_at = task.started_at or now
+        task.completed_at = None
+        metadata = dict(task.metadata_json or {})
+        metadata.update(
+            {
+                "reopened_from": "runPlan.reopen",
+                "last_reopened_at": now.isoformat(),
+                **({"last_reopen_reason": reason} if reason else {}),
+                **({"last_reopened_by": actor} if actor else {}),
+            }
+        )
+        task.metadata_json = metadata
+        task.updated_at = now
+        self._s.add(task)
+
+        step_by_pk = {step.id: step for step in steps if step.id is not None}
+        for ticket in self._ticket_rows_for_run_plan(tracker.id, plan.id):
+            ticket.run_id = plan.run_id
+            if ticket.run_plan_step_id is None:
+                ticket.updated_at = now
+                self._s.add(ticket)
+                continue
+            step = step_by_pk.get(ticket.run_plan_step_id)
+            if step is None or not is_workflow_step_mirror_ticket(ticket, step):
+                ticket.updated_at = now
+                self._s.add(ticket)
+                continue
+            ticket.status = self._ticket_status_from_step(step)
+            ticket.blocker_reason = self._step_blocker_reason(step)
+            ticket.outcome = (
+                None if step.status == RunPlanStepStatus.PENDING else self._step_outcome(step)
+            )
+            if ticket.status in TERMINAL_TRACKER_STATUSES:
+                ticket.completed_at = ticket.completed_at or now
+                ticket.lane_key = "done"
+            else:
+                ticket.completed_at = None
+                ticket.lane_key = "implementation"
+            ticket.updated_at = now
+            self._s.add(ticket)
+
+        self._sync_task_status(task, now=now)
+        self._record_revision(
+            tracker,
+            actor=actor,
+            change_kind="workflow-reopen",
+            entity_kind="task",
+            entity_id=task.id,
+            entity_key=task.key,
+            summary=f"Run plan {plan.id} reopened.",
+            before_json=before,
+            after_json=self._task_snapshot(task),
+            patch_json={"reason": reason} if reason else None,
+            commit=False,
+        )
+
     def mirror_run_plan_status(self, *, plan: RunPlan) -> None:
         if plan.id is None:
             return

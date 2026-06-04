@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlmodel import select
+
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import RunPlan, RunPlanStatus
 from stackos.mcp.context import MCPContext
@@ -16,6 +18,7 @@ from stackos.operations.tracker.schemas import (
     TrackerPatchInput,
     TrackerPickInput,
     TrackerRejectTaskInput,
+    TrackerReopenInput,
     TrackerReleaseInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
@@ -24,6 +27,7 @@ from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import (
     TrackerMutationOut,
+    TrackerReopenOut,
     TrackerRepository,
 )
 
@@ -35,6 +39,13 @@ def _safe_rejection_reason(reason: str) -> str:
     return clean
 
 
+def _safe_reopen_reason(reason: str) -> str:
+    clean = redact_secret_text(str(reason or "")).strip()
+    if not clean:
+        raise ValidationError("reason is required to reopen a task or run plan")
+    return clean
+
+
 def _workflow_run_plan_id_from_task_key(task_key: str | None) -> int | None:
     if task_key is None or not task_key.startswith("workflow-"):
         return None
@@ -43,6 +54,27 @@ def _workflow_run_plan_id_from_task_key(task_key: str | None) -> int | None:
         return int(raw)
     except ValueError:
         return None
+
+
+def _workflow_run_plan_id_from_run_id(
+    ctx: MCPContext,
+    *,
+    project_id: int,
+    run_id: int,
+) -> int:
+    plan = ctx.session.exec(
+        select(RunPlan).where(RunPlan.project_id == project_id, RunPlan.run_id == run_id)
+    ).first()
+    if plan is None or plan.id is None:
+        raise ValidationError(
+            "run_id is not linked to a run plan in this project; pass task_key for a manual task",
+            data={
+                "project_id": project_id,
+                "run_id": run_id,
+                "next_operations": ["tracker.reopen", "runPlan.list"],
+            },
+        )
+    return int(plan.id)
 
 
 def _workflow_step_context(
@@ -318,6 +350,92 @@ async def tracker_reject_task(
     )
 
 
+async def tracker_reopen(
+    inp: TrackerReopenInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerReopenOut]:
+    if inp.task_key is None and inp.run_plan_id is None and inp.run_id is None:
+        raise ValidationError("task_key, run_plan_id, or run_id is required")
+    task_run_plan_id = _workflow_run_plan_id_from_task_key(inp.task_key)
+    if inp.task_key is not None and inp.run_id is not None and task_run_plan_id is None:
+        raise ValidationError(
+            "manual task_key cannot be combined with run_id; pass only task_key to reopen the task",
+            data={"task_key": inp.task_key, "run_id": inp.run_id},
+        )
+    workflow_run_plan_id = inp.run_plan_id or task_run_plan_id
+    if inp.run_id is not None:
+        run_plan_id_from_run = _workflow_run_plan_id_from_run_id(
+            ctx,
+            project_id=inp.project_id,
+            run_id=inp.run_id,
+        )
+        if workflow_run_plan_id is not None and workflow_run_plan_id != run_plan_id_from_run:
+            raise ValidationError(
+                "run_id and run_plan_id/task_key point at different workflows",
+                data={
+                    "task_key": inp.task_key,
+                    "run_plan_id": inp.run_plan_id,
+                    "run_id": inp.run_id,
+                    "resolved_run_plan_id": run_plan_id_from_run,
+                },
+            )
+        workflow_run_plan_id = run_plan_id_from_run
+    if (
+        inp.task_key is not None
+        and inp.run_plan_id is not None
+        and inp.task_key != f"workflow-{inp.run_plan_id}"
+    ):
+        raise ValidationError(
+            "task_key must match workflow-{run_plan_id} when both reopen targets are provided",
+            data={"task_key": inp.task_key, "run_plan_id": inp.run_plan_id},
+        )
+    reason = _safe_reopen_reason(inp.reason)
+    if workflow_run_plan_id is not None:
+        run_env = RunPlanRepository(ctx.session).reopen(
+            project_id=inp.project_id,
+            run_plan_id=workflow_run_plan_id,
+            step_id=inp.step_id,
+            reason=reason,
+            actor=inp.actor,
+        )
+        tracker = TrackerRepository(ctx.session)
+        snapshot = tracker.get(
+            project_id=inp.project_id,
+            task_key=f"workflow-{workflow_run_plan_id}",
+            include_graph=False,
+        )
+        task = snapshot.tasks[0] if snapshot.tasks else None
+        out = TrackerReopenOut(
+            tracker=snapshot.tracker,
+            task=task,
+            rev=snapshot.tracker.rev,
+            run_plan_id=workflow_run_plan_id,
+            run_id=run_env.data.run_id,
+            run_token=run_env.data.run_token,
+            reopened_step_id=run_env.data.reopened_step_id,
+            reset_step_ids=run_env.data.reset_step_ids,
+            next_operations=run_env.data.next_operations,
+        )
+        return WriteEnvelope[TrackerReopenOut](
+            data=out,
+            run_id=run_env.run_id,
+            project_id=run_env.project_id,
+        )
+
+    env = TrackerRepository(ctx.session).reopen_task(
+        project_id=inp.project_id,
+        task_key=str(inp.task_key),
+        reason=reason,
+        actor=inp.actor,
+    )
+    return WriteEnvelope[TrackerReopenOut](
+        data=env.data,
+        run_id=ctx.run_id,
+        project_id=env.project_id,
+    )
+
+
 async def tracker_update_ticket(
     inp: TrackerUpdateTicketInput,
     ctx: MCPContext,
@@ -427,6 +545,7 @@ __all__ = [
     "tracker_patch",
     "tracker_pick",
     "tracker_reject_task",
+    "tracker_reopen",
     "tracker_release",
     "tracker_update_task",
     "tracker_update_ticket",

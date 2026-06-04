@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from stackos.mcp.contract import WriteEnvelope
 from stackos.operations.spec import (
     OperationExample,
     OperationSpec,
@@ -33,6 +34,7 @@ from stackos.operations.tracker.schemas import (
     TrackerPickInput,
     TrackerProjectInput,
     TrackerRejectTaskInput,
+    TrackerReopenInput,
     TrackerReleaseInput,
     TrackerSearchInput,
     TrackerTicketInput,
@@ -50,6 +52,7 @@ from stackos.operations.tracker.write_handlers import (
     tracker_patch,
     tracker_pick,
     tracker_reject_task,
+    tracker_reopen,
     tracker_release,
     tracker_update_task,
     tracker_update_ticket,
@@ -60,6 +63,7 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerReopenOut,
     TrackerSearchOut,
     TrackerSnapshotOut,
     TrackerStatusOut,
@@ -360,6 +364,38 @@ def operation_specs() -> list[OperationSpec]:
                         "task_key": "manual-comms",
                         "reason": "No longer needed after product decision.",
                         "actor": "codex",
+                    },
+                ),
+            ),
+        ),
+        _write_spec(
+            name="tracker.reopen",
+            summary="Reopen a tracker task or workflow run plan with one command.",
+            input_model=TrackerReopenInput,
+            output_model=WriteEnvelope[TrackerReopenOut],
+            handler=tracker_reopen,
+            purpose=(
+                "Use this when more work is discovered after a task or workflow was "
+                "closed. StackOS resolves whether the target is a plain tracker task "
+                "or a mirrored workflow run plan, then reopens the canonical lifecycle "
+                "state in one operation."
+            ),
+            examples=(
+                OperationExample(
+                    title="Reopen a workflow task",
+                    arguments={
+                        "project_id": 2,
+                        "task_key": "workflow-27",
+                        "reason": "More form follow-up work was found after closeout.",
+                        "actor": "codex",
+                    },
+                ),
+                OperationExample(
+                    title="Reopen a manual task",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-comms",
+                        "reason": "A new requirement was identified.",
                     },
                 ),
             ),

@@ -48,6 +48,7 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
         "tracker.updateTicket",
         "tracker.patch",
         "tracker.rejectTask",
+        "tracker.reopen",
         "tracker.pick",
         "tracker.release",
         "tracker.linkRunPlan",
@@ -56,6 +57,7 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     create_props = by_name["tracker.createTicket"]["inputSchema"]["properties"]
     update_props = by_name["tracker.updateTicket"]["inputSchema"]["properties"]
     reject_props = by_name["tracker.rejectTask"]["inputSchema"]["properties"]
+    reopen_props = by_name["tracker.reopen"]["inputSchema"]["properties"]
     assert {"tickets_json", "dependencies_json", "dry_run", "run_plan_id", "step_id"} <= set(
         create_props
     )
@@ -63,6 +65,7 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     assert "Attachment is containment/linkage only" in create_props["step_id"]["description"]
     assert {"updates_json", "dry_run"} <= set(update_props)
     assert {"task_key", "run_plan_id", "reason"} <= set(reject_props)
+    assert {"task_key", "run_plan_id", "run_id", "step_id", "reason"} <= set(reopen_props)
 
 
 def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict) -> None:

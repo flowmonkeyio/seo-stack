@@ -433,7 +433,11 @@ Use `action.execute` when the action belongs to a workflow:
    or a daemon-restart orphan aborting the canonical workflow. It restores the
    same plan/run into a live blocked or pending step instead of creating a
    duplicate replacement workflow.
-10. Stale-run reaping, explicit run aborts, and run-plan aborts reconcile the
+10. `tracker.reopen` is the normal operator follow-up path after closeout. It
+   accepts a task key, run-plan id, or linked run id and reopens the task, or
+   the linked plan/run/task mirror when the target is workflow-backed. Agents
+   should use it instead of patching workflow task status directly.
+11. Stale-run reaping, explicit run aborts, and run-plan aborts reconcile the
    linked run, plan, unfinished steps, pending approvals, and tracker mirror
    through one lifecycle path. If old data or manual edits leave a mismatch,
    `runPlan.get.consistency_issues` and `runPlan.checkConsistency` expose the

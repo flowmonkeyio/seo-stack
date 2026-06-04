@@ -319,6 +319,19 @@ class TrackerMutationOut(BaseModel):
     rev: int
 
 
+class TrackerReopenOut(BaseModel):
+    tracker: TrackerSummaryOut
+    task: TrackerTaskOut | None = None
+    rev: int
+    run_plan_id: int | None = None
+    run_id: int | None = None
+    run_token: str | None = None
+    reopened_step_id: str | None = None
+    reset_step_ids: list[str] = Field(default_factory=list)
+    next_operations: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 __all__ = [
     "TrackerBriefOut",
     "TrackerChangedOut",
@@ -336,6 +349,7 @@ __all__ = [
     "TrackerNextOut",
     "TrackerPriorityOut",
     "TrackerReferenceOut",
+    "TrackerReopenOut",
     "TrackerSearchOut",
     "TrackerSnapshotOut",
     "TrackerStatusOut",

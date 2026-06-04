@@ -24,6 +24,7 @@ from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.run_plans import (
     RunPlanConsistencyOut,
     RunPlanOut,
+    RunPlanReopenOut,
     RunPlanRepository,
     RunPlanStartOut,
     RunPlanStepOut,
@@ -128,6 +129,25 @@ class RunPlanRecoverInput(MCPInput):
     actor: str | None = None
     result_json: dict[str, Any] | None = None
     error: str | None = None
+
+
+class RunPlanReopenInput(MCPInput):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "run_plan_id": 27,
+                "reason": "More follow-up work was found after closeout.",
+                "actor": "codex",
+            }
+        },
+    )
+
+    run_plan_id: int
+    project_id: int | None = None
+    step_id: str | None = None
+    reason: str
+    actor: str | None = None
 
 
 class RunPlanListInput(MCPInput):
@@ -313,6 +333,25 @@ async def run_plan_recover(
         error=inp.error,
     )
     return WriteEnvelope[RunPlanOut](data=env.data, run_id=env.run_id, project_id=env.project_id)
+
+
+async def run_plan_reopen(
+    inp: RunPlanReopenInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[RunPlanReopenOut]:
+    env = RunPlanRepository(ctx.session).reopen(
+        run_plan_id=inp.run_plan_id,
+        project_id=inp.project_id,
+        step_id=inp.step_id,
+        reason=inp.reason,
+        actor=inp.actor,
+    )
+    return WriteEnvelope[RunPlanReopenOut](
+        data=env.data,
+        run_id=env.run_id,
+        project_id=env.project_id,
+    )
 
 
 async def run_plan_list(
@@ -627,6 +666,45 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-run-audit-write",
         ),
         OperationSpec(
+            name="runPlan.reopen",
+            summary="Reopen a closed workflow run plan and its mirrored tracker task.",
+            input_model=RunPlanReopenInput,
+            output_model=WriteEnvelope[RunPlanReopenOut],
+            handler=run_plan_reopen,
+            surfaces=_surfaces("runPlan.reopen", "run-plans reopen"),
+            purpose=(
+                "Use this when more work is discovered after a workflow was closed and "
+                "the same run-plan audit trail should continue instead of creating a "
+                "duplicate replacement plan."
+            ),
+            when_to_use=(
+                "The operator says to continue, reopen, or add follow-up work to a "
+                "closed workflow.",
+                "A closed workflow task has open child tickets or new follow-up tickets "
+                "must be created under the same canonical run plan.",
+            ),
+            prerequisites=(
+                "Pass run_plan_id and a human-readable reason.",
+                "Optional step_id chooses where to resume; omit it to let StackOS reopen "
+                "the delivery step or the last step.",
+            ),
+            returns=(
+                "A WriteEnvelope with the reopened run plan, revived run, run_token, "
+                "reopened_step_id, and reset_step_ids.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Reopen a closed workflow",
+                    arguments={
+                        "run_plan_id": 27,
+                        "reason": "More UI follow-up work was found after closeout.",
+                        "actor": "codex",
+                    },
+                ),
+            ),
+            grant_policy="direct-run-audit-write",
+        ),
+        OperationSpec(
             name="runPlan.list",
             summary="List run plans with cursor pagination and optional filters.",
             input_model=RunPlanListInput,
@@ -810,6 +888,7 @@ __all__ = [
     "RunPlanCreateInput",
     "RunPlanGetInput",
     "RunPlanListInput",
+    "RunPlanReopenInput",
     "RunPlanRecordStepInput",
     "RunPlanRecoverInput",
     "RunPlanStartInput",
@@ -820,6 +899,7 @@ __all__ = [
     "run_plan_create",
     "run_plan_get",
     "run_plan_list",
+    "run_plan_reopen",
     "run_plan_record_step",
     "run_plan_recover",
     "run_plan_start",

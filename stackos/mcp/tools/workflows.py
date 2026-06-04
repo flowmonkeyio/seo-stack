@@ -391,6 +391,7 @@ def _run_plan_operations() -> OperationRegistry:
         "runPlan.update",
         "runPlan.abort",
         "runPlan.recover",
+        "runPlan.reopen",
         "runPlan.claimStep",
         "runPlan.recordStep",
     ):

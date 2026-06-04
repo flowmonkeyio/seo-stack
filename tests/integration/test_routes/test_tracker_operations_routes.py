@@ -228,3 +228,86 @@ def test_tracker_operations_rest_reject_task_cascades_tickets(
         "rejected",
         "rejected",
     ]
+
+
+def test_tracker_operations_rest_reopen_workflow_by_run_id(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    created = api.post(
+        "/api/v1/operations/runPlan.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_json": {
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "rest-reopen-workflow.run",
+                    "title": "REST reopen workflow",
+                    "steps": [
+                        {"id": "scope-work", "title": "Scope work"},
+                        {"id": "deliver-tickets", "title": "Deliver tickets"},
+                        {"id": "verify-delivery", "title": "Verify delivery"},
+                    ],
+                },
+            }
+        },
+    )
+    assert created.status_code == 200, created.text
+    run_plan_id = created.json()["data"]["id"]
+
+    started = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": run_plan_id}},
+    )
+    assert started.status_code == 200, started.text
+    run_id = started.json()["data"]["run_id"]
+    run_token = started.json()["data"]["run_token"]
+
+    for step_id in ("scope-work", "deliver-tickets", "verify-delivery"):
+        claimed = api.post(
+            "/api/v1/operations/runPlan.claimStep/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "run_plan_id": run_plan_id,
+                    "step_id": step_id,
+                    "run_token": run_token,
+                }
+            },
+        )
+        assert claimed.status_code == 200, claimed.text
+        recorded = api.post(
+            "/api/v1/operations/runPlan.recordStep/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "run_plan_id": run_plan_id,
+                    "step_id": step_id,
+                    "status": "success",
+                    "result_json": {"summary": f"{step_id} complete"},
+                    "run_token": run_token,
+                }
+            },
+        )
+        assert recorded.status_code == 200, recorded.text
+
+    reopened = api.post(
+        "/api/v1/operations/tracker.reopen/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_id": run_id,
+                "reason": "More follow-up work was found after closeout.",
+                "actor": "route-test",
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert reopened.status_code == 200, reopened.text
+    body = reopened.json()["data"]
+    assert body["run_plan_id"] == run_plan_id
+    assert body["run_id"] == run_id
+    assert body["run_token"] == run_token
+    assert body["reopened_step_id"] == "deliver-tickets"
+    assert body["reset_step_ids"] == ["deliver-tickets", "verify-delivery"]
+    assert body["task"]["status"] == "in-progress"

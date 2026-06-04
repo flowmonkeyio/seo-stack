@@ -289,6 +289,112 @@ def test_approval_gate_transition_then_step_completion(
     assert run.status == RunStatus.SUCCESS
 
 
+def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = RunPlanRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "reopen.workflow.run",
+            "title": "Reopen workflow run",
+            "steps": [
+                {"id": "scope-work", "title": "Scope work"},
+                {"id": "deliver-tickets", "title": "Deliver tickets"},
+                {"id": "verify-delivery", "title": "Verify delivery"},
+                {"id": "release-closeout", "title": "Release closeout"},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+
+    for step_id in (
+        "scope-work",
+        "deliver-tickets",
+        "verify-delivery",
+        "release-closeout",
+    ):
+        repo.claim_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id=step_id,
+            claimed_by="agent",
+        )
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id=step_id,
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"summary": f"{step_id} complete"},
+        )
+
+    closed_run = session.get(Run, started.run_id)
+    assert repo.get(plan.id).status == RunPlanStatus.COMPLETED
+    assert closed_run is not None
+    assert closed_run.status == RunStatus.SUCCESS
+    assert closed_run.ended_at is not None
+
+    reopened = repo.reopen(
+        run_plan_id=plan.id,
+        project_id=project_id,
+        reason="More follow-up work was found after closeout.",
+        actor="codex",
+    ).data
+    run = session.get(Run, started.run_id)
+    step_rows = {
+        step.step_id: step
+        for step in session.exec(
+            select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)
+        )
+    }
+
+    assert reopened.plan.status == RunPlanStatus.STARTED
+    assert reopened.plan.completed_at is None
+    assert reopened.run_id == started.run_id
+    assert reopened.run_token == started.run_token
+    assert reopened.reopened_step_id == "deliver-tickets"
+    assert reopened.reset_step_ids == [
+        "deliver-tickets",
+        "verify-delivery",
+        "release-closeout",
+    ]
+    assert run is not None
+    assert run.status == RunStatus.RUNNING
+    assert run.ended_at is None
+    assert run.error is None
+    assert step_rows["scope-work"].status == RunPlanStepStatus.SUCCESS
+    assert step_rows["deliver-tickets"].status == RunPlanStepStatus.PENDING
+    assert step_rows["verify-delivery"].status == RunPlanStepStatus.PENDING
+    assert step_rows["release-closeout"].status == RunPlanStepStatus.PENDING
+
+    snapshot = TrackerRepository(session).get(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        include_graph=False,
+    )
+    task = snapshot.tasks[0]
+    tickets = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert task.status == TrackerItemStatus.IN_PROGRESS
+    assert task.completed_at is None
+    assert tickets[f"workflow-{plan.id}-scope-work"].status == TrackerItemStatus.COMPLETE
+    assert tickets[f"workflow-{plan.id}-deliver-tickets"].status == (
+        TrackerItemStatus.NOT_STARTED
+    )
+    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == (
+        TrackerItemStatus.NOT_STARTED
+    )
+
+    claimed = repo.claim_step(
+        run_plan_id=plan.id,
+        run_id=reopened.run_id,
+        step_id=reopened.reopened_step_id,
+        claimed_by="agent",
+    ).data
+    assert claimed.status == RunPlanStepStatus.RUNNING
+
+
 def test_blocked_step_keeps_run_plan_recoverable(
     session: Session,
     project_id: int,
