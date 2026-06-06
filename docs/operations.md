@@ -84,6 +84,11 @@ non-executable external-provider actions by default. Pass
 `include_unavailable_integrations=true` only for setup or deliberate catalog
 inspection. Use `integration.list` for compact provider readiness and hidden
 action counts, and `readiness.check` for one selected workflow/action.
+Generated provider actions use stable public refs in `action.list`; internal
+inventory storage keys and retired generated rows are audit history, not
+callable options. Search indexes action metadata, input/output schema fields,
+category/tags, paths, and operation ids so agents can discover actions from
+business intent before fetching one detailed schema.
 
 Each description includes:
 
@@ -167,6 +172,11 @@ stackos ops call action.describe \
   --input describe-action.json
 ```
 
+In a source checkout, the CLI entrypoint is available at `.venv/bin/stackos`
+after dependency sync. If the shell has not activated the repo venv, use
+`.venv/bin/stackos ...`, `uv run stackos ...`, or export
+`PATH="$PWD/.venv/bin:$PATH"` before using the shorter `stackos ...` form.
+
 For common cross-cutting fields, the CLI can merge flags into the input JSON:
 
 ```bash
@@ -184,11 +194,16 @@ Common operations also have aliases that still call the generic operation
 endpoint:
 
 ```bash
+stackos actions list --project 1 --plugin trackbooth --query "top offers" --executable
 stackos actions describe utils.sitemap.fetch --project 1
-stackos actions validate utils.sitemap.fetch --project 1 --input action-input.json
+stackos actions validate utils.sitemap.fetch \
+  --project 1 \
+  --context-ref ctx_reporting \
+  --input action-input.json
 stackos actions execute utils.sitemap.fetch \
   --project 1 \
   --run-token "$RUN_TOKEN" \
+  --context-ref ctx_reporting \
   --input action-input.json
 stackos actions run communications.telegram-bot.message.send \
   --project 1 \
@@ -223,6 +238,41 @@ stackos tracker next --project 1
 stackos tracker brief workflow-42-review --project 1
 stackos tracker pick --project 1 --assignee codex
 stackos tracker patch --project 1 --input tracker-patch.json
+```
+
+Provider execution context stays outside endpoint payloads. Pass it directly
+with `--provider-context provider-context.json`, or store it once on an
+execution context and pass `--context-ref` on subsequent calls.
+
+For Trackbooth on-behalf execution, `provider-context.json` can contain:
+
+```json
+{
+  "acting_as_account": "acct_123"
+}
+```
+
+StackOS validates that provider context separately from `--input`; the
+Trackbooth connector maps `acting_as_account` to the `X-Acting-As-Account`
+header. It is not sent as REST body/query/path data.
+
+Examples:
+
+```bash
+stackos actions run trackbooth.reporting.aggregate \
+  --project 1 \
+  --credential-ref cred_trackbooth \
+  --provider-context provider-context.json \
+  --input reporting-aggregate.json \
+  --dry-run
+
+stackos actions run trackbooth.offers.update \
+  --project 1 \
+  --context-ref ctx_revtrix_reporting \
+  --input offer-update.json \
+  --confirm-direct \
+  --intent-summary "Operator approved updating one offer." \
+  --idempotency-key trackbooth-offer-update-123
 ```
 
 Agent tracker reads such as `tracker.status`, `tracker.next`,
@@ -365,6 +415,38 @@ setup items are missing? For workflow templates, `ready=true` means the template
 is usable for planning/run-plan creation; `execution_ready=false` means only the
 listed action dependencies need setup before affected steps execute.
 
+## Execution Context Refs
+
+Use execution contexts when several provider actions share the same project,
+credential, provider scope, output policy, request budget, or artifact
+namespace. The context is a StackOS object, not plugin business logic.
+
+Agent flow:
+
+1. Create or discover a context with `executionContext.create`,
+   `executionContext.list`, or `executionContext.discover`. Link it to the
+   relevant task, ticket, run plan, or run so resumed agents can find it.
+2. Inspect compatibility with `executionContext.resolve` before a new action
+   family or provider scope is used.
+3. Pass `context_ref` to `action.validate`, `action.run`, or
+   `action.execute`. StackOS applies the daemon-held `credential_ref`, validates
+   and merges typed `provider_context_json`, records output/request-budget
+   metadata, and keeps endpoint `input_json` separate.
+4. For large responses, set `output_policy_json.mode` to `file_if_large` or
+   `always_file`; use `executionContext.artifact.list` and
+   `executionContext.artifact.read` to inspect prior file-backed outputs later.
+5. Treat `request_budget_json` as the coordination contract for agents using
+   the context. Supported fields are `max_parallel`, `max_calls`,
+   `max_calls_per_run`, `window_seconds`, and `notes`. Current action-call rows
+   are terminal audit records, so StackOS records these limits and exposes them
+   in action metadata/UI; agents should obey them until a running-call lifecycle
+   exists for hard concurrency enforcement.
+
+Risk labels come from the action or generated catalog contract, not HTTP method
+alone. Catalog-marked or semantically read-only reporting/list/export POST
+actions can be read actions, while idempotent mutations remain write actions
+and still require the normal confirmation/idempotency protections.
+
 ## Direct Actions Vs Workflows
 
 `action.run` is for one explicit action when no workflow state is needed:
@@ -381,10 +463,14 @@ listed action dependencies need setup before affected steps execute.
    through `provider_context_json` and validated against the action's
    `provider_context_schema_json`. This context is connector-owned and is not
    endpoint body/query/path payload.
-6. Direct action responses are raw redacted provider output by default so agents
+6. When a reusable execution context exists, callers should pass `context_ref`
+   instead of repeating credential and provider scope. Explicit
+   `credential_ref` or `provider_context_json` still works as a deliberate
+   override when the context allows it.
+7. Direct action responses are raw redacted provider output by default so agents
    keep external refs, partial-delivery state, idempotency state, and retry
    context.
-7. The execution writes the same `action_calls` audit row as workflow
+8. The execution writes the same `action_calls` audit row as workflow
    execution, but without run-plan linkage.
 
 Agent-facing MCP setup/discovery tools default to compact bridge-shaped
@@ -404,7 +490,10 @@ Use `action.execute` when the action belongs to a workflow:
    exact `action_ref`.
 7. Credentials are resolved inside the daemon; callers pass only
    `credential_ref`.
-8. The execution writes an `action_calls` audit row with redacted request,
+8. Pass `context_ref` when a workflow/task-linked execution context supplies
+   credential, provider scope, output policy, request budget, or artifact
+   namespace defaults for the step.
+9. The execution writes an `action_calls` audit row with redacted request,
    response, metadata, and run-plan linkage.
 
 `runPlan.*` keeps the same boundary everywhere:

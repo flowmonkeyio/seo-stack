@@ -184,8 +184,13 @@ class ProjectRepository:
         self._s.refresh(row)
         return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
 
-    def delete(self, project_id: int) -> Envelope[ProjectOut]:
+    def delete(self, project_id: int, *, hard: bool = False) -> Envelope[ProjectOut]:
         row = self._fetch_row(project_id)
+        if hard:
+            out = ProjectOut.model_validate(row)
+            self._s.delete(row)
+            self._s.commit()
+            return Envelope(data=out, project_id=project_id)
         row.is_active = False
         row.updated_at = _utcnow()
         self._s.add(row)

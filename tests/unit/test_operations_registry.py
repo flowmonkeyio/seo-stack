@@ -7,7 +7,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 154
+    assert len(names) == 164
     assert {
         "action.execute",
         "auth.status",
@@ -29,6 +29,16 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.reopen",
         "runPlan.recover",
         "runPlan.reopen",
+        "executionContext.create",
+        "executionContext.get",
+        "executionContext.list",
+        "executionContext.discover",
+        "executionContext.resolve",
+        "executionContext.update",
+        "executionContext.link",
+        "executionContext.unlink",
+        "executionContext.artifact.list",
+        "executionContext.artifact.read",
     } <= names
 
     described = registry.get("action.execute").describe_out()

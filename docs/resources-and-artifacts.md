@@ -64,6 +64,23 @@ MCP write tool:
 Metadata and provenance are deep-redacted for secret-looking keys such as
 tokens, API keys, passwords, authorization headers, and credentials.
 
+## File-Backed Action Outputs
+
+Execution contexts can set `output_policy_json` for provider actions:
+
+- `{"mode": "inline"}` keeps the sanitized action output inline.
+- `{"mode": "file_if_large", "max_inline_bytes": 16000}` writes oversized
+  sanitized JSON outputs to the generated-assets directory.
+- `{"mode": "always_file"}` always writes the sanitized JSON output to a file.
+
+When a file-backed output is used, `action.run` and `action.execute` return a
+compact pointer with an absolute path, `/generated-assets/...` URI, byte size,
+SHA-256 checksum, content type, semantic artifact name, top-level JSON shape,
+and `executionContext.artifact.read` hints. StackOS creates an `artifact` row
+and registers it under the `context_ref`, so resumed agents can list prior
+outputs with `executionContext.artifact.list` and read bounded JSON content or
+simple JSON paths with `executionContext.artifact.read`.
+
 ## Plugin Ownership
 
 Domain plugins own domain records as resources. SEO can own keyword

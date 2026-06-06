@@ -71,6 +71,11 @@ from stackos.db.model_enums import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+from stackos.db.model_execution_contexts import (
+    ExecutionContext,
+    ExecutionContextArtifact,
+    ExecutionContextLink,
+)
 from stackos.db.model_resources import (
     Artifact,
     ProjectEvent,
@@ -138,6 +143,9 @@ __all__ = [
     "CredentialScope",
     "CredentialUsageEvent",
     "Decision",
+    "ExecutionContext",
+    "ExecutionContextArtifact",
+    "ExecutionContextLink",
     "Experiment",
     "ExperimentObservation",
     "ExperimentVariant",

@@ -123,6 +123,71 @@ def ops_call(
     _echo_json(payload)
 
 
+@actions_app.command(name="list")
+def actions_list(
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            "-q",
+            help="Search action refs, names, descriptions, paths, and schema fields.",
+        ),
+    ] = None,
+    project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
+    plugin_slug: Annotated[
+        str | None,
+        typer.Option("--plugin", help="Plugin slug filter."),
+    ] = None,
+    provider_key: Annotated[
+        str | None,
+        typer.Option("--provider", help="Provider key filter."),
+    ] = None,
+    capability_key: Annotated[
+        str | None,
+        typer.Option("--capability", help="Capability key filter."),
+    ] = None,
+    executable: Annotated[
+        bool | None,
+        typer.Option("--executable/--any-executable", help="Filter by current executability."),
+    ] = None,
+    include_unavailable_integrations: Annotated[
+        bool,
+        typer.Option(
+            "--include-unavailable-integrations",
+            help="Include hidden/disconnected/non-executable external provider actions.",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit the full machine-readable action list."),
+    ] = False,
+) -> None:
+    """List or search project-aware action contracts."""
+    payload = _operation_call(
+        "action.list",
+        _merge_common_arguments(
+            {
+                "plugin_slug": plugin_slug,
+                "provider_key": provider_key,
+                "capability_key": capability_key,
+                "query": query,
+                "executable": executable,
+                "include_unavailable_integrations": include_unavailable_integrations,
+            },
+            project_id=project_id,
+        ),
+    )
+    if json_output:
+        _echo_json(payload)
+        return
+    for item in payload.get("items", []):
+        availability = item.get("availability_status", "unknown")
+        action_ref = item.get("action_ref", "")
+        risk = item.get("risk_level", "")
+        name = item.get("name", "")
+        typer.echo(f"{action_ref}\t{availability}\t{risk}\t{name}")
+
+
 @actions_app.command(name="describe")
 def actions_describe(
     action_ref: Annotated[
@@ -168,6 +233,10 @@ def actions_validate(
             help="JSON provider execution context payload, or '-' for stdin.",
         ),
     ] = None,
+    context_ref: Annotated[
+        str | None,
+        typer.Option("--context-ref", help="Reusable execution context ref."),
+    ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     plugin_slug: Annotated[
         str | None,
@@ -190,6 +259,7 @@ def actions_validate(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "context_ref": context_ref,
             "provider_context_json": _load_operation_arguments(provider_context_path)
             if provider_context_path
             else None,
@@ -215,6 +285,10 @@ def actions_execute(
             "--provider-context",
             help="JSON provider execution context payload, or '-' for stdin.",
         ),
+    ] = None,
+    context_ref: Annotated[
+        str | None,
+        typer.Option("--context-ref", help="Reusable execution context ref."),
     ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     run_token: Annotated[
@@ -251,6 +325,7 @@ def actions_execute(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "context_ref": context_ref,
             "provider_context_json": _load_operation_arguments(provider_context_path)
             if provider_context_path
             else None,
@@ -279,6 +354,10 @@ def actions_run(
             "--provider-context",
             help="JSON provider execution context payload, or '-' for stdin.",
         ),
+    ] = None,
+    context_ref: Annotated[
+        str | None,
+        typer.Option("--context-ref", help="Reusable execution context ref."),
     ] = None,
     project_id: Annotated[int | None, typer.Option("--project", help="Project id.")] = None,
     plugin_slug: Annotated[
@@ -332,6 +411,7 @@ def actions_run(
             "action_key": action_key,
             "credential_ref": credential_ref,
             "input_json": _load_operation_arguments(input_path) if input_path else None,
+            "context_ref": context_ref,
             "provider_context_json": _load_operation_arguments(provider_context_path)
             if provider_context_path
             else None,

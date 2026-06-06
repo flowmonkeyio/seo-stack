@@ -12,6 +12,10 @@ from stackos.actions.manifest import ExecutableActionManifest
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import ResolvedCredential
 from stackos.db.models import ActionCall, ActionCallStatus
+from stackos.generated_inventory import (
+    generated_action_audit_key,
+    generated_action_public_audit_metadata,
+)
 from stackos.repositories.base import ConflictError, Page, cursor_paginate_desc
 
 from .schema import ActionCallAuditOut, ActionCallOut, ActionExecutionOut
@@ -145,13 +149,14 @@ class ActionAuditMixin:
 
     def _call_audit_out(self, row: ActionCall) -> ActionCallAuditOut:
         assert row.id is not None
+        metadata_json = generated_action_public_audit_metadata(row.metadata_json)
         return ActionCallAuditOut(
             id=row.id,
             project_id=row.project_id,
             run_id=row.run_id,
             run_plan_id=row.run_plan_id,
             run_plan_step_id=row.run_plan_step_id,
-            action_key=row.action_key,
+            action_key=generated_action_audit_key(row.action_key) or row.action_key,
             plugin_slug=row.plugin_slug,
             provider_key=row.provider_key,
             connector_key=row.connector_key,
@@ -162,7 +167,7 @@ class ActionAuditMixin:
             request_json=_redact_for_audit(row.request_json),
             provider_context_json=_redact_for_audit(row.provider_context_json),
             response_json=_redact_for_audit(row.response_json),
-            metadata_json=_redact_for_audit(row.metadata_json),
+            metadata_json=_redact_for_audit(metadata_json),
             cost_cents=row.cost_cents,
             duration_ms=row.duration_ms,
             error=redact_secret_text(row.error) if row.error is not None else None,

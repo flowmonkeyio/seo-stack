@@ -131,9 +131,11 @@ async def update_project(
 
 @router.delete("/{project_id}", response_model=WriteResponse[ProjectOut])
 async def delete_project(
-    project_id: int, session: Session = Depends(get_session)
+    project_id: int,
+    hard: bool = Query(default=False),
+    session: Session = Depends(get_session),
 ) -> WriteResponse[ProjectOut]:
-    return write_response(ProjectRepository(session).delete(project_id))
+    return write_response(ProjectRepository(session).delete(project_id, hard=hard))
 
 
 @router.get("/{project_id}/schedules", response_model=list[ScheduledJobOut])

@@ -5,7 +5,7 @@ from __future__ import annotations
 import weakref
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
@@ -21,6 +21,10 @@ from stackos.db.models import (
     ProjectPlugin,
     Provider,
     Resource,
+)
+from stackos.generated_inventory import (
+    generated_action_public_key,
+    generated_action_visible_for_project,
 )
 from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS, PluginManifest, plugin_sort_key
 from stackos.repositories.base import ConflictError, Envelope, NotFoundError
@@ -307,19 +311,21 @@ class PluginRepository:
         )
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(self._s.exec(stmt.order_by(col(Action.key).asc())).all())
+        rows = cast(
+            list[tuple[Action, Plugin, Provider | None]],
+            list(self._s.exec(stmt.order_by(col(Action.key).asc())).all()),
+        )
         rows = self._filter_project_enabled(rows, project_id=project_id)
-        from stackos.actions.trackbooth import trackbooth_generated_action_visible_for_project
-
         rows = [
             row
             for row in rows
-            if trackbooth_generated_action_visible_for_project(
-                plugin_slug=row[1].slug,
+            if generated_action_visible_for_project(
                 config_json=row[0].config_json,
                 project_id=project_id,
+                action_key=row[0].key,
             )
         ]
+        rows = _dedupe_generated_public_action_rows(rows)
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         availability_context = self._action_availability_context(project_id)
         connector_keys = self._connector_keys()
@@ -748,7 +754,7 @@ class PluginRepository:
             provider_id=row.provider_id,
             provider_key=provider.key if provider is not None else None,
             action_ref=manifest.action_ref,
-            key=row.key,
+            key=manifest.action_key,
             name=row.name,
             description=row.description,
             capability_key=row.capability_key,
@@ -765,6 +771,41 @@ class PluginRepository:
             availability=availability,
             exposure=exposure,
         )
+
+
+def _dedupe_generated_public_action_rows(
+    rows: list[tuple[Action, Plugin, Provider | None]],
+) -> list[tuple[Action, Plugin, Provider | None]]:
+    latest_by_public_ref: dict[tuple[str, str], tuple[Action, Plugin, Provider | None]] = {}
+    for row in rows:
+        action, plugin, _provider = row
+        public_action_key = generated_action_public_key(action.config_json)
+        if public_action_key is None:
+            continue
+        key = (plugin.slug, public_action_key)
+        current = latest_by_public_ref.get(key)
+        if current is None or _action_row_recency_key(action) > _action_row_recency_key(current[0]):
+            latest_by_public_ref[key] = row
+
+    deduped: list[tuple[Action, Plugin, Provider | None]] = []
+    emitted_public_refs: set[tuple[str, str]] = set()
+    for row in rows:
+        action, plugin, _provider = row
+        public_action_key = generated_action_public_key(action.config_json)
+        if public_action_key is None:
+            deduped.append(row)
+            continue
+        key = (plugin.slug, public_action_key)
+        if key in emitted_public_refs:
+            continue
+        if latest_by_public_ref.get(key) == row:
+            deduped.append(row)
+            emitted_public_refs.add(key)
+    return deduped
+
+
+def _action_row_recency_key(action: Action) -> tuple[Any, Any, int]:
+    return action.updated_at, action.created_at, int(action.id or 0)
 
 
 __all__ = [

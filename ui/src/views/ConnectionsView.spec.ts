@@ -479,7 +479,7 @@ describe('ConnectionsView', () => {
           allowed_updates: ['message', 'callback_query'],
         },
         'slack-bot': {
-          auth_profile_key: 'revtrix',
+          auth_profile_key: 'ops-slack',
           bot_user_id: 'U123',
         },
       },
@@ -580,7 +580,7 @@ describe('ConnectionsView', () => {
             auth_profile_key: 'support',
             bot_username: 'support_bot',
           }),
-          'slack-bot': { auth_profile_key: 'revtrix', bot_user_id: 'U123' },
+          'slack-bot': { auth_profile_key: 'ops-slack', bot_user_id: 'U123' },
         },
         access_policy: expect.objectContaining({
           denied_user_refs: ['telegram-user:999'],
@@ -900,11 +900,11 @@ describe('ConnectionsView', () => {
               authType: 'bot-token',
               authMethodKey: 'bot-token',
               profileKey: 'default',
-              label: 'Revtrix',
+              label: 'Demo Workspace',
               account: {
                 provider_account_id: 'T123',
-                display_name: 'Revtrix',
-                metadata_json: { team: 'Revtrix', bot_id: 'B123', user_id: 'U_BOT' },
+                display_name: 'Demo Workspace',
+                metadata_json: { team: 'Demo Workspace', bot_id: 'B123', user_id: 'U_BOT' },
               },
             }),
           ],
@@ -916,10 +916,10 @@ describe('ConnectionsView', () => {
             {
               record_id: 20,
               project_id: 1,
-              profile_ref: 'communication-profile:revtrix-slack',
-              key: 'revtrix-slack',
+              profile_ref: 'communication-profile:workspace-slack',
+              key: 'workspace-slack',
               enabled: true,
-              identity: { display_name: 'Revtrix Slack Bot' },
+              identity: { display_name: 'Workspace Slack Bot' },
               agent_guidance: {},
               provider_facets: { 'slack-bot': { bot_user_id: 'U_BOT' } },
               access_policy: {
@@ -946,14 +946,14 @@ describe('ConnectionsView', () => {
               display_name: 'Slack #roadmap',
               provider_key: 'slack-bot',
               surface_ref: 'slack-channel:C123',
-              profile_ref: 'communication-profile:revtrix-slack',
+              profile_ref: 'communication-profile:workspace-slack',
               thread_ref: null,
               enabled: true,
               action_ref: 'communications.slack-bot.message.send',
               action_input_defaults: { surface_ref: 'slack-channel:C123' },
               send_policy: {
                 mode: 'explicit-target',
-                allowed_profile_refs: ['communication-profile:revtrix-slack'],
+                allowed_profile_refs: ['communication-profile:workspace-slack'],
                 allowed_invoker_refs: ['slack-user:U111'],
               },
               metadata_json: {},
@@ -1006,8 +1006,8 @@ describe('ConnectionsView', () => {
           routes: [
             {
               provider_key: 'slack-bot',
-              profile_key: 'revtrix-slack',
-              ingress_url: 'https://example.ngrok-free.app/api/v1/ingress/slack/1/revtrix-slack',
+              profile_key: 'workspace-slack',
+              ingress_url: 'https://example.ngrok-free.app/api/v1/ingress/slack/1/workspace-slack',
               remote_status: 'manual_provider_update_required',
             },
           ],
@@ -1025,7 +1025,7 @@ describe('ConnectionsView', () => {
     await router.isReady()
 
     const wrapper = mount(ConnectionsView, { global: { plugins: [router] } })
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Revtrix Slack Bot'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Workspace Slack Bot'))
 
     expect(wrapper.text()).toContain('Communication Setup')
     expect(wrapper.text()).toContain('1 operators')

@@ -282,7 +282,7 @@ class TrackerGraphMixin:
                 children=children,
                 dependency_edges=dependency_edges,
             )
-            if bypassing_gate_children and parent.status != TrackerItemStatus.NOT_STARTED:
+            if bypassing_gate_children:
                 sample = ", ".join(bypassing_gate_children[:3])
                 suffix = "..." if len(bypassing_gate_children) > 3 else ""
                 warnings.append(
@@ -357,11 +357,10 @@ class TrackerGraphMixin:
         dependency_edges: set[tuple[str, str]],
     ) -> list[str]:
         gate_children = [child for child in children if self._graph_is_workflow_gate_child(child)]
-        terminal_delivery_children = self._graph_terminal_workflow_delivery_children(
+        delivery_children = self._graph_workflow_delivery_children(
             children,
-            dependency_edges,
         )
-        if not gate_children or not terminal_delivery_children:
+        if not gate_children or not delivery_children:
             return []
         child_keys = {child.key for child in children}
         scoped_edges = {
@@ -369,33 +368,23 @@ class TrackerGraphMixin:
         }
         bypassing: list[str] = []
         for gate_child in gate_children:
-            downstream_of_all_terminal_delivery = all(
+            downstream_of_all_delivery = all(
                 self._graph_dependency_path_exists(
                     delivery_child.key,
                     gate_child.key,
                     scoped_edges,
                 )
-                for delivery_child in terminal_delivery_children
+                for delivery_child in delivery_children
             )
-            if not downstream_of_all_terminal_delivery:
+            if not downstream_of_all_delivery:
                 bypassing.append(gate_child.key)
         return bypassing
 
-    def _graph_terminal_workflow_delivery_children(
+    def _graph_workflow_delivery_children(
         self,
         children: list[TrackerTicketOut],
-        dependency_edges: set[tuple[str, str]],
     ) -> list[TrackerTicketOut]:
-        delivery_children = [
-            child for child in children if not self._graph_is_workflow_gate_child(child)
-        ]
-        delivery_keys = {child.key for child in delivery_children}
-        depended_on_by_delivery = {
-            dependency_key
-            for dependency_key, ticket_key in dependency_edges
-            if dependency_key in delivery_keys and ticket_key in delivery_keys
-        }
-        return [child for child in delivery_children if child.key not in depended_on_by_delivery]
+        return [child for child in children if not self._graph_is_workflow_gate_child(child)]
 
     def _graph_is_workflow_gate_child(self, ticket: TrackerTicketOut) -> bool:
         haystack = " ".join(
@@ -411,8 +400,6 @@ class TrackerGraphMixin:
         return any(
             keyword in haystack
             for keyword in (
-                "doc",
-                "documentation",
                 "qa",
                 "review",
                 "release",

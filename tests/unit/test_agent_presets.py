@@ -71,9 +71,7 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "pass run_plan_id and step_id together" in contract_text.lower()
     assert "never retry tracker.createticket with only one" in contract_text.lower()
 
-    reviewer = AgentPresetLoader().describe_preset(
-        key="stackos.sdlc.delivery-reviewer"
-    )
+    reviewer = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer")
     reviewer_text = " ".join(
         [
             *reviewer.preset.prompt_contract.responsibilities,
@@ -174,7 +172,9 @@ def test_generic_workflow_author_preset_teaches_workflow_generation_boundary() -
     assert "runPlan.create" in loaded.preset.recommended_tools
     assert "workflowTemplate.save" not in loaded.preset.recommended_tools
     assert "workflow authoring brief" in loaded.preset.project_adaptation.required_agent_action
-    assert "run plan, a workflow extension, or a reusable project workflow template" in contract_text
+    assert (
+        "run plan, a workflow extension, or a reusable project workflow template" in contract_text
+    )
     assert "workflowTemplate.save" in contract_text
     assert "local-admin authority" in contract_text
     assert "Do not embed raw API keys" in contract_text

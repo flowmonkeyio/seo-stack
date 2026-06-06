@@ -75,6 +75,45 @@ def test_action_call_route_returns_redacted_audit_rows(
     assert "caller-secret-key" not in resp.text
 
 
+def test_action_call_route_hides_generated_inventory_scope_ids(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    engine = api.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        row = ActionCall(
+            project_id=project_id,
+            action_key="api.ctx_e35abd8c2055.reporting_getlinklistmetrics",
+            plugin_slug="trackbooth",
+            provider_key="trackbooth",
+            connector_key="trackbooth",
+            operation="operation.execute",
+            status=ActionCallStatus.SUCCESS,
+            dry_run=False,
+            request_json={"body": {"row_ids": ["rec_1"]}},
+            response_json={"status": "ok"},
+            metadata_json={
+                "inventory_scope_key": "ctx_e35abd8c2055",
+                "nested": {"inventory_scope_key": "inv_current"},
+            },
+        )
+        session.add(row)
+        session.commit()
+
+    resp = api.get(
+        f"/api/v1/projects/{project_id}/action-calls",
+        params={"plugin_slug": "trackbooth"},
+    )
+
+    assert resp.status_code == 200
+    item = resp.json()["items"][0]
+    assert item["action_key"] == "api.reporting_getlinklistmetrics"
+    assert "ctx_e35abd8c2055" not in resp.text
+    assert "inv_current" not in resp.text
+    assert item["metadata_json"]["inventory_scope_key"] == "[generated-inventory-scope]"
+    assert item["metadata_json"]["nested"]["inventory_scope_key"] == "[generated-inventory-scope]"
+
+
 def test_action_call_route_returns_newest_first_with_older_cursor(
     api: TestClient,
     project_id: int,

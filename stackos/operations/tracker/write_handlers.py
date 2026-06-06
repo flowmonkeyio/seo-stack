@@ -18,8 +18,8 @@ from stackos.operations.tracker.schemas import (
     TrackerPatchInput,
     TrackerPickInput,
     TrackerRejectTaskInput,
-    TrackerReopenInput,
     TrackerReleaseInput,
+    TrackerReopenInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
@@ -545,8 +545,8 @@ __all__ = [
     "tracker_patch",
     "tracker_pick",
     "tracker_reject_task",
-    "tracker_reopen",
     "tracker_release",
+    "tracker_reopen",
     "tracker_update_task",
     "tracker_update_ticket",
 ]

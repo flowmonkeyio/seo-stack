@@ -51,6 +51,21 @@ def test_project_validation_and_soft_delete(session: Session) -> None:
     assert repo.get(env.data.id).is_active is False
 
 
+def test_project_hard_delete_removes_row(session: Session) -> None:
+    repo = ProjectRepository(session)
+    env = repo.create(
+        slug="hard-delete",
+        name="Hard Delete",
+        domain="hard-delete.example",
+        locale="en-US",
+    )
+
+    repo.delete(env.data.id, hard=True)
+
+    with pytest.raises(NotFoundError):
+        repo.get(env.data.id)
+
+
 def test_integration_credential_set_round_trip_and_remove(
     session: Session,
     project_id: int,

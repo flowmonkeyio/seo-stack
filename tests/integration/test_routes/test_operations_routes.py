@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, ClassVar
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from pytest_httpx import HTTPXMock
 from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
+from stackos.config import Settings
 from stackos.db.models import CredentialUsageEvent
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.resources import ResourceRepository
@@ -610,6 +612,117 @@ def test_operation_rest_action_run_mock_provider_returns_raw_output(
     assert body["action_call"]["provider_key"] == "mock-provider"
     assert body["output_json"]["message"] == "hello from direct REST action"
     assert "mock-direct-secret" not in rendered
+
+
+def test_operation_rest_action_run_uses_execution_context_ref(
+    api: TestClient,
+    project_id: int,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id, secret="mock-context-secret")
+    created_context = api.post(
+        "/api/v1/operations/executionContext.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "context_ref": "ctx_mock_direct",
+                "name": "Mock direct context",
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "output_policy_json": {"mode": "inline"},
+                "request_budget_json": {"max_parallel": 1},
+            }
+        },
+    )
+    assert created_context.status_code == 200, created_context.text
+    assert created_context.json()["data"]["context_ref"] == "ctx_mock_direct"
+
+    executed = api.post(
+        "/api/v1/operations/action.run/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "utils.mock.echo",
+                "context_ref": "ctx_mock_direct",
+                "input_json": {
+                    "message": "hello from context REST action",
+                    "echo": {"source": "rest-context"},
+                    "cost_cents": 4,
+                },
+                "idempotency_key": "rest-direct-mock-context-1",
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    rendered = json.dumps(executed.json())
+    assert body["status"] == "success"
+    assert body["credential_ref"] == credential_ref
+    assert body["output_json"]["credential_ref"] == credential_ref
+    assert body["action_call"]["metadata_json"]["execution_context"] == {
+        "context_ref": "ctx_mock_direct",
+        "output_policy_json": {"mode": "inline"},
+        "request_budget_json": {"max_parallel": 1},
+    }
+    assert "mock-context-secret" not in rendered
+
+
+def test_operation_rest_action_run_with_context_ref_returns_file_backed_compact_output(
+    api: TestClient,
+    project_id: int,
+    settings: Settings,
+) -> None:
+    credential_ref = _store_mock_credential(api, project_id, secret="mock-context-secret")
+    created_context = api.post(
+        "/api/v1/operations/executionContext.create/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "context_ref": "ctx_mock_file_output",
+                "name": "Mock file output context",
+                "action_ref": "utils.mock.echo",
+                "credential_ref": credential_ref,
+                "output_policy_json": {"mode": "always_file", "semantic_name": "mock-output"},
+            }
+        },
+    )
+    assert created_context.status_code == 200, created_context.text
+
+    executed = api.post(
+        "/api/v1/operations/action.run/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "action_ref": "utils.mock.echo",
+                "context_ref": "ctx_mock_file_output",
+                "input_json": {
+                    "message": "hello from file-backed context",
+                    "echo": {"source": "rest-context"},
+                },
+                "idempotency_key": "rest-direct-mock-file-output-1",
+            }
+        },
+    )
+
+    assert executed.status_code == 200, executed.text
+    body = executed.json()["data"]
+    rendered = json.dumps(executed.json())
+    assert body["compact"]["output_mode"] == "file"
+    assert body["compact"]["artifact_id"] == body["output_json"]["file"]["artifact_id"]
+    assert body["compact"]["absolute_path"] == body["output_json"]["file"]["absolute_path"]
+    assert body["compact"]["read"]["operation"] == "executionContext.artifact.read"
+    assert (
+        body["metadata_json"]["file_backed_output"]["artifact_id"] == body["compact"]["artifact_id"]
+    )
+    saved_path = Path(body["compact"]["absolute_path"])
+    assert saved_path.exists()
+    assert str(saved_path).startswith(str(settings.generated_assets_dir))
+    saved = json.loads(saved_path.read_text(encoding="utf-8"))
+    assert saved["leak_check"] == {
+        "authorization": "[redacted]",
+        "api_key": "[redacted]",
+    }
+    assert "mock-context-secret" not in rendered
 
 
 def test_operation_rest_smtp_notification_uses_run_plan_action_execute(

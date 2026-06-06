@@ -10,9 +10,12 @@ from sqlmodel import col, select
 
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
-from stackos.actions.trackbooth import trackbooth_generated_action_visible_for_project
-from stackos.db.models import Action, Plugin, Project, ProjectPlugin, Provider
-from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.db.models import Action, ExecutionContext, Plugin, Project, ProjectPlugin, Provider
+from stackos.generated_inventory import (
+    generated_action_public_key,
+    generated_action_visible_for_project,
+)
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.plugins import PluginRepository
 
 from .schema import ActionDescribeOut
@@ -74,12 +77,16 @@ class ActionCatalogMixin:
         plugin_slug: str | None,
         action_key: str | None,
         project_id: int | None = None,
+        context_ref: str | None = None,
+        credential_ref: str | None = None,
     ) -> ExecutableActionManifest:
         manifest, _provider_config_json = self._manifest_with_provider_config(
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
             project_id=project_id,
+            context_ref=context_ref,
+            credential_ref=credential_ref,
         )
         return manifest
 
@@ -90,12 +97,19 @@ class ActionCatalogMixin:
         plugin_slug: str | None,
         action_key: str | None,
         project_id: int | None,
+        context_ref: str | None = None,
+        credential_ref: str | None = None,
     ) -> tuple[ExecutableActionManifest, dict[str, Any] | None]:
         PluginRepository(self._s).sync_builtin_plugins()
         resolved_plugin, resolved_action = self._resolve_action_key(
             action_ref=action_ref,
             plugin_slug=plugin_slug,
             action_key=action_key,
+        )
+        credential_hint = self._action_lookup_credential_hint(
+            project_id=project_id,
+            context_ref=context_ref,
+            credential_ref=credential_ref,
         )
         stmt = (
             select(Action, Plugin, Provider)
@@ -104,16 +118,34 @@ class ActionCatalogMixin:
             .where(col(Plugin.slug) == resolved_plugin, col(Action.key) == resolved_action)
         )
         row = self._s.exec(stmt).first()
+        if row is not None:
+            action, _plugin, _provider = row
+            public_action_key = generated_action_public_key(action.config_json)
+            if public_action_key is not None and public_action_key != resolved_action:
+                row = None
+        if row is None:
+            row = self._generated_public_action_row(
+                plugin_slug=resolved_plugin,
+                action_key=resolved_action,
+                project_id=project_id,
+                credential_ref=credential_hint,
+            )
         if row is None:
             raise NotFoundError(
                 f"action {resolved_plugin}.{resolved_action!r} not found",
                 data={"plugin_slug": resolved_plugin, "action_key": resolved_action},
             )
         action, plugin, provider = row
-        if not trackbooth_generated_action_visible_for_project(
-            plugin_slug=plugin.slug,
+        public_action_key = generated_action_public_key(action.config_json)
+        if public_action_key is not None and public_action_key != resolved_action:
+            raise NotFoundError(
+                f"action {resolved_plugin}.{resolved_action!r} not found",
+                data={"plugin_slug": resolved_plugin, "action_key": resolved_action},
+            )
+        if not generated_action_visible_for_project(
             config_json=action.config_json,
             project_id=project_id,
+            action_key=action.key,
         ):
             raise NotFoundError(
                 f"action {resolved_plugin}.{resolved_action!r} not found",
@@ -123,6 +155,81 @@ class ActionCatalogMixin:
             parse_action_manifest(action=action, plugin=plugin, provider=provider),
             provider.config_json if provider is not None else None,
         )
+
+    def _generated_public_action_row(
+        self,
+        *,
+        plugin_slug: str,
+        action_key: str,
+        project_id: int | None,
+        credential_ref: str | None = None,
+    ) -> tuple[Action, Plugin, Provider | None] | None:
+        if project_id is None:
+            return None
+        stmt = (
+            select(Action, Plugin, Provider)
+            .join(Plugin, col(Action.plugin_id) == col(Plugin.id))
+            .outerjoin(Provider, col(Action.provider_id) == col(Provider.id))
+            .where(col(Plugin.slug) == plugin_slug)
+        )
+        candidates: list[tuple[Action, Plugin, Provider | None]] = []
+        for candidate in self._s.exec(stmt).all():
+            action, _plugin, _provider = candidate
+            if generated_action_public_key(action.config_json) != action_key:
+                continue
+            if not generated_action_visible_for_project(
+                config_json=action.config_json,
+                project_id=project_id,
+                action_key=action.key,
+            ):
+                continue
+            candidates.append(candidate)
+        if not candidates:
+            return None
+        if credential_ref:
+            credential_candidates = [
+                candidate
+                for candidate in candidates
+                if isinstance(candidate[0].config_json, dict)
+                and candidate[0].config_json.get("inventory_credential_ref") == credential_ref
+            ]
+            if credential_candidates:
+                candidates = credential_candidates
+        if len(candidates) > 1:
+            candidates.sort(key=lambda row: row[0].updated_at, reverse=True)
+            latest_updated_at = candidates[0][0].updated_at
+            latest = [row for row in candidates if row[0].updated_at == latest_updated_at]
+            if len(latest) > 1:
+                raise ConflictError(
+                    "generated action ref is ambiguous for this project",
+                    data={
+                        "action_key": action_key,
+                        "project_id": project_id,
+                        "candidate_keys": [row[0].key for row in latest[:8]],
+                    },
+                )
+        return candidates[0]
+
+    def _action_lookup_credential_hint(
+        self,
+        *,
+        project_id: int | None,
+        context_ref: str | None,
+        credential_ref: str | None,
+    ) -> str | None:
+        if credential_ref:
+            return credential_ref
+        if project_id is None or not context_ref:
+            return None
+        row = self._s.exec(
+            select(ExecutionContext).where(
+                col(ExecutionContext.project_id) == project_id,
+                col(ExecutionContext.context_ref) == context_ref,
+            )
+        ).first()
+        if row is None or not isinstance(row.credential_ref, str) or not row.credential_ref:
+            return None
+        return row.credential_ref
 
     def _resolve_action_key(
         self,

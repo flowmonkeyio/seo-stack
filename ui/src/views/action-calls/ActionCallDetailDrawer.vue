@@ -24,11 +24,18 @@ defineEmits<{
 const title = computed(() => (props.call ? `Action Call #${props.call.id}` : 'Action Call'))
 const description = computed(() => (props.call ? callTitle(props.call) : undefined))
 
+const executionContext = computed(() => recordValue(props.call?.metadata_json?.execution_context))
+const fileBackedOutput = computed(() => recordValue(props.call?.metadata_json?.file_backed_output))
+
 const summaryGroups = computed<UiFactGroup[]>(() => {
   const call = props.call
   if (!call) return []
+  const context = executionContext.value
+  const outputPolicy = recordValue(context?.output_policy_json)
+  const requestBudget = recordValue(context?.request_budget_json)
+  const fileOutput = fileBackedOutput.value
   const hasRunContext = Boolean(call.run_id || call.run_plan_id || call.run_plan_step_id)
-  return [
+  const groups: UiFactGroup[] = [
     {
       title: 'Execution Target',
       description: 'Provider, connector, and operation resolved by StackOS.',
@@ -76,6 +83,32 @@ const summaryGroups = computed<UiFactGroup[]>(() => {
       ],
     },
   ]
+  if (context) {
+    groups.splice(2, 0, {
+      title: 'Execution Context',
+      description: 'Reusable provider defaults applied by StackOS for this call.',
+      items: [
+        { label: 'Context ref', value: stringValue(context.context_ref), mono: true, wide: true },
+        { label: 'Output mode', value: stringValue(outputPolicy?.mode) },
+        { label: 'Max parallel', value: numberValue(requestBudget?.max_parallel) },
+        { label: 'Max calls', value: numberValue(requestBudget?.max_calls) },
+        { label: 'Artifact namespace', value: stringValue(context.artifact_namespace), mono: true, wide: true },
+      ],
+    })
+  }
+  if (fileOutput) {
+    groups.splice(context ? 3 : 2, 0, {
+      title: 'File Output',
+      description: 'Sanitized response stored as a context artifact.',
+      items: [
+        { label: 'Artifact', value: numberValue(fileOutput.artifact_id), mono: true },
+        { label: 'Bytes', value: numberValue(fileOutput.bytes) },
+        { label: 'SHA-256', value: stringValue(fileOutput.sha256), mono: true, wide: true },
+        { label: 'Path', value: stringValue(fileOutput.absolute_path), mono: true, wide: true },
+      ],
+    })
+  }
+  return groups
 })
 
 function callTitle(call: SchemaActionCallAuditOut): string {
@@ -84,6 +117,19 @@ function callTitle(call: SchemaActionCallAuditOut): string {
 
 function formatDuration(value: number | null | undefined): string {
   return value === null || value === undefined ? '-' : `${value}ms`
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 </script>
 

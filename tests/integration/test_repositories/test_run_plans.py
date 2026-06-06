@@ -345,9 +345,7 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     run = session.get(Run, started.run_id)
     step_rows = {
         step.step_id: step
-        for step in session.exec(
-            select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id)
-        )
+        for step in session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan.id))
     }
 
     assert reopened.plan.status == RunPlanStatus.STARTED
@@ -379,12 +377,8 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     assert task.status == TrackerItemStatus.IN_PROGRESS
     assert task.completed_at is None
     assert tickets[f"workflow-{plan.id}-scope-work"].status == TrackerItemStatus.COMPLETE
-    assert tickets[f"workflow-{plan.id}-deliver-tickets"].status == (
-        TrackerItemStatus.NOT_STARTED
-    )
-    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == (
-        TrackerItemStatus.NOT_STARTED
-    )
+    assert tickets[f"workflow-{plan.id}-deliver-tickets"].status == (TrackerItemStatus.NOT_STARTED)
+    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == (TrackerItemStatus.NOT_STARTED)
 
     claimed = repo.claim_step(
         run_plan_id=plan.id,

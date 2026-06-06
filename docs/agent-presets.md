@@ -26,6 +26,16 @@ operations as direct MCP tools, while the StackOS bridge may expose only
 them directly only when the host exposes them, otherwise inspect the exact names
 with `toolbox.describe` and invoke them through `toolbox.call`.
 
+Provider-action presets should prefer stable `action.list` refs plus
+`action.describe`/`action.validate` before execution. When repeated calls share
+credential, provider scope, output policy, request budget, or artifact
+namespace, use `executionContext.discover`/`executionContext.resolve` or create
+a context and pass `context_ref` to `action.run` or `action.execute`. Keep
+endpoint payload in `input_json`; keep provider scope in provider context or the
+execution context; use `executionContext.artifact.list` and
+`executionContext.artifact.read` for file-backed outputs before rerunning
+provider calls.
+
 Bundled presets must not assume customer repositories contain StackOS' own
 documentation files. StackOS operating guidance comes from the installed
 `stackos:stackos` skill and MCP tool descriptions. Repo-local docs such as

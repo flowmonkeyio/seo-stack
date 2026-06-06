@@ -291,8 +291,8 @@ def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
                 plugin_id=trackbooth.id,
                 provider_id=provider.id,
                 key=action_key,
-                name=f"Legacy {action_key}",
-                description="Legacy Trackbooth generic REST action",
+                name=f"Removed {action_key}",
+                description="Removed Trackbooth generic REST action",
                 capability_key="agent-api",
                 risk_level="write" if action_key == "rest.write" else "read",
                 input_schema_json={"type": "object", "additionalProperties": True},
@@ -313,10 +313,10 @@ def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
     }
 
     assert action_keys == {"catalog.sync", "catalog.search", "operation.describe"}
-    legacy = session.exec(select(Action).where(Action.key == "rest.read")).first()
-    assert legacy is not None
-    assert legacy.config_json["trackbooth_removed_action"] is True
-    assert legacy.config_json["execution_mode"] == "deferred.removed"
+    removed = session.exec(select(Action).where(Action.key == "rest.read")).first()
+    assert removed is not None
+    assert removed.config_json["trackbooth_removed_action"] is True
+    assert removed.config_json["execution_mode"] == "deferred.removed"
     actions = ActionRepository(session)
     for action_ref in ("trackbooth.rest.read", "trackbooth.rest.write"):
         with pytest.raises(NotFoundError):
@@ -327,6 +327,68 @@ def test_trackbooth_plugin_sync_hides_removed_generic_rest_actions(
             asyncio.run(
                 actions.execute(project_id=project_id, action_ref=action_ref, input_json={})
             )
+
+
+def test_trackbooth_plugin_sync_hides_removed_internal_scope_generated_actions(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = PluginRepository(session)
+    trackbooth = repo.get_plugin("trackbooth")
+    provider = session.exec(
+        select(Provider).where(Provider.plugin_id == trackbooth.id, Provider.key == "trackbooth")
+    ).first()
+    assert provider is not None
+    removed_internal_key = "api.ctx_pruned_scope.links_create"
+    session.add(
+        Action(
+            plugin_id=trackbooth.id,
+            provider_id=provider.id,
+            key=removed_internal_key,
+            name="Removed internal-scope Trackbooth action",
+            description="Generated action row with an internal inventory scope in the key",
+            capability_key="agent-api",
+            risk_level="write",
+            input_schema_json={"type": "object", "additionalProperties": True},
+            output_schema_json={"type": "object", "additionalProperties": True},
+            config_json={
+                "schema_version": "stackos.action.v1",
+                "connector": "trackbooth",
+                "operation": "operation.execute",
+                "requires_credential": True,
+            },
+        )
+    )
+    session.commit()
+
+    action_refs = {
+        action.action_ref
+        for action in repo.list_actions(plugin_slug="trackbooth", project_id=project_id)
+    }
+
+    assert f"trackbooth.{removed_internal_key}" not in action_refs
+    removed = session.exec(select(Action).where(Action.key == removed_internal_key)).first()
+    assert removed is not None
+    assert removed.config_json["action_removed"] is True
+    assert removed.config_json["execution_mode"] == "deferred.removed"
+    assert removed.config_json["inventory_state"] == "retired"
+    actions = ActionRepository(session)
+    with pytest.raises(NotFoundError):
+        actions.describe(project_id=project_id, action_ref=f"trackbooth.{removed_internal_key}")
+    with pytest.raises(NotFoundError):
+        actions.validate(
+            project_id=project_id,
+            action_ref=f"trackbooth.{removed_internal_key}",
+            input_json={},
+        )
+    with pytest.raises(NotFoundError):
+        asyncio.run(
+            actions.execute(
+                project_id=project_id,
+                action_ref=f"trackbooth.{removed_internal_key}",
+                input_json={},
+            )
+        )
 
 
 def test_project_catalog_reports_action_availability(session: Session, project_id: int) -> None:

@@ -394,8 +394,7 @@ def _bridge_toolbox_describe(
     step_granted_tools = sorted(active_step_tool_set - _AGENT_STEP_GATED_TOOL_NAMES)
     active_step_tools = sorted(active_step_tool_set)
     setup_count = len(
-        (_AGENT_SETUP_TOOLBOX_NAMES | _bridge_direct_operation_tool_names(catalog))
-        & set(catalog)
+        (_AGENT_SETUP_TOOLBOX_NAMES | _bridge_direct_operation_tool_names(catalog)) & set(catalog)
     )
     direct_visible = [
         name

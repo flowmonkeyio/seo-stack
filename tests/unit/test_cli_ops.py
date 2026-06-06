@@ -295,6 +295,69 @@ def test_cli_actions_describe_alias_calls_operation(monkeypatch) -> None:  # typ
     assert json.loads(result.stdout)["manifest"]["action_ref"] == "utils.sitemap.fetch"
 
 
+def test_cli_actions_list_alias_calls_operation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    def fake_api_request(
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        calls.append((method, path, body))
+        return {
+            "items": [
+                {
+                    "action_ref": "trackbooth.reporting.aggregate",
+                    "availability_status": "ready",
+                    "risk_level": "read",
+                    "name": "Reporting aggregate",
+                }
+            ],
+            "count": 1,
+        }
+
+    monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "actions",
+            "list",
+            "--project",
+            "7",
+            "--plugin",
+            "trackbooth",
+            "--provider",
+            "trackbooth",
+            "--query",
+            "top offers",
+            "--executable",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        (
+            "POST",
+            "/api/v1/operations/action.list/call",
+            {
+                "arguments": {
+                    "plugin_slug": "trackbooth",
+                    "provider_key": "trackbooth",
+                    "query": "top offers",
+                    "executable": True,
+                    "include_unavailable_integrations": False,
+                    "project_id": 7,
+                }
+            },
+        )
+    ]
+    assert "trackbooth.reporting.aggregate" in result.stdout
+
+
 def test_cli_actions_run_alias_calls_direct_operation(
     tmp_path: Path,
     monkeypatch,
@@ -316,6 +379,11 @@ def test_cli_actions_run_alias_calls_direct_operation(
         json.dumps({"chat_ref": "telegram-chat:123", "text": "Done."}),
         encoding="utf-8",
     )
+    provider_context_path = tmp_path / "provider-context.json"
+    provider_context_path.write_text(
+        json.dumps({"acting_as_account": "acct_123"}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(operation_cli, "_api_request", fake_api_request)
 
     result = CliRunner().invoke(
@@ -330,6 +398,10 @@ def test_cli_actions_run_alias_calls_direct_operation(
             str(input_path),
             "--credential-ref",
             "cred_123",
+            "--context-ref",
+            "ctx_provider_messaging",
+            "--provider-context",
+            str(provider_context_path),
             "--confirm-direct",
             "--intent-summary",
             "User asked to send one message.",
@@ -349,6 +421,8 @@ def test_cli_actions_run_alias_calls_direct_operation(
                     "action_ref": "communications.telegram-bot.message.send",
                     "credential_ref": "cred_123",
                     "input_json": {"chat_ref": "telegram-chat:123", "text": "Done."},
+                    "context_ref": "ctx_provider_messaging",
+                    "provider_context_json": {"acting_as_account": "acct_123"},
                     "dry_run": False,
                     "confirm_direct": True,
                     "intent_summary": "User asked to send one message.",

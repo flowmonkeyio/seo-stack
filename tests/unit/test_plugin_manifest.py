@@ -156,9 +156,10 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert sync_config["connector"] == "trackbooth"
     assert sync_config["operation"] == "catalog.sync"
     assert sync_config["requires_credential"] is True
-    assert sync_config["provider_context_schema"]["properties"]["acting_as_account"][
-        "type"
-    ] == "string"
+    assert (
+        sync_config["provider_context_schema"]["properties"]["acting_as_account"]["type"]
+        == "string"
+    )
     search_config = trackbooth_actions["catalog.search"].config
     assert search_config["schema_version"] == "stackos.action.v1"
     assert search_config["connector"] == "trackbooth"

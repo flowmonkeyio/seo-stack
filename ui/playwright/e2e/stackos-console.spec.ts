@@ -23,7 +23,7 @@ test.describe('StackOS console — generic project surfaces', () => {
       { path: 'workflow-templates', heading: 'Workflow Templates' },
       { path: 'runs', heading: /^Runs/ },
       { path: 'data', heading: 'Data' },
-      { path: 'resources', heading: 'Resource Explorer' },
+      { path: 'resources', heading: 'Data Explorer' },
       { path: 'schedules', heading: 'Schedules' },
       { path: 'cost-budget', heading: 'Cost & Budget' },
     ] as const

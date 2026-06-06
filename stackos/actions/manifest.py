@@ -149,11 +149,16 @@ def parse_action_manifest(
     resolved_budget_kind = (
         budget_kind if budget_kind is not None else (provider.key if provider else None)
     )
+    public_action_key = config.get("public_action_key")
+    if not isinstance(public_action_key, str) or not public_action_key.strip():
+        public_action_key = action.key
+    else:
+        public_action_key = public_action_key.strip()
     return ExecutableActionManifest(
         schema_version=schema_version,
         action_id=action.id,
-        action_key=action.key,
-        action_ref=f"{plugin.slug}.{action.key}",
+        action_key=public_action_key,
+        action_ref=f"{plugin.slug}.{public_action_key}",
         plugin_slug=plugin.slug,
         provider_key=provider.key if provider is not None else None,
         provider_auth_type=provider.auth_type if provider is not None else None,

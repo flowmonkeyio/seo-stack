@@ -531,36 +531,29 @@ class TrackerQueryMixin:
         children: list[TrackerTicket],
     ) -> list[str]:
         gate_children = [child for child in children if self._is_workflow_gate_child(child)]
-        terminal_delivery_children = self._terminal_workflow_delivery_child_rows(children)
-        if not gate_children or not terminal_delivery_children:
+        delivery_children = self._workflow_delivery_child_rows(children)
+        if not gate_children or not delivery_children:
             return []
         scope_ids = {child.id for child in children if child.id is not None}
         bypassing: list[str] = []
         for gate_child in gate_children:
-            downstream_of_all_terminal_delivery = all(
+            downstream_of_all_delivery = all(
                 self._dependency_path_exists(
                     source_ticket=delivery_child,
                     target_ticket=gate_child,
                     scope_ids=scope_ids,
                 )
-                for delivery_child in terminal_delivery_children
+                for delivery_child in delivery_children
             )
-            if not downstream_of_all_terminal_delivery:
+            if not downstream_of_all_delivery:
                 bypassing.append(gate_child.key)
         return bypassing
 
-    def _terminal_workflow_delivery_child_rows(
+    def _workflow_delivery_child_rows(
         self,
         children: list[TrackerTicket],
     ) -> list[TrackerTicket]:
-        delivery_children = [child for child in children if not self._is_workflow_gate_child(child)]
-        delivery_ids = {child.id for child in delivery_children if child.id is not None}
-        depended_on_by_delivery: set[int] = set()
-        for child in delivery_children:
-            for dependent in self._dependent_rows_for_ticket(child.id):
-                if dependent.ticket_id in delivery_ids and child.id is not None:
-                    depended_on_by_delivery.add(child.id)
-        return [child for child in delivery_children if child.id not in depended_on_by_delivery]
+        return [child for child in children if not self._is_workflow_gate_child(child)]
 
     def _is_workflow_gate_child(self, ticket: TrackerTicket) -> bool:
         haystack = " ".join(
@@ -576,8 +569,6 @@ class TrackerQueryMixin:
         return any(
             keyword in haystack
             for keyword in (
-                "doc",
-                "documentation",
                 "qa",
                 "review",
                 "release",

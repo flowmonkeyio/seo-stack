@@ -95,6 +95,12 @@ they must not infer workflow meaning, choose providers, mutate data, or expose
 secrets. Opaque refs such as `credential_ref` are displayable; token-like
 fields are not.
 
+Action and execution-context UI should show stable `action_ref`, `context_ref`,
+`credential_ref`, provider scope summaries, risk level, output policy,
+artifact pointers, and action-call audit metadata. It must not offer internal
+generated inventory keys as selectable or callable actions; those are
+storage/audit implementation details.
+
 ## 6. Accessibility
 
 - WCAG AA contrast for all text (semantic tokens are tuned for this in both modes).

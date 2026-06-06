@@ -39,10 +39,23 @@ sync. They are created or refreshed only when an agent explicitly executes
 the credential's configured `api_base_url` and the live bulk export endpoint, so
 the inventory can come from production, a remote staging URL, or a local
 Trackbooth server without crawling per-operation details.
+Sync output includes `source_endpoint`, `detail_fetch_count`, `endpoint_count`,
+`synced`, `created`, `updated`, `skipped`, `pruned`/`retired`, `catalog_hash`,
+`write_ms`, and `total_ms`. Full unchanged syncs can skip by `catalog_hash`;
+mixed or scoped syncs skip unchanged generated rows by endpoint checksum or a
+stable manifest hash.
 
-Generated action identity is scoped to the StackOS project, credential ref, and
+Generated action storage is scoped to the StackOS project, credential ref, and
 API URL used for the sync. A local sync cannot overwrite production inventory,
 and a different project cannot discover another project's generated actions.
+The agent-facing action refs are stable operation refs such as
+`trackbooth.api.advertiser_create`, `trackbooth.api.links_create`, and
+`trackbooth.api.offers_findbyid`; the inventory scope stays internal metadata
+for sync, audit, and cleanup. Scoped storage keys are not supported action refs.
+Generated storage keys that include internal inventory scopes are retired or
+hidden during sync and plugin catalog cleanup, and are not callable through
+`action.list`, `action.describe`, `action.validate`, `action.run`, or
+`action.execute`.
 Acting-account is runtime business context and does not create a separate
 generated action namespace; Trackbooth remains the authority for whether the
 credential may act on behalf of the requested account.
@@ -54,10 +67,9 @@ Normal agent flow:
 2. The agent runs `trackbooth.catalog.sync` when it wants to initialize or
    refresh runtime inventory. There is no automatic background sync.
 3. StackOS exposes generated direct inventory actions such as
-   `trackbooth.api.ctx_<scope>.advertiser_create`,
-   `trackbooth.api.ctx_<scope>.links_create`, or
-   `trackbooth.api.ctx_<scope>.offers_findbyid`, according to the live catalog
-   returned for that credential context.
+   `trackbooth.api.advertiser_create`, `trackbooth.api.links_create`, or
+   `trackbooth.api.offers_findbyid`, according to the live catalog returned
+   for that credential context.
 4. The action input schema already contains the selected operation's structured
    `path_params`, `query`, and `body` fields where applicable.
 5. The action provider-context schema exposes optional Trackbooth execution

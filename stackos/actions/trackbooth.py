@@ -61,8 +61,7 @@ _TRACKBOOTH_PROVIDER_CONTEXT_SCHEMA: JsonObject = {
         "acting_as_account": {
             "type": "string",
             "description": (
-                "Optional managed Trackbooth account id. StackOS sends it as "
-                "X-Acting-As-Account."
+                "Optional managed Trackbooth account id. StackOS sends it as X-Acting-As-Account."
             ),
         }
     },
@@ -105,7 +104,10 @@ class TrackboothAssets:
 
     @cached_property
     def tools_by_operation_id(self) -> dict[str, JsonObject]:
-        tools = self.stackos_tools.get("tools") if isinstance(self.stackos_tools, dict) else []
+        tools_raw = (
+            self.stackos_tools.get("tools") if isinstance(self.stackos_tools, dict) else None
+        )
+        tools = tools_raw if isinstance(tools_raw, list) else []
         return {
             str(tool.get("operation_id")): tool
             for tool in tools
@@ -114,7 +116,8 @@ class TrackboothAssets:
 
     @cached_property
     def catalog_by_operation_id(self) -> dict[str, JsonObject]:
-        endpoints = self.catalog.get("endpoints") if isinstance(self.catalog, dict) else []
+        endpoints_raw = self.catalog.get("endpoints") if isinstance(self.catalog, dict) else None
+        endpoints = endpoints_raw if isinstance(endpoints_raw, list) else []
         return {
             str(endpoint.get("operation_id")): endpoint
             for endpoint in endpoints
@@ -147,7 +150,8 @@ class TrackboothAssets:
 
     def summary(self, endpoint: Mapping[str, Any]) -> JsonObject:
         operation_id = str(endpoint.get("operation_id") or "")
-        context = endpoint.get("context") if isinstance(endpoint.get("context"), dict) else {}
+        context_raw = endpoint.get("context")
+        context: Mapping[str, Any] = context_raw if isinstance(context_raw, Mapping) else {}
         return {
             "operation_id": operation_id,
             "title": endpoint.get("title") or context.get("title") or operation_id,
@@ -301,13 +305,13 @@ class TrackboothActionConnector:
                 headers=headers,
             )
 
-        operation_id = self._configured_operation_id(request)
-        if operation_id is not None:
+        configured_operation_id = self._configured_operation_id(request)
+        if configured_operation_id is not None:
             return await self._execute_rest(
                 request=request,
                 base_url=base_url,
                 headers=headers,
-                operation_id_override=operation_id,
+                operation_id_override=configured_operation_id,
                 live_visibility_check=False,
             )
 
@@ -409,10 +413,9 @@ class TrackboothActionConnector:
                     "blocked_operation",
                 )
             )
-        path_params = (
-            payload.get("path_params")
-            if isinstance(payload.get("path_params"), dict)
-            else {}
+        path_params_raw = payload.get("path_params")
+        path_params: Mapping[str, Any] = (
+            path_params_raw if isinstance(path_params_raw, Mapping) else {}
         )
         for name in _path_param_names(str(endpoint.get("path") or "")):
             if name not in path_params:
@@ -433,9 +436,7 @@ class TrackboothActionConnector:
                     "body_not_allowed",
                 )
             )
-        body_requires_validation = (
-            request.operation == "rest.write" or method in _WRITE_METHODS
-        )
+        body_requires_validation = request.operation == "rest.write" or method in _WRITE_METHODS
         if body_requires_validation and body_schema is not None:
             if body is None:
                 issues.extend(_missing_required_body_issues(body_schema))
@@ -555,6 +556,7 @@ class TrackboothActionConnector:
         selected_ids = {str(item.get("operation_id")) for item in selected_items}
         missing_ids = sorted(requested_ids - selected_ids)
 
+        started = perf_counter()
         details: list[JsonObject] = []
         warnings: list[JsonObject] = []
         for item in selected_items:
@@ -580,14 +582,21 @@ class TrackboothActionConnector:
             request=request,
             details=details,
             base_url=base_url,
+            catalog_hash=catalog_hash if isinstance(catalog_hash, str) else None,
             prune_missing=not requested_ids and limit is None,
+        )
+        write_ms = sync_result["write_ms"]
+        total_ms = int((perf_counter() - started) * 1000) + (
+            source_fetch_ms if isinstance(source_fetch_ms, int) else 0
         )
         return ActionConnectorResult(
             output_json={
                 "synced": sync_result["synced"],
                 "created": sync_result["created"],
                 "updated": sync_result["updated"],
+                "skipped": sync_result["skipped"],
                 "pruned": sync_result["pruned"],
+                "retired": sync_result["retired"],
                 "action_refs": sync_result["action_refs"],
                 "operation_ids": sync_result["operation_ids"],
                 "blocked_operation_ids": sync_result["blocked_operation_ids"],
@@ -597,6 +606,8 @@ class TrackboothActionConnector:
                 "inventory_scope_key": sync_result["inventory_scope_key"],
                 "source_endpoint": "/api/agent-api/catalog/export",
                 "source_fetch_ms": source_fetch_ms,
+                "write_ms": write_ms,
+                "total_ms": total_ms,
                 "endpoint_count": endpoint_count
                 if isinstance(endpoint_count, int)
                 else len(live_items),
@@ -613,6 +624,7 @@ class TrackboothActionConnector:
                 "operation": request.operation,
                 "synced": sync_result["synced"],
                 "api_base_url": base_url,
+                "catalog_hash": catalog_hash if isinstance(catalog_hash, str) else None,
             },
         )
 
@@ -834,7 +846,8 @@ def _detail_from_endpoint(
 ) -> JsonObject:
     schemas = openapi_schemas or {}
     operation_id = str(endpoint.get("operation_id") or "")
-    context = endpoint.get("context") if isinstance(endpoint.get("context"), Mapping) else {}
+    context_raw = endpoint.get("context")
+    context: Mapping[str, Any] = context_raw if isinstance(context_raw, Mapping) else {}
     query_schema = _expand_schema_descriptor(_schema_descriptor(endpoint, "query_schema"), schemas)
     body_schema = _expand_schema_descriptor(_schema_descriptor(endpoint, "body_schema"), schemas)
     response_schema = _expand_schema_descriptor(
@@ -851,6 +864,7 @@ def _detail_from_endpoint(
             schema_warnings.append(label)
     return {
         "operation_id": operation_id,
+        "checksum": endpoint.get("checksum") if isinstance(endpoint.get("checksum"), str) else None,
         "name": endpoint.get("name"),
         "title": endpoint.get("title") or context.get("title") or operation_id,
         "subtitle": context.get("subtitle") or endpoint.get("subtitle"),
@@ -864,6 +878,7 @@ def _detail_from_endpoint(
         "feature_requirements": endpoint.get("feature_requirements") or [],
         "field_groups": endpoint.get("field_groups") or [],
         "execution_blocked": _is_blocked_endpoint(endpoint),
+        **_risk_metadata(endpoint, context),
         "path_params": _path_param_details(endpoint),
         "query_params": query_schema,
         "request_body": body_schema,
@@ -875,6 +890,28 @@ def _detail_from_endpoint(
             "static_catalog": False,
         },
     }
+
+
+def _risk_metadata(
+    endpoint: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> JsonObject:
+    metadata: JsonObject = {}
+    for key in (
+        "risk_level",
+        "risk",
+        "side_effect",
+        "side_effects",
+        "read_only",
+        "readonly",
+        "readOnly",
+        "idempotent",
+    ):
+        if key in endpoint and endpoint[key] is not None:
+            metadata[key] = endpoint[key]
+        elif key in context and context[key] is not None:
+            metadata[key] = context[key]
+    return metadata
 
 
 def _expand_schema_descriptor(
@@ -1008,7 +1045,7 @@ def _runtime_inventory_scope_key(scope: Mapping[str, Any]) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
-    return f"ctx_{_short_hash(payload, length=12)}"
+    return f"inv_{_short_hash(payload, length=12)}"
 
 
 def _runtime_action_key(
@@ -1018,6 +1055,22 @@ def _runtime_action_key(
     suffix: str | None = None,
 ) -> str:
     prefix = f"{_RUNTIME_ACTION_KEY_PREFIX}{scope_key}."
+    max_slug_length = max(1, 160 - len(prefix))
+    slug = _operation_action_slug(detail)
+    if suffix:
+        suffix_text = f"_{suffix}"
+        slug = f"{slug[: max(1, max_slug_length - len(suffix_text))]}{suffix_text}"
+    else:
+        slug = slug[:max_slug_length]
+    return f"{prefix}{slug}"
+
+
+def _runtime_public_action_key(
+    *,
+    detail: Mapping[str, Any],
+    suffix: str | None = None,
+) -> str:
+    prefix = _RUNTIME_ACTION_KEY_PREFIX
     max_slug_length = max(1, 160 - len(prefix))
     slug = _operation_action_slug(detail)
     if suffix:
@@ -1081,7 +1134,7 @@ def _runtime_row_sort_key(row: Action) -> tuple[str, str, int]:
     return synced_text, updated_text, int(row.id or 0)
 
 
-def retire_superseded_trackbooth_inventory_contexts(
+def retire_superseded_trackbooth_inventory_scopes(
     *,
     session: Any,
     plugin_id: int,
@@ -1089,11 +1142,11 @@ def retire_superseded_trackbooth_inventory_contexts(
     keep_logical_scope: tuple[int, str, str] | None = None,
     keep_scope_key: str | None = None,
 ) -> int:
-    """Retire older generated contexts for the same logical Trackbooth inventory."""
+    """Retire older generated scopes for the same logical Trackbooth inventory."""
     rows = session.exec(
         select(Action).where(
             col(Action.plugin_id) == plugin_id,
-            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}ctx_%.%"),
+            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
         )
     ).all()
     grouped: dict[tuple[int, str, str], list[Action]] = defaultdict(list)
@@ -1111,8 +1164,17 @@ def retire_superseded_trackbooth_inventory_contexts(
             for row in scoped_rows
             if (scope_key := _runtime_row_scope_key(row)) is not None
         }
+        if keep_logical_scope == logical_scope and keep_scope_key:
+            for row in scoped_rows:
+                if _runtime_row_scope_key(row) == keep_scope_key:
+                    continue
+                _retire_runtime_action(row, now=now)
+                session.add(row)
+                retired += 1
+            continue
         if len(scope_keys) <= 1:
             continue
+        active_scope_key: str | None
         if keep_logical_scope == logical_scope and keep_scope_key in scope_keys:
             active_scope_key = keep_scope_key
         else:
@@ -1129,17 +1191,49 @@ def retire_superseded_trackbooth_inventory_contexts(
     return retired
 
 
+def _runtime_catalog_hash_unchanged(
+    *,
+    session: Any,
+    plugin_id: int,
+    logical_scope: tuple[int, str, str] | None,
+    catalog_hash: str,
+    action_keys: set[str],
+) -> bool:
+    if logical_scope is None or not action_keys:
+        return False
+    rows = session.exec(
+        select(Action).where(
+            col(Action.plugin_id) == plugin_id,
+            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
+        )
+    ).all()
+    active_rows = [
+        row
+        for row in rows
+        if _runtime_action_logical_scope(
+            row.config_json if isinstance(row.config_json, Mapping) else {}
+        )
+        == logical_scope
+    ]
+    if {str(row.key) for row in active_rows} != action_keys:
+        return False
+    for row in active_rows:
+        config = row.config_json if isinstance(row.config_json, Mapping) else {}
+        if config.get("inventory_catalog_hash") != catalog_hash:
+            return False
+    return True
+
+
 def _upsert_runtime_actions(
     *,
     session: Any,
     request: ActionConnectorRequest,
     details: Sequence[Mapping[str, Any]],
     base_url: str,
+    catalog_hash: str | None,
     prune_missing: bool,
 ) -> JsonObject:
-    plugin = session.exec(
-        select(Plugin).where(col(Plugin.slug) == _TRACKBOOTH_PLUGIN_SLUG)
-    ).first()
+    plugin = session.exec(select(Plugin).where(col(Plugin.slug) == _TRACKBOOTH_PLUGIN_SLUG)).first()
     if plugin is None or plugin.id is None:
         raise ValidationError("Trackbooth plugin must be synced before catalog sync")
     provider = session.exec(
@@ -1157,13 +1251,23 @@ def _upsert_runtime_actions(
         base_url=base_url,
     )
     scope_key = _runtime_inventory_scope_key(scope)
+    logical_scope = _runtime_action_logical_scope(
+        {
+            "inventory_source": _RUNTIME_INVENTORY_SOURCE,
+            "inventory_state": "active",
+            "inventory_project_id": scope["project_id"],
+            "inventory_credential_ref": scope["credential_ref"],
+            "inventory_api_base_url": scope["api_base_url"],
+        }
+    )
+    write_started = perf_counter()
     created = 0
     updated = 0
+    skipped = 0
     pruned = 0
-    action_refs: list[str] = []
     action_keys: set[str] = set()
-    action_key_operations: dict[str, str] = {}
-    operation_ids: list[str] = []
+    planned_actions: list[JsonObject] = []
+    public_action_key_operations: dict[str, str] = {}
     blocked_operation_ids: list[str] = []
     for detail in details:
         operation_id = str(detail.get("operation_id") or "").strip()
@@ -1174,26 +1278,73 @@ def _upsert_runtime_actions(
         if _is_blocked_endpoint(detail):
             blocked_operation_ids.append(operation_id)
             continue
-        action_key = _runtime_action_key(scope_key=scope_key, detail=detail)
-        prior_operation_id = action_key_operations.get(action_key)
+        suffix: str | None = None
+        public_action_key = _runtime_public_action_key(detail=detail)
+        prior_operation_id = public_action_key_operations.get(public_action_key)
         if prior_operation_id is not None and prior_operation_id != operation_id:
-            action_key = _runtime_action_key(
-                scope_key=scope_key,
-                detail=detail,
-                suffix=_short_hash(operation_id),
-            )
-        action_key_operations[action_key] = operation_id
+            suffix = _short_hash(operation_id)
+            public_action_key = _runtime_public_action_key(detail=detail, suffix=suffix)
+        public_action_key_operations[public_action_key] = operation_id
+        action_key = _runtime_action_key(scope_key=scope_key, detail=detail, suffix=suffix)
+        action_keys.add(action_key)
+        planned_actions.append(
+            {
+                "detail": detail,
+                "operation_id": operation_id,
+                "public_action_key": public_action_key,
+                "action_key": action_key,
+            }
+        )
+
+    if (
+        prune_missing
+        and catalog_hash
+        and _runtime_catalog_hash_unchanged(
+            session=session,
+            plugin_id=plugin.id,
+            logical_scope=logical_scope,
+            catalog_hash=catalog_hash,
+            action_keys=action_keys,
+        )
+    ):
+        session.commit()
+        return {
+            "synced": len(planned_actions),
+            "created": 0,
+            "updated": 0,
+            "skipped": len(planned_actions),
+            "pruned": 0,
+            "retired": 0,
+            "action_refs": [
+                f"{_TRACKBOOTH_PLUGIN_SLUG}.{item['public_action_key']}" for item in planned_actions
+            ],
+            "operation_ids": [str(item["operation_id"]) for item in planned_actions],
+            "blocked_operation_ids": blocked_operation_ids,
+            "inventory_scope_key": scope_key,
+            "write_ms": int((perf_counter() - write_started) * 1000),
+        }
+
+    action_refs: list[str] = []
+    operation_ids: list[str] = []
+    for item in planned_actions:
+        detail = item["detail"]
+        operation_id = str(item["operation_id"])
+        public_action_key = str(item["public_action_key"])
+        action_key = str(item["action_key"])
         row = session.exec(
             select(Action).where(col(Action.plugin_id) == plugin.id, col(Action.key) == action_key)
         ).first()
         manifest_json = _runtime_action_manifest(
             action_key=action_key,
+            public_action_key=public_action_key,
             detail=detail,
             base_url=base_url,
             inventory_scope=scope,
             inventory_scope_key=scope_key,
+            catalog_hash=catalog_hash,
             synced_at=now,
         )
+        manifest_json["config"]["inventory_manifest_hash"] = _runtime_manifest_hash(manifest_json)
         if row is None:
             row = Action(
                 plugin_id=plugin.id,
@@ -1208,6 +1359,11 @@ def _upsert_runtime_actions(
                 config_json=manifest_json["config"],
             )
             created += 1
+        elif _runtime_action_row_unchanged(row, manifest_json):
+            skipped += 1
+            action_refs.append(f"{_TRACKBOOTH_PLUGIN_SLUG}.{public_action_key}")
+            operation_ids.append(operation_id)
+            continue
         else:
             row.provider_id = provider.id
             row.name = manifest_json["name"]
@@ -1238,35 +1394,29 @@ def _upsert_runtime_actions(
         else:
             version.manifest_json = manifest_json
         session.add(version)
-        action_refs.append(f"{_TRACKBOOTH_PLUGIN_SLUG}.{action_key}")
-        action_keys.add(action_key)
+        action_refs.append(f"{_TRACKBOOTH_PLUGIN_SLUG}.{public_action_key}")
         operation_ids.append(operation_id)
     if prune_missing:
         stale_rows = session.exec(
             select(Action).where(
                 col(Action.plugin_id) == plugin.id,
-                col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}{scope_key}.%"),
+                col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}%"),
             )
         ).all()
         for row in stale_rows:
+            config = row.config_json if isinstance(row.config_json, Mapping) else {}
+            if _runtime_action_logical_scope(config) != logical_scope:
+                continue
             if row.key in action_keys:
                 continue
             _retire_runtime_action(row, now=now)
             session.add(row)
             pruned += 1
-    pruned += retire_superseded_trackbooth_inventory_contexts(
+    pruned += retire_superseded_trackbooth_inventory_scopes(
         session=session,
         plugin_id=plugin.id,
         now=now,
-        keep_logical_scope=_runtime_action_logical_scope(
-            {
-                "inventory_source": _RUNTIME_INVENTORY_SOURCE,
-                "inventory_state": "active",
-                "inventory_project_id": scope["project_id"],
-                "inventory_credential_ref": scope["credential_ref"],
-                "inventory_api_base_url": scope["api_base_url"],
-            }
-        ),
+        keep_logical_scope=logical_scope,
         keep_scope_key=scope_key,
     )
     session.commit()
@@ -1274,21 +1424,26 @@ def _upsert_runtime_actions(
         "synced": len(action_refs),
         "created": created,
         "updated": updated,
+        "skipped": skipped,
         "pruned": pruned,
+        "retired": pruned,
         "action_refs": action_refs,
         "operation_ids": operation_ids,
         "blocked_operation_ids": blocked_operation_ids,
         "inventory_scope_key": scope_key,
+        "write_ms": int((perf_counter() - write_started) * 1000),
     }
 
 
 def _runtime_action_manifest(
     *,
     action_key: str,
+    public_action_key: str,
     detail: Mapping[str, Any],
     base_url: str,
     inventory_scope: Mapping[str, Any],
     inventory_scope_key: str,
+    catalog_hash: str | None,
     synced_at: datetime,
 ) -> JsonObject:
     method = str(detail.get("method") or "").upper()
@@ -1304,11 +1459,12 @@ def _runtime_action_manifest(
         "description": _runtime_action_description(detail=detail, method=method, path=path),
         "provider": _TRACKBOOTH_PROVIDER_KEY,
         "capability": "agent-api",
-        "risk_level": "read" if method == "GET" else "write",
+        "risk_level": _runtime_risk_level(detail=detail, method=method, path=path),
         "input_schema": _runtime_input_schema(detail),
         "output_schema": _runtime_output_schema(detail),
         "config": {
             "schema_version": "stackos.action.v1",
+            "public_action_key": public_action_key,
             "connector": "trackbooth",
             "operation": "operation.execute",
             "requires_credential": True,
@@ -1336,10 +1492,43 @@ def _runtime_action_manifest(
             "inventory_project_id": inventory_scope["project_id"],
             "inventory_credential_ref": inventory_scope["credential_ref"],
             "inventory_api_base_url": base_url,
+            "inventory_catalog_hash": catalog_hash,
+            "inventory_endpoint_checksum": _runtime_endpoint_checksum(detail),
             "inventory_synced_at": synced_at.isoformat(),
             "provider_context_schema": _TRACKBOOTH_PROVIDER_CONTEXT_SCHEMA,
         },
     }
+
+
+def _runtime_endpoint_checksum(detail: Mapping[str, Any]) -> str | None:
+    checksum = detail.get("checksum")
+    return checksum.strip() if isinstance(checksum, str) and checksum.strip() else None
+
+
+def _runtime_manifest_hash(manifest_json: Mapping[str, Any]) -> str:
+    stable = json.loads(json.dumps(manifest_json, default=str))
+    config = stable.get("config")
+    if isinstance(config, dict):
+        config.pop("inventory_synced_at", None)
+        config.pop("inventory_manifest_hash", None)
+    raw = json.dumps(stable, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _runtime_action_row_unchanged(row: Action, manifest_json: Mapping[str, Any]) -> bool:
+    config = row.config_json if isinstance(row.config_json, Mapping) else {}
+    if config.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
+        return False
+    if config.get("inventory_state") != "active":
+        return False
+    manifest_config = manifest_json.get("config")
+    if not isinstance(manifest_config, Mapping):
+        return False
+    manifest_checksum = manifest_config.get("inventory_endpoint_checksum")
+    if isinstance(manifest_checksum, str) and manifest_checksum:
+        return config.get("inventory_endpoint_checksum") == manifest_checksum
+    manifest_hash = manifest_config.get("inventory_manifest_hash")
+    return isinstance(manifest_hash, str) and config.get("inventory_manifest_hash") == manifest_hash
 
 
 def _runtime_action_name(title: str) -> str:
@@ -1359,6 +1548,140 @@ def _runtime_action_description(*, detail: Mapping[str, Any], method: str, path:
     if summary:
         parts.append(summary)
     return " | ".join(parts) or "Generated Trackbooth operation from the live catalog."
+
+
+def _runtime_risk_level(*, detail: Mapping[str, Any], method: str, path: str) -> str:
+    explicit = _explicit_risk_level(detail)
+    if explicit is not None:
+        return explicit
+    if method in _READ_METHODS:
+        return "read"
+    if _looks_like_read_semantics(detail=detail, path=path):
+        return "read"
+    return "write"
+
+
+def _explicit_risk_level(detail: Mapping[str, Any]) -> str | None:
+    candidates: list[tuple[str, Any]] = [
+        ("risk_level", detail.get("risk_level")),
+        ("risk", detail.get("risk")),
+        ("side_effect", detail.get("side_effect")),
+        ("side_effects", detail.get("side_effects")),
+        ("read_only", detail.get("read_only")),
+        ("readonly", detail.get("readonly")),
+        ("readOnly", detail.get("readOnly")),
+    ]
+    context = detail.get("context")
+    if isinstance(context, Mapping):
+        candidates.extend(
+            [
+                ("risk_level", context.get("risk_level")),
+                ("risk", context.get("risk")),
+                ("side_effect", context.get("side_effect")),
+                ("side_effects", context.get("side_effects")),
+                ("read_only", context.get("read_only")),
+                ("readonly", context.get("readonly")),
+                ("readOnly", context.get("readOnly")),
+            ]
+        )
+    for key, candidate in candidates:
+        if isinstance(candidate, str):
+            normalized_key = key.lower()
+            normalized = candidate.strip().lower().replace("-", "_")
+            if normalized in {"read", "readonly", "read_only", "low", "safe", "none"}:
+                return "read"
+            if normalized in {"write", "mutation", "mutating", "high", "unsafe", "side_effect"}:
+                return "write"
+            if normalized in {"true", "yes"}:
+                if normalized_key in {"read_only", "readonly"}:
+                    return "read"
+                if normalized_key in {"side_effect", "side_effects"}:
+                    return "write"
+            if normalized in {"false", "no"}:
+                if normalized_key in {"read_only", "readonly"}:
+                    return "write"
+                if normalized_key in {"side_effect", "side_effects"}:
+                    return "read"
+        elif isinstance(candidate, bool):
+            normalized_key = key.lower()
+            if normalized_key in {"read_only", "readonly"}:
+                return "read" if candidate else "write"
+            if normalized_key in {"side_effect", "side_effects"}:
+                return "write" if candidate else "read"
+            if not candidate:
+                return "read"
+            if candidate:
+                continue
+    return None
+
+
+def _looks_like_read_semantics(*, detail: Mapping[str, Any], path: str) -> bool:
+    values = [
+        detail.get("operation_id"),
+        detail.get("name"),
+        detail.get("title"),
+        detail.get("subtitle"),
+        detail.get("description"),
+        detail.get("category"),
+        path,
+    ]
+    context = detail.get("context")
+    if isinstance(context, Mapping):
+        values.extend(
+            [
+                context.get("title"),
+                context.get("subtitle"),
+                context.get("category"),
+                " ".join(map(str, context.get("tags") or []))
+                if isinstance(context.get("tags"), list)
+                else None,
+            ]
+        )
+    if isinstance(detail.get("tags"), list):
+        values.append(" ".join(map(str, detail.get("tags") or [])))
+    text = " ".join(str(value or "") for value in values).lower().replace("_", " ")
+    read_domains = ("reporting", "analytics", "dashboard", "report", "metric", "metrics")
+    read_verbs = (
+        "aggregate",
+        "catalog",
+        "compare",
+        "comparison",
+        "dashboard",
+        "export",
+        "get",
+        "kpi",
+        "list",
+        "metric",
+        "record",
+        "report",
+        "search",
+        "summary",
+        "top",
+        "view",
+    )
+    write_verbs = (
+        "approve",
+        "create",
+        "delete",
+        "duplicate",
+        "generate",
+        "invite",
+        "pause",
+        "reject",
+        "remove",
+        "reveal",
+        "revoke",
+        "send",
+        "sync",
+        "terminate",
+        "update",
+        "upsert",
+    )
+    return (
+        any(domain in text for domain in read_domains)
+        and any(verb in text for verb in read_verbs)
+        and not any(verb in text for verb in write_verbs)
+    )
 
 
 def _runtime_input_schema(detail: Mapping[str, Any]) -> JsonObject:
@@ -1495,11 +1818,7 @@ def _configured_endpoint(config: Mapping[str, Any], operation_id: str) -> JsonOb
         "operation_id": operation_id,
         "method": method.upper(),
         "path": path,
-        "path_params": [
-            {"name": str(item)}
-            for item in path_param_names
-            if isinstance(item, str)
-        ],
+        "path_params": [{"name": str(item)} for item in path_param_names if isinstance(item, str)],
         "body_schema": {"details": {"type": "object", "fields": body_fields}}
         if config.get("has_body") is True
         else None,
@@ -1589,11 +1908,15 @@ def _substitute_path_params(path: str, raw_params: Any) -> str:
 
 
 def _field_to_schema(field: Mapping[str, Any]) -> JsonObject:
-    raw_type = str(field.get("type") or "object")
+    raw_type = str(field.get("type") or "object").strip()
     enum_values = _enum_values(field)
     schema: JsonObject
-    if raw_type.endswith("[]"):
-        schema = {"type": "array", "items": _simple_type_schema(raw_type[:-2])}
+    array_item_type = _array_item_type(raw_type)
+    if array_item_type is not None:
+        items = _simple_type_schema(array_item_type)
+        if enum_values:
+            items = {"type": "string", "enum": enum_values}
+        schema = {"type": "array", "items": items}
     elif enum_values:
         schema = {"type": "string", "enum": enum_values}
     else:
@@ -1612,8 +1935,23 @@ def _field_to_schema(field: Mapping[str, Any]) -> JsonObject:
     return schema
 
 
+def _array_item_type(raw_type: str) -> str | None:
+    normalized = raw_type.strip()
+    while normalized.startswith("readonly "):
+        normalized = normalized.removeprefix("readonly ").strip()
+    if normalized.endswith("[]"):
+        return normalized[:-2].strip()
+    if normalized.startswith("Array<") and normalized.endswith(">"):
+        return normalized[len("Array<") : -1].strip()
+    if normalized.startswith("ReadonlyArray<") and normalized.endswith(">"):
+        return normalized[len("ReadonlyArray<") : -1].strip()
+    return None
+
+
 def _simple_type_schema(raw_type: str) -> JsonObject:
     normalized = raw_type.strip()
+    while normalized.startswith("readonly "):
+        normalized = normalized.removeprefix("readonly ").strip()
     if normalized in {"string", "z.string"}:
         return {"type": "string"}
     if normalized in {"number", "z.number"}:
@@ -1688,6 +2026,32 @@ def _schema_value_issues(
     if isinstance(properties, Mapping):
         for key, prop in properties.items():
             if key not in value or not isinstance(prop, Mapping):
+                continue
+            prop_type = prop.get("type")
+            if prop_type == "array":
+                raw_items = prop.get("items")
+                item_schema = raw_items if isinstance(raw_items, Mapping) else {}
+                if not isinstance(value[key], list):
+                    issues.append(
+                        issue(
+                            f"{path}.{key}",
+                            "value must be an array",
+                            "type_mismatch",
+                        )
+                    )
+                    continue
+                item_enum_values = item_schema.get("enum")
+                if isinstance(item_enum_values, list):
+                    for index, item in enumerate(value[key]):
+                        if item not in item_enum_values:
+                            issues.append(
+                                issue(
+                                    f"{path}.{key}[{index}]",
+                                    "value must be one of: "
+                                    f"{', '.join(map(str, item_enum_values))}",
+                                    "enum_mismatch",
+                                )
+                            )
                 continue
             enum_values = prop.get("enum")
             if isinstance(enum_values, list) and value[key] not in enum_values:
@@ -1765,9 +2129,7 @@ def _extract_catalog_items(body: Any) -> list[JsonObject]:
     else:
         raw_items = []
     items = [
-        dict(item)
-        for item in raw_items
-        if isinstance(item, Mapping) and item.get("operation_id")
+        dict(item) for item in raw_items if isinstance(item, Mapping) and item.get("operation_id")
     ]
     return items
 
@@ -1842,65 +2204,63 @@ def _runtime_inventory_input_issues(
     return issues
 
 
-def trackbooth_generated_action_visible_for_project(
-    *,
-    plugin_slug: str,
-    config_json: Mapping[str, Any] | None,
-    project_id: int | None,
-) -> bool:
-    """Return whether a Trackbooth action belongs in project discovery."""
-    if plugin_slug != _TRACKBOOTH_PLUGIN_SLUG:
-        return True
-    if not isinstance(config_json, Mapping):
-        return True
-    if config_json.get("operation") in {"rest.read", "rest.write"}:
-        return False
-    if config_json.get("trackbooth_removed_action") is True:
-        return False
-    if config_json.get("inventory_source") != _RUNTIME_INVENTORY_SOURCE:
-        return True
-    if config_json.get("inventory_state") != "active":
-        return False
-    if project_id is None:
-        return False
-    inventory_project_id = config_json.get("inventory_project_id")
-    return isinstance(inventory_project_id, int) and inventory_project_id == project_id
-
-
 def retire_removed_trackbooth_actions(
     *,
     session: Any,
     plugin_id: int,
     now: datetime,
 ) -> None:
-    """Mark removed first-pass Trackbooth generic actions as non-executable."""
+    """Mark removed Trackbooth action rows as non-executable."""
     for action_key in ("rest.read", "rest.write"):
         row = session.exec(
             select(Action).where(col(Action.plugin_id) == plugin_id, col(Action.key) == action_key)
         ).first()
         if row is None:
             continue
-        config = dict(row.config_json or {})
-        if (
-            config.get("trackbooth_removed_action") is True
-            and config.get("execution_mode") == "deferred.removed"
-        ):
-            continue
-        config.pop("connector", None)
-        config["execution_mode"] = "deferred.removed"
-        config["deferred_reason"] = (
-            "Trackbooth operation execution is exposed through generated actions from "
-            "trackbooth.catalog.sync."
+        _remove_trackbooth_action_row(
+            row,
+            now=now,
+            reason=(
+                "Trackbooth operation execution is exposed through generated actions from "
+                "trackbooth.catalog.sync."
+            ),
         )
-        config["trackbooth_removed_action"] = True
-        row.config_json = config
-        row.updated_at = now
         session.add(row)
-    retire_superseded_trackbooth_inventory_contexts(
+    for row in session.exec(
+        select(Action).where(
+            col(Action.plugin_id) == plugin_id,
+            col(Action.key).like(f"{_RUNTIME_ACTION_KEY_PREFIX}ctx_%"),
+        )
+    ).all():
+        _remove_trackbooth_action_row(
+            row,
+            now=now,
+            reason=(
+                "Generated Trackbooth action used a removed internal inventory namespace. "
+                "Run trackbooth.catalog.sync to use stable public action refs."
+            ),
+        )
+        session.add(row)
+    retire_superseded_trackbooth_inventory_scopes(
         session=session,
         plugin_id=plugin_id,
         now=now,
     )
+
+
+def _remove_trackbooth_action_row(row: Action, *, now: datetime, reason: str) -> None:
+    config = dict(row.config_json or {})
+    if config.get("action_removed") is True and config.get("execution_mode") == "deferred.removed":
+        return
+    config.pop("connector", None)
+    config["execution_mode"] = "deferred.removed"
+    config["deferred_reason"] = reason
+    config["action_removed"] = True
+    config["trackbooth_removed_action"] = True
+    config["inventory_state"] = "retired"
+    config["inventory_retired_at"] = now.isoformat()
+    row.config_json = config
+    row.updated_at = now
 
 
 def _optional_clean_str(value: Any) -> str | None:
@@ -1920,6 +2280,5 @@ __all__ = [
     "TrackboothActionConnector",
     "TrackboothAssets",
     "retire_removed_trackbooth_actions",
-    "retire_superseded_trackbooth_inventory_contexts",
-    "trackbooth_generated_action_visible_for_project",
+    "retire_superseded_trackbooth_inventory_scopes",
 ]

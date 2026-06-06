@@ -997,7 +997,7 @@ class RunPlanRepository:
 
     def _reopen_step(
         self,
-        steps: list[RunPlanStep],
+        steps: builtins.list[RunPlanStep],
         *,
         step_id: str | None,
     ) -> RunPlanStep:

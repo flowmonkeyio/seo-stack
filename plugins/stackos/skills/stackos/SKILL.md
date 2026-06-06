@@ -54,11 +54,16 @@ run token.
    Use `integration.list` when setup or planning needs compact provider
    readiness and hidden-action counts; use
    `include_unavailable_integrations=true` only for deliberate setup/catalog
-   inspection.
+   inspection. Generated provider inventories expose stable public action refs;
+   do not call internal generated storage keys.
 8. When a step requires a provider call, use `action.describe`,
-   `action.validate`, and the step-granted `action.execute` path. The daemon
-   resolves credentials inside the action process and returns only sanitized
-   output.
+   `action.validate`, and the step-granted `action.execute` path. When several
+   provider calls share credential, provider scope, output policy, request
+   budget, or artifact namespace, use `executionContext.discover`,
+   `executionContext.resolve`, or `executionContext.create` and pass
+   `context_ref` instead of repeating credential/provider context on every
+   call. The daemon resolves credentials inside the action process and returns
+   only sanitized output.
 9. When the user asks for one explicit action and no workflow state is needed,
    use `toolbox.call` for `action.run` with `confirm_direct=true`,
    `intent_summary`, and an `idempotency_key` for non-read actions. Provider
@@ -201,11 +206,16 @@ run token.
   refresh heartbeat automatically, but an agent doing local work for several
   minutes should keep the controller run alive explicitly.
 - Execute one direct action: describe/validate when useful, call
-  `toolbox.call` for `readiness.check` when setup is uncertain, call
+  `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
+  `executionContext.*` ref when the provider scope will be reused, call
   `toolbox.call` for `action.run`, and read the raw redacted provider result.
 - Execute a workflow action: validate the manifest and input, let the daemon
   resolve credentials through `action.execute`, then store outputs as
-  resources, artifacts, learnings, or run step summaries.
+  resources, artifacts, learnings, or run step summaries. Keep endpoint payload
+  in `input_json`; keep provider scope such as acting-on-behalf options in
+  provider context or an execution context. For file-backed provider outputs,
+  use `executionContext.artifact.list` and `executionContext.artifact.read`
+  before rerunning production calls.
 - Use engineering evidence/resources: read existing `engineering-decision` and
   `engineering-evidence` records with `resource.query`. Create durable evidence
   only inside a run-plan step with explicit grants such as `resource.upsert`,

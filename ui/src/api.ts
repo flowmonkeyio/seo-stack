@@ -1381,12 +1381,12 @@ export interface components {
             plugin_slug: string;
             /** Project Id */
             project_id: number;
-            /** Provider Key */
-            provider_key: string | null;
             /** Provider Context Json */
             provider_context_json: {
                 [key: string]: unknown;
             } | null;
+            /** Provider Key */
+            provider_key: string | null;
             /** Request Json */
             request_json: {
                 [key: string]: unknown;
@@ -5355,7 +5355,9 @@ export interface operations {
     };
     delete_project_api_v1_projects__project_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                hard?: boolean;
+            };
             header?: never;
             path: {
                 project_id: number;

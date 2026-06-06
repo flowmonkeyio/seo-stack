@@ -135,6 +135,13 @@ external-provider actions are hidden from normal discovery. Setup and admin
 flows can pass `include_unavailable_integrations=true` to inspect the full
 action inventory deliberately.
 
+Generated provider inventories expose stable public refs only. Internal
+inventory storage keys and retired generated rows are not valid agent-facing
+action refs and must stay hidden from normal discovery. Search is
+intent-oriented: it matches titles, descriptions, tags, paths, operation ids,
+request/response fields, and common token variants before the agent calls
+`action.describe`.
+
 Use `integration.list` when the agent needs to answer "which integrations are
 available or missing for this project?" without treating every disconnected
 provider as a blocker. It returns provider rows, connected counts, visible
@@ -170,6 +177,13 @@ Action inputs are split into endpoint payload and provider execution context.
 `provider_context_json` is validated against the selected action's
 `provider_context_schema_json` and mapped by the connector to provider scope or
 auth context. It is never copied into endpoint payload fields.
+
+Reusable `context_ref` values can supply the credential, typed provider
+context, output policy, request budget, and artifact namespace for
+`action.validate`, `action.run`, and workflow-scoped `action.execute`. Risk
+classification is part of the action contract: read-like POST reporting actions
+may be classified as read when catalog metadata and semantics say they are
+safe, but idempotency alone never makes a mutating action read-safe.
 
 `action.execute` is not direct execution surface. It is callable only through a
 started run plan, exactly one active claimed step, an explicit

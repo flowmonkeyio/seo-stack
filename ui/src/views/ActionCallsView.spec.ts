@@ -58,6 +58,11 @@ describe('ActionCallsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Action Call #1'))
     expect(wrapper.text()).toContain('Execution Target')
     expect(wrapper.text()).toContain('Run Context')
+    expect(wrapper.text()).toContain('Execution Context')
+    expect(wrapper.text()).toContain('ctx_provider_analysis')
+    expect(wrapper.text()).toContain('Max parallel')
+    expect(wrapper.text()).toContain('File Output')
+    expect(wrapper.text()).toContain('/tmp/provider-output.json')
     expect(wrapper.text()).toContain('Outcome')
     expect(wrapper.text()).toContain('Timeline')
     expect(wrapper.text()).toContain('[redacted]')
@@ -145,7 +150,21 @@ function actionCall({
     request_json: { prompt: 'test', api_key: 'sk-secret' },
     provider_context_json: { acting_as_account: 'acct-managed', token: 'token-secret' },
     response_json: status === 'success' ? { asset_url: '/asset.webp', token: 'token-secret' } : null,
-    metadata_json: { credential_ref: 'cred_safe' },
+    metadata_json: {
+      credential_ref: 'cred_safe',
+      execution_context: {
+        context_ref: 'ctx_provider_analysis',
+        output_policy_json: { mode: 'file_if_large' },
+        request_budget_json: { max_parallel: 3 },
+        artifact_namespace: 'provider-analysis',
+      },
+      file_backed_output: {
+        absolute_path: '/tmp/provider-output.json',
+        bytes: 2048,
+        sha256: 'sha256-output',
+        artifact_id: 42,
+      },
+    },
     cost_cents: 2,
     duration_ms: 42,
     error,

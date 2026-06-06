@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "FlowFilliates Admin Agent API",
+    "title": "TrackBooth Admin Agent API",
     "version": "1.0.0"
   },
   "security": [

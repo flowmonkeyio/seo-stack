@@ -32,6 +32,24 @@ def test_project_crud_routes(api: TestClient, project_id: int) -> None:
     assert deleted.json()["data"]["is_active"] is False
 
 
+def test_project_hard_delete_route_removes_row(api: TestClient) -> None:
+    created = api.post(
+        "/api/v1/projects",
+        json={
+            "slug": "hard-delete-route",
+            "name": "Hard Delete Route",
+            "domain": "hard-delete-route.example",
+            "locale": "en-US",
+        },
+    )
+    assert created.status_code == 201
+    project_id = created.json()["data"]["id"]
+
+    deleted = api.delete(f"/api/v1/projects/{project_id}", params={"hard": "true"})
+    assert deleted.status_code == 200
+    assert api.get(f"/api/v1/projects/{project_id}").status_code == 404
+
+
 def test_list_projects_pagination_and_missing(api: TestClient) -> None:
     listing = api.get("/api/v1/projects")
     assert listing.status_code == 200

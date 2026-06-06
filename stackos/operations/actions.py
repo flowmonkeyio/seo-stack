@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -109,7 +110,7 @@ class ActionValidateInput(MCPInput):
                 "project_id": 1,
                 "action_ref": "utils.image.generate",
                 "input_json": {"prompt": "Product photo"},
-                "credential_ref": "cred_...",
+                "context_ref": "ctx_provider_analysis",
             }
         },
     )
@@ -119,6 +120,13 @@ class ActionValidateInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    context_ref: str | None = Field(
+        default=None,
+        description=(
+            "Optional reusable execution context ref. StackOS resolves credential and "
+            "provider_context_json defaults inside the daemon."
+        ),
+    )
     provider_context_json: dict[str, Any] | None = Field(
         default=None,
         description=(
@@ -138,7 +146,7 @@ class ActionExecuteInput(MCPInput):
                 "project_id": 1,
                 "action_ref": "utils.image.generate",
                 "input_json": {"prompt": "Product photo"},
-                "credential_ref": "cred_...",
+                "context_ref": "ctx_provider_analysis",
             }
         },
     )
@@ -148,6 +156,13 @@ class ActionExecuteInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    context_ref: str | None = Field(
+        default=None,
+        description=(
+            "Optional reusable execution context ref. StackOS resolves credential and "
+            "provider_context_json defaults inside the daemon."
+        ),
+    )
     provider_context_json: dict[str, Any] | None = Field(
         default=None,
         description="Optional provider execution context, separate from endpoint input_json.",
@@ -173,7 +188,7 @@ class ActionRunInput(MCPInput):
                     "chat_ref": "telegram-chat:123",
                     "text": "Done.",
                 },
-                "credential_ref": "cred_...",
+                "context_ref": "ctx_provider_messaging",
             }
         },
     )
@@ -183,6 +198,13 @@ class ActionRunInput(MCPInput):
     plugin_slug: str | None = None
     action_key: str | None = None
     input_json: dict[str, Any] | None = None
+    context_ref: str | None = Field(
+        default=None,
+        description=(
+            "Optional reusable execution context ref. StackOS resolves credential and "
+            "provider_context_json defaults inside the daemon."
+        ),
+    )
     provider_context_json: dict[str, Any] | None = Field(
         default=None,
         description="Optional provider execution context, separate from endpoint input_json.",
@@ -230,17 +252,21 @@ async def action_list(
         plugin_slug=inp.plugin_slug,
         project_id=project_id,
     )
-    matched = [
-        row
-        for row in rows
+    scored: list[tuple[ActionOut, float]] = []
+    for row in rows:
+        score = _action_query_score(row, inp.query)
+        if score <= 0:
+            continue
         if _matches_action_filters(
             row,
             provider_key=inp.provider_key,
             capability_key=inp.capability_key,
-            query=inp.query,
             executable=inp.executable,
-        )
-    ]
+        ):
+            scored.append((row, score))
+    if (inp.query or "").strip():
+        scored.sort(key=lambda item: (-item[1], item[0].plugin_slug, item[0].key))
+    matched = [row for row, _score in scored]
     filtered = [
         row
         for row in matched
@@ -271,32 +297,120 @@ def _matches_action_filters(
     *,
     provider_key: str | None,
     capability_key: str | None,
-    query: str | None,
     executable: bool | None,
 ) -> bool:
     if provider_key is not None and row.provider_key != provider_key:
         return False
     if capability_key is not None and row.capability_key != capability_key:
         return False
-    if executable is not None and row.availability.executable != executable:
-        return False
-    normalized_query = (query or "").strip().lower()
-    if normalized_query:
-        haystack = " ".join(
-            value
-            for value in (
-                row.action_ref,
-                row.name,
-                row.description,
-                row.operation,
-                row.provider_key or "",
-                row.capability_key or "",
-            )
-            if value
-        ).lower()
-        if normalized_query not in haystack:
-            return False
-    return True
+    return executable is None or row.availability.executable == executable
+
+
+_SEARCH_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _action_query_score(row: ActionOut, query: str | None) -> float:
+    normalized_query = _normalize_search_text(query or "")
+    if not normalized_query:
+        return 1.0
+    haystack = _action_search_haystack(row)
+    if normalized_query in haystack:
+        return 100.0 + len(normalized_query) / 1000
+    query_tokens = _search_tokens(normalized_query)
+    if not query_tokens:
+        return 1.0
+    haystack_tokens = set(_search_tokens(haystack))
+    if not haystack_tokens:
+        return 0.0
+    matched = [token for token in query_tokens if token in haystack_tokens]
+    if not matched:
+        return 0.0
+    ratio = len(matched) / len(query_tokens)
+    required_ratio = 1.0 if len(query_tokens) <= 2 else 0.5
+    if ratio < required_ratio:
+        return 0.0
+    return ratio * 10 + len(matched) / 100
+
+
+def _action_search_haystack(row: ActionOut) -> str:
+    values: list[str] = [
+        row.action_ref,
+        row.key,
+        row.name,
+        row.description,
+        row.operation,
+        row.provider_key or "",
+        row.capability_key or "",
+        row.risk_level,
+    ]
+    values.extend(_json_search_values(row.config_json))
+    values.extend(_json_search_values(row.input_schema_json))
+    values.extend(_json_search_values(row.output_schema_json))
+    return _normalize_search_text(" ".join(value for value in values if value))
+
+
+def _json_search_values(value: Any, *, limit: int = 600) -> list[str]:
+    out: list[str] = []
+
+    def visit(item: Any) -> None:
+        if len(out) >= limit:
+            return
+        if isinstance(item, dict):
+            for key, nested in item.items():
+                if isinstance(key, str):
+                    out.append(key)
+                visit(nested)
+                if len(out) >= limit:
+                    return
+        elif isinstance(item, list):
+            for nested in item:
+                visit(nested)
+                if len(out) >= limit:
+                    return
+        elif isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, int | float | bool):
+            out.append(str(item))
+
+    visit(value)
+    return out
+
+
+def _normalize_search_text(value: str) -> str:
+    return " ".join(_SEARCH_TOKEN_RE.findall(value.replace("_", " ").replace("-", " ").lower()))
+
+
+def _search_tokens(value: str) -> list[str]:
+    raw_tokens = _SEARCH_TOKEN_RE.findall(value)
+    tokens: list[str] = []
+    for token in raw_tokens:
+        variants = _search_token_variants(token)
+        for variant in variants:
+            if variant not in tokens:
+                tokens.append(variant)
+    return tokens
+
+
+def _search_token_variants(token: str) -> list[str]:
+    variants = [token]
+    if len(token) > 3 and token.endswith("s"):
+        variants.append(token[:-1])
+    synonyms = {
+        "metric": ["metrics"],
+        "metrics": ["metric"],
+        "partner": ["partners", "partnership", "partnerships"],
+        "partners": ["partner", "partnership", "partnerships"],
+        "partnership": ["partner", "partners", "relationships", "relationship"],
+        "partnerships": ["partner", "partners", "relationships", "relationship"],
+        "relation": ["relationship", "relationships"],
+        "relationship": ["relation", "relationships", "partnership", "partnerships"],
+        "relationships": ["relation", "relationship", "partnership", "partnerships"],
+        "report": ["reporting", "reports"],
+        "reports": ["report", "reporting"],
+        "reporting": ["report", "reports"],
+    }
+    variants.extend(synonyms.get(token, []))
+    return variants
 
 
 def _action_list_item(row: ActionOut, availability: ActionAvailabilityOut) -> ActionListItemOut:
@@ -349,6 +463,7 @@ async def action_validate(
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
         input_json=inp.input_json,
+        context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
     )
@@ -371,6 +486,7 @@ async def action_execute(
         step_id=step.step_id,
         action_ref=action_ref,
         input_json=inp.input_json,
+        context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         dry_run=inp.dry_run,
@@ -383,6 +499,7 @@ async def action_execute(
         plugin_slug=inp.plugin_slug,
         action_key=inp.action_key,
         input_json=inp.input_json,
+        context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
@@ -436,6 +553,7 @@ async def action_run(
             project_id=project_id,
             action_ref=described.manifest.action_ref,
             input_json=inp.input_json,
+            context_ref=inp.context_ref,
             provider_context_json=inp.provider_context_json,
             credential_ref=inp.credential_ref,
             intent_id=inp.intent_id,
@@ -457,6 +575,7 @@ async def action_run(
         project_id=project_id,
         action_ref=described.manifest.action_ref,
         input_json=inp.input_json,
+        context_ref=inp.context_ref,
         provider_context_json=inp.provider_context_json,
         credential_ref=inp.credential_ref,
         run_id=ctx.run_id,
@@ -499,6 +618,7 @@ def _derive_direct_idempotency_key(
     project_id: int,
     action_ref: str,
     input_json: dict[str, Any] | None,
+    context_ref: str | None,
     provider_context_json: dict[str, Any] | None,
     credential_ref: str | None,
     intent_id: str | None,
@@ -509,6 +629,7 @@ def _derive_direct_idempotency_key(
         "scope": "direct-action",
         "project_id": project_id,
         "action_ref": action_ref,
+        "context_ref": context_ref,
         "credential_ref": credential_ref,
         "input_json": input_json or {},
         "provider_context_json": provider_context_json or {},
@@ -528,6 +649,7 @@ def _derive_workflow_idempotency_key(
     step_id: str,
     action_ref: str | None,
     input_json: dict[str, Any] | None,
+    context_ref: str | None,
     provider_context_json: dict[str, Any] | None,
     credential_ref: str | None,
     dry_run: bool,
@@ -540,6 +662,7 @@ def _derive_workflow_idempotency_key(
         "run_plan_step_id": run_plan_step_id,
         "step_id": step_id,
         "action_ref": action_ref,
+        "context_ref": context_ref,
         "credential_ref": credential_ref,
         "input_json": input_json or {},
         "provider_context_json": provider_context_json or {},
@@ -582,6 +705,18 @@ def _compact_action_output(
     operation: str,
     output_json: dict[str, Any],
 ) -> dict[str, Any]:
+    if output_json.get("output_mode") == "file" and isinstance(output_json.get("file"), dict):
+        file = output_json["file"]
+        return {
+            "output_mode": "file",
+            "absolute_path": file.get("absolute_path"),
+            "uri": file.get("uri"),
+            "artifact_id": file.get("artifact_id"),
+            "semantic_name": file.get("semantic_name"),
+            "bytes": file.get("bytes"),
+            "sha256": file.get("sha256"),
+            "read": file.get("read"),
+        }
     if provider_key == "telegram-bot":
         return _compact_telegram_output(operation, output_json)
     compact: dict[str, Any] = {}
@@ -847,7 +982,8 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass either action_ref or plugin_slug plus action_key.",
                 "Pass input_json with the exact payload the action would receive.",
-                "Pass credential_ref only when the action manifest allows credentials.",
+                "Pass context_ref when reusable execution defaults should supply credential "
+                "or provider context; pass credential_ref only for a deliberate direct override.",
             ),
             returns=(
                 "valid=true when schema, credential policy, and connector validation pass.",
@@ -860,6 +996,7 @@ def operation_specs() -> list[OperationSpec]:
                         "project_id": 1,
                         "action_ref": "utils.sitemap.fetch",
                         "input_json": {"urls": ["https://example.com/sitemap.xml"]},
+                        "context_ref": "ctx_provider_analysis",
                     },
                 ),
             ),
@@ -892,7 +1029,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass project_id and run_token from runPlan.start.",
                 "Exactly one run-plan step must be running.",
                 "The requested action_ref must match the step and mcp_tool_grants refs.",
-                "Pass only credential_ref; never pass secret values.",
+                "Pass context_ref when the active task/run has a reusable execution context; "
+                "pass only opaque credential_ref values for deliberate low-level overrides.",
             ),
             returns=(
                 "A WriteEnvelope containing the public ActionExecutionOut.",
@@ -937,7 +1075,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=(
                 "The current workspace must resolve to a project, or pass project_id.",
-                "Pass only credential_ref; never pass secret values.",
+                "Pass context_ref when the project/task has reusable execution defaults; "
+                "pass only opaque credential_ref values for deliberate low-level overrides.",
                 "For non-read actions, pass confirm_direct=true and intent_summary; "
                 "pass intent_id or idempotency_key when stable retries matter. "
                 "If omitted, StackOS derives a request-scoped idempotency key.",

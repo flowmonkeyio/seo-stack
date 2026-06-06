@@ -28,3 +28,34 @@ def test_telegram_file_download_compact_output_keeps_artifact_handoff_fields() -
         "source_message_ref": "telegram-message:12345:21",
         "provider_ok": True,
     }
+
+
+def test_file_backed_action_compact_output_keeps_artifact_pointer() -> None:
+    compact = _compact_action_output(
+        provider_key="provider",
+        operation="operation.execute",
+        output_json={
+            "output_mode": "file",
+            "file": {
+                "absolute_path": "/tmp/generated/action-output.json",
+                "uri": "/generated-assets/action-outputs/project-1/action-output.json",
+                "artifact_id": 42,
+                "semantic_name": "action-output",
+                "bytes": 1200,
+                "sha256": "abc",
+                "read": {"operation": "executionContext.artifact.read"},
+                "top_level_shape": {"type": "object"},
+            },
+        },
+    )
+
+    assert compact == {
+        "output_mode": "file",
+        "absolute_path": "/tmp/generated/action-output.json",
+        "uri": "/generated-assets/action-outputs/project-1/action-output.json",
+        "artifact_id": 42,
+        "semantic_name": "action-output",
+        "bytes": 1200,
+        "sha256": "abc",
+        "read": {"operation": "executionContext.artifact.read"},
+    }
