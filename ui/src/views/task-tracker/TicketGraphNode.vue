@@ -83,16 +83,18 @@ const statusClass = computed(() => `ticket-graph-node--status-${props.data.statu
   padding: 9px 10px 9px 14px;
 }
 
-/* 2px status accent strip flush with the left edge. */
+/*
+ * Status accent strip. Painted as a full-size underlay whose own radius
+ * matches the card's inner curve, so the strip is clipped along the
+ * rounded corners instead of poking past them (and never overlaps the
+ * border, which selection/blocked states recolor).
+ */
 .ticket-graph-node::before {
   content: '';
   position: absolute;
-  top: -1px;
-  bottom: -1px;
-  left: -1px;
-  width: 2px;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  background: var(--ticket-node-status);
+  inset: 0;
+  border-radius: calc(var(--radius-md) - 1px) 0 0 calc(var(--radius-md) - 1px);
+  background: linear-gradient(to right, var(--ticket-node-status) 3px, transparent 3px);
 }
 
 .ticket-graph-node:hover {
