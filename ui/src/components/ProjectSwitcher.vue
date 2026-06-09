@@ -64,16 +64,16 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
 <template>
   <div
     ref="rootEl"
-    class="relative"
+    class="relative min-w-0"
   >
     <button
       type="button"
-      class="flex w-full items-center justify-between gap-2 rounded-sm border border-default bg-bg-surface px-3 py-2 text-sm shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      class="flex w-full min-w-0 items-center justify-between gap-2 rounded-sm border border-default bg-bg-surface px-3 py-2 text-sm shadow-xs hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       :aria-expanded="open"
       aria-haspopup="listbox"
       @click="toggle"
     >
-      <span class="truncate text-left">
+      <span class="min-w-0 flex-1 truncate text-left">
         <span
           v-if="selectedProject"
           class="font-medium text-fg-strong"
@@ -87,13 +87,13 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
       </span>
       <span
         aria-hidden="true"
-        class="text-xs text-fg-muted"
+        class="shrink-0 text-xs text-fg-muted"
       >▾</span>
     </button>
     <div
       v-if="open"
       role="listbox"
-      class="absolute z-dropdown mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-default bg-bg-surface py-1 shadow-md"
+      class="absolute z-dropdown mt-1 max-h-72 w-full overflow-x-hidden overflow-y-auto rounded-md border border-default bg-bg-surface py-1 shadow-md"
     >
       <button
         v-for="p in sortedItems"
@@ -101,11 +101,11 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
         role="option"
         :aria-selected="p.id === selectedProject?.id"
         type="button"
-        class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        class="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden px-3 py-2 text-left text-sm hover:bg-bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         :class="p.id === selectedProject?.id ? 'bg-accent-subtle' : ''"
         @click="pick(p.id)"
       >
-        <span>
+        <span class="min-w-0 flex-1">
           <span class="block truncate font-medium text-fg-strong">
             {{ p.name }}
           </span>
@@ -115,7 +115,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
         </span>
         <span
           v-if="!p.is_active"
-          class="rounded-xs bg-neutral-subtle px-1.5 py-0.5 text-[10px] font-medium text-neutral-fg"
+          class="shrink-0 rounded-xs bg-neutral-subtle px-1.5 py-0.5 text-[10px] font-medium text-neutral-fg"
         >
           archived
         </span>

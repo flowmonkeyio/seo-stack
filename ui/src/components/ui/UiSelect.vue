@@ -308,7 +308,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       </span>
       <span
         v-if="hasRightContent(selectedOption)"
-        class="pointer-events-none ml-2 flex shrink-0 items-center gap-1.5 pr-3"
+        class="pointer-events-none ml-2 flex min-w-0 max-w-[50%] shrink-0 items-center gap-1.5 overflow-hidden pr-3"
       >
         <span
           v-if="selectedOption?.rightLabel"
@@ -345,7 +345,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 
     <div
       v-if="open"
-      class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-y-auto rounded-md border border-default bg-bg-surface p-1 shadow-lg"
+      class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-x-hidden overflow-y-auto rounded-md border border-default bg-bg-surface p-1 shadow-lg"
     >
       <div
         v-if="searchable"
@@ -366,6 +366,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       <div
         :id="listboxId"
         role="listbox"
+        class="min-w-0"
         :aria-labelledby="controlId"
       >
         <template
@@ -374,7 +375,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
         >
           <div
             v-if="group"
-            class="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
+            class="truncate px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
           >
             {{ group }}
           </div>
@@ -387,7 +388,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             :aria-selected="String(option.value) === String(modelValue ?? '')"
             :disabled="option.disabled"
             :class="[
-              'flex min-h-8 w-full items-center justify-between gap-2 rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
+              'flex min-h-8 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
               String(option.value) === String(modelValue ?? '')
                 ? 'bg-accent text-fg-on-accent'
                 : normalized[activeIndex]?.value === option.value
@@ -398,8 +399,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             @mouseenter="activeIndex = visibleIndexFor(option)"
             @click="selectOption(option)"
           >
-            <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
-            <span class="ml-auto flex shrink-0 items-center gap-1.5">
+            <span class="block min-w-0 flex-1 truncate">{{ option.label }}</span>
+            <span class="ml-auto flex min-w-0 max-w-[50%] shrink-0 items-center gap-1.5 overflow-hidden">
               <span
                 v-if="option.rightLabel"
                 :class="['ui-select__right-chip', rightToneClass(option)]"
@@ -456,19 +457,26 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
   max-width: 8.5rem;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ui-select__right-meta {
+  display: inline-block;
+  min-width: 0;
+  max-width: 8.5rem;
+  overflow: hidden;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 </style>

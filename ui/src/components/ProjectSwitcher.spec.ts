@@ -80,6 +80,37 @@ describe('ProjectSwitcher', () => {
     expect(options[1].text()).toContain('Beta')
   })
 
+  it('clips long project rows instead of allowing horizontal menu overflow', async () => {
+    const projects = useProjectsStore()
+    projects.items = [
+      {
+        ...sample[0],
+        name: 'Project with an extremely long operator-facing name that should truncate',
+        slug: 'project-with-an-extremely-long-slug-that-should-truncate',
+        domain: 'very-long-project-domain-name-that-should-not-stretch-the-dropdown.local',
+      },
+    ] as never
+    projects.activeProjectId = 1
+    const router = makeRouter()
+    const w = mount(ProjectSwitcher, {
+      global: { plugins: [router] },
+    })
+
+    await w.find('button').trigger('click')
+
+    const listbox = w.get('[role="listbox"]')
+    expect(listbox.classes()).toContain('overflow-x-hidden')
+
+    const option = w.get('[role="option"]')
+    expect(option.classes()).toContain('min-w-0')
+    expect(option.classes()).toContain('overflow-hidden')
+
+    const textColumn = option.get('span')
+    expect(textColumn.classes()).toContain('min-w-0')
+    expect(textColumn.classes()).toContain('flex-1')
+    expect(textColumn.findAll('span').every((row) => row.classes().includes('truncate'))).toBe(true)
+  })
+
   it('uses the routed project as selected without changing local fallback selection', async () => {
     const projects = useProjectsStore()
     projects.items = sample as never

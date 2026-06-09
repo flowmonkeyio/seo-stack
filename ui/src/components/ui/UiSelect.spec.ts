@@ -64,6 +64,39 @@ describe('UiSelect', () => {
     wrapper.unmount()
   })
 
+  it('clips long option content instead of allowing horizontal menu overflow', async () => {
+    const wrapper = mount(UiSelect, {
+      props: {
+        modelValue: 'very-long',
+        options: [
+          {
+            value: 'very-long',
+            label: 'Very long service label that must remain inside the select dropdown width',
+            group: 'Very long group name that must not stretch the dropdown panel',
+            rightLabel: 'connected-with-a-very-long-state',
+            rightMeta: 'very-long-provider-ref.local.example',
+          },
+        ],
+      },
+      attachTo: document.body,
+    })
+
+    await wrapper.get('[role="combobox"]').trigger('click')
+
+    const listbox = wrapper.get('[role="listbox"]')
+    expect(listbox.classes()).toContain('min-w-0')
+    expect((listbox.element.parentElement as HTMLElement).className).toContain('overflow-x-hidden')
+
+    const group = wrapper.get('[role="listbox"] > div')
+    expect(group.classes()).toContain('truncate')
+
+    const option = wrapper.get('[role="option"]')
+    expect(option.classes()).toContain('overflow-hidden')
+    expect(option.find('span').classes()).toContain('truncate')
+    expect(option.get('.ui-select__right-meta').classes()).toContain('ui-select__right-meta')
+    wrapper.unmount()
+  })
+
   it('supports keyboard open, movement, selection, and Escape close', async () => {
     const wrapper = mount(UiSelect, {
       props: {
