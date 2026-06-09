@@ -85,10 +85,10 @@ const placementClass = computed(() => ({
       :set-open="setOpen"
     />
     <transition
-      enter-active-class="transition-opacity duration-fast ease-enter"
-      enter-from-class="opacity-0"
-      leave-active-class="transition-opacity duration-fast ease-exit"
-      leave-to-class="opacity-0"
+      enter-active-class="transition duration-fast ease-enter"
+      enter-from-class="opacity-0 scale-[0.98]"
+      leave-active-class="transition duration-fast ease-exit"
+      leave-to-class="opacity-0 scale-[0.98]"
     >
       <div
         v-if="open"
@@ -98,7 +98,7 @@ const placementClass = computed(() => ({
         :aria-label="ariaLabel"
         @vue:mounted="onPanelMounted"
         :class="[
-          'ui-popover__panel absolute z-popover rounded-md border border-default bg-bg-surface shadow-md focus:outline-none',
+          'ui-popover__panel absolute z-popover rounded-lg border border-default bg-bg-surface shadow-md p-1 focus:outline-none',
           placementClass,
         ]"
         :style="{ width: typeof width === 'number' ? width + 'px' : width }"

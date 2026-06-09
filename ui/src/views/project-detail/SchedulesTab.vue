@@ -7,7 +7,7 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBadge, UiButton, UiCallout, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiEmptyState, UiMetricCard, UiSectionHeader } from '@/components/ui'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
 
@@ -45,7 +45,7 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="space-y-6">
+  <section class="space-y-5">
     <UiSectionHeader
       title="Scheduled jobs"
       description="Read-only schedule inventory for recurring agent-owned maintenance."
@@ -70,53 +70,28 @@ onMounted(load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-3">
-      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-          Schedules
-        </p>
-        <p class="mt-2 text-sm font-semibold text-fg-strong">
-          {{ items.length }}
-        </p>
-        <p class="mt-1 text-xs text-fg-muted">
-          Recurring jobs in the project.
-        </p>
-      </div>
-      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-          Enabled
-        </p>
-        <p class="mt-2 text-sm font-semibold text-fg-strong">
-          {{ enabledCount }}
-        </p>
-        <p class="mt-1 text-xs text-fg-muted">
-          Jobs currently allowed to run.
-        </p>
-      </div>
-      <div class="rounded-md border border-default bg-bg-surface p-3 shadow-xs">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
-          Disabled
-        </p>
-        <p class="mt-2 text-sm font-semibold text-fg-strong">
-          {{ items.length - enabledCount }}
-        </p>
-        <p class="mt-1 text-xs text-fg-muted">
-          Paused jobs retained for audit.
-        </p>
-      </div>
+    <div class="grid gap-4 md:grid-cols-3">
+      <UiMetricCard
+        label="Schedules"
+        :value="items.length"
+      />
+      <UiMetricCard
+        label="Enabled"
+        :value="enabledCount"
+      />
+      <UiMetricCard
+        label="Disabled"
+        :value="items.length - enabledCount"
+      />
     </div>
 
-    <div
+    <UiEmptyState
       v-if="!loading && items.length === 0"
-      class="rounded-md border border-dashed border-subtle bg-bg-surface px-4 py-8 text-center"
-    >
-      <p class="text-sm font-semibold text-fg-strong">
-        No scheduled jobs
-      </p>
-      <p class="mt-1 text-sm text-fg-muted">
-        Agent-owned schedules will appear here with next run, last run, and status.
-      </p>
-    </div>
+      title="No scheduled jobs"
+      description="Agent-owned schedules will appear here with next run, last run, and status."
+      icon="calendar"
+      class="rounded-lg border border-dashed border-default bg-bg-surface px-4 py-8"
+    />
 
     <DataTable
       v-else

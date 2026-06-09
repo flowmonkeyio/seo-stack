@@ -52,12 +52,12 @@ const fillBg = computed(() => ({
     >
       <div
         v-if="!indeterminate"
-        :class="['absolute inset-y-0 left-0 rounded-full transition-all duration-base ease-standard', fillBg]"
+        :class="['absolute inset-y-0 left-0 rounded-full transition-[width] duration-slow ease-standard', fillBg]"
         :style="{ width: percent + '%' }"
       />
       <div
         v-else
-        :class="['absolute inset-y-0 w-1/3 rounded-full ui-progressbar__indeterminate', fillBg]"
+        :class="['absolute inset-y-0 left-0 w-1/3 rounded-full ui-progressbar__indeterminate', fillBg]"
       />
     </div>
     <span
@@ -73,8 +73,10 @@ const fillBg = computed(() => ({
 .ui-progressbar__indeterminate {
   animation: ui-progress-slide 1.4s var(--easing-standard) infinite;
 }
+/* Transform-only sweep — the bar is 1/3 of the track, so translating by
+   -100%..300% of its own width spans the full track edge-to-edge. */
 @keyframes ui-progress-slide {
-  0%   { left: -33%; }
-  100% { left: 100%; }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 </style>

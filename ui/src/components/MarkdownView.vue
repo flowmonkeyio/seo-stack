@@ -113,15 +113,15 @@ const rendered = computed<string>(() => {
   padding: 0;
 }
 .cs-markdown :deep(a) {
-  color: #1d4ed8;
+  color: var(--color-fg-link);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .cs-markdown :deep(blockquote) {
-  border-left: 3px solid #cbd5e1;
+  border-left: 3px solid var(--color-border-strong);
   padding-left: 0.75rem;
   margin: 0.5rem 0;
-  color: #475569;
+  color: var(--color-fg-muted);
 }
 .cs-markdown :deep(.cs-citation) {
   margin-left: 0.1rem;

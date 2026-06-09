@@ -25,10 +25,10 @@ defineEmits<{
     role="region"
     :aria-label="ariaLabel ?? 'Bulk actions'"
     aria-live="polite"
-    class="ui-bulk-action-bar flex items-center justify-between gap-3 rounded-md border border-accent bg-accent-subtle px-3 py-2"
+    class="ui-bulk-action-bar flex items-center justify-between gap-3 rounded-lg border border-default bg-bg-surface px-3 py-2 shadow-lg"
   >
     <div class="flex items-center gap-3 min-w-0">
-      <span class="text-sm font-medium text-accent-fg">
+      <span class="text-sm font-medium text-fg-strong">
         {{ count }} selected<span v-if="total"> of {{ total }}</span>
       </span>
       <button
@@ -41,7 +41,7 @@ defineEmits<{
       </button>
       <button
         type="button"
-        class="focus-ring text-xs text-fg-muted hover:text-fg-default rounded-xs"
+        class="focus-ring rounded-xs text-xs text-fg-muted transition-colors duration-fast hover:text-fg-default"
         @click="$emit('clear')"
       >
         Clear

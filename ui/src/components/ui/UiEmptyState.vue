@@ -3,14 +3,20 @@
   ideally one primary action.
 -->
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import { hasIcon } from './icons';
+import UiIcon from './UiIcon.vue';
+
+const props = defineProps<{
   title: string;
   description?: string;
-  /** Lucide icon name — caller is responsible for rendering it via slot[icon]. */
+  /** Icon registry name — rendered in the ring; slot[icon] overrides. */
   icon?: string;
   /** Compact (inline) variant — for empty table rows, inside cards. */
   size?: 'sm' | 'md' | 'lg';
 }>();
+
+const fallbackIcon = computed(() => (hasIcon(props.icon) ? props.icon : 'info'));
 </script>
 
 <template>
@@ -23,32 +29,25 @@ defineProps<{
     <div
       v-if="$slots.icon || icon"
       :class="[
-        'ui-empty-state__icon flex items-center justify-center rounded-full bg-bg-sunken text-fg-muted',
-        size === 'sm' ? 'w-9 h-9' : 'w-12 h-12',
+        'ui-empty-state__icon flex items-center justify-center rounded-full bg-bg-sunken text-fg-subtle',
+        size === 'sm' ? 'h-9 w-9 text-lg' : size === 'lg' ? 'h-12 w-12 text-2xl' : 'h-10 w-10 text-xl',
       ]"
     >
       <slot name="icon">
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-        ><circle
-          cx="12"
-          cy="12"
-          r="9"
-        /><path d="M12 8v4M12 16h.01" /></svg>
+        <UiIcon
+          :name="fallbackIcon"
+          :class="size === 'sm' ? 'h-4 w-4' : size === 'lg' ? 'h-6 w-6' : 'h-5 w-5'"
+          aria-hidden="true"
+        />
       </slot>
     </div>
     <div class="flex flex-col gap-1">
-      <p :class="[size === 'lg' ? 't-h1' : 't-h2', 'text-fg-default']">
+      <p class="t-h3 text-fg-strong">
         {{ title }}
       </p>
       <p
         v-if="description"
-        class="text-sm text-fg-muted text-balance"
+        class="text-sm text-fg-muted max-w-sm text-balance"
       >
         {{ description }}
       </p>

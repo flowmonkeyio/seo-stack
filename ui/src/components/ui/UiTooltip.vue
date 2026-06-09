@@ -58,7 +58,7 @@ const isOpen = computed(() => props.open ?? visible.value);
       v-if="isOpen && content"
       role="tooltip"
       :class="[
-        'ui-tooltip__bubble absolute z-tooltip pointer-events-none whitespace-nowrap rounded-xs bg-bg-inverse text-fg-inverse text-2xs font-medium px-2 py-1 shadow-md',
+        'ui-tooltip__bubble absolute z-tooltip pointer-events-none whitespace-nowrap rounded-sm bg-bg-inverse text-fg-inverse px-2 py-1 text-2xs font-medium shadow-md',
         placementClass,
       ]"
     >

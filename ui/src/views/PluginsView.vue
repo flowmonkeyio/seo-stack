@@ -4,7 +4,8 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiButton, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiCard, UiIcon, UiPageShell, UiSectionHeader, UiSkeleton } from '@/components/ui'
+import { pluginSectionIcon } from '@/lib/stackos/nav'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 
 const route = useRoute()
@@ -38,65 +39,94 @@ onMounted(load)
       {{ error }}
     </UiCallout>
 
-    <p
+    <div
       v-if="loading && plugins.length === 0"
-      class="rounded-md border border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+      class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+      aria-label="Loading plugins"
     >
-      Loading plugins.
-    </p>
+      <UiCard
+        v-for="n in 6"
+        :key="n"
+      >
+        <UiSkeleton
+          shape="line"
+          :lines="3"
+        />
+      </UiCard>
+    </div>
 
     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <UiPanel
+      <UiCard
         v-for="plugin in plugins"
         :key="plugin.slug"
-        class="p-4"
+        section
+        :aria-label="plugin.name"
+        class="flex flex-col"
+        :padded="false"
       >
-        <UiSectionHeader
-          :title="plugin.name"
-          :description="plugin.description"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge tone="accent">{{ plugin.slug }}</UiBadge>
+        <div class="flex flex-1 flex-col p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex min-w-0 items-center gap-3">
+              <span
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent-fg"
+                aria-hidden="true"
+              >
+                <UiIcon
+                  :name="pluginSectionIcon(plugin.slug)"
+                  class="h-[18px] w-[18px]"
+                />
+              </span>
+              <div class="min-w-0">
+                <h3 class="truncate text-sm font-semibold text-fg-strong">
+                  {{ plugin.name }}
+                </h3>
+                <p class="truncate font-mono text-2xs text-fg-subtle">
+                  {{ plugin.slug }}
+                </p>
+              </div>
+            </div>
             <UiBadge
               :tone="plugin.enabled_for_project === false ? 'neutral' : 'success'"
               :dot="plugin.enabled_for_project !== false"
             >
-              {{ plugin.enabled_for_project === false ? 'available' : 'enabled' }}
+              {{ plugin.enabled_for_project === false ? 'Available' : 'Enabled' }}
             </UiBadge>
-          </template>
-        </UiSectionHeader>
-
-        <dl class="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt class="text-xs text-fg-muted">Version</dt>
-            <dd>{{ plugin.version }}</dd>
           </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Source</dt>
-            <dd>{{ plugin.source }}</dd>
+          <p class="mt-3 line-clamp-3 text-sm text-fg-muted">
+            {{ plugin.description }}
+          </p>
+        </div>
+        <dl class="flex items-center gap-4 border-t border-subtle px-4 py-2.5 text-xs text-fg-muted">
+          <div class="flex items-baseline gap-1.5">
+            <dd class="font-medium tabular-nums text-fg-default">{{ catalogStore.capabilitiesFor(plugin.slug).length }}</dd>
+            <dt>capabilities</dt>
           </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Capabilities</dt>
-            <dd>{{ catalogStore.capabilitiesFor(plugin.slug).length }}</dd>
+          <div class="flex items-baseline gap-1.5">
+            <dd class="font-medium tabular-nums text-fg-default">{{ catalogStore.actionsFor(plugin.slug).length }}</dd>
+            <dt>actions</dt>
           </div>
-          <div>
-            <dt class="text-xs text-fg-muted">Actions</dt>
-            <dd>{{ catalogStore.actionsFor(plugin.slug).length }}</dd>
+          <div class="ml-auto flex items-baseline gap-1.5">
+            <dt class="sr-only">Version</dt>
+            <dd class="font-mono text-2xs text-fg-subtle">v{{ plugin.version }} · {{ plugin.source }}</dd>
           </div>
         </dl>
-      </UiPanel>
+      </UiCard>
     </div>
 
-    <UiPanel class="p-4">
+    <UiCard section>
       <UiSectionHeader
-        title="Action Contracts"
+        title="Action contracts"
         description="Full provider actions are inspected in Operations so the plugin catalog stays scan-friendly."
         as="h3"
       >
         <template #actions>
           <UiBadge>{{ catalogStore.actions.length }}</UiBadge>
-          <UiButton size="sm" :href="operationsHref">Open Operations</UiButton>
+          <UiButton
+            size="sm"
+            :href="operationsHref"
+          >
+            Open Operations
+          </UiButton>
         </template>
       </UiSectionHeader>
       <p class="text-sm text-fg-muted">
@@ -104,6 +134,6 @@ onMounted(load)
         {{ plugins.length }} installed plugins. Use Operations for schema detail, credential
         readiness, and entrypoint visibility.
       </p>
-    </UiPanel>
+    </UiCard>
   </UiPageShell>
 </template>

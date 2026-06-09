@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
+import UiIcon from './UiIcon.vue';
 
 export interface UiCalloutProps {
   tone?: 'info' | 'success' | 'warning' | 'danger' | 'neutral';
@@ -22,13 +23,15 @@ const props = withDefaults(defineProps<UiCalloutProps>(), {
 
 defineEmits<{ (e: 'dismiss'): void }>();
 
-const toneStyles = computed(() => ({
-  info:    { bg: 'bg-info-subtle',    border: 'border-info-border',    fg: 'text-info-fg',    icon: 'M13 16h-1v-4h-1m1-4h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z' },
-  success: { bg: 'bg-success-subtle', border: 'border-success-border', fg: 'text-success-fg', icon: 'm5 12 5 5 9-12' },
-  warning: { bg: 'bg-warning-subtle', border: 'border-warning-border', fg: 'text-warning-fg', icon: 'M12 2 2 22h20L12 2zM12 9v4m0 4h.01' },
-  danger:  { bg: 'bg-danger-subtle',  border: 'border-danger-border',  fg: 'text-danger-fg',  icon: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM15 9l-6 6m0-6 6 6' },
-  neutral: { bg: 'bg-neutral-subtle', border: 'border-neutral-border', fg: 'text-neutral-fg', icon: 'M12 16v-4m0-4h.01M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0Z' },
-}[props.tone]));
+const CALLOUT_TONE_STYLES = {
+  info:    { bg: 'bg-info-subtle',    border: 'border-info-border',    fg: 'text-info-fg',    icon: 'info' },
+  success: { bg: 'bg-success-subtle', border: 'border-success-border', fg: 'text-success-fg', icon: 'check-circle' },
+  warning: { bg: 'bg-warning-subtle', border: 'border-warning-border', fg: 'text-warning-fg', icon: 'alert-triangle' },
+  danger:  { bg: 'bg-danger-subtle',  border: 'border-danger-border',  fg: 'text-danger-fg',  icon: 'x-circle' },
+  neutral: { bg: 'bg-neutral-subtle', border: 'border-neutral-border', fg: 'text-neutral-fg', icon: 'info' },
+} as const;
+
+const toneStyles = computed(() => CALLOUT_TONE_STYLES[props.tone]);
 </script>
 
 <template>
@@ -36,34 +39,25 @@ const toneStyles = computed(() => ({
     role="status"
     :aria-live="tone === 'danger' ? 'assertive' : 'polite'"
     :class="[
-      'ui-callout flex gap-3 rounded-md border',
+      'ui-callout flex gap-2.5 rounded-lg border',
       toneStyles.bg,
       toneStyles.border,
       density === 'compact' ? 'p-2.5' : 'p-3',
     ]"
   >
-    <svg
-      :class="['shrink-0 mt-0.5', toneStyles.fg]"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+    <UiIcon
+      :name="toneStyles.icon"
+      :class="['mt-0.5 h-4 w-4 shrink-0', toneStyles.fg]"
       aria-hidden="true"
-    >
-      <path :d="toneStyles.icon" />
-    </svg>
+    />
     <div class="ui-callout__body flex-1 min-w-0">
       <p
         v-if="title"
-        :class="['t-h3', toneStyles.fg, 'mb-0.5']"
+        :class="['text-sm font-medium', toneStyles.fg, 'mb-0.5']"
       >
         {{ title }}
       </p>
-      <div :class="['text-sm', toneStyles.fg, 'opacity-90 [&_a]:underline [&_a]:underline-offset-2']">
+      <div :class="['text-sm', toneStyles.fg, '[&_a]:underline [&_a]:underline-offset-2']">
         <slot />
       </div>
       <div
@@ -76,18 +70,18 @@ const toneStyles = computed(() => ({
     <button
       v-if="dismissible"
       type="button"
-      :class="['ui-callout__dismiss focus-ring shrink-0 rounded-xs p-0.5', toneStyles.fg, 'opacity-60 hover:opacity-100']"
+      :class="[
+        'ui-callout__dismiss focus-ring -m-1 shrink-0 self-start rounded-sm p-1 opacity-60 transition-opacity duration-fast hover:opacity-100',
+        toneStyles.fg,
+      ]"
       aria-label="Dismiss"
       @click="$emit('dismiss')"
     >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-      ><path d="M18 6 6 18M6 6l12 12" /></svg>
+      <UiIcon
+        name="close"
+        class="h-3.5 w-3.5"
+        aria-hidden="true"
+      />
     </button>
   </div>
 </template>

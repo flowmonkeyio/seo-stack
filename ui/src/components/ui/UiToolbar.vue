@@ -22,8 +22,8 @@ defineProps<{
     :aria-label="ariaLabel"
     :class="[
       'ui-toolbar flex flex-wrap items-center',
-      density === 'comfortable' ? 'gap-3 px-4 py-2.5' : 'gap-2 px-3 py-2',
-      variant === 'sunken' ? 'bg-bg-surface-alt border-y border-subtle' : 'bg-bg-surface border border-default rounded-md',
+      density === 'comfortable' ? 'gap-3 px-4 py-3' : 'gap-2 px-3 py-2.5',
+      variant === 'sunken' ? 'bg-bg-surface-alt border-y border-subtle' : 'rounded-lg border border-default bg-bg-surface shadow-xs',
       sticky && 'sticky top-0 z-sticky',
     ]"
   >

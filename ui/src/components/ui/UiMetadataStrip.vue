@@ -30,7 +30,7 @@ function displayValue(value: UiMetadataStripItem['value']): string | number {
 
 <template>
   <dl
-    class="ui-metadata-strip flex flex-wrap gap-x-4 gap-y-2 rounded-md border border-subtle bg-bg-surface-alt px-3 py-2"
+    class="ui-metadata-strip flex flex-wrap gap-x-4 gap-y-2 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2"
     :aria-label="props.ariaLabel"
   >
     <div
@@ -39,12 +39,12 @@ function displayValue(value: UiMetadataStripItem['value']): string | number {
       class="inline-flex min-w-0 max-w-full items-baseline gap-1.5"
       :title="item.title"
     >
-      <dt class="shrink-0 text-2xs font-semibold uppercase text-fg-subtle">
+      <dt class="shrink-0 text-2xs font-medium text-fg-subtle">
         {{ item.label }}
       </dt>
       <dd
         :class="[
-          'min-w-0 truncate text-sm font-medium text-fg-default',
+          'min-w-0 truncate text-sm text-fg-default',
           item.mono && 'font-mono text-xs',
         ]"
       >

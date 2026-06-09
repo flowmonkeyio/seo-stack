@@ -10,6 +10,8 @@
 <script setup lang="ts">
 import { computed, provide, useId } from 'vue';
 
+import UiIcon from './UiIcon.vue';
+
 export interface UiFormFieldProps {
   label?: string;
   help?: string;
@@ -84,14 +86,26 @@ provide('uiFormField', {
       </label>
       <span
         v-if="dirty"
-        class="text-2xs uppercase text-warning-fg"
+        class="inline-flex items-center gap-1 text-2xs font-medium uppercase tracking-wide text-warning-fg"
         aria-label="Unsaved changes"
-      >• unsaved</span>
+      >
+        <span
+          class="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
+          aria-hidden="true"
+        />
+        unsaved
+      </span>
       <span
         v-else-if="saved"
-        class="text-2xs uppercase text-success-fg"
+        class="inline-flex items-center gap-1 text-2xs font-medium uppercase tracking-wide text-success-fg"
         aria-live="polite"
-      >✓ saved</span>
+      >
+        <UiIcon
+          name="check"
+          class="ui-form-field__status-icon"
+        />
+        saved
+      </span>
     </div>
     <div class="ui-form-field__body flex flex-col gap-1">
       <slot
@@ -113,21 +127,25 @@ provide('uiFormField', {
         class="text-xs text-danger-fg flex items-start gap-1"
         role="alert"
       >
-        <svg
-          class="mt-0.5 shrink-0"
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-        ><circle
-          cx="12"
-          cy="12"
-          r="10"
-        /><path d="M12 8v4M12 16h.01" /></svg>
+        <UiIcon
+          name="alert-triangle"
+          class="ui-form-field__error-icon mt-0.5 shrink-0"
+        />
         <span>{{ error }}</span>
       </p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.ui-form-field__error-icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+.ui-form-field__status-icon {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2.5;
+}
+</style>

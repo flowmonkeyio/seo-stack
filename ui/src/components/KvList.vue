@@ -44,10 +44,10 @@ function display(value: unknown): string {
       v-for="item in items"
       :key="item.key"
     >
-      <dt class="font-medium text-fg-muted">
+      <dt class="text-xs font-medium text-fg-muted">
         {{ item.label }}
       </dt>
-      <dd class="min-w-0 break-words text-fg-default">
+      <dd class="min-w-0 break-words text-sm text-fg-default">
         <slot
           :name="`item:${item.key}`"
           :value="item.value"

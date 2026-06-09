@@ -24,6 +24,11 @@ export interface UiTextareaProps {
   ariaDescribedby?: string
 }
 
+/** Auto-resize metrics — keep in sync with the text-sm line height (20px). */
+const LINE_HEIGHT_PX = 20
+/** Vertical padding total (top + bottom) used by the md size (`py-2`). */
+const PADDING_Y_PX = 16
+
 const props = withDefaults(defineProps<UiTextareaProps>(), {
   modelValue: '',
   rows: 4,
@@ -67,7 +72,7 @@ function onInput(ev: Event) {
   const ta = ev.target as HTMLTextAreaElement
   if (props.autoResize) {
     ta.style.height = 'auto'
-    const max = props.maxRows ? props.maxRows * 20 + 16 : 9999
+    const max = props.maxRows ? props.maxRows * LINE_HEIGHT_PX + PADDING_Y_PX : 9999
     ta.style.height = Math.min(ta.scrollHeight, max) + 'px'
   }
   emit('update:modelValue', ta.value)
@@ -92,10 +97,9 @@ function onInput(ev: Event) {
         ? 'border-danger'
         : 'border-default hover:border-strong hover:bg-bg-surface-alt focus:border-accent focus:bg-bg-surface',
       disabled &&
-        'bg-bg-sunken text-fg-disabled cursor-not-allowed opacity-70 hover:border-default hover:bg-bg-sunken',
+        'bg-bg-sunken text-fg-disabled cursor-not-allowed hover:border-default hover:bg-bg-sunken',
       readonly && 'bg-bg-surface-alt',
       sizeClass,
-      `resize-${resize}`,
     ]"
     :style="{ resize }"
     @input="onInput"

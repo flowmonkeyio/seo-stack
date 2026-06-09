@@ -17,6 +17,7 @@ import {
 } from 'vue'
 import type { ComputedRef } from 'vue'
 
+import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 
 defineOptions({ inheritAttrs: false })
@@ -148,12 +149,22 @@ const RIGHT_TONE_CLASSES: Record<UiSelectTone, string> = {
   accent: 'bg-accent-subtle text-accent-fg',
 }
 
+const RIGHT_CHIP_CLASS =
+  'ui-select__right-chip inline-block min-w-0 max-w-[8.5rem] truncate rounded-xs px-1.5 py-0.5 text-2xs font-medium leading-none'
+
+const RIGHT_META_CLASS =
+  'ui-select__right-meta inline-block min-w-0 max-w-[8.5rem] truncate font-mono text-2xs font-medium leading-none'
+
 function hasRightContent(option: NormalizedOption | undefined): boolean {
   return Boolean(option?.rightLabel || option?.rightMeta)
 }
 
 function rightToneClass(option: NormalizedOption): string {
   return RIGHT_TONE_CLASSES[option.rightTone ?? 'neutral']
+}
+
+function isSelected(option: NormalizedOption): boolean {
+  return String(option.value) === String(props.modelValue ?? '')
 }
 
 function optionSearchText(option: NormalizedOption): string {
@@ -292,9 +303,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       :disabled="disabled"
       :class="[
         'ui-select__button focus-ring flex w-full items-center rounded-sm border bg-bg-surface text-left text-fg-default shadow-xs transition-colors duration-fast',
-        controlInvalid ? 'border-danger' : 'border-default hover:border-strong hover:bg-bg-surface-alt',
+        controlInvalid
+          ? 'border-danger'
+          : open
+            ? 'border-accent'
+            : 'border-default hover:border-strong hover:bg-bg-surface-alt',
         disabled &&
-          'cursor-not-allowed bg-bg-sunken text-fg-disabled opacity-70 hover:border-default hover:bg-bg-sunken',
+          'cursor-not-allowed bg-bg-sunken text-fg-disabled hover:border-default hover:bg-bg-sunken',
         sizeClass,
       ]"
       @click="setOpen(!open)"
@@ -312,44 +327,36 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
       >
         <span
           v-if="selectedOption?.rightLabel"
-          :class="['ui-select__right-chip', rightToneClass(selectedOption)]"
+          :class="[RIGHT_CHIP_CLASS, rightToneClass(selectedOption)]"
         >
           {{ selectedOption.rightLabel }}
         </span>
         <span
           v-if="selectedOption?.rightMeta"
-          class="ui-select__right-meta text-fg-muted"
+          :class="[RIGHT_META_CLASS, 'text-fg-muted']"
         >
           {{ selectedOption.rightMeta }}
         </span>
       </span>
       <span
-        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-fg-subtle transition-transform duration-fast"
-        :class="open && 'rotate-180'"
+        class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
+        :class="disabled ? 'text-fg-disabled' : 'text-fg-subtle'"
         aria-hidden="true"
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
+        <UiIcon
+          name="chevron-up-down"
+          class="ui-select__icon"
+        />
       </span>
     </button>
 
     <div
       v-if="open"
-      class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-x-hidden overflow-y-auto rounded-md border border-default bg-bg-surface p-1 shadow-lg"
+      class="absolute left-0 right-0 top-[calc(100%+4px)] z-popover max-h-72 overflow-x-hidden overflow-y-auto rounded-lg border border-default bg-bg-surface p-1 shadow-md"
     >
       <div
         v-if="searchable"
-        class="sticky top-0 z-10 bg-bg-surface p-1"
+        class="sticky top-0 z-10 -m-1 mb-1 border-b border-subtle bg-bg-surface p-1.5"
       >
         <UiInput
           :id="searchInputId"
@@ -361,7 +368,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
           clearable
           @update:model-value="setSearchQuery"
           @keydown="onSearchKeydown"
-        />
+        >
+          <template #prefix>
+            <UiIcon
+              name="search"
+              class="ui-select__icon"
+            />
+          </template>
+        </UiInput>
       </div>
       <div
         :id="listboxId"
@@ -375,7 +389,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
         >
           <div
             v-if="group"
-            class="truncate px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle"
+            class="truncate px-2 py-1.5 text-2xs font-semibold uppercase tracking-wide text-fg-subtle"
           >
             {{ group }}
           </div>
@@ -385,16 +399,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             :key="option.value"
             type="button"
             role="option"
-            :aria-selected="String(option.value) === String(modelValue ?? '')"
+            :aria-selected="isSelected(option)"
             :disabled="option.disabled"
             :class="[
-              'flex min-h-8 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-sm px-2.5 py-1.5 text-left text-sm transition-colors',
-              String(option.value) === String(modelValue ?? '')
-                ? 'bg-accent text-fg-on-accent'
-                : normalized[activeIndex]?.value === option.value
-                  ? 'bg-bg-surface-alt text-fg-strong'
-                  : 'text-fg-default hover:bg-bg-surface-alt',
-              option.disabled && 'cursor-not-allowed opacity-50',
+              'focus-ring-inset flex h-8 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-sm px-2 text-left text-sm transition-colors duration-fast',
+              option.disabled
+                ? 'cursor-not-allowed text-fg-disabled'
+                : isSelected(option)
+                  ? 'bg-accent-subtle text-accent-fg'
+                  : normalized[activeIndex]?.value === option.value
+                    ? 'bg-bg-surface-alt text-fg-strong'
+                    : 'text-fg-default hover:bg-bg-surface-alt',
             ]"
             @mouseenter="activeIndex = visibleIndexFor(option)"
             @click="selectOption(option)"
@@ -403,45 +418,27 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
             <span class="ml-auto flex min-w-0 max-w-[50%] shrink-0 items-center gap-1.5 overflow-hidden">
               <span
                 v-if="option.rightLabel"
-                :class="['ui-select__right-chip', rightToneClass(option)]"
+                :class="[RIGHT_CHIP_CLASS, rightToneClass(option)]"
               >
                 {{ option.rightLabel }}
               </span>
               <span
                 v-if="option.rightMeta"
-                :class="[
-                  'ui-select__right-meta',
-                  String(option.value) === String(modelValue ?? '')
-                    ? 'text-fg-on-accent'
-                    : 'text-fg-muted',
-                ]"
+                :class="[RIGHT_META_CLASS, isSelected(option) ? 'text-accent-fg' : 'text-fg-muted']"
               >
                 {{ option.rightMeta }}
               </span>
-              <span
-                v-if="String(option.value) === String(modelValue ?? '')"
-                aria-hidden="true"
-                class="shrink-0"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="m5 12 5 5 9-12" />
-                </svg>
-              </span>
+              <UiIcon
+                v-if="isSelected(option)"
+                name="check"
+                class="ui-select__icon shrink-0"
+              />
             </span>
           </button>
         </template>
         <p
           v-if="filteredNormalized.length === 0"
-          class="px-2.5 py-3 text-sm text-fg-muted"
+          class="px-2 py-3 text-sm text-fg-muted"
         >
           {{ emptyLabel }}
         </p>
@@ -451,32 +448,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown)
 </template>
 
 <style scoped>
-.ui-select__right-chip {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 8.5rem;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 3px;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ui-select__right-meta {
-  display: inline-block;
-  min-width: 0;
-  max-width: 8.5rem;
-  overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.ui-select__icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  stroke-width: 2;
 }
 </style>

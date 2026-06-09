@@ -18,6 +18,7 @@ const DIALOG_Z_INDEX_BASE = 1000;
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
 
 export interface UiDialogProps {
@@ -159,7 +160,7 @@ const dialogZIndex = computed(() =>
   >
     <div
       v-if="modelValue"
-      class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay flex items-center justify-center p-4"
+      class="ui-dialog__overlay fixed inset-0 z-overlay bg-bg-overlay backdrop-blur-[2px] flex items-center justify-center p-4"
       :style="{ zIndex: overlayZIndex }"
       @vue:before-mount="onDialogOpening"
       @vue:mounted="onDialogOpened"
@@ -168,9 +169,9 @@ const dialogZIndex = computed(() =>
     >
       <transition
         enter-active-class="transition duration-base ease-enter"
-        enter-from-class="opacity-0 scale-[0.97]"
+        enter-from-class="opacity-0 scale-[0.98]"
         leave-active-class="transition duration-fast ease-exit"
-        leave-to-class="opacity-0 scale-[0.97]"
+        leave-to-class="opacity-0 scale-[0.98]"
       >
         <div
           v-if="modelValue"
@@ -181,7 +182,7 @@ const dialogZIndex = computed(() =>
           :aria-describedby="descriptionId"
           :style="{ zIndex: dialogZIndex }"
           :class="[
-            'ui-dialog z-modal w-full rounded-lg bg-bg-surface shadow-lg border border-default flex flex-col max-h-[calc(100vh-2rem)]',
+            'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
             sizeClass,
           ]"
         >
@@ -194,7 +195,7 @@ const dialogZIndex = computed(() =>
                 <h2
                   v-if="title"
                   :id="titleId"
-                  class="t-h1 text-fg-strong"
+                  class="t-h2 text-fg-strong"
                 >
                   {{ title }}
                 </h2>
@@ -215,14 +216,11 @@ const dialogZIndex = computed(() =>
               variant="ghost"
               @click="close"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              ><path d="M18 6 6 18M6 6l12 12" /></svg>
+              <UiIcon
+                name="close"
+                class="h-4 w-4"
+                aria-hidden="true"
+              />
             </UiIconButton>
           </header>
           <div
@@ -235,7 +233,7 @@ const dialogZIndex = computed(() =>
           </div>
           <footer
             v-if="$slots.footer"
-            class="ui-dialog__footer flex items-center justify-end gap-2 px-5 py-3 border-t border-subtle bg-bg-surface-alt rounded-b-lg"
+            class="ui-dialog__footer flex items-center justify-end gap-2 px-5 py-3 border-t border-subtle bg-bg-surface-alt rounded-b-xl"
           >
             <slot
               name="footer"

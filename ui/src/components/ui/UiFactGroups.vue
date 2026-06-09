@@ -54,11 +54,11 @@ function displayValue(value: UiFactItem['value']): string | number {
     <section
       v-for="group in props.groups"
       :key="group.title"
-      class="rounded-md border border-subtle bg-bg-surface-alt"
+      class="rounded-lg border border-subtle bg-bg-surface-alt"
       :class="props.density === 'compact' ? 'p-3' : 'p-4'"
     >
       <div class="mb-3">
-        <h3 class="text-sm font-semibold text-fg-strong">
+        <h3 class="text-xs font-semibold text-fg-default">
           {{ group.title }}
         </h3>
         <p
@@ -76,11 +76,11 @@ function displayValue(value: UiFactItem['value']): string | number {
           class="min-w-0"
           :class="item.wide && 'sm:col-span-2'"
         >
-          <dt class="text-xs font-medium uppercase text-fg-subtle">
+          <dt class="text-xs font-medium text-fg-muted">
             {{ item.label }}
             <span
               v-if="item.hint"
-              class="mt-0.5 block text-2xs font-normal normal-case text-fg-disabled"
+              class="mt-0.5 block text-2xs font-normal text-fg-disabled"
             >
               {{ item.hint }}
             </span>
@@ -89,7 +89,7 @@ function displayValue(value: UiFactItem['value']): string | number {
             class="mt-1 min-w-0 break-words"
             :class="[
               item.mono ? 'font-mono text-xs' : 'text-sm',
-              item.emphasis === 'strong' ? 'font-semibold text-fg-strong' : 'font-medium text-fg-default',
+              item.emphasis === 'strong' ? 'font-semibold text-fg-strong' : 'text-fg-default',
             ]"
           >
             <UiBadge

@@ -3,6 +3,8 @@
   Use UiSkeleton for layout-shaped placeholders.
 -->
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue';
+
 defineProps<{
   label?: string;
   size?: 'sm' | 'md' | 'lg';
@@ -20,29 +22,14 @@ defineProps<{
       !inline && 'w-full justify-center py-8',
     ]"
   >
-    <svg
-      :class="['animate-spin text-fg-subtle']"
-      :width="size === 'sm' ? 12 : size === 'lg' ? 20 : 16"
-      :height="size === 'sm' ? 12 : size === 'lg' ? 20 : 16"
-      viewBox="0 0 24 24"
-      fill="none"
+    <UiIcon
+      name="loader"
+      :class="[
+        'animate-spin text-fg-subtle shrink-0',
+        size === 'sm' ? 'h-3 w-3 text-xs' : size === 'lg' ? 'h-5 w-5 text-xl' : 'h-4 w-4 text-lg',
+      ]"
       aria-hidden="true"
-    >
-      <circle
-        cx="12"
-        cy="12"
-        r="9"
-        stroke="currentColor"
-        stroke-opacity="0.25"
-        stroke-width="3"
-      />
-      <path
-        d="M21 12a9 9 0 0 0-9-9"
-        stroke="currentColor"
-        stroke-width="3"
-        stroke-linecap="round"
-      />
-    </svg>
+    />
     <span :class="[size === 'sm' ? 'text-xs' : 'text-sm']">{{ label ?? 'Loading…' }}</span>
   </div>
 </template>

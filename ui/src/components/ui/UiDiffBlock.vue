@@ -28,7 +28,7 @@ function rowClass(kind: DiffLine['kind']) {
   switch (kind) {
     case 'add':    return 'bg-success-subtle text-success-fg';
     case 'remove': return 'bg-danger-subtle text-danger-fg';
-    case 'meta':   return 'bg-bg-sunken text-fg-subtle italic';
+    case 'meta':   return 'text-fg-subtle italic';
     default:       return '';
   }
 }
@@ -40,11 +40,11 @@ function gutter(kind: DiffLine['kind']) {
 <template>
   <div
     :aria-label="ariaLabel"
-    class="ui-diffblock rounded-md border border-subtle bg-bg-surface font-mono text-xs overflow-hidden"
+    class="ui-diffblock rounded-lg border border-subtle bg-bg-sunken font-mono text-xs leading-relaxed text-fg-default overflow-hidden"
   >
     <div
       v-if="filename"
-      class="px-3 py-1.5 border-b border-subtle text-2xs font-sans font-semibold uppercase text-fg-subtle bg-bg-surface-alt"
+      class="border-b border-subtle px-3 py-1.5 font-sans text-2xs font-medium text-fg-muted"
     >
       {{ filename }}
     </div>

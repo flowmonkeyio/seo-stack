@@ -13,6 +13,7 @@ const SIDEPANEL_Z_INDEX_BASE = 1100;
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
 
 export interface UiSidePanelProps {
@@ -158,7 +159,7 @@ const descriptionId = computed(() =>
       <div
         v-if="modelValue"
         ref="overlayRef"
-        class="ui-sidepanel__overlay fixed inset-0 z-overlay bg-bg-overlay"
+        class="ui-sidepanel__overlay fixed inset-0 z-overlay bg-bg-overlay backdrop-blur-[2px]"
         @vue:before-mount="onPanelOpening"
         @vue:mounted="onPanelOpened"
         @vue:before-unmount="onPanelClosed"
@@ -180,7 +181,7 @@ const descriptionId = computed(() =>
             :aria-describedby="descriptionId"
             :style="{ width: sizePx }"
             :class="[
-              'ui-sidepanel fixed top-0 bottom-0 z-modal flex h-dvh max-h-dvh min-h-0 flex-col bg-bg-surface border-default shadow-lg max-w-full',
+              'ui-sidepanel fixed top-0 bottom-0 z-modal flex h-dvh max-h-dvh min-h-0 flex-col bg-bg-surface border-default shadow-xl max-w-full',
               side === 'right' ? 'right-0 border-l' : 'left-0 border-r',
             ]"
           >
@@ -194,7 +195,7 @@ const descriptionId = computed(() =>
                   <h2
                     v-if="title"
                     :id="titleId"
-                    class="t-h1 text-fg-strong"
+                    class="t-h2 text-fg-strong"
                   >
                     {{ title }}
                   </h2>
@@ -215,14 +216,11 @@ const descriptionId = computed(() =>
                 variant="ghost"
                 @click="close"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                ><path d="M18 6 6 18M6 6l12 12" /></svg>
+                <UiIcon
+                  name="close"
+                  class="h-4 w-4"
+                  aria-hidden="true"
+                />
               </UiIconButton>
             </header>
             <div

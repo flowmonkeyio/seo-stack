@@ -7,6 +7,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
+import UiIcon from './UiIcon.vue';
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -32,60 +33,67 @@ defineEmits<{
   (e: 'dismiss'): void;
 }>();
 
-const toneClass = computed(() => ({
-  info:    'border-l-info',
-  success: 'border-l-success',
-  warning: 'border-l-warning',
-  danger:  'border-l-danger',
-  neutral: 'border-l-neutral',
-}[props.tone]));
+const TOAST_TONE_STYLES = {
+  info:    { icon: 'info',           iconClass: 'text-info',    barClass: 'bg-info' },
+  success: { icon: 'check-circle',   iconClass: 'text-success', barClass: 'bg-success' },
+  warning: { icon: 'alert-triangle', iconClass: 'text-warning', barClass: 'bg-warning' },
+  danger:  { icon: 'x-circle',       iconClass: 'text-danger',  barClass: 'bg-danger' },
+  neutral: { icon: 'info',           iconClass: 'text-neutral', barClass: 'bg-neutral' },
+} as const;
+
+const toneStyle = computed(() => TOAST_TONE_STYLES[props.tone]);
 </script>
 
 <template>
   <div
     role="status"
     :aria-live="tone === 'danger' ? 'assertive' : 'polite'"
-    :class="[
-      'ui-toast pointer-events-auto flex items-start gap-3 min-w-[320px] max-w-md rounded-md border border-default border-l-4 bg-bg-surface px-3 py-2.5 shadow-md',
-      toneClass,
-    ]"
+    class="ui-toast pointer-events-auto relative min-w-[320px] max-w-md overflow-hidden rounded-lg border border-default bg-bg-surface p-3 pl-4 text-sm shadow-lg"
   >
-    <div class="flex-1 min-w-0">
-      <p class="t-h3 text-fg-strong leading-tight">
-        {{ title }}
-      </p>
-      <p
-        v-if="description"
-        class="text-sm text-fg-muted mt-0.5 leading-snug"
-      >
-        {{ description }}
-      </p>
-    </div>
-    <div class="flex items-center gap-1 shrink-0">
-      <button
-        v-if="actionLabel"
-        type="button"
-        class="focus-ring text-sm font-medium text-accent-fg hover:underline px-1.5 py-0.5 rounded-xs"
-        @click="$emit('action')"
-      >
-        {{ actionLabel }}
-      </button>
-      <button
-        v-if="dismissible"
-        type="button"
-        class="focus-ring text-fg-subtle hover:text-fg-default rounded-xs p-0.5"
-        aria-label="Dismiss"
-        @click="$emit('dismiss')"
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        ><path d="M18 6 6 18M6 6l12 12" /></svg>
-      </button>
+    <span
+      :class="['absolute inset-y-0 left-0 w-1', toneStyle.barClass]"
+      aria-hidden="true"
+    />
+    <div class="flex items-start gap-2.5">
+      <UiIcon
+        :name="toneStyle.icon"
+        :class="['mt-0.5 h-4 w-4 shrink-0', toneStyle.iconClass]"
+        aria-hidden="true"
+      />
+      <div class="flex-1 min-w-0">
+        <p class="font-medium text-fg-strong">
+          {{ title }}
+        </p>
+        <p
+          v-if="description"
+          class="mt-0.5 text-xs text-fg-muted"
+        >
+          {{ description }}
+        </p>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        <button
+          v-if="actionLabel"
+          type="button"
+          class="focus-ring rounded-sm px-1.5 py-0.5 text-sm font-medium text-accent-fg hover:underline underline-offset-2"
+          @click="$emit('action')"
+        >
+          {{ actionLabel }}
+        </button>
+        <button
+          v-if="dismissible"
+          type="button"
+          class="focus-ring -m-1 rounded-sm p-1 text-fg-subtle transition-colors duration-fast hover:text-fg-default"
+          aria-label="Dismiss"
+          @click="$emit('dismiss')"
+        >
+          <UiIcon
+            name="close"
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
     </div>
   </div>
 </template>

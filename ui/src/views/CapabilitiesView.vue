@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiButton, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiCard, UiPageShell, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaCapabilityOut, SchemaProviderOut } from '@/api'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -55,7 +55,7 @@ onMounted(load)
       {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
+    <section aria-label="Capabilities">
       <UiSectionHeader
         title="Capabilities"
         as="h3"
@@ -76,9 +76,9 @@ onMounted(load)
           <UiBadge tone="accent">{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
-    <UiPanel class="p-4">
+    <section aria-label="Providers">
       <UiSectionHeader
         title="Providers"
         as="h3"
@@ -99,11 +99,11 @@ onMounted(load)
           <UiBadge tone="accent">{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
-    <UiPanel class="p-4">
+    <UiCard section>
       <UiSectionHeader
-        title="Action Contracts"
+        title="Action contracts"
         description="Detailed input/output schemas live in Operations to keep this catalog page readable."
         as="h3"
       >
@@ -116,6 +116,6 @@ onMounted(load)
         {{ actions.length }} actions are registered. Operations provides the compact registry,
         surface policy, schemas, and connector readiness in one place.
       </p>
-    </UiPanel>
+    </UiCard>
   </UiPageShell>
 </template>

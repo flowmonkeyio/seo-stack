@@ -68,6 +68,12 @@ const pageBreadcrumbs = computed(() =>
   activeKey.value === 'overview' ? [] : [{ label: pageCopy.value.title }],
 )
 
+// The overview is the project home — lead with the project's own name.
+const isOverview = computed(() => activeKey.value === 'overview')
+const pageTitle = computed(() =>
+  isOverview.value ? project.value?.name ?? pageCopy.value.title : pageCopy.value.title,
+)
+
 async function ensureLoaded(): Promise<void> {
   if (project.value) return
   if (items.value.length === 0) await projects.refresh()
@@ -80,9 +86,10 @@ onMounted(ensureLoaded)
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      :title="pageCopy.title"
+      :title="pageTitle"
       :description="pageCopy.description"
       :breadcrumbs="pageBreadcrumbs"
+      :show-project-meta="isOverview"
       show-project-status
     />
     <RouterView />

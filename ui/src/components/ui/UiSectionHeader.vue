@@ -1,22 +1,15 @@
 <!--
   UiSectionHeader — group heading inside a page or card.
   Smaller than UiPageHeader; right-aligned slot for inline actions.
+  `as` sets the semantic heading level only — the visual is always t-h3.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
-
-const props = defineProps<{
+defineProps<{
   title: string;
   description?: string;
   /** Heading level (h2..h4). Default h2. */
   as?: 'h2' | 'h3' | 'h4';
 }>();
-
-const headingClass = computed(() => {
-  if (props.as === 'h3') return 't-h3'
-  if (props.as === 'h4') return 'text-sm font-semibold leading-5'
-  return 't-h2'
-})
 </script>
 
 <template>
@@ -24,13 +17,13 @@ const headingClass = computed(() => {
     <div class="min-w-0">
       <component
         :is="as ?? 'h2'"
-        :class="[headingClass, 'text-fg-strong']"
+        class="t-h3 text-fg-strong"
       >
         {{ title }}
       </component>
       <p
         v-if="description"
-        class="text-xs text-fg-muted mt-0.5"
+        class="mt-0.5 text-sm text-fg-muted"
       >
         {{ description }}
       </p>

@@ -94,7 +94,7 @@ const offset = computed(() => circumference.value * (1 - percent.value / 100));
         :stroke-dasharray="circumference"
         :stroke-dashoffset="offset"
         :transform="`rotate(-90 ${sizes.box / 2} ${sizes.box / 2})`"
-        style="transition: stroke-dashoffset var(--duration-base) var(--easing-standard)"
+        style="transition: stroke-dashoffset var(--duration-slow) var(--easing-standard)"
       />
     </svg>
     <span
@@ -106,17 +106,24 @@ const offset = computed(() => circumference.value * (1 - percent.value / 100));
   </div>
   <div
     v-else
-    class="ui-score-meter ui-score-meter--linear flex items-center gap-2 text-sm"
+    class="ui-score-meter ui-score-meter--linear flex items-center gap-2"
   >
-    <div class="flex-1 h-1.5 rounded-full bg-bg-sunken overflow-hidden">
+    <div
+      role="meter"
+      :aria-valuemin="0"
+      :aria-valuemax="max"
+      :aria-valuenow="value"
+      :aria-label="label ?? `${value} of ${max}`"
+      class="relative flex-1 h-1.5 overflow-hidden rounded-full bg-bg-sunken"
+    >
       <div
-        class="h-full rounded-full transition-all duration-base ease-standard"
+        class="absolute inset-y-0 left-0 rounded-full transition-[width] duration-slow ease-standard"
         :style="{ width: percent + '%', background: stroke }"
       />
     </div>
     <span
       v-if="!noLabel"
-      class="font-mono tabular-nums text-fg-muted"
+      class="text-2xs font-mono tabular-nums text-fg-muted shrink-0"
     >{{ label ?? `${value}/${max}` }}</span>
   </div>
 </template>

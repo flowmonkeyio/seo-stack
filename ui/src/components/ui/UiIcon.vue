@@ -22,8 +22,9 @@ const icon = computed(() => iconComponent(props.name))
   />
 </template>
 
-<style scoped>
-.ui-icon {
+<style>
+/* Zero-specificity default so sizing utilities (h-4 w-4 …) can override. */
+:where(.ui-icon) {
   width: 1em;
   height: 1em;
   flex: none;

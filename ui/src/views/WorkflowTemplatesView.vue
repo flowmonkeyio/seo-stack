@@ -7,7 +7,7 @@ import DataTable from '@/components/DataTable.vue'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
-import { UiBadge, UiCallout, UiPageShell, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiCallout, UiPageShell, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
 import { useWorkflowTemplatesStore } from '@/stores/workflowTemplates'
@@ -31,11 +31,11 @@ const selectedRowId = computed(() =>
 )
 
 const columns: DataTableColumn<TemplateRow>[] = [
-  { key: 'key', label: 'Key' },
-  { key: 'name', label: 'Name' },
+  { key: 'key', label: 'Key', cellClass: 'font-mono text-xs' },
+  { key: 'name', label: 'Name', cellClass: 'font-medium text-fg-strong' },
   { key: 'source', label: 'Source', widthClass: 'w-28' },
   { key: 'plugin_slug', label: 'Plugin', widthClass: 'w-28', format: (value) => String(value ?? '-') },
-  { key: 'version', label: 'Version', widthClass: 'w-24' },
+  { key: 'version', label: 'Version', widthClass: 'w-24', cellClass: 'font-mono text-xs' },
 ]
 
 function parseProjectId(raw: unknown): number {
@@ -63,9 +63,9 @@ onBeforeRouteUpdate((to) => {
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Workflow Templates"
+      title="Workflow library"
       description="Reusable workflow configuration and instruction contracts."
-      :breadcrumbs="[{ label: 'Workflow Templates' }]"
+      :breadcrumbs="[{ label: 'Workflow library' }]"
     />
 
     <UiCallout
@@ -75,7 +75,7 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
+    <section aria-label="Workflow templates">
       <UiSectionHeader
         title="Templates"
         as="h3"
@@ -91,7 +91,7 @@ onBeforeRouteUpdate((to) => {
         :selected-id="selectedRowId"
         max-height="calc(100vh - 16rem)"
         aria-label="Workflow templates"
-        empty-message="No workflow templates."
+        empty-message="No workflow templates — plugins ship templates when enabled."
         interactive
         @row-click="selectTemplate"
       >
@@ -99,7 +99,7 @@ onBeforeRouteUpdate((to) => {
           <UiBadge tone="accent">{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
     <InspectableDetailDrawer
       v-model="detailOpen"

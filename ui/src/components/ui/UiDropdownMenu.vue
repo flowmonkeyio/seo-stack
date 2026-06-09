@@ -154,7 +154,7 @@ const placementClass = computed(
         :aria-label="ariaLabel"
         @vue:mounted="onPanelMounted"
         :class="[
-          'ui-dropdown__panel absolute z-dropdown min-w-[180px] py-1 rounded-md border border-default bg-bg-surface shadow-md focus:outline-none',
+          'ui-dropdown__panel absolute z-dropdown min-w-[180px] p-1 rounded-lg border border-default bg-bg-surface shadow-md focus:outline-none',
           placementClass,
         ]"
         :style="{ width: typeof width === 'number' ? width + 'px' : width }"
@@ -163,12 +163,12 @@ const placementClass = computed(
           <div
             v-if="item.as === 'separator'"
             role="separator"
-            class="my-1 border-t border-subtle"
+            class="my-1 -mx-1 border-t border-subtle"
           />
           <div
             v-else-if="item.as === 'header'"
             role="presentation"
-            class="px-3 py-1.5 text-2xs font-semibold uppercase text-fg-subtle"
+            class="t-overline text-fg-subtle px-2 pt-2 pb-1"
           >
             {{ item.label }}
           </div>
@@ -182,19 +182,25 @@ const placementClass = computed(
             :disabled="item.disabled || undefined"
             :aria-disabled="item.disabled || undefined"
             :class="[
-              'ui-dropdown__item w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left',
-              item.tone === 'danger' ? 'text-danger-fg' : 'text-fg-default',
+              'ui-dropdown__item w-full flex items-center gap-2 rounded-sm px-2 h-8 text-sm text-left transition-colors duration-fast ease-standard',
               item.disabled
-                ? 'opacity-50 cursor-not-allowed'
-                : 'hover:bg-bg-surface-alt cursor-pointer',
-              activeIndex === i && !item.disabled && 'bg-bg-surface-alt',
+                ? 'text-fg-disabled cursor-not-allowed'
+                : item.tone === 'danger'
+                  ? 'text-danger-fg hover:bg-danger-subtle cursor-pointer'
+                  : 'text-fg-default hover:bg-bg-surface-alt cursor-pointer',
+              activeIndex === i
+                && !item.disabled
+                && (item.tone === 'danger' ? 'bg-danger-subtle' : 'bg-bg-surface-alt'),
             ]"
             @click="select(item)"
             @mouseenter="!item.disabled && (activeIndex = i)"
           >
-            <span v-if="$slots.icon || hasIcon(item.icon)" class="shrink-0 text-fg-muted">
+            <span
+              v-if="$slots.icon || hasIcon(item.icon)"
+              :class="['shrink-0', item.tone !== 'danger' && !item.disabled && 'text-fg-muted']"
+            >
               <slot name="icon" :item="item">
-                <UiIcon :name="item.icon" class="ui-dropdown__icon" />
+                <UiIcon :name="item.icon" class="ui-dropdown__icon h-4 w-4" />
               </slot>
             </span>
             <span class="flex-1 truncate">{{ item.label }}</span>
@@ -207,11 +213,3 @@ const placementClass = computed(
     </transition>
   </div>
 </template>
-
-<style scoped>
-.ui-dropdown__icon {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-</style>

@@ -138,10 +138,14 @@ const schedulerLabel = computed<string>(() => {
       >
         <div class="flex flex-wrap gap-2">
           <UiBadge :tone="dbBadgeClass">
-            db: {{ dbStatus }}
+            Database {{ dbStatus }}
           </UiBadge>
-          <UiBadge :tone="schedulerBadgeClass">
-            scheduler: {{ schedulerLabel }}
+          <UiBadge
+            :tone="schedulerBadgeClass"
+            :dot="schedulerRunning === true"
+            :pulse="schedulerRunning === true"
+          >
+            Scheduler {{ schedulerLabel }}
           </UiBadge>
           <UiBadge
             v-if="state.data.version"
@@ -153,7 +157,7 @@ const schedulerLabel = computed<string>(() => {
             v-if="typeof state.data.daemon_uptime_s === 'number'"
             tone="neutral"
           >
-            uptime: {{ Math.round(state.data.daemon_uptime_s) }}s
+            Up {{ Math.round(state.data.daemon_uptime_s) }}s
           </UiBadge>
         </div>
 

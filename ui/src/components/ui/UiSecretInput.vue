@@ -4,8 +4,9 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import UiInput from './UiInput.vue';
+import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
+import UiInput from './UiInput.vue';
 
 export interface UiSecretInputProps {
   modelValue?: string;
@@ -74,28 +75,7 @@ async function copy() {
           variant="ghost"
           @click="revealed = !revealed"
         >
-          <svg
-            v-if="!revealed"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          ><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle
-            cx="12"
-            cy="12"
-            r="3"
-          /></svg>
-          <svg
-            v-else
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          ><path d="m3 3 18 18M10.6 6.1a8 8 0 0 1 11.4 5.9 13 13 0 0 1-1.7 2.7M6.6 6.6A13 13 0 0 0 2 12s3 7 10 7c1.7 0 3.2-.4 4.5-1.1" /></svg>
+          <UiIcon :name="revealed ? 'eye-off' : 'eye'" />
         </UiIconButton>
         <UiIconButton
           v-if="!noCopy"
@@ -104,30 +84,7 @@ async function copy() {
           variant="ghost"
           @click="copy"
         >
-          <svg
-            v-if="!copied"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          ><rect
-            x="9"
-            y="9"
-            width="11"
-            height="11"
-            rx="2"
-          /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
-          <svg
-            v-else
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.5"
-          ><path d="m5 12 5 5 9-12" /></svg>
+          <UiIcon :name="copied ? 'check' : 'copy'" />
         </UiIconButton>
       </div>
     </template>

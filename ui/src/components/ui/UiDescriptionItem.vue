@@ -13,11 +13,11 @@ defineProps<{
 
 <template>
   <div class="grid grid-cols-[max-content_1fr] items-baseline gap-3 py-1.5 border-b border-subtle last:border-b-0">
-    <dt class="text-xs font-medium uppercase text-fg-subtle min-w-[8rem]">
+    <dt class="text-xs font-medium text-fg-muted min-w-[8rem]">
       {{ label }}
       <p
         v-if="hint"
-        class="text-2xs font-normal normal-case text-fg-disabled mt-0.5"
+        class="text-2xs font-normal text-fg-disabled mt-0.5"
       >
         {{ hint }}
       </p>

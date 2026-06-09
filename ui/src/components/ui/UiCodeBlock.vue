@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { ref } from 'vue';
+import UiIcon from './UiIcon.vue';
 import UiIconButton from './UiIconButton.vue';
 
 defineProps<{
@@ -36,16 +37,16 @@ async function copy(code: string) {
 <template>
   <div
     :class="[
-      'ui-codeblock relative rounded-md border border-subtle bg-bg-sunken font-mono text-fg-default',
+      'ui-codeblock relative rounded-lg border border-subtle bg-bg-sunken font-mono text-fg-default',
       density === 'comfortable' ? 'text-sm' : 'text-xs',
     ]"
     :aria-label="ariaLabel"
   >
     <div
       v-if="language || copyable"
-      class="ui-codeblock__chrome flex items-center justify-between px-3 py-1.5 border-b border-subtle"
+      class="ui-codeblock__chrome flex items-center justify-between border-b border-subtle px-3 py-1.5 font-sans text-2xs font-medium text-fg-muted"
     >
-      <span class="text-2xs uppercase text-fg-subtle font-sans font-semibold">{{ language }}</span>
+      <span>{{ language }}</span>
       <UiIconButton
         v-if="copyable"
         :aria-label="copied ? 'Copied' : 'Copy code'"
@@ -53,35 +54,23 @@ async function copy(code: string) {
         variant="ghost"
         @click="copy(code)"
       >
-        <svg
+        <UiIcon
           v-if="!copied"
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        ><rect
-          x="9"
-          y="9"
-          width="11"
-          height="11"
-          rx="2"
-        /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
-        <svg
+          name="copy"
+          class="h-3.5 w-3.5"
+          aria-hidden="true"
+        />
+        <UiIcon
           v-else
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-        ><path d="m5 12 5 5 9-12" /></svg>
+          name="check"
+          class="h-3.5 w-3.5"
+          aria-hidden="true"
+        />
       </UiIconButton>
     </div>
     <pre
       :class="[
-        'ui-codeblock__pre overflow-x-auto m-0',
+        'ui-codeblock__pre overflow-auto m-0 leading-relaxed',
         wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre',
         density === 'comfortable' ? 'p-4' : 'p-3',
       ]"

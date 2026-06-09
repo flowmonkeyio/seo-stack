@@ -151,20 +151,20 @@ function onGroupChange(value: string | number | null): void {
 <template>
   <nav
     :aria-label="props.ariaLabel"
-    class="rounded-md border border-default bg-bg-surface px-3 py-2 shadow-xs"
+    class="border-b border-subtle"
   >
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
       <label
         v-if="hasNamedGroups"
-        class="flex items-center gap-2 text-sm"
+        class="flex items-center gap-2 pb-2 text-sm"
       >
-        <span class="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+        <span class="t-overline shrink-0 text-fg-subtle">
           Stage
         </span>
         <UiSelect
           :model-value="activeTabGroup.name ?? ''"
           :options="groupOptions"
-          size="md"
+          size="sm"
           :block="false"
           class="min-w-28"
           @update:model-value="onGroupChange"
@@ -174,7 +174,7 @@ function onGroupChange(value: string | number | null): void {
       <div
         role="tablist"
         :aria-label="`${props.ariaLabel} tabs`"
-        class="flex min-w-0 flex-wrap items-center gap-1"
+        class="-mb-px flex min-w-0 flex-wrap items-center gap-1"
       >
         <button
           v-for="{ tab, index } in visibleTabItems"
@@ -187,11 +187,11 @@ function onGroupChange(value: string | number | null): void {
           :aria-controls="`cs-tabpanel-${tab.key}`"
           :tabindex="tab.key === props.activeKey ? 0 : -1"
           :disabled="tab.disabled"
-          class="focus-ring inline-flex h-8 items-center justify-center gap-1.5 rounded-sm border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60"
+          class="focus-ring-inset inline-flex h-9 items-center justify-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors duration-fast disabled:cursor-not-allowed disabled:text-fg-disabled"
           :class="
             tab.key === props.activeKey
-              ? 'border-accent bg-accent text-fg-on-accent shadow-xs'
-              : 'border-transparent text-fg-muted hover:border-default hover:bg-bg-surface-alt hover:text-fg-strong'
+              ? 'border-accent text-fg-strong'
+              : 'border-transparent text-fg-muted hover:border-strong hover:text-fg-default'
           "
           @click="onSelect(tab)"
           @keydown="onKeydown($event, index)"
@@ -199,7 +199,7 @@ function onGroupChange(value: string | number | null): void {
           <span class="truncate">{{ tab.label }}</span>
           <span
             v-if="typeof tab.count === 'number'"
-            class="inline-block min-w-[1.25rem] rounded-full bg-bg-sunken px-1.5 py-0 text-center text-xs font-medium text-fg-muted"
+            class="inline-block min-w-[1.25rem] rounded-full bg-bg-sunken px-1.5 py-0.5 text-center text-2xs font-medium tabular-nums text-fg-muted"
           >
             {{ tab.count }}
           </span>

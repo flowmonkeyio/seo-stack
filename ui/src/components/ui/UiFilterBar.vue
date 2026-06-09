@@ -8,6 +8,7 @@
 import UiInput from './UiInput.vue';
 import UiBadge from './UiBadge.vue';
 import UiButton from './UiButton.vue';
+import UiIcon from './UiIcon.vue';
 
 export interface ActiveFilter {
   key: string;
@@ -52,18 +53,11 @@ defineEmits<{
         @update:model-value="(v: any) => $emit('update:search', String(v ?? ''))"
       >
         <template #prefix>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          ><circle
-            cx="11"
-            cy="11"
-            r="8"
-          /><path d="m21 21-4.3-4.3" /></svg>
+          <UiIcon
+            name="search"
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
         </template>
       </UiInput>
       <slot />
@@ -86,15 +80,11 @@ defineEmits<{
       >
         <span class="text-fg-muted font-normal mr-1">{{ f.label }}:</span>
         <span>{{ f.value }}</span>
-        <svg
-          class="ml-1 -mr-0.5"
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-        ><path d="M18 6 6 18M6 6l12 12" /></svg>
+        <UiIcon
+          name="close"
+          class="ml-1 -mr-0.5 h-2.5 w-2.5"
+          aria-hidden="true"
+        />
       </UiBadge>
       <UiButton
         variant="link"

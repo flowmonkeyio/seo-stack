@@ -1,6 +1,7 @@
 <!--
   UiSegmentedControl — compact segmented choice control for status filters
-  and short mode toggles.
+  and short mode toggles. Sunken rail with a raised "pill" for the active
+  segment.
 -->
 <script setup lang="ts">
 import { hasIcon } from './icons'
@@ -40,7 +41,7 @@ function selectOption(value: string | number): void {
   <div
     role="tablist"
     :aria-label="label"
-    class="ui-segmented-control inline-flex flex-wrap items-center gap-1 rounded-md border border-subtle bg-bg-surface-alt p-1"
+    class="ui-segmented-control inline-flex flex-wrap items-center gap-0.5 rounded-md border border-subtle bg-bg-sunken p-0.5"
   >
     <button
       v-for="option in options"
@@ -50,15 +51,21 @@ function selectOption(value: string | number): void {
       :aria-selected="modelValue === option.key"
       :disabled="option.disabled"
       :class="[
-        'focus-ring inline-flex items-center gap-1.5 rounded-sm border border-transparent font-medium transition-colors duration-fast disabled:cursor-not-allowed disabled:opacity-50',
+        'focus-ring inline-flex items-center gap-1.5 rounded-sm font-medium transition-colors duration-fast ease-standard disabled:cursor-not-allowed',
         size === 'sm' ? 'h-7 px-2.5 text-sm' : 'h-8 px-3 text-sm',
         modelValue === option.key
-          ? 'bg-bg-surface text-fg-strong border-default shadow-xs'
-          : 'text-fg-muted hover:text-fg-default hover:bg-bg-surface',
+          ? ['bg-bg-surface shadow-xs', option.disabled ? 'text-fg-disabled' : 'text-fg-strong']
+          : option.disabled
+            ? 'text-fg-disabled'
+            : 'text-fg-muted hover:text-fg-default',
       ]"
       @click="selectOption(option.key)"
     >
-      <UiIcon v-if="hasIcon(option.icon)" :name="option.icon" class="ui-segmented-control__icon" />
+      <UiIcon
+        v-if="hasIcon(option.icon)"
+        :name="option.icon"
+        class="ui-segmented-control__icon"
+      />
       <span>{{ option.label }}</span>
     </button>
   </div>
@@ -66,8 +73,9 @@ function selectOption(value: string | number): void {
 
 <style scoped>
 .ui-segmented-control__icon {
-  width: 14px;
-  height: 14px;
+  width: 1.07em;
+  height: 1.07em;
   flex: none;
+  stroke-width: 1.8;
 }
 </style>

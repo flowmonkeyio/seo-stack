@@ -28,9 +28,18 @@ const emit = defineEmits<{
 
 const dims = computed(() =>
   props.size === 'sm'
-    ? { track: 'w-8 h-4', thumb: 'w-3 h-3', translate: 'translate-x-4' }
-    : { track: 'w-10 h-5', thumb: 'w-4 h-4', translate: 'translate-x-5' },
+    ? { track: 'w-8 h-[18px]', thumb: 'w-3.5 h-3.5', translate: 'translate-x-3' }
+    : { track: 'w-9 h-5', thumb: 'w-4 h-4', translate: 'translate-x-3.5' },
 )
+
+const trackStateClass = computed(() => {
+  if (props.disabled) {
+    return props.modelValue
+      ? 'cursor-not-allowed bg-fg-disabled border-fg-disabled'
+      : 'cursor-not-allowed bg-bg-sunken border-default'
+  }
+  return props.modelValue ? 'bg-accent border-accent' : 'bg-bg-sunken border-strong'
+})
 
 function toggle() {
   if (props.disabled) return
@@ -49,17 +58,16 @@ function toggle() {
     :aria-labelledby="ariaLabelledby"
     :disabled="disabled"
     :class="[
-      'ui-switch focus-ring inline-flex items-center rounded-full border shadow-xs transition-colors duration-fast',
+      'ui-switch focus-ring inline-flex shrink-0 items-center rounded-full border transition-colors duration-fast ease-standard',
       dims.track,
-      modelValue ? 'bg-accent border-accent' : 'bg-bg-sunken border-strong hover:border-default',
-      disabled && 'opacity-60 cursor-not-allowed',
+      trackStateClass,
     ]"
     @click="toggle"
   >
     <span
       aria-hidden="true"
       :class="[
-        'ui-switch__thumb inline-block rounded-full bg-bg-surface shadow-xs transition-transform duration-fast ease-standard ml-0.5',
+        'ui-switch__thumb pointer-events-none ml-0.5 inline-block rounded-full bg-fg-on-accent shadow-sm transition-transform duration-fast ease-standard',
         dims.thumb,
         modelValue ? dims.translate : 'translate-x-0',
       ]"

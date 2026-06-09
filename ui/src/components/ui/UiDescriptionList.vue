@@ -32,6 +32,15 @@ defineProps<{
   ariaLabel?: string;
 }>();
 
+// Static map so Tailwind can generate the classes (dynamic
+// `grid-cols-${n}` interpolation is never picked up by the scanner).
+const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
+  1: 'sm:grid-cols-1',
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+};
+
 const dashIfNull = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : v);
 </script>
 
@@ -41,7 +50,7 @@ const dashIfNull = (v: unknown) => (v === null || v === undefined || v === '' ? 
     :class="[
       'ui-description-list',
       layout === 'stacked' && 'flex flex-col gap-3',
-      layout === 'grid' && `grid grid-cols-${columns ?? 2} gap-x-6 gap-y-3`,
+      layout === 'grid' && ['grid grid-cols-1 gap-x-6 gap-y-3', GRID_COLS[columns ?? 2]],
       (!layout || layout === 'rows') && 'flex flex-col',
     ]"
   >
@@ -56,20 +65,20 @@ const dashIfNull = (v: unknown) => (v === null || v === undefined || v === '' ? 
             density === 'compact' ? 'py-1' : 'py-1.5',
             'border-b border-subtle last:border-b-0',
           ],
-          layout === 'stacked' && 'flex flex-col gap-0.5',
-          layout === 'grid' && 'flex flex-col gap-0.5 min-w-0',
+          layout === 'stacked' && 'flex flex-col gap-1',
+          layout === 'grid' && 'flex flex-col gap-1 min-w-0',
         ]"
       >
         <dt
           :class="[
-            'text-xs font-medium uppercase text-fg-subtle',
+            'text-xs font-medium text-fg-muted',
             (!layout || layout === 'rows') && 'min-w-[8rem]',
           ]"
         >
           {{ item.label }}
           <p
             v-if="item.hint"
-            class="text-2xs font-normal normal-case text-fg-disabled mt-0.5"
+            class="text-2xs font-normal text-fg-disabled mt-0.5"
           >
             {{ item.hint }}
           </p>

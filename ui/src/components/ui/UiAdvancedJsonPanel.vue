@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
 import UiJsonBlock from './UiJsonBlock.vue'
 
 withDefaults(defineProps<{
@@ -17,12 +18,17 @@ withDefaults(defineProps<{
 
 <template>
   <details
-    class="rounded-md border border-subtle bg-bg-surface"
+    class="group rounded-lg border border-subtle bg-bg-sunken"
     :open="open"
   >
-    <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default hover:bg-bg-surface-alt focus-ring">
+    <summary class="focus-ring flex cursor-pointer list-none items-center gap-1.5 rounded-lg px-3 py-1.5 text-2xs font-medium text-fg-muted transition-colors duration-fast hover:text-fg-default [&::-webkit-details-marker]:hidden">
+      <UiIcon
+        name="chevron-right"
+        class="h-3 w-3 text-fg-subtle transition-transform duration-fast group-open:rotate-90"
+        aria-hidden="true"
+      />
       {{ title }}
-      <span class="ml-2 text-xs font-normal text-fg-muted">{{ summary }}</span>
+      <span class="font-normal text-fg-subtle">{{ summary }}</span>
     </summary>
     <div class="border-t border-subtle p-3">
       <UiJsonBlock

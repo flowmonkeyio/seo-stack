@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiBadge, UiButton, UiCallout, UiMetricCard, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiCard, UiMetricCard, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { formatDateTime } from '@/lib/stackos/json'
@@ -120,7 +120,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-4">
+  <div class="space-y-5">
     <UiCallout
       v-if="error"
       tone="danger"
@@ -128,7 +128,7 @@ onMounted(load)
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <UiMetricCard
         label="Enabled plugins"
         :value="enabledPlugins.length"
@@ -147,16 +147,18 @@ onMounted(load)
       />
     </div>
 
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-      <UiPanel class="p-4">
+    <div class="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+      <section aria-label="Recent runs">
         <UiSectionHeader
-          title="Recent Runs"
+          title="Recent runs"
           as="h3"
         >
           <template #actions>
             <UiBadge
               v-if="runningRuns.length"
               tone="info"
+              dot
+              pulse
             >
               {{ runningRuns.length }} running
             </UiBadge>
@@ -171,7 +173,7 @@ onMounted(load)
               variant="secondary"
               @click="go('runs')"
             >
-              Open
+              View all
             </UiButton>
           </template>
         </UiSectionHeader>
@@ -180,7 +182,7 @@ onMounted(load)
           :columns="runColumns"
           :loading="loading"
           aria-label="Recent runs"
-          empty-message="No runs yet."
+          empty-message="No runs yet — agents create runs when they execute workflows."
         >
           <template #cell:status="{ value }">
             <StatusBadge
@@ -189,66 +191,67 @@ onMounted(load)
             />
           </template>
         </DataTable>
-      </UiPanel>
+      </section>
 
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Setup"
-          as="h3"
-        >
-          <template #actions>
-            <UiButton
-              size="sm"
-              variant="secondary"
-              @click="go('connections')"
-            >
-              Connections
-            </UiButton>
-          </template>
-        </UiSectionHeader>
-        <dl class="grid gap-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Active schedules</dt>
-            <dd class="font-medium">{{ activeSchedules.length }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Budgets</dt>
-            <dd class="font-medium">{{ activeBudgets.length }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Run-plan audit rows</dt>
-            <dd class="font-medium">{{ runPlans }}</dd>
-          </div>
-        </dl>
-        <div class="mt-4 flex flex-wrap gap-2">
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Setup
+          </h3>
           <UiButton
             size="sm"
             variant="secondary"
+            @click="go('connections')"
+          >
+            Connections
+          </UiButton>
+        </template>
+        <dl class="grid gap-3 text-sm">
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Active schedules</dt>
+            <dd class="font-medium tabular-nums text-fg-strong">{{ activeSchedules.length }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Budgets</dt>
+            <dd class="font-medium tabular-nums text-fg-strong">{{ activeBudgets.length }}</dd>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <dt class="text-fg-muted">Run-plan audit rows</dt>
+            <dd class="font-medium tabular-nums text-fg-strong">{{ runPlans }}</dd>
+          </div>
+        </dl>
+        <div class="mt-4 flex flex-wrap gap-2 border-t border-subtle pt-3">
+          <UiButton
+            size="sm"
+            variant="ghost"
+            icon-left="puzzle"
             @click="go('plugins')"
           >
             Plugins
           </UiButton>
           <UiButton
             size="sm"
-            variant="secondary"
+            variant="ghost"
+            icon-left="library"
             @click="go('workflow-templates')"
           >
             Templates
           </UiButton>
           <UiButton
             size="sm"
-            variant="secondary"
+            variant="ghost"
+            icon-left="folder"
             @click="go('resources')"
           >
             Resources
           </UiButton>
         </div>
-      </UiPanel>
+      </UiCard>
     </div>
 
-    <UiPanel class="p-4">
+    <section aria-label="Latest resource records">
       <UiSectionHeader
-        title="Latest Resource Records"
+        title="Latest resource records"
         as="h3"
       >
         <template #actions>
@@ -257,7 +260,7 @@ onMounted(load)
             variant="secondary"
             @click="go('resources')"
           >
-            Open
+            View all
           </UiButton>
         </template>
       </UiSectionHeader>
@@ -266,12 +269,12 @@ onMounted(load)
         :columns="resourceColumns"
         :loading="loading"
         aria-label="Latest resource records"
-        empty-message="No resource records yet."
+        empty-message="No resource records yet — records appear as plugins store data."
       >
         <template #cell:plugin_slug="{ value }">
           <UiBadge tone="accent">{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
   </div>
 </template>
