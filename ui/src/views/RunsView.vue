@@ -27,6 +27,11 @@ import {
   UiSelect,
 } from '@/components/ui'
 import RunDetail from './RunDetail.vue'
+import {
+  formatAbsoluteDateTime,
+  formatDurationBetween,
+  formatRelativeDateTime,
+} from '@/lib/stackos/time'
 import { useRunsStore, type Run } from '@/stores/runs'
 import { RunKind as RunKindEnum, RunStatus as RunStatusEnum } from '@/api'
 import type { DataTableColumn } from '@/components/types'
@@ -64,21 +69,14 @@ const columns: DataTableColumn<Run>[] = [
   { key: 'kind', label: 'Kind' },
   { key: 'status', label: 'Status', widthClass: 'w-24' },
   { key: 'parent_run_id', label: 'Parent', widthClass: 'w-20' },
-  {
-    key: 'started_at',
-    label: 'Started',
-    sortable: true,
-    format: (v) => (v ? new Date(String(v)).toLocaleString() : ''),
-  },
+  { key: 'started_at', label: 'Started', sortable: true },
   {
     key: 'ended_at',
     label: 'Duration',
     format: (_v, row) => {
       const r = row as Run
-      if (!r.ended_at) return r.status === 'running' ? 'running…' : '—'
-      const ms = new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()
-      const s = Math.round(ms / 1000)
-      return s < 60 ? `${s}s` : `${Math.round(s / 60)}m`
+      if (!r.ended_at && r.status !== 'running') return '—'
+      return formatDurationBetween(r.started_at, r.ended_at)
     },
     widthClass: 'w-24',
   },
@@ -91,7 +89,21 @@ function setStatusFilter(opt: 'all' | `${RunStatusEnum}`): void {
 }
 
 function onStatusSelect(key: string | number): void {
-  setStatusFilter(String(key) as 'all' | `${RunStatusEnum}`)
+  const next = String(key) as 'all' | `${RunStatusEnum}`
+  setStatusFilter(next)
+  // Keep the status in the URL so filtered views are shareable/linkable.
+  void router.replace({
+    query: { ...route.query, status: next === 'all' ? undefined : next },
+  })
+}
+
+/** Deep-link support: `/runs?status=failed` arrives pre-filtered. */
+function applyStatusFromQuery(): void {
+  const raw = String(route.query.status ?? '')
+  const known = STATUS_OPTIONS.find((option) => option.key === raw)
+  if (known && known.key !== 'all') {
+    runsStore.setFilter('status', known.key as RunStatusEnum)
+  }
 }
 
 function setKindFilter(value: string): void {
@@ -123,6 +135,7 @@ async function loadMore(): Promise<void> {
 async function load(): Promise<void> {
   if (!projectId.value || Number.isNaN(projectId.value)) return
   runsStore.reset()
+  applyStatusFromQuery()
   await runsStore.refresh(projectId.value)
 }
 
@@ -248,6 +261,11 @@ onMounted(load)
           "
           @load-more="loadMore"
         >
+          <template #cell:started_at="{ value }">
+            <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
+              {{ formatRelativeDateTime(value ? String(value) : null) }}
+            </span>
+          </template>
           <template #cell:status="{ row }">
             <div class="flex items-center gap-2">
               <StatusBadge

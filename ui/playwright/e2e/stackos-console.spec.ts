@@ -16,14 +16,15 @@ test.describe('StackOS console — generic project surfaces', () => {
       niche: 'qa',
     })
     const routes = [
-      { path: 'overview', heading: 'Overview' },
+      // The overview is the project home — its h1 is the project name.
+      { path: 'overview', heading: 'Console Project' },
       { path: 'plugins', heading: 'Plugins' },
       { path: 'capabilities', heading: 'Capabilities' },
       { path: 'connections', heading: 'Connections' },
-      { path: 'workflow-templates', heading: 'Workflow Templates' },
+      { path: 'workflow-templates', heading: 'Workflow library' },
       { path: 'runs', heading: /^Runs/ },
-      { path: 'data', heading: 'Data' },
-      { path: 'resources', heading: 'Data Explorer' },
+      { path: 'data', heading: 'Project data' },
+      { path: 'resources', heading: 'Data explorer' },
       { path: 'schedules', heading: 'Schedules' },
       { path: 'cost-budget', heading: 'Cost & Budget' },
     ] as const

@@ -10,7 +10,7 @@ import {
   UiSectionHeader,
   UiSkeleton,
 } from '@/components/ui'
-import { formatDateTime } from '@/lib/stackos/json'
+import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 
 import {
   accountLabel,
@@ -62,6 +62,7 @@ function connectionActionKey(credentialRef: string, action: string): string {
 
     <UiCard
       v-if="loading"
+      role="status"
       aria-label="Loading connections"
     >
       <UiSkeleton
@@ -202,8 +203,11 @@ function connectionActionKey(credentialRef: string, action: string): string {
                   <dt class="text-fg-subtle">
                     Last tested
                   </dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{ formatDateTime(connection.last_tested_at) }}
+                  <dd
+                    class="mt-0.5 truncate text-fg-default"
+                    :title="formatAbsoluteDateTime(connection.last_tested_at)"
+                  >
+                    {{ formatRelativeDateTime(connection.last_tested_at) }}
                   </dd>
                 </div>
                 <div
@@ -213,8 +217,11 @@ function connectionActionKey(credentialRef: string, action: string): string {
                   <dt class="text-fg-subtle">
                     Expires
                   </dt>
-                  <dd class="mt-0.5 truncate text-fg-default">
-                    {{ formatDateTime(connection.expires_at) }}
+                  <dd
+                    class="mt-0.5 truncate text-fg-default"
+                    :title="formatAbsoluteDateTime(connection.expires_at)"
+                  >
+                    {{ formatRelativeDateTime(connection.expires_at) }}
                   </dd>
                 </div>
               </dl>

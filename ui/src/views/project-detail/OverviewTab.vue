@@ -43,7 +43,6 @@ const schedules = ref<SchemaScheduledJobOut[]>([])
 const budgets = ref<SchemaIntegrationBudgetOut[]>([])
 const runningTotal = ref(0)
 const failedTotal = ref(0)
-const abortedTotal = ref(0)
 const unreadRequests = ref(0)
 
 const enabledPlugins = computed(() =>
@@ -51,7 +50,6 @@ const enabledPlugins = computed(() =>
 )
 const activeSchedules = computed(() => schedules.value.filter((schedule) => schedule.enabled))
 const activeBudgets = computed(() => budgets.value.filter((budget) => budget.monthly_budget_usd > 0))
-const needsReview = computed(() => failedTotal.value + abortedTotal.value)
 
 const runColumns: DataTableColumn<SchemaRunOut>[] = [
   { key: 'id', label: 'ID', widthClass: 'w-16', cellClass: 'font-mono text-xs', format: (value) => `#${value}` },
@@ -112,7 +110,6 @@ async function load(): Promise<void> {
       budgetRows,
       runningCount,
       failedCount,
-      abortedCount,
       unreadCount,
     ] = await Promise.all([
       apiFetch<SchemaPluginOut[]>(`/api/v1/plugins?project_id=${id}`),
@@ -136,7 +133,6 @@ async function load(): Promise<void> {
       fetchOr<SchemaIntegrationBudgetOut[]>(`/api/v1/projects/${id}/budgets`, []),
       fetchRunTotal(id, 'running'),
       fetchRunTotal(id, 'failed'),
-      fetchRunTotal(id, 'aborted'),
       fetchUnreadRequests(id),
     ])
     plugins.value = pluginRows
@@ -151,7 +147,6 @@ async function load(): Promise<void> {
     budgets.value = budgetRows
     runningTotal.value = runningCount
     failedTotal.value = failedCount
-    abortedTotal.value = abortedCount
     unreadRequests.value = unreadCount
   } catch (err) {
     error.value = formatApiError(err, 'failed to load project overview')
@@ -188,9 +183,9 @@ onMounted(load)
         :loading="loading"
       />
       <UiMetricCard
-        label="Needs review"
-        :value="needsReview"
-        :value-tone="needsReview > 0 ? 'danger' : 'success'"
+        label="Failed runs"
+        :value="failedTotal"
+        :value-tone="failedTotal > 0 ? 'danger' : 'success'"
         icon="alert-triangle"
         :to="`${base}/runs?status=failed`"
         :loading="loading"

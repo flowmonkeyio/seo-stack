@@ -36,7 +36,11 @@ test.describe('runs view — list + filters + sub-route navigation', () => {
     await page.goto(`/projects/${project.id}/runs`)
     await expect(page.getByRole('heading', { name: /^Runs/ })).toBeVisible()
     // The DataTable surfaces its empty-message slot.
-    await expect(page.getByRole('cell', { name: 'No runs match the filters.' })).toBeVisible()
+    await expect(
+      page.getByRole('cell', {
+        name: 'No runs match these filters — runs are recorded when agents execute plans, skills, and tools.',
+      }),
+    ).toBeVisible()
 
     errors.assertNone()
   })

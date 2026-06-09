@@ -13,6 +13,7 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import {
   UiBadge,
   UiCallout,
+  UiInput,
   UiJsonBlock,
   UiPageShell,
   UiSectionHeader,
@@ -35,6 +36,7 @@ const loading = ref(false)
 const detailLoading = ref(false)
 const error = ref<string | null>(null)
 const surfaceFilter = ref<SurfaceFilter>('all')
+const search = ref('')
 
 const surfaceOptions = [
   { key: 'all', label: 'All' },
@@ -42,6 +44,14 @@ const surfaceOptions = [
   { key: 'rest', label: 'REST' },
   { key: 'cli', label: 'CLI' },
 ]
+
+const visibleRows = computed<OperationRow[]>(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return rows.value
+  return rows.value.filter((row) =>
+    `${row.name} ${row.summary ?? ''}`.toLowerCase().includes(query),
+  )
+})
 
 const columns: DataTableColumn<OperationRow>[] = [
   { key: 'name', label: 'Operation', widthClass: 'w-56', cellClass: 'font-mono text-xs' },
@@ -148,23 +158,33 @@ onBeforeRouteUpdate((to) => {
         as="h3"
       >
         <template #actions>
+          <UiInput
+            v-model="search"
+            type="search"
+            placeholder="Find by name or summary…"
+            :block="false"
+            size="sm"
+            clearable
+            class="w-64"
+            aria-label="Filter operations"
+          />
           <UiSegmentedControl
             :model-value="surfaceFilter"
             :options="surfaceOptions"
             label="Surface"
             @select="setSurface"
           />
-          <UiBadge>{{ rows.length }}</UiBadge>
+          <UiBadge>{{ visibleRows.length }}</UiBadge>
         </template>
       </UiSectionHeader>
       <DataTable
-        :items="rows"
+        :items="visibleRows"
         :columns="columns"
         :loading="loading"
         :selected-id="selected?.name"
         max-height="calc(100vh - 16rem)"
         aria-label="StackOS operations"
-        empty-message="No operations for this surface — operations are registered by StackOS core and plugins."
+        empty-message="No operations match — operations are registered by StackOS core and plugins."
         interactive
         @row-click="selectOperation"
       >

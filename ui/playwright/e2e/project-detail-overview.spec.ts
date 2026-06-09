@@ -18,12 +18,13 @@ test.describe('project detail — overview tab', () => {
     await page.goto(`/projects/${project.id}/overview`)
 
     const main = page.getByRole('main')
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
-    await expect(main.getByText('overview-project').first()).toBeVisible()
-    await expect(main.getByText('Overview Project').first()).toBeVisible()
-    await expect(page.getByRole('heading', { level: 3, name: 'Recent Runs' })).toBeVisible()
     await expect(
-      page.getByRole('heading', { level: 3, name: 'Latest Resource Records' }),
+      page.getByRole('heading', { level: 1, name: 'Overview Project' }),
+    ).toBeVisible()
+    await expect(main.getByText('overview-project').first()).toBeVisible()
+    await expect(page.getByRole('heading', { level: 3, name: 'Recent runs' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { level: 3, name: 'Latest resource records' }),
     ).toBeVisible()
     await expect(page.getByText('en-US').first()).toBeVisible()
     errors.assertNone()

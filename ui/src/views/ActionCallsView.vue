@@ -265,10 +265,59 @@ onMounted(load)
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4">
-      <UiMetricCard label="Loaded calls" :value="rows.length" density="compact" />
-      <UiMetricCard label="Success" :value="loadedSuccess" density="compact" />
-      <UiMetricCard label="Failed" :value="loadedFailed" density="compact" />
-      <UiMetricCard label="Dry runs" :value="loadedDryRun" density="compact" />
+      <button
+        type="button"
+        class="focus-ring rounded-lg text-left"
+        :aria-pressed="statusFilter === 'all'"
+        aria-label="Show all action calls"
+        @click="setStatus('all')"
+      >
+        <UiMetricCard
+          label="Loaded calls"
+          :value="rows.length"
+          density="compact"
+        />
+      </button>
+      <button
+        type="button"
+        class="focus-ring rounded-lg text-left"
+        :aria-pressed="statusFilter === 'success'"
+        aria-label="Filter to successful calls"
+        @click="setStatus('success')"
+      >
+        <UiMetricCard
+          label="Success"
+          :value="loadedSuccess"
+          density="compact"
+        />
+      </button>
+      <button
+        type="button"
+        class="focus-ring rounded-lg text-left"
+        :aria-pressed="statusFilter === 'failed'"
+        aria-label="Filter to failed calls"
+        @click="setStatus('failed')"
+      >
+        <UiMetricCard
+          label="Failed"
+          :value="loadedFailed"
+          :value-tone="loadedFailed > 0 ? 'danger' : 'default'"
+          density="compact"
+        />
+      </button>
+      <button
+        type="button"
+        class="focus-ring rounded-lg text-left"
+        :aria-pressed="statusFilter === 'dry-run'"
+        aria-label="Filter to dry runs"
+        @click="setStatus('dry-run')"
+      >
+        <UiMetricCard
+          label="Dry runs"
+          :value="loadedDryRun"
+          density="compact"
+        />
+      </button>
     </div>
 
     <UiPanel

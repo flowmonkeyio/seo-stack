@@ -252,7 +252,20 @@ function agentRequestTraceMetadata(request: AgentRequestOut) {
   ].filter((item): item is NonNullable<typeof item> => Boolean(item))
 }
 
-onMounted(fetchRequests)
+/** Deep-link support: `?attention_status=unread` arrives pre-filtered. */
+function applyFiltersFromQuery(): void {
+  const attention = String(route.query.attention_status ?? '')
+  if (attention !== 'all' && attentionOptions.some((option) => option.value === attention)) {
+    attentionFilter.value = attention as AttentionFilter
+    // Attention filters should scan the whole queue, not just claimable rows.
+    mode.value = 'all'
+  }
+}
+
+onMounted(() => {
+  applyFiltersFromQuery()
+  void fetchRequests()
+})
 </script>
 
 <template>
