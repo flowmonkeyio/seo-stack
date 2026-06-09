@@ -8,6 +8,7 @@ import { useRoute } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiMetricCard, UiSectionHeader } from '@/components/ui'
+import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
 
@@ -20,18 +21,10 @@ const { items, loading, error } = storeToRefs(schedulesStore)
 const enabledCount = computed(() => items.value.filter((job) => job.enabled).length)
 
 const columns: DataTableColumn<ScheduledJob>[] = [
-  { key: 'kind', label: 'Kind', cellClass: 'font-mono text-sm' },
-  { key: 'cron_expr', label: 'Cron', cellClass: 'font-mono text-sm' },
-  {
-    key: 'next_run_at',
-    label: 'Next run',
-    format: (value) => (value ? new Date(String(value)).toLocaleString() : '-'),
-  },
-  {
-    key: 'last_run_at',
-    label: 'Last run',
-    format: (value) => (value ? new Date(String(value)).toLocaleString() : '-'),
-  },
+  { key: 'kind', label: 'Kind', cellClass: 'font-medium text-fg-strong' },
+  { key: 'cron_expr', label: 'Cron', cellClass: 'font-mono text-xs' },
+  { key: 'next_run_at', label: 'Next run' },
+  { key: 'last_run_at', label: 'Last run' },
   { key: 'last_run_status', label: 'Last status', widthClass: 'w-28' },
   { key: 'enabled', label: 'State', widthClass: 'w-24' },
 ]
@@ -101,6 +94,16 @@ onMounted(load)
       aria-label="Scheduled jobs"
       empty-message="No scheduled jobs yet."
     >
+      <template #cell:next_run_at="{ value }">
+        <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
+          {{ formatRelativeDateTime(value ? String(value) : null) }}
+        </span>
+      </template>
+      <template #cell:last_run_at="{ value }">
+        <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
+          {{ formatRelativeDateTime(value ? String(value) : null) }}
+        </span>
+      </template>
       <template #cell:last_run_status="{ row }">
         <StatusBadge
           v-if="(row as ScheduledJob).last_run_status"

@@ -10,9 +10,10 @@ import RunPlanRenderer from '@/components/renderers/RunPlanRenderer.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
   UiAdvancedJsonPanel,
+  UiBadge,
+  UiCard,
   UiEmptyState,
   UiJsonBlock,
-  UiPanel,
   UiSectionHeader,
 } from '@/components/ui'
 import { useRunsStore, type Run } from '@/stores/runs'
@@ -227,35 +228,39 @@ onMounted(load)
   />
   <div
     v-else
-    class="space-y-4"
+    class="space-y-5"
   >
-    <UiPanel
-      aria-labelledby="cs-run-summary-title"
-      class="p-4"
-    >
-      <UiSectionHeader
-        id="cs-run-summary-title"
-        title="Summary"
-      >
-        <template #actions>
-          <StatusBadge
-            :status="run.status"
-            kind="run"
-          />
-        </template>
-      </UiSectionHeader>
+    <UiCard section>
+      <template #header>
+        <h2 class="t-h3 text-fg-strong">
+          Summary
+        </h2>
+        <StatusBadge
+          :status="run.status"
+          kind="run"
+        />
+      </template>
       <KvList
         :items="summary"
         :two-column="true"
       />
-    </UiPanel>
+    </UiCard>
 
     <section
-      v-if="runPlans.length > 0"
       class="space-y-3"
       aria-label="Run plans"
     >
-      <UiSectionHeader title="Run Plans" />
+      <UiSectionHeader title="Run plans">
+        <template #actions>
+          <UiBadge>{{ runPlans.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <p
+        v-if="runPlans.length === 0"
+        class="text-sm text-fg-muted"
+      >
+        No run plans for this run.
+      </p>
       <RunPlanRenderer
         v-for="plan in runPlans"
         :key="plan.id"
@@ -264,176 +269,227 @@ onMounted(load)
       />
     </section>
 
-    <UiPanel
+    <div
       v-if="
         actionCalls.length > 0 ||
-        contextSnapshots.length > 0 ||
-        observations.length > 0 ||
-        decisions.length > 0 ||
-        linkedLearnings.length > 0 ||
-        linkedExperiments.length > 0
+          contextSnapshots.length > 0 ||
+          observations.length > 0 ||
+          decisions.length > 0 ||
+          linkedLearnings.length > 0 ||
+          linkedExperiments.length > 0
       "
-      aria-labelledby="cs-run-data-title"
-      class="p-4"
+      class="grid items-start gap-5 xl:grid-cols-2"
     >
-      <UiSectionHeader
-        id="cs-run-data-title"
-        title="Linked Project Data"
-      />
-      <div class="grid gap-4 xl:grid-cols-2">
-        <section v-if="actionCalls.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
-            Action Calls
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="call in actionCalls"
-              :key="call.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2"
-            >
-              <div class="mb-2 flex flex-wrap items-center gap-2">
-                <span class="font-mono text-xs text-fg-muted">#{{ call.id }}</span>
-                <span class="font-medium">{{ call.plugin_slug }}.{{ call.action_key }}</span>
-                <StatusBadge
-                  :status="call.status"
-                  kind="job"
-                  :small="true"
-                />
-              </div>
-              <UiJsonBlock
-                :data="sanitizeForDisplay({ request: call.request_json, response: call.response_json })"
-                density="compact"
-                max-height="12rem"
-                wrap
+      <UiCard
+        v-if="actionCalls.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
+            Action calls
+          </h2>
+          <UiBadge>{{ actionCalls.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="call in actionCalls"
+            :key="call.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+          >
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <span class="font-mono text-2xs text-fg-subtle">#{{ call.id }}</span>
+              <span class="text-sm font-medium text-fg-default">{{ call.plugin_slug }}.{{ call.action_key }}</span>
+              <StatusBadge
+                :status="call.status"
+                kind="job"
+                :small="true"
               />
-            </li>
-          </ul>
-        </section>
+            </div>
+            <UiJsonBlock
+              :data="sanitizeForDisplay({ request: call.request_json, response: call.response_json })"
+              density="compact"
+              max-height="12rem"
+              wrap
+            />
+          </li>
+        </ul>
+      </UiCard>
 
-        <section v-if="contextSnapshots.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
-            Context Snapshots
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="snapshot in contextSnapshots"
-              :key="snapshot.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2"
-            >
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <span class="font-medium">{{ snapshot.name ?? `Snapshot #${snapshot.id}` }}</span>
-                <span class="text-xs text-fg-muted">{{ formatDateTime(snapshot.created_at) }}</span>
-              </div>
-              <UiJsonBlock
-                :data="sanitizeForDisplay(snapshot.summary_json ?? snapshot.query_json)"
-                density="compact"
-                max-height="12rem"
-                wrap
-              />
-            </li>
-          </ul>
-        </section>
+      <UiCard
+        v-if="contextSnapshots.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
+            Context snapshots
+          </h2>
+          <UiBadge>{{ contextSnapshots.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="snapshot in contextSnapshots"
+            :key="snapshot.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+          >
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate text-sm font-medium text-fg-default">
+                {{ snapshot.name ?? `Snapshot #${snapshot.id}` }}
+              </span>
+              <span class="shrink-0 text-2xs text-fg-subtle">{{ formatDateTime(snapshot.created_at) }}</span>
+            </div>
+            <UiJsonBlock
+              :data="sanitizeForDisplay(snapshot.summary_json ?? snapshot.query_json)"
+              density="compact"
+              max-height="12rem"
+              wrap
+            />
+          </li>
+        </ul>
+      </UiCard>
 
-        <section v-if="observations.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
+      <UiCard
+        v-if="observations.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
             Observations
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="observation in observations"
-              :key="observation.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2"
-            >
-              <div class="mb-2 flex flex-wrap items-center gap-2">
-                <span class="font-mono text-xs text-fg-muted">#{{ observation.id }}</span>
-                <span>Experiment #{{ observation.experiment_id }}</span>
-                <span class="text-xs text-fg-muted">{{ formatDateTime(observation.observed_at) }}</span>
-              </div>
-              <UiJsonBlock
-                :data="sanitizeForDisplay(observation)"
-                density="compact"
-                max-height="12rem"
-                wrap
-              />
-            </li>
-          </ul>
-        </section>
+          </h2>
+          <UiBadge>{{ observations.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="observation in observations"
+            :key="observation.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+          >
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+              <span class="font-mono text-2xs text-fg-subtle">#{{ observation.id }}</span>
+              <span class="text-sm font-medium text-fg-default">Experiment #{{ observation.experiment_id }}</span>
+              <span class="text-2xs text-fg-subtle">{{ formatDateTime(observation.observed_at) }}</span>
+            </div>
+            <UiJsonBlock
+              :data="sanitizeForDisplay(observation)"
+              density="compact"
+              max-height="12rem"
+              wrap
+            />
+          </li>
+        </ul>
+      </UiCard>
 
-        <section v-if="decisions.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
+      <UiCard
+        v-if="decisions.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
             Decisions
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="decision in decisions"
-              :key="decision.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2"
-            >
-              <div class="mb-1 flex items-center justify-between gap-2">
-                <span class="font-medium">{{ decision.title ?? `Decision #${decision.id}` }}</span>
-                <StatusBadge
-                  :status="decision.status"
-                  kind="job"
-                  :small="true"
-                />
-              </div>
-              <p class="text-sm text-fg-default">{{ decision.decision }}</p>
-            </li>
-          </ul>
-        </section>
+          </h2>
+          <UiBadge>{{ decisions.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="decision in decisions"
+            :key="decision.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5"
+          >
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate text-sm font-medium text-fg-default">
+                {{ decision.title ?? `Decision #${decision.id}` }}
+              </span>
+              <StatusBadge
+                :status="decision.status"
+                kind="job"
+                :small="true"
+              />
+            </div>
+            <p class="text-sm text-fg-default">
+              {{ decision.decision }}
+            </p>
+          </li>
+        </ul>
+      </UiCard>
 
-        <section v-if="linkedLearnings.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
+      <UiCard
+        v-if="linkedLearnings.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
             Learnings
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="learning in linkedLearnings"
-              :key="learning.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2 text-sm"
-            >
-              {{ learning.statement }}
-            </li>
-          </ul>
-        </section>
+          </h2>
+          <UiBadge>{{ linkedLearnings.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="learning in linkedLearnings"
+            :key="learning.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5 text-sm text-fg-default"
+          >
+            {{ learning.statement }}
+          </li>
+        </ul>
+      </UiCard>
 
-        <section v-if="linkedExperiments.length > 0">
-          <h3 class="mb-2 text-sm font-semibold text-fg-default">
+      <UiCard
+        v-if="linkedExperiments.length > 0"
+        section
+      >
+        <template #header>
+          <h2 class="t-h3 text-fg-strong">
             Experiments
-          </h3>
-          <ul class="space-y-2">
-            <li
-              v-for="experiment in linkedExperiments"
-              :key="experiment.id"
-              class="rounded-md border border-subtle bg-bg-surface p-2 text-sm"
-            >
-              <div class="mb-1 flex items-center justify-between gap-2">
-                <span class="font-medium">{{ experiment.name ?? experiment.key ?? `Experiment #${experiment.id}` }}</span>
-                <StatusBadge
-                  :status="experiment.status"
-                  kind="job"
-                  :small="true"
-                />
-              </div>
-              <p class="text-fg-muted">{{ experiment.hypothesis }}</p>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </UiPanel>
+          </h2>
+          <UiBadge>{{ linkedExperiments.length }}</UiBadge>
+        </template>
+        <ul class="space-y-2">
+          <li
+            v-for="experiment in linkedExperiments"
+            :key="experiment.id"
+            class="rounded-md border border-subtle bg-bg-surface-alt p-2.5 text-sm"
+          >
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate font-medium text-fg-default">
+                {{ experiment.name ?? experiment.key ?? `Experiment #${experiment.id}` }}
+              </span>
+              <StatusBadge
+                :status="experiment.status"
+                kind="job"
+                :small="true"
+              />
+            </div>
+            <p class="text-fg-muted">
+              {{ experiment.hypothesis }}
+            </p>
+          </li>
+        </ul>
+      </UiCard>
+    </div>
 
-    <section
-      v-if="linkedArtifacts.length > 0"
-      class="space-y-3"
-      aria-label="Linked artifacts"
-    >
-      <UiSectionHeader title="Artifacts" />
-      <ArtifactRenderer
-        v-for="artifact in linkedArtifacts"
-        :key="artifact.id"
-        :artifact="artifact"
-      />
-    </section>
+    <UiCard section>
+      <template #header>
+        <h2 class="t-h3 text-fg-strong">
+          Artifacts
+        </h2>
+        <UiBadge>{{ linkedArtifacts.length }}</UiBadge>
+      </template>
+      <p
+        v-if="linkedArtifacts.length === 0"
+        class="text-sm text-fg-muted"
+      >
+        No artifacts for this run.
+      </p>
+      <div
+        v-else
+        class="space-y-3"
+      >
+        <ArtifactRenderer
+          v-for="artifact in linkedArtifacts"
+          :key="artifact.id"
+          :artifact="artifact"
+        />
+      </div>
+    </UiCard>
 
     <UiAdvancedJsonPanel
       v-if="hasMetadata"
@@ -442,32 +498,31 @@ onMounted(load)
       :data="sanitizeForDisplay(run.metadata_json)"
     />
 
-    <UiPanel
-      aria-labelledby="cs-run-children-title"
-      class="p-4"
-    >
-      <UiSectionHeader
-        id="cs-run-children-title"
-        title="Children runs"
-      />
+    <UiCard section>
+      <template #header>
+        <h2 class="t-h3 text-fg-strong">
+          Child runs
+        </h2>
+        <UiBadge>{{ children.length }}</UiBadge>
+      </template>
       <p
         v-if="children.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+        class="text-sm text-fg-muted"
       >
-        No child runs.
+        No child runs for this run.
       </p>
       <ul
         v-else
-        class="space-y-1 text-sm"
+        class="space-y-1.5 text-sm"
       >
         <li
           v-for="c in children"
           :key="c.id"
-          class="flex items-center justify-between rounded-sm border border-default bg-bg-surface p-2"
+          class="flex items-center justify-between gap-3 rounded-md border border-subtle bg-bg-surface-alt px-2.5 py-2"
         >
           <RouterLink
             :to="`/projects/${projectId}/runs/${c.id}`"
-            class="text-fg-link hover:underline"
+            class="focus-ring rounded-sm text-fg-link hover:underline"
           >
             #{{ c.id }} · {{ c.kind }}
           </RouterLink>
@@ -478,6 +533,6 @@ onMounted(load)
           />
         </li>
       </ul>
-    </UiPanel>
+    </UiCard>
   </div>
 </template>

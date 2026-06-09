@@ -28,12 +28,20 @@ function formatCount(count: number, label: string): string {
 </script>
 
 <template>
-  <UiCallout v-if="issues.length" tone="warning" density="compact">
+  <UiCallout
+    v-if="issues.length"
+    tone="warning"
+    density="compact"
+  >
     <details class="tracker-warning-summary">
       <summary class="tracker-warning-summary__header focus-ring">
         <span class="tracker-warning-summary__title">{{ summaryText }}</span>
         <span class="tracker-warning-summary__badges">
-          <UiBadge v-if="warningCount" tone="warning" variant="outline">
+          <UiBadge
+            v-if="warningCount"
+            tone="warning"
+            variant="outline"
+          >
             {{ formatCount(warningCount, 'warning') }}
           </UiBadge>
           <span class="tracker-warning-summary__toggle">Details</span>
@@ -45,7 +53,12 @@ function formatCount(count: number, label: string): string {
           :key="issue.id"
           class="tracker-warning-summary__item"
         >
-          <UiBadge tone="warning" variant="subtle"> Warning </UiBadge>
+          <UiBadge
+            tone="warning"
+            variant="subtle"
+          >
+            Warning
+          </UiBadge>
           <span>{{ issue.message }}</span>
         </li>
       </ul>
@@ -66,7 +79,7 @@ function formatCount(count: number, label: string): string {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .tracker-warning-summary__header::-webkit-details-marker {
@@ -76,8 +89,8 @@ function formatCount(count: number, label: string): string {
 .tracker-warning-summary__title {
   min-width: 0;
   color: currentColor;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 
 .tracker-warning-summary__badges {
@@ -89,8 +102,8 @@ function formatCount(count: number, label: string): string {
 
 .tracker-warning-summary__toggle {
   color: var(--color-fg-muted);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
 }
 
 .tracker-warning-summary__toggle::after {
@@ -113,7 +126,7 @@ function formatCount(count: number, label: string): string {
   align-items: start;
   gap: 10px;
   color: currentColor;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
 }
 </style>

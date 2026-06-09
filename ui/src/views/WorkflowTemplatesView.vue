@@ -7,7 +7,7 @@ import DataTable from '@/components/DataTable.vue'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
-import { UiBadge, UiCallout, UiPageShell, UiSectionHeader } from '@/components/ui'
+import { UiBadge, UiCallout, UiInput, UiPageShell, UiSectionHeader } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
 import { useWorkflowTemplatesStore } from '@/stores/workflowTemplates'
@@ -21,9 +21,21 @@ const detailOpen = ref(false)
 
 const projectId = computed(() => Number.parseInt(route.params.id as string, 10))
 const pluginSlug = computed(() => String(route.query.plugin_slug ?? ''))
-const rows = computed<TemplateRow[]>(() =>
-  items.value.map((item) => ({ ...item, id: `${item.source}:${item.key}:${item.version}` })),
-)
+const search = ref('')
+const rows = computed<TemplateRow[]>(() => {
+  const all = items.value.map((item) => ({
+    ...item,
+    id: `${item.source}:${item.key}:${item.version}`,
+  }))
+  const query = search.value.trim().toLowerCase()
+  if (!query) return all
+  return all.filter((row) =>
+    [row.key, row.name, row.plugin_slug ?? '']
+      .join(' ')
+      .toLowerCase()
+      .includes(query),
+  )
+})
 const selectedRowId = computed(() =>
   selected.value
     ? `${selected.value.summary.source}:${selected.value.summary.key}:${selected.value.summary.version}`
@@ -81,6 +93,16 @@ onBeforeRouteUpdate((to) => {
         as="h3"
       >
         <template #actions>
+          <UiInput
+            v-model="search"
+            type="search"
+            placeholder="Filter by key, name, or plugin…"
+            :block="false"
+            size="sm"
+            clearable
+            class="w-64"
+            aria-label="Filter templates"
+          />
           <UiBadge>{{ rows.length }}</UiBadge>
         </template>
       </UiSectionHeader>

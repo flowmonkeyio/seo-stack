@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import type { SchemaActionOut } from '@/api'
-import { UiBadge, UiIcon, UiJsonBlock } from '@/components/ui'
+import { UiAdvancedJsonPanel, UiBadge, UiIcon, UiJsonBlock } from '@/components/ui'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 
 const props = withDefaults(
@@ -48,57 +48,76 @@ function humanize(value: string | null | undefined): string {
 <template>
   <details
     :open="open"
-    class="group rounded-md border border-default bg-bg-surface shadow-xs"
+    class="group/action rounded-lg border border-default bg-bg-surface shadow-xs"
     :aria-label="`${action.name} action schema`"
   >
     <summary
-      class="grid cursor-pointer list-none gap-2 px-3 py-2 focus-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center [&::-webkit-details-marker]:hidden"
+      class="focus-ring flex cursor-pointer list-none flex-wrap items-center gap-2 rounded-lg px-3 py-1.5 transition-colors duration-fast [&::-webkit-details-marker]:hidden"
     >
-      <div class="min-w-0">
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="truncate text-sm font-semibold text-fg-strong">
+      <UiIcon
+        name="chevron-right"
+        class="ui-action-schema-renderer__chevron h-3 w-3 shrink-0 text-fg-subtle transition-transform duration-fast group-open/action:rotate-90"
+        aria-hidden="true"
+      />
+      <div class="min-w-0 flex-1">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <span class="truncate text-sm font-medium text-fg-strong">
             {{ action.name }}
           </span>
-          <UiBadge>{{ action.key }}</UiBadge>
+          <span class="font-mono text-2xs text-fg-subtle">{{ action.key }}</span>
         </div>
-        <p v-if="action.description" class="mt-0.5 truncate text-xs text-fg-muted">
+        <p
+          v-if="action.description"
+          class="mt-0.5 truncate text-xs text-fg-muted"
+        >
           {{ action.description }}
         </p>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5 sm:justify-end">
+      <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
         <UiBadge :tone="statusTone">
           {{ humanize(availability.status) }}
         </UiBadge>
-        <UiBadge tone="accent">{{ action.plugin_slug }}</UiBadge>
-        <UiBadge v-if="action.provider_key" tone="info">
+        <UiBadge tone="accent">
+          {{ action.plugin_slug }}
+        </UiBadge>
+        <UiBadge
+          v-if="action.provider_key"
+          tone="info"
+        >
           {{ action.provider_key }}
         </UiBadge>
         <UiBadge :tone="action.risk_level === 'read' ? 'success' : 'warning'">
           {{ action.risk_level }}
         </UiBadge>
-        <UiIcon
-          name="chevron-down"
-          class="ui-action-schema-renderer__chevron ml-1 h-4 w-4 text-fg-subtle transition-transform duration-fast group-open:rotate-180"
-        />
       </div>
     </summary>
 
-    <div class="grid gap-3 border-t border-subtle p-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Action ref</p>
-        <p class="mt-1 break-all font-mono text-xs text-fg-default">{{ action.action_ref }}</p>
+    <div class="grid gap-3 border-t border-subtle p-3 md:grid-cols-2 xl:grid-cols-4">
+      <div class="min-w-0">
+        <p class="text-2xs font-medium text-fg-muted">
+          Action ref
+        </p>
+        <p class="mt-1 break-all font-mono text-xs text-fg-default">
+          {{ action.action_ref }}
+        </p>
       </div>
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Connector</p>
+      <div class="min-w-0">
+        <p class="text-2xs font-medium text-fg-muted">
+          Connector
+        </p>
         <div class="mt-1 flex flex-wrap gap-1.5">
           <UiBadge :tone="availability.connector_registered ? 'success' : 'danger'">
             {{ action.connector_key ?? 'none' }}
           </UiBadge>
-          <UiBadge variant="outline">{{ action.operation }}</UiBadge>
+          <UiBadge variant="outline">
+            {{ action.operation }}
+          </UiBadge>
         </div>
       </div>
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Credential</p>
+      <div class="min-w-0">
+        <p class="text-2xs font-medium text-fg-muted">
+          Credential
+        </p>
         <div class="mt-1 flex flex-wrap gap-1.5">
           <UiBadge
             :tone="
@@ -109,13 +128,18 @@ function humanize(value: string | null | undefined): string {
           >
             {{ humanize(availability.credential_state) }}
           </UiBadge>
-          <UiBadge v-if="availability.credential_refs?.length" tone="info">
+          <UiBadge
+            v-if="availability.credential_refs?.length"
+            tone="info"
+          >
             {{ availability.credential_refs.length }}
           </UiBadge>
         </div>
       </div>
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Budget</p>
+      <div class="min-w-0">
+        <p class="text-2xs font-medium text-fg-muted">
+          Budget
+        </p>
         <div class="mt-1 flex flex-wrap gap-1.5">
           <UiBadge
             :tone="
@@ -128,13 +152,21 @@ function humanize(value: string | null | undefined): string {
           >
             {{ humanize(availability.budget_state) }}
           </UiBadge>
-          <UiBadge v-if="availability.budget_kind" variant="outline">
+          <UiBadge
+            v-if="availability.budget_kind"
+            variant="outline"
+          >
             {{ availability.budget_kind }}
           </UiBadge>
         </div>
       </div>
-      <div v-if="availability.reasons?.length" class="md:col-span-2 xl:col-span-4">
-        <p class="text-xs font-semibold uppercase tracking-wide text-fg-muted">Reasons</p>
+      <div
+        v-if="availability.reasons?.length"
+        class="md:col-span-2 xl:col-span-4"
+      >
+        <p class="text-2xs font-medium text-fg-muted">
+          Reasons
+        </p>
         <div class="mt-1 flex flex-wrap gap-1.5">
           <UiBadge
             v-for="reason in availability.reasons"
@@ -149,23 +181,40 @@ function humanize(value: string | null | undefined): string {
     </div>
 
     <div class="grid gap-3 border-t border-subtle p-3 lg:grid-cols-2">
-      <div>
-        <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Input</h4>
-        <UiJsonBlock :data="inputSchema" density="compact" max-height="18rem" wrap />
+      <div class="min-w-0">
+        <h4 class="mb-1 text-xs font-medium text-fg-muted">
+          Input schema
+        </h4>
+        <UiJsonBlock
+          :data="inputSchema"
+          density="compact"
+          max-height="18rem"
+          wrap
+        />
       </div>
-      <div>
-        <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted">Output</h4>
-        <UiJsonBlock :data="outputSchema" density="compact" max-height="18rem" wrap />
+      <div class="min-w-0">
+        <h4 class="mb-1 text-xs font-medium text-fg-muted">
+          Output schema
+        </h4>
+        <UiJsonBlock
+          :data="outputSchema"
+          density="compact"
+          max-height="18rem"
+          wrap
+        />
       </div>
     </div>
 
-    <details v-if="config" class="mx-3 mb-3 rounded-md border border-subtle bg-bg-surface">
-      <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-        Connector config
-      </summary>
-      <div class="border-t border-subtle p-3">
-        <UiJsonBlock :data="config" density="compact" max-height="14rem" wrap />
-      </div>
-    </details>
+    <div
+      v-if="config"
+      class="border-t border-subtle p-3"
+    >
+      <UiAdvancedJsonPanel
+        title="Connector config"
+        summary="Raw JSON"
+        :data="config"
+        max-height="14rem"
+      />
+    </div>
   </details>
 </template>

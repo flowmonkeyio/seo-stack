@@ -118,7 +118,7 @@ describe('AgentPresetsView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Planning Agent'))
 
-    expect(wrapper.text()).toContain('Agent Presets')
+    expect(wrapper.text()).toContain('Agent presets')
     expect(wrapper.text()).toContain('Engineering')
     await wrapper
       .findAll('tr')

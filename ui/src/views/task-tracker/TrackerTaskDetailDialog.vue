@@ -98,10 +98,6 @@ function hasJsonObject(value: Record<string, unknown> | null): boolean {
   return Boolean(value && Object.keys(value).length > 0)
 }
 
-function contextArtifacts(contextRef: string): TaskExecutionContextArtifact[] {
-  return props.contextArtifacts[contextRef] ?? []
-}
-
 const hiddenContextCount = computed(() => {
   const total = props.contextPageInfo?.totalEstimate ?? props.contexts.length
   return Math.max(0, total - props.contexts.length)
@@ -109,7 +105,7 @@ const hiddenContextCount = computed(() => {
 
 function hiddenArtifactCount(contextRef: string): number {
   const pageInfo = props.contextArtifactPageInfo[contextRef]
-  const visible = contextArtifacts(contextRef).length
+  const visible = (props.contextArtifacts[contextRef] ?? []).length
   const total = pageInfo?.totalEstimate ?? visible
   return Math.max(0, total - visible)
 }
@@ -161,19 +157,21 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
   >
     <div
       v-if="task"
-      class="space-y-4"
+      class="space-y-5"
     >
-      <section class="space-y-3 rounded-md border border-subtle bg-bg-surface-alt px-3 py-3">
+      <section class="space-y-3 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-3">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-xs font-semibold uppercase text-fg-subtle">Overview</p>
+            <h3 class="t-h3 text-fg-strong">
+              Overview
+            </h3>
             <div class="mt-1.5 flex flex-wrap items-center gap-2">
               <TrackerStatusBadge :status="task.status" />
               <UiBadge
                 v-if="workflowManaged"
                 tone="accent"
               >
-                run-plan linked
+                Run plan linked
               </UiBadge>
             </div>
           </div>
@@ -192,7 +190,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           aria-label="Task core metadata"
         />
         <details class="rounded-sm border border-subtle bg-bg-surface px-2.5 py-1.5">
-          <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">
+          <summary class="focus-ring cursor-pointer rounded-xs text-xs font-medium text-fg-muted">
             Trace
           </summary>
           <UiMetadataStrip
@@ -213,7 +211,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         v-if="task.goal || task.description"
         class="space-y-2"
       >
-        <p class="text-xs font-semibold uppercase text-fg-subtle">Summary</p>
+        <h3 class="t-h3 text-fg-strong">
+          Summary
+        </h3>
         <p class="max-w-[76ch] text-sm leading-6 text-fg-default">
           {{ task.goal || task.description }}
         </p>
@@ -221,9 +221,11 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
 
       <section
         v-if="task.definition_of_done_json.length"
-        class="space-y-2 border-t border-subtle pt-3"
+        class="space-y-2 border-t border-subtle pt-4"
       >
-        <p class="text-xs font-semibold uppercase text-fg-subtle">Definition of done</p>
+        <h3 class="t-h3 text-fg-strong">
+          Definition of done
+        </h3>
         <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
           <li
             v-for="item in task.definition_of_done_json"
@@ -237,13 +239,15 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
 
       <section
         v-if="task.expected_outcomes_json.length || task.constraints_json.length"
-        class="grid gap-3 border-t border-subtle pt-3 md:grid-cols-2"
+        class="grid gap-4 border-t border-subtle pt-4 md:grid-cols-2"
       >
         <div
           v-if="task.expected_outcomes_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Expected outcomes</p>
+          <h3 class="t-h3 text-fg-strong">
+            Expected outcomes
+          </h3>
           <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
             <li
               v-for="item in task.expected_outcomes_json"
@@ -258,7 +262,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           v-if="task.constraints_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Constraints</p>
+          <h3 class="t-h3 text-fg-strong">
+            Constraints
+          </h3>
           <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
             <li
               v-for="item in task.constraints_json"
@@ -271,11 +277,13 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         </div>
       </section>
 
-      <section class="space-y-3 border-t border-subtle pt-3">
+      <section class="space-y-3 border-t border-subtle pt-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p class="text-xs font-semibold uppercase text-fg-subtle">Task context</p>
-            <p class="mt-1 text-sm text-fg-muted">
+            <h3 class="t-h3 text-fg-strong">
+              Task context
+            </h3>
+            <p class="mt-0.5 text-sm text-fg-muted">
               Context refs and file-backed outputs linked directly to this task.
             </p>
           </div>
@@ -294,7 +302,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
 
         <p
           v-if="contextLoading"
-          class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
+          class="rounded-lg border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
         >
           Loading task contexts...
         </p>
@@ -318,12 +326,16 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           <article
             v-for="context in contexts"
             :key="context.context_ref"
-            class="rounded-md border border-subtle bg-bg-surface px-3 py-3"
+            class="rounded-lg border border-subtle bg-bg-surface px-3 py-3"
           >
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0">
-                <p class="truncate text-sm font-semibold text-fg-strong">{{ context.name }}</p>
-                <p class="truncate font-mono text-xs text-fg-muted">{{ context.context_ref }}</p>
+                <p class="truncate text-sm font-semibold text-fg-strong">
+                  {{ context.name }}
+                </p>
+                <p class="truncate font-mono text-xs text-fg-muted">
+                  {{ context.context_ref }}
+                </p>
               </div>
               <span class="flex flex-wrap justify-end gap-1">
                 <UiBadge tone="accent">{{ contextScopeLabel(context) }}</UiBadge>
@@ -352,13 +364,15 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             />
 
             <div
-              v-if="contextArtifacts(context.context_ref).length"
+              v-if="contextArtifacts[context.context_ref]?.length"
               class="mt-3 space-y-2 border-t border-subtle pt-3"
             >
-              <p class="text-xs font-semibold uppercase text-fg-subtle">Files</p>
+              <p class="text-xs font-medium text-fg-muted">
+                Files
+              </p>
               <ul class="grid gap-2">
                 <li
-                  v-for="artifact in contextArtifacts(context.context_ref)"
+                  v-for="artifact in contextArtifacts[context.context_ref] ?? []"
                   :key="artifact.id"
                   class="rounded-sm border border-subtle bg-bg-surface-alt px-3 py-2"
                 >
@@ -367,9 +381,13 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
                       <p class="truncate text-sm font-medium text-fg-strong">
                         {{ artifactName(artifact) }}
                       </p>
-                      <p class="mt-1 text-xs text-fg-muted">{{ artifactDetail(artifact) }}</p>
+                      <p class="mt-1 text-xs text-fg-muted">
+                        {{ artifactDetail(artifact) }}
+                      </p>
                     </div>
-                    <UiBadge v-if="artifact.action_call_id">call #{{ artifact.action_call_id }}</UiBadge>
+                    <UiBadge v-if="artifact.action_call_id">
+                      Call #{{ artifact.action_call_id }}
+                    </UiBadge>
                   </div>
                   <p
                     v-if="artifactPath(artifact)"
@@ -383,7 +401,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
                 v-if="hiddenArtifactCount(context.context_ref) > 0"
                 class="text-xs text-fg-muted"
               >
-                Showing first {{ contextArtifacts(context.context_ref).length }} of
+                Showing first {{ contextArtifacts[context.context_ref]?.length ?? 0 }} of
                 {{ contextArtifactPageInfo[context.context_ref]?.totalEstimate }} files.
               </p>
             </div>
@@ -393,9 +411,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
 
       <details
         v-if="hasTaskJson"
-        class="rounded-md border border-subtle bg-bg-surface px-3 py-2"
+        class="rounded-lg border border-subtle bg-bg-surface px-3 py-2"
       >
-        <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">
+        <summary class="focus-ring cursor-pointer rounded-xs text-xs font-medium text-fg-muted">
           Raw metadata
         </summary>
         <div class="mt-3 space-y-4">
@@ -403,7 +421,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             v-if="hasJsonObject(task.completion_evidence_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Completion evidence</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Completion evidence
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(task.completion_evidence_json)"
               density="compact"
@@ -415,7 +435,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             v-if="hasJsonObject(task.source_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Source</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Source
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(task.source_json)"
               density="compact"
@@ -427,7 +449,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             v-if="hasJsonObject(task.context_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Context</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Context
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(task.context_json)"
               density="compact"
@@ -439,7 +463,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             v-if="hasJsonObject(task.metadata_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Metadata</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Metadata
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(task.metadata_json)"
               density="compact"

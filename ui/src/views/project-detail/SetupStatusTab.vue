@@ -6,10 +6,11 @@ import {
   UiBadge,
   UiButton,
   UiCallout,
+  UiCard,
+  UiDescriptionList,
+  UiIcon,
   UiMetricCard,
-  UiPanel,
   UiProgressBar,
-  UiSectionHeader,
 } from '@/components/ui'
 import type {
   SchemaAuthProviderOut,
@@ -339,6 +340,12 @@ const readiness = computed(() =>
   Math.round((readyItems.value.length / checklist.value.length) * 100),
 )
 
+// Presentational split of the checklist into two stacked column lists.
+const checklistColumns = computed(() => {
+  const midpoint = Math.ceil(checklist.value.length / 2)
+  return [checklist.value.slice(0, midpoint), checklist.value.slice(midpoint)]
+})
+
 async function fetchOr<T>(path: string, fallback: T): Promise<T> {
   try {
     return await apiFetch<T>(path)
@@ -440,10 +447,11 @@ function go(path: string): void {
   void router.push(`/projects/${projectId.value}/${path}`)
 }
 
-function statusTone(status: ChecklistStatus): 'success' | 'warning' | 'danger' {
-  if (status === 'done') return 'success'
-  if (status === 'todo') return 'warning'
-  return 'danger'
+// Status icon treatment per checklist state — ready, attention, open.
+const STATUS_ICONS: Record<ChecklistStatus, { icon: string; class: string }> = {
+  done: { icon: 'check-circle', class: 'text-success' },
+  attention: { icon: 'alert-triangle', class: 'text-warning' },
+  todo: { icon: 'clock', class: 'text-fg-subtle' },
 }
 
 function statusLabel(status: ChecklistStatus): string {
@@ -456,21 +464,39 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="space-y-4">
-    <UiCallout v-if="error" tone="danger">
+  <div class="space-y-5">
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
-    <div class="grid gap-3 md:grid-cols-4">
-      <UiMetricCard label="Readiness" :value="`${readiness}%`" />
-      <UiMetricCard label="Ready" :value="readyItems.length" />
-      <UiMetricCard label="Open" :value="todoItems.length" />
-      <UiMetricCard label="Check" :value="attentionItems.length" />
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <UiMetricCard
+        label="Readiness"
+        :value="`${readiness}%`"
+      />
+      <UiMetricCard
+        label="Ready"
+        :value="readyItems.length"
+      />
+      <UiMetricCard
+        label="Open"
+        :value="todoItems.length"
+      />
+      <UiMetricCard
+        label="Check"
+        :value="attentionItems.length"
+      />
     </div>
 
-    <UiPanel class="p-4">
-      <UiSectionHeader title="Setup Status" as="h3">
-        <template #actions>
+    <UiCard section>
+      <template #header>
+        <h3 class="t-h3 text-fg-strong">
+          Setup status
+        </h3>
+        <div class="flex items-center gap-2">
           <UiBadge
             :tone="
               attentionItems.length > 0 ? 'danger' : todoItems.length > 0 ? 'warning' : 'success'
@@ -478,11 +504,16 @@ onMounted(load)
           >
             {{ readyItems.length }} / {{ checklist.length }}
           </UiBadge>
-          <UiButton size="sm" variant="secondary" :disabled="loading" @click="load">
+          <UiButton
+            size="sm"
+            variant="secondary"
+            :disabled="loading"
+            @click="load"
+          >
             Refresh
           </UiButton>
-        </template>
-      </UiSectionHeader>
+        </div>
+      </template>
 
       <UiProgressBar
         :value="readyItems.length"
@@ -492,86 +523,92 @@ onMounted(load)
         aria-label="Setup readiness"
       />
 
-      <div
+      <UiCallout
         v-if="workspaceBinding && workspaceProfileMissing.length > 0"
-        class="mt-4 flex flex-col gap-3 rounded-md border border-warning-border bg-warning-subtle px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+        class="mt-4"
+        tone="warning"
+        title="Workspace profile incomplete"
       >
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <UiBadge tone="warning">Adaptation hints</UiBadge>
-            <p class="text-sm font-medium text-fg-strong">Workspace profile incomplete</p>
-          </div>
-          <p class="mt-1 text-sm text-fg-muted">
-            Project tools are usable; future agents are missing
-            {{ workspaceProfileMissing.join(', ') }} guidance.
-          </p>
-        </div>
-        <UiButton
-          class="shrink-0"
-          size="sm"
-          variant="secondary"
-          aria-label="Open workspace profile operation"
-          @click="go('operations')"
-        >
-          Open operation
-        </UiButton>
-      </div>
+        Adaptation hints — project tools are usable; future agents are missing
+        {{ workspaceProfileMissing.join(', ') }} guidance.
+        <template #actions>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            aria-label="Open workspace profile operation"
+            @click="go('operations')"
+          >
+            Open operation
+          </UiButton>
+        </template>
+      </UiCallout>
 
-      <div class="mt-4 grid gap-2 md:grid-cols-2">
-        <div
-          v-for="item in checklist"
-          :key="item.key"
-          class="flex min-h-16 items-center justify-between gap-3 rounded-md border border-subtle bg-bg-surface-alt px-3 py-2"
+      <div class="mt-3 grid gap-x-6 md:grid-cols-2">
+        <ul
+          v-for="(column, columnIndex) in checklistColumns"
+          :key="columnIndex"
+          class="divide-y divide-border-subtle"
         >
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <UiBadge :tone="statusTone(item.status)" dot>
-                {{ statusLabel(item.status) }}
-              </UiBadge>
+          <li
+            v-for="item in column"
+            :key="item.key"
+            class="flex items-center gap-3 py-2.5"
+          >
+            <span
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-bg-sunken"
+            >
+              <UiIcon
+                :name="STATUS_ICONS[item.status].icon"
+                :class="['h-4 w-4', STATUS_ICONS[item.status].class]"
+                :aria-label="statusLabel(item.status)"
+              />
+            </span>
+            <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-fg-strong">
                 {{ item.label }}
               </p>
+              <p class="truncate text-xs text-fg-muted">
+                {{ item.detail }}
+              </p>
             </div>
-            <p class="mt-1 truncate text-xs text-fg-muted">
-              {{ item.detail }}
-            </p>
-          </div>
-          <UiButton
-            v-if="item.to"
-            class="shrink-0"
-            size="sm"
-            variant="ghost"
-            :aria-label="`Open ${item.label}`"
-            @click="go(item.to)"
-          >
-            Open
-          </UiButton>
-        </div>
+            <UiButton
+              v-if="item.to"
+              class="shrink-0"
+              size="sm"
+              variant="ghost"
+              icon-right="arrow-right"
+              :aria-label="`Open ${item.label}`"
+              @click="go(item.to)"
+            >
+              Open
+            </UiButton>
+          </li>
+        </ul>
       </div>
-    </UiPanel>
+    </UiCard>
 
-    <div class="grid gap-4 lg:grid-cols-2">
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Agent Presets" as="h3">
-          <template #actions>
+    <div class="grid gap-5 lg:grid-cols-2">
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Agent presets
+          </h3>
+          <div class="flex items-center gap-2">
             <UiBadge>{{ agentPresets.length }}</UiBadge>
-            <UiBadge tone="warning">{{ adaptationRequiredPresets }} adapt</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <dl class="grid gap-3 text-sm md:grid-cols-3">
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Available</dt>
-            <dd class="font-medium">{{ agentPresets.length }}</dd>
+            <UiBadge tone="warning">
+              {{ adaptationRequiredPresets }} adapt
+            </UiBadge>
           </div>
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Domains</dt>
-            <dd class="font-medium">{{ agentDomains.length }}</dd>
-          </div>
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Adaptation</dt>
-            <dd class="font-medium">{{ adaptationRequiredPresets }} required</dd>
-          </div>
-        </dl>
+        </template>
+        <UiDescriptionList
+          layout="grid"
+          :columns="3"
+          :items="[
+            { label: 'Available', value: agentPresets.length },
+            { label: 'Domains', value: agentDomains.length },
+            { label: 'Adaptation', value: `${adaptationRequiredPresets} required` },
+          ]"
+        />
         <div
           v-if="agentDomains.length"
           class="mt-4 flex flex-wrap gap-2"
@@ -584,33 +621,35 @@ onMounted(load)
             {{ domain }}
           </UiBadge>
         </div>
-      </UiPanel>
+      </UiCard>
 
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Skills & Skill Presets" as="h3">
-          <template #actions>
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Skills & skill presets
+          </h3>
+          <div class="flex items-center gap-2">
             <UiBadge>{{ workflowSkillRequirements.length }}</UiBadge>
-            <UiBadge tone="accent">{{ workflowSkillPresetRequirements.length }} presets</UiBadge>
-            <UiBadge tone="info">{{ templatesWithStackosSkill }} templates</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <dl class="grid gap-3 text-sm md:grid-cols-3">
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Skill refs</dt>
-            <dd class="font-medium">{{ skillRefs.length }}</dd>
+            <UiBadge tone="accent">
+              {{ workflowSkillPresetRequirements.length }} presets
+            </UiBadge>
+            <UiBadge tone="info">
+              {{ templatesWithStackosSkill }} templates
+            </UiBadge>
           </div>
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Template coverage</dt>
-            <dd class="font-medium">{{ templatesWithStackosSkill }} / {{ templates }}</dd>
-          </div>
-          <div class="min-w-0">
-            <dt class="text-xs text-fg-muted">Workflow roles</dt>
-            <dd class="font-medium">
-              {{ workflowAgentRequirements.length }} roles on
-              {{ templatesWithAgentRequirements }} templates
-            </dd>
-          </div>
-        </dl>
+        </template>
+        <UiDescriptionList
+          layout="grid"
+          :columns="3"
+          :items="[
+            { label: 'Skill refs', value: skillRefs.length },
+            { label: 'Template coverage', value: `${templatesWithStackosSkill} / ${templates}` },
+            {
+              label: 'Workflow roles',
+              value: `${workflowAgentRequirements.length} roles on ${templatesWithAgentRequirements} templates`,
+            },
+          ]"
+        />
         <div
           v-if="skillPresetRefs.length"
           class="mt-4 flex flex-wrap gap-2"
@@ -635,63 +674,57 @@ onMounted(load)
             {{ skill }}
           </UiBadge>
         </div>
-      </UiPanel>
+      </UiCard>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-3">
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Runtime" as="h3" />
-        <dl class="grid gap-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Version</dt>
-            <dd class="font-medium">{{ health?.version ?? '-' }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Database</dt>
-            <dd class="font-medium">{{ health?.db_status ?? '-' }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Scheduler</dt>
-            <dd class="font-medium">{{ health?.scheduler_running ? 'running' : '-' }}</dd>
-          </div>
-        </dl>
-      </UiPanel>
+    <div class="grid gap-5 lg:grid-cols-3">
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Runtime
+          </h3>
+        </template>
+        <UiDescriptionList
+          numeric
+          :items="[
+            { label: 'Version', value: health?.version ?? '-' },
+            { label: 'Database', value: health?.db_status ?? '-' },
+            { label: 'Scheduler', value: health?.scheduler_running ? 'running' : '-' },
+          ]"
+        />
+      </UiCard>
 
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Project Surface" as="h3" />
-        <dl class="grid gap-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Installed plugins</dt>
-            <dd class="font-medium">{{ plugins.length }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Templates</dt>
-            <dd class="font-medium">{{ templates }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Actions</dt>
-            <dd class="font-medium">{{ actions }}</dd>
-          </div>
-        </dl>
-      </UiPanel>
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Project surface
+          </h3>
+        </template>
+        <UiDescriptionList
+          numeric
+          :items="[
+            { label: 'Installed plugins', value: plugins.length },
+            { label: 'Templates', value: templates },
+            { label: 'Actions', value: actions },
+          ]"
+        />
+      </UiCard>
 
-      <UiPanel class="p-4">
-        <UiSectionHeader title="Connections" as="h3" />
-        <dl class="grid gap-3 text-sm">
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Providers</dt>
-            <dd class="font-medium">{{ authProviders.length }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Active</dt>
-            <dd class="font-medium">{{ activeConnections.length }}</dd>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <dt class="text-fg-muted">Connected</dt>
-            <dd class="font-medium">{{ connectedConnections.length }}</dd>
-          </div>
-        </dl>
-      </UiPanel>
+      <UiCard section>
+        <template #header>
+          <h3 class="t-h3 text-fg-strong">
+            Connections
+          </h3>
+        </template>
+        <UiDescriptionList
+          numeric
+          :items="[
+            { label: 'Providers', value: authProviders.length },
+            { label: 'Active', value: activeConnections.length },
+            { label: 'Connected', value: connectedConnections.length },
+          ]"
+        />
+      </UiCard>
     </div>
   </div>
 </template>

@@ -9,7 +9,6 @@ import {
   UiCallout,
   UiMetricCard,
   UiPageShell,
-  UiPanel,
   UiSegmentedControl,
 } from '@/components/ui'
 import type { SchemaAuthProviderOut } from '@/api'
@@ -680,18 +679,29 @@ onBeforeRouteUpdate((to) => {
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
-        <UiButton variant="primary" icon-left="plus" @click="openAddConnection()">
+        <UiButton
+          variant="primary"
+          icon-left="plus"
+          @click="openAddConnection()"
+        >
           Add connection
         </UiButton>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout v-if="error" tone="danger">
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-3">
-      <UiMetricCard label="Connected services" :value="connectedServiceCount" density="compact" />
+      <UiMetricCard
+        label="Connected services"
+        :value="connectedServiceCount"
+        density="compact"
+      />
       <UiMetricCard
         label="Active connections"
         :value="activeConnections.length"
@@ -704,21 +714,19 @@ onBeforeRouteUpdate((to) => {
       />
     </div>
 
-    <UiPanel class="p-3">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <UiSegmentedControl
-          :model-value="activeSection"
-          :options="connectionSectionOptions"
-          label="Connection page sections"
-          size="md"
-          @select="setActiveSection"
-        />
-        <p class="max-w-3xl text-sm text-fg-muted">
-          Use this page for local-admin setup and read-only inspection. Agents receive safe refs,
-          not secrets.
-        </p>
-      </div>
-    </UiPanel>
+    <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <UiSegmentedControl
+        :model-value="activeSection"
+        :options="connectionSectionOptions"
+        label="Connection page sections"
+        size="md"
+        @select="setActiveSection"
+      />
+      <p class="text-xs text-fg-subtle">
+        Use this page for local-admin setup and read-only inspection. Agents receive safe refs,
+        not secrets.
+      </p>
+    </div>
 
     <ConnectedServicesPanel
       v-show="activeSection === 'services'"

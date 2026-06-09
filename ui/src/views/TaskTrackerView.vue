@@ -372,8 +372,8 @@ const relationFocusActive = computed(
 )
 
 const relationFocusLabel = computed(() => {
-  if (selectedEdgeId.value) return 'selected relation'
-  if (selectedNodeFocusId.value) return 'related dependencies'
+  if (selectedEdgeId.value) return 'Selected relation'
+  if (selectedNodeFocusId.value) return 'Related dependencies'
   return ''
 })
 
@@ -383,9 +383,9 @@ const selectedGraphEdge = computed(
 )
 
 const graphSelectionLabel = computed(() => {
-  if (selectedEdgeId.value) return 'selected relation'
-  if (selectedNodeFocusId.value) return 'selected ticket'
-  if (selectedTicket.value) return 'selected ticket'
+  if (selectedEdgeId.value) return 'Selected relation'
+  if (selectedNodeFocusId.value) return 'Selected ticket'
+  if (selectedTicket.value) return 'Selected ticket'
   return ''
 })
 
@@ -938,14 +938,29 @@ onBeforeRouteUpdate((to) => {
       :breadcrumbs="[{ label: 'Tasks' }]"
     >
       <template #actions>
-        <UiButton variant="secondary" :disabled="loading" @click="load"> Refresh </UiButton>
+        <UiButton
+          variant="secondary"
+          :disabled="loading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
       </template>
       <template #titleMeta>
-        <UiBadge v-if="tracker" tone="neutral" variant="outline"> rev {{ tracker.rev }} </UiBadge>
+        <UiBadge
+          v-if="tracker"
+          tone="neutral"
+          variant="outline"
+        >
+          Rev {{ tracker.rev }}
+        </UiBadge>
       </template>
     </ProjectPageHeader>
 
-    <UiCallout v-if="error" tone="danger">
+    <UiCallout
+      v-if="error"
+      tone="danger"
+    >
       {{ error }}
     </UiCallout>
 
@@ -984,14 +999,20 @@ onBeforeRouteUpdate((to) => {
 
     <TrackerWarningSummary :warnings="flow.warnings" />
 
-    <div v-if="!loading && taskRows.length === 0" class="min-h-[360px]">
+    <div
+      v-if="!loading && taskRows.length === 0"
+      class="min-h-[360px]"
+    >
       <UiEmptyState
         title="No tracker work"
         description="Agents can create tasks and tickets through tracker operations."
       />
     </div>
 
-    <div v-else class="tracker-workspace">
+    <div
+      v-else
+      class="tracker-workspace"
+    >
       <div class="tracker-focus">
         <div class="tracker-main">
           <TrackerGraphPanel

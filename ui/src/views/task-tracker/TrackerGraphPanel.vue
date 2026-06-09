@@ -5,7 +5,8 @@ import { MiniMap } from '@vue-flow/minimap'
 import { VueFlow } from '@vue-flow/core'
 import type { EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 
-import { UiButton, UiPanel } from '@/components/ui'
+import { UiBadge, UiButton } from '@/components/ui'
+import { resolveStatus, type Tone } from '@/design/status'
 import type { TrackerFlowModel } from '@/lib/task-tracker/graphModel'
 import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -50,22 +51,37 @@ defineEmits<{
   (e: 'openSelectedDetail'): void
   (e: 'clearGraphFocus'): void
 }>()
+
+const BLOCK_TONES: Record<GraphBlockFilter, Tone> = {
+  blocked: 'danger',
+  open: 'success',
+}
+
+function statusTone(status: TrackerStatus): Tone {
+  return resolveStatus('tracker', status).tone
+}
 </script>
 
 <template>
-  <UiPanel :padded="false" class="tracker-flow-shell">
-    <div class="tracker-flow-shell__bar">
-      <div>
-        <p class="tracker-flow-shell__eyebrow">Dependency map</p>
-        <p class="tracker-flow-shell__title">{{ activeTaskTitle }}</p>
+  <section
+    class="tracker-flow-shell rounded-lg border border-default bg-bg-surface shadow-xs"
+    aria-label="Task dependency graph"
+  >
+    <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-subtle px-4 py-3">
+      <div class="min-w-0">
+        <p class="t-overline text-fg-subtle">
+          Dependency map
+        </p>
+        <h3 class="t-h3 truncate text-fg-strong">
+          {{ activeTaskTitle }}
+        </h3>
       </div>
-      <div class="tracker-flow-shell__right">
-        <div class="tracker-flow-shell__stats">
+      <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        <p class="tracker-flow-shell__stats text-xs text-fg-muted">
           <span>{{ ticketStatLabel }}</span>
           <span>{{ edgeStatLabel }}</span>
-        </div>
+        </p>
         <UiButton
-          class="tracker-task-details-button"
           variant="secondary"
           size="sm"
           icon-left="file-text"
@@ -76,53 +92,59 @@ defineEmits<{
           Task details
         </UiButton>
       </div>
-    </div>
+    </header>
 
-    <div class="tracker-graph-controls">
-      <div class="tracker-graph-filter-group">
-        <span class="tracker-graph-filter-group__label">Status</span>
-        <button
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle bg-bg-surface px-4 py-2">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="t-overline text-fg-subtle">Status</span>
+        <UiBadge
           v-for="item in statusRows"
           :key="item.key"
-          type="button"
-          class="tracker-graph-filter"
-          :class="{ 'tracker-graph-filter--active': statusFilters.includes(item.key) }"
+          interactive
+          :tone="statusTone(item.key)"
+          :variant="statusFilters.includes(item.key) ? 'solid' : 'subtle'"
+          :aria-pressed="statusFilters.includes(item.key)"
           @click="$emit('toggleStatus', item.key)"
         >
-          <span>{{ item.label }}</span>
-          <strong>{{ item.count }}</strong>
-        </button>
+          {{ item.label }}
+          <template #iconRight>
+            <span class="tabular-nums">{{ item.count }}</span>
+          </template>
+        </UiBadge>
       </div>
-      <div class="tracker-graph-filter-group">
-        <span class="tracker-graph-filter-group__label">Block</span>
-        <button
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="t-overline text-fg-subtle">Block</span>
+        <UiBadge
           v-for="item in blockRows"
           :key="item.key"
-          type="button"
-          class="tracker-graph-filter"
-          :class="[
-            `tracker-graph-filter--${item.key}`,
-            { 'tracker-graph-filter--active': blockFilters.includes(item.key) },
-          ]"
+          interactive
+          :tone="BLOCK_TONES[item.key]"
+          :variant="blockFilters.includes(item.key) ? 'solid' : 'subtle'"
+          :aria-pressed="blockFilters.includes(item.key)"
           @click="$emit('toggleBlock', item.key)"
         >
-          <span>{{ item.label }}</span>
-          <strong>{{ item.count }}</strong>
-        </button>
+          {{ item.label }}
+          <template #iconRight>
+            <span class="tabular-nums">{{ item.count }}</span>
+          </template>
+        </UiBadge>
       </div>
-      <div class="tracker-graph-controls__tail">
-        <button
+      <div class="ml-auto flex items-center">
+        <UiButton
           v-if="filtersActive"
-          type="button"
-          class="tracker-graph-clear"
+          variant="ghost"
+          size="sm"
           @click="$emit('clearFilters')"
         >
-          Clear graph
-        </button>
+          Clear graph filters
+        </UiButton>
       </div>
     </div>
 
-    <div class="tracker-flow-frame" @click.capture="$emit('graphCanvasClick', $event)">
+    <div
+      class="tracker-flow-frame"
+      @click.capture="$emit('graphCanvasClick', $event)"
+    >
       <VueFlow
         :key="flowRenderKey"
         class="tracker-flow"
@@ -141,7 +163,10 @@ defineEmits<{
           <TicketGraphNode v-bind="props" />
         </template>
         <Background pattern-color="var(--color-border-subtle)" />
-        <MiniMap pannable zoomable />
+        <MiniMap
+          pannable
+          zoomable
+        />
         <Controls />
         <div
           v-if="selectionVisible"
@@ -149,23 +174,34 @@ defineEmits<{
           @pointerdown.stop
           @mousedown.stop
         >
-          <div class="tracker-graph-selection__main">
-            <div class="tracker-graph-selection__title-row">
-              <p class="tracker-graph-selection__eyebrow">{{ selectionLabel }}</p>
-              <p class="tracker-graph-selection__title">
-                {{ selectedTicket?.title ?? 'Dependency context' }}
+          <div class="grid min-w-0 gap-1">
+            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <p class="t-overline text-fg-subtle">
+                {{ selectionLabel }}
               </p>
-              <TrackerStatusBadge v-if="selectedTicket" :status="selectedTicket.status" />
+              <TrackerStatusBadge
+                v-if="selectedTicket"
+                :status="selectedTicket.status"
+              />
             </div>
-            <div class="tracker-graph-selection__meta">
-              <span v-if="selectedTicket">{{ selectedTicket.key }}</span>
+            <p class="truncate text-sm font-medium text-fg-strong">
+              {{ selectedTicket?.title ?? 'Dependency context' }}
+            </p>
+            <p class="tracker-graph-selection__meta text-2xs text-fg-muted">
+              <span
+                v-if="selectedTicket"
+                class="font-mono"
+              >{{ selectedTicket.key }}</span>
               <span v-if="selectedEdgeLabel">{{ selectedEdgeLabel }}</span>
-              <span v-for="stat in selectionStats" :key="stat">{{ stat }}</span>
-              <span v-if="selectedTicket?.assignee">owner {{ selectedTicket.assignee }}</span>
-              <span v-if="selectedTicket?.run_plan_id">run {{ selectedTicket.run_plan_id }}</span>
-            </div>
+              <span
+                v-for="stat in selectionStats"
+                :key="stat"
+              >{{ stat }}</span>
+              <span v-if="selectedTicket?.assignee">Owner {{ selectedTicket.assignee }}</span>
+              <span v-if="selectedTicket?.run_plan_id">Run {{ selectedTicket.run_plan_id }}</span>
+            </p>
           </div>
-          <div class="tracker-graph-selection__actions">
+          <div class="tracker-graph-selection__actions flex flex-none items-center gap-1.5">
             <UiButton
               v-if="selectedTicket"
               variant="secondary"
@@ -174,14 +210,18 @@ defineEmits<{
             >
               Details
             </UiButton>
-            <UiButton variant="ghost" size="sm" @click.stop="$emit('clearGraphFocus')">
+            <UiButton
+              variant="ghost"
+              size="sm"
+              @click.stop="$emit('clearGraphFocus')"
+            >
               Clear
             </UiButton>
           </div>
         </div>
       </VueFlow>
     </div>
-  </UiPanel>
+  </section>
 </template>
 
 <style scoped>
@@ -193,156 +233,19 @@ defineEmits<{
   overflow: hidden;
 }
 
-.tracker-flow-shell__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
-  padding: 10px 14px;
-}
-
-.tracker-flow-shell__eyebrow {
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.tracker-flow-shell__title {
-  margin-top: 2px;
-  color: var(--color-fg-default);
-  font-size: 14px;
-  font-weight: 700;
-}
-
 .tracker-flow-shell__stats {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-  color: var(--color-fg-muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.tracker-flow-shell__right {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px 12px;
+  column-gap: 8px;
+  row-gap: 2px;
 }
 
-.tracker-task-details-button {
-  border-color: color-mix(in srgb, var(--color-accent-primary) 34%, var(--color-border-default));
-  background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-bg-surface));
-  color: var(--color-fg-strong);
-  font-weight: var(--fw-semibold);
-  box-shadow: 0 1px 1px color-mix(in srgb, var(--color-fg-default) 8%, transparent);
-}
-
-.tracker-task-details-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--color-accent-primary) 72%, var(--color-border-strong));
-  background: color-mix(in srgb, var(--color-accent-primary) 13%, var(--color-bg-surface));
-}
-
-.tracker-task-details-button:active:not(:disabled) {
-  background: color-mix(in srgb, var(--color-accent-primary) 17%, var(--color-bg-surface));
-}
-
-.tracker-task-details-button:disabled {
-  border-color: var(--color-border-default);
-  background: var(--color-bg-surface);
-  box-shadow: none;
-}
-
-.tracker-graph-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
-  padding: 8px 14px;
-}
-
-.tracker-graph-filter-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.tracker-graph-filter-group__label {
-  color: var(--color-fg-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.tracker-graph-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
-  background: var(--color-bg-surface-alt);
-  color: var(--color-fg-muted);
-  padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.tracker-graph-filter:hover {
-  border-color: var(--color-border-strong);
-  color: var(--color-fg-default);
-}
-
-.tracker-graph-filter strong {
-  color: var(--color-fg-default);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
-.tracker-graph-filter--active {
-  border-color: var(--color-accent-primary);
-  background: color-mix(in srgb, var(--color-accent-primary) 10%, var(--color-bg-surface));
-  color: var(--color-fg-default);
-}
-
-.tracker-graph-filter--blocked {
-  color: var(--color-danger-default);
-}
-
-.tracker-graph-filter--open {
-  color: var(--color-success-default);
-}
-
-.tracker-graph-controls__tail {
-  display: flex;
-  min-height: 24px;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.tracker-graph-clear {
-  border: 0;
-  background: transparent;
-  color: var(--color-fg-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.tracker-graph-clear:hover {
-  color: var(--color-fg-default);
+.tracker-flow-shell__stats > span + span::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--color-fg-subtle);
 }
 
 .tracker-graph-selection {
@@ -354,66 +257,20 @@ defineEmits<{
   align-items: center;
   justify-content: space-between;
   max-width: min(520px, calc(100% - 24px));
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--color-info-default) 22%, var(--color-border-subtle));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-bg-surface) 96%, var(--color-info-default));
-  box-shadow: var(--shadow-sm);
-  padding: 7px 9px;
+  gap: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-md);
+  padding: 8px 10px;
   pointer-events: auto;
-}
-
-.tracker-graph-selection__main {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.tracker-graph-selection__eyebrow {
-  flex: none;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-info-default) 9%, var(--color-bg-surface));
-  color: var(--color-info-default);
-  padding: 2px 6px;
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.tracker-graph-selection__title-row {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-
-.tracker-graph-selection__title {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-fg-default);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tracker-graph-selection__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  color: var(--color-fg-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.tracker-graph-selection__actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
+  column-gap: 8px;
+  row-gap: 2px;
 }
 
 .tracker-flow-frame {
@@ -440,6 +297,54 @@ defineEmits<{
   z-index: 20 !important;
 }
 
+/* Zoom controls — small icon buttons on the surface material. */
+.tracker-flow :deep(.vue-flow__controls) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: none;
+}
+
+.tracker-flow :deep(.vue-flow__controls-button) {
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--color-fg-muted);
+}
+
+.tracker-flow :deep(.vue-flow__controls-button svg) {
+  fill: currentColor;
+}
+
+.tracker-flow :deep(.vue-flow__controls-button:hover) {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-surface-alt);
+  color: var(--color-fg-default);
+}
+
+/* Minimap — surface material with sunken viewport mask. */
+.tracker-flow :deep(.vue-flow__minimap) {
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.tracker-flow :deep(.vue-flow__minimap-mask) {
+  fill: color-mix(in srgb, var(--color-bg-sunken) 72%, transparent);
+}
+
+.tracker-flow :deep(.vue-flow__minimap-node) {
+  fill: var(--color-border-strong);
+  stroke: none;
+}
+
 :deep(.tracker-node-highlighted .ticket-graph-node) {
   border-color: var(--color-border-strong);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-strong) 18%, transparent);
@@ -459,10 +364,8 @@ defineEmits<{
 
 :deep(.tracker-node-selected .ticket-graph-node) {
   border-color: var(--color-accent-primary);
-  background: color-mix(in srgb, var(--color-accent-primary) 7%, var(--color-bg-surface));
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 28%, transparent),
-    0 6px 14px rgb(15 23 42 / 10%);
+  background: var(--color-bg-surface);
+  box-shadow: var(--shadow-md);
 }
 
 :deep(.tracker-node-muted) {
@@ -500,48 +403,15 @@ defineEmits<{
 }
 
 @media (max-width: 720px) {
-  .tracker-flow-shell__bar {
-    display: grid;
-  }
-
-  .tracker-flow-shell__stats {
-    justify-content: start;
-  }
-
-  .tracker-flow-shell__right {
-    justify-content: start;
-  }
-
-  .tracker-graph-controls {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-block: 7px;
-  }
-
-  .tracker-graph-filter-group {
-    flex: none;
-    flex-wrap: nowrap;
-  }
-
-  .tracker-graph-controls__tail {
-    flex: none;
-    margin-left: 0;
-  }
-
   .tracker-graph-selection {
     top: 10px;
     right: 10px;
     left: 10px;
-    align-items: center;
     max-width: none;
   }
 
   .tracker-graph-selection__actions {
     justify-content: flex-end;
-  }
-
-  .tracker-flow {
-    min-height: 520px;
   }
 }
 </style>

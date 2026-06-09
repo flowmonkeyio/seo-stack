@@ -25,9 +25,16 @@ defineEmits<{
       :loading="loading"
       interactive
       :selected-id="selectedTicketId"
+      aria-label="Tracker tickets"
       empty-message="No tickets match the current filters."
       @row-click="$emit('rowClick', $event as TrackerTicket)"
     >
+      <template #cell:key="{ row }">
+        <span class="font-mono text-xs text-fg-default">{{ (row as TrackerTicket).key }}</span>
+      </template>
+      <template #cell:task_key="{ row }">
+        <span class="font-mono text-xs text-fg-muted">{{ (row as TrackerTicket).task_key }}</span>
+      </template>
       <template #cell:status="{ row }">
         <TrackerStatusBadge :status="(row as TrackerTicket).status" />
       </template>
@@ -37,6 +44,7 @@ defineEmits<{
 
 <style scoped>
 .tracker-ticket-table {
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 </style>

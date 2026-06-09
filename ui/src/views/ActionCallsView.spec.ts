@@ -53,10 +53,10 @@ describe('ActionCallsView', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('utils:image.generate'))
 
     expect(requestedUrls.some((url) => url.includes('plugin_slug=utils'))).toBe(true)
-    expect(wrapper.text()).not.toContain('Action Call #1')
+    expect(wrapper.text()).not.toContain('Action call #1')
 
     await clickRow(wrapper, 'utils:image.generate')
-    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Action Call #1'))
+    await vi.waitFor(() => expect(document.body.textContent ?? '').toContain('Action call #1'))
     const detailText = document.body.textContent ?? ''
     expect(detailText).toContain('Execution Target')
     expect(detailText).toContain('Run Context')

@@ -5,6 +5,7 @@ import {
   UiButton,
   UiCallout,
   UiFormField,
+  UiIcon,
   UiInput,
   UiSecretInput,
   UiSelect,
@@ -67,8 +68,14 @@ defineEmits<{
     size="lg"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div v-if="selectedProvider" class="grid gap-4">
-      <UiCallout v-if="visibleAuthProviders.length === 0" tone="info">
+    <div
+      v-if="selectedProvider"
+      class="grid gap-4"
+    >
+      <UiCallout
+        v-if="visibleAuthProviders.length === 0"
+        tone="info"
+      >
         Enable a plugin before adding provider connections.
       </UiCallout>
 
@@ -88,23 +95,48 @@ defineEmits<{
         </template>
       </UiFormField>
 
-      <div class="rounded-md border border-subtle bg-bg-surface-alt p-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <h3 class="text-sm font-semibold text-fg-strong">{{ selectedProvider.name }}</h3>
-          <UiBadge tone="accent">{{ pluginLabel(selectedProvider.plugin_slug) }}</UiBadge>
-          <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
+      <div class="flex gap-3 rounded-lg border border-subtle bg-bg-surface-alt p-3">
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-fg"
+          aria-hidden="true"
+        >
+          <UiIcon
+            name="plug"
+            class="h-[18px] w-[18px]"
+          />
+        </span>
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="t-h3 text-fg-strong">
+              {{ selectedProvider.name }}
+            </h3>
+            <UiBadge tone="accent">
+              {{ pluginLabel(selectedProvider.plugin_slug) }}
+            </UiBadge>
+            <UiBadge>{{ formatAuthType(selectedProvider.auth_type) }}</UiBadge>
+          </div>
+          <p
+            v-if="selectedProvider.description"
+            class="mt-1 text-sm text-fg-muted"
+          >
+            {{ selectedProvider.description }}
+          </p>
         </div>
-        <p v-if="selectedProvider.description" class="mt-1 text-sm text-fg-muted">
-          {{ selectedProvider.description }}
-        </p>
       </div>
 
-      <UiCallout v-if="providerSetupNote(selectedProvider)" tone="info">
+      <UiCallout
+        v-if="providerSetupNote(selectedProvider)"
+        tone="info"
+        density="compact"
+      >
         {{ providerSetupNote(selectedProvider) }}
       </UiCallout>
 
       <template v-if="supportsCredential(selectedProvider) && selectedMethod(selectedProvider)">
-        <UiFormField v-if="authMethods(selectedProvider).length > 1" label="Auth method">
+        <UiFormField
+          v-if="authMethods(selectedProvider).length > 1"
+          label="Auth method"
+        >
           <template #default="{ id, describedBy, invalid }">
             <UiSelect
               :id="id"
@@ -146,7 +178,10 @@ defineEmits<{
           </template>
         </UiFormField>
 
-        <UiFormField label="Display label" help="Shown to operators and agents as safe metadata.">
+        <UiFormField
+          label="Display label"
+          help="Shown to operators and agents as safe metadata."
+        >
           <template #default="{ id, describedBy, invalid }">
             <UiInput
               :id="id"
@@ -255,9 +290,11 @@ defineEmits<{
           v-if="
             advancedCredentialFields(selectedProvider, selectedMethod(selectedProvider)).length > 0
           "
-          class="rounded-md border border-subtle bg-bg-surface-alt"
+          class="rounded-lg border border-subtle bg-bg-surface-alt"
         >
-          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+          <summary
+            class="focus-ring cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-fg-default"
+          >
             Advanced connection settings
             <span class="ml-2 text-xs font-normal text-fg-muted">
               self-hosted Bot API and webhook secret overrides
@@ -350,7 +387,11 @@ defineEmits<{
           </div>
         </details>
 
-        <UiCallout v-if="selectedMethod(selectedProvider)?.description" tone="info">
+        <UiCallout
+          v-if="selectedMethod(selectedProvider)?.description"
+          tone="info"
+          density="compact"
+        >
           {{ selectedMethod(selectedProvider)?.description }}
         </UiCallout>
 
@@ -362,13 +403,28 @@ defineEmits<{
         </UiCallout>
       </template>
 
-      <UiCallout v-else tone="info"> No credential required. </UiCallout>
+      <UiCallout
+        v-else
+        tone="info"
+      >
+        No credential required.
+      </UiCallout>
     </div>
 
-    <UiCallout v-else tone="info"> Enable a plugin before adding provider connections. </UiCallout>
+    <UiCallout
+      v-else
+      tone="info"
+    >
+      Enable a plugin before adding provider connections.
+    </UiCallout>
 
     <template #footer>
-      <UiButton variant="ghost" @click="$emit('update:modelValue', false)"> Cancel </UiButton>
+      <UiButton
+        variant="ghost"
+        @click="$emit('update:modelValue', false)"
+      >
+        Cancel
+      </UiButton>
       <UiButton
         v-if="selectedProvider && selectedMethod(selectedProvider)?.interactive"
         variant="secondary"

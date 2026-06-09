@@ -4,7 +4,9 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
+import { RouterLink } from 'vue-router';
 
+import { hasIcon } from './icons';
 import UiIcon from './UiIcon.vue';
 
 export interface UiMetricCardProps {
@@ -23,6 +25,12 @@ export interface UiMetricCardProps {
   density?: 'compact' | 'comfortable';
   /** Loading state — shows skeleton. */
   loading?: boolean;
+  /** Renders as a RouterLink — the whole card becomes a drill-down. */
+  to?: string;
+  /** Quiet registry icon shown top-right. */
+  icon?: string;
+  /** Tints the value (e.g. danger when a failure count is non-zero). */
+  valueTone?: 'default' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
 }
 
 const props = withDefaults(defineProps<UiMetricCardProps>(), {
@@ -31,7 +39,19 @@ const props = withDefaults(defineProps<UiMetricCardProps>(), {
   deltaLabel: undefined,
   deltaTone: undefined,
   density: 'comfortable',
+  to: undefined,
+  icon: undefined,
+  valueTone: 'default',
 });
+
+const VALUE_TONE_CLASSES = {
+  default: 'text-fg-strong',
+  accent: 'text-accent-fg',
+  success: 'text-success-fg',
+  warning: 'text-warning-fg',
+  danger: 'text-danger-fg',
+  info: 'text-info-fg',
+} as const;
 
 const deltaToneResolved = computed(() => {
   if (props.deltaTone) return props.deltaTone;
@@ -56,13 +76,22 @@ const deltaIconName = computed(() => ({
 </script>
 
 <template>
-  <div
+  <component
+    :is="to ? RouterLink : 'div'"
+    :to="to"
     :class="[
-      'ui-metric-card rounded-lg border border-default bg-bg-surface shadow-xs',
+      'ui-metric-card relative block rounded-lg border border-default bg-bg-surface shadow-xs',
       density === 'comfortable' ? 'px-4 py-3.5' : 'p-3',
+      to && 'focus-ring transition-all duration-fast hover:border-strong hover:shadow-sm',
     ]"
   >
-    <p class="truncate text-xs font-medium text-fg-muted">
+    <UiIcon
+      v-if="hasIcon(icon)"
+      :name="icon"
+      class="absolute right-3.5 top-3.5 h-4 w-4 text-fg-subtle"
+      aria-hidden="true"
+    />
+    <p class="truncate pr-6 text-xs font-medium text-fg-muted">
       {{ label }}
     </p>
     <div class="mt-1.5 flex items-baseline gap-1.5">
@@ -74,7 +103,8 @@ const deltaIconName = computed(() => ({
       <template v-else>
         <span
           :class="[
-            'font-semibold tabular-nums tracking-tight text-fg-strong',
+            'font-semibold tabular-nums tracking-tight',
+            VALUE_TONE_CLASSES[valueTone],
             density === 'comfortable' ? 'text-2xl' : 'text-xl',
           ]"
         >{{ value }}</span>
@@ -110,5 +140,5 @@ const deltaIconName = computed(() => ({
         <slot name="spark" />
       </div>
     </div>
-  </div>
+  </component>
 </template>

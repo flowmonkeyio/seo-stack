@@ -9,8 +9,8 @@ import {
   UiBadge,
   UiCallout,
   UiJsonBlock,
+  UiMetricCard,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSegmentedControl,
 } from '@/components/ui'
@@ -247,9 +247,9 @@ onBeforeRouteUpdate((to) => {
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Agent Presets"
+      title="Agent presets"
       description="Generic agent role contracts that must be adapted to the current project before use."
-      :breadcrumbs="[{ label: 'Agent Presets' }]"
+      :breadcrumbs="[{ label: 'Agent presets' }]"
     />
 
     <UiCallout
@@ -260,27 +260,15 @@ onBeforeRouteUpdate((to) => {
     </UiCallout>
 
     <div class="grid gap-3 md:grid-cols-4">
-      <UiPanel class="p-4">
-        <p class="text-xs font-semibold uppercase text-fg-muted">Presets</p>
-        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ rows.length }}</p>
-      </UiPanel>
-      <UiPanel class="p-4">
-        <p class="text-xs font-semibold uppercase text-fg-muted">Engineering</p>
-        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ engineeringCount }}</p>
-      </UiPanel>
-      <UiPanel class="p-4">
-        <p class="text-xs font-semibold uppercase text-fg-muted">Workflow Linked</p>
-        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ workflowLinkedCount }}</p>
-      </UiPanel>
-      <UiPanel class="p-4">
-        <p class="text-xs font-semibold uppercase text-fg-muted">Require Adaptation</p>
-        <p class="mt-2 text-2xl font-semibold text-fg-strong">{{ adaptationRequiredCount }}</p>
-      </UiPanel>
+      <UiMetricCard label="Presets" :value="rows.length" density="compact" />
+      <UiMetricCard label="Engineering" :value="engineeringCount" density="compact" />
+      <UiMetricCard label="Workflow linked" :value="workflowLinkedCount" density="compact" />
+      <UiMetricCard label="Require adaptation" :value="adaptationRequiredCount" density="compact" />
     </div>
 
-    <UiPanel class="p-4">
+    <section aria-label="Agent preset catalog">
       <UiSectionHeader
-        title="Preset Catalog"
+        title="Preset catalog"
         as="h3"
       >
         <template #actions>
@@ -288,7 +276,7 @@ onBeforeRouteUpdate((to) => {
         </template>
       </UiSectionHeader>
 
-      <div class="mb-3 overflow-x-auto pb-1">
+      <div class="mb-3">
         <UiSegmentedControl
           :model-value="domainFilter"
           :options="domainOptions"
@@ -304,7 +292,7 @@ onBeforeRouteUpdate((to) => {
         :selected-id="selected?.preset.summary.key"
         max-height="calc(100vh - 22rem)"
         aria-label="Agent presets"
-        empty-message="No agent presets."
+        empty-message="No agent presets — presets ship with StackOS core and enabled plugins."
         interactive
         @row-click="selectPreset"
       >
@@ -323,7 +311,7 @@ onBeforeRouteUpdate((to) => {
           </UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
     <InspectableDetailDrawer
       v-model="detailOpen"
@@ -339,7 +327,7 @@ onBeforeRouteUpdate((to) => {
           <div class="flex flex-wrap items-center gap-2">
             <h2
               :id="titleId"
-              class="t-h1 text-fg-strong"
+              class="t-h2 text-fg-strong"
             >
               {{ selected?.preset.summary.name ?? 'Preset' }}
             </h2>
@@ -376,103 +364,103 @@ onBeforeRouteUpdate((to) => {
         v-else-if="selected"
         class="space-y-4"
       >
-          <p class="text-sm text-fg-muted">
-            {{ selected.preset.summary.description }}
-          </p>
+        <p class="text-sm text-fg-muted">
+          {{ selected.preset.summary.description }}
+        </p>
 
-          <dl class="grid gap-3 text-sm md:grid-cols-2">
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Key</dt>
-              <dd class="truncate font-mono">{{ selected.preset.summary.key }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Role</dt>
-              <dd class="truncate font-mono">{{ selected.preset.summary.role }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Type</dt>
-              <dd class="truncate">{{ selected.preset.summary.agent_type }}</dd>
-            </div>
-            <div class="min-w-0">
-              <dt class="text-xs text-fg-muted">Source</dt>
-              <dd class="truncate">
-                {{ selected.preset.summary.plugin_slug ?? selected.preset.summary.source }}
-              </dd>
-            </div>
-          </dl>
-
-          <section class="rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">Mission</h4>
-            <p class="mt-2 text-sm text-fg-muted">
-              {{ selected.preset.preset.prompt_contract.mission }}
-            </p>
-          </section>
-
-          <section class="rounded-md border border-subtle bg-bg-surface p-3">
-            <h4 class="text-sm font-semibold text-fg-strong">Project Adaptation</h4>
-            <p class="mt-2 text-sm text-fg-muted">
-              {{ selected.project_adaptation.instruction }}
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <UiBadge tone="warning">do not use verbatim</UiBadge>
-              <UiBadge tone="info">project-specific setup required</UiBadge>
-            </div>
-          </section>
-
-          <div class="grid gap-4 lg:grid-cols-2">
-            <section class="rounded-md border border-subtle bg-bg-surface p-3">
-              <h4 class="text-sm font-semibold text-fg-strong">Must Do</h4>
-              <ul class="mt-2 space-y-1 text-sm text-fg-muted">
-                <li
-                  v-for="item in selected.preset.preset.prompt_contract.must_do ?? []"
-                  :key="item"
-                >
-                  {{ item }}
-                </li>
-              </ul>
-            </section>
-            <section class="rounded-md border border-subtle bg-bg-surface p-3">
-              <h4 class="text-sm font-semibold text-fg-strong">Success Criteria</h4>
-              <ul class="mt-2 space-y-1 text-sm text-fg-muted">
-                <li
-                  v-for="item in selected.preset.preset.prompt_contract.success_criteria ?? []"
-                  :key="item"
-                >
-                  {{ item }}
-                </li>
-              </ul>
-            </section>
+        <dl class="grid gap-3 text-sm md:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Key</dt>
+            <dd class="truncate font-mono text-xs">{{ selected.preset.summary.key }}</dd>
           </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Role</dt>
+            <dd class="truncate font-mono text-xs">{{ selected.preset.summary.role }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Type</dt>
+            <dd class="truncate">{{ selected.preset.summary.agent_type }}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-xs text-fg-muted">Source</dt>
+            <dd class="truncate">
+              {{ selected.preset.summary.plugin_slug ?? selected.preset.summary.source }}
+            </dd>
+          </div>
+        </dl>
 
-          <section
-            v-if="selected.preset.summary.applies_to_workflows.length"
-            class="rounded-md border border-subtle bg-bg-surface p-3"
-          >
-            <h4 class="text-sm font-semibold text-fg-strong">Workflow Coverage</h4>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <UiBadge
-                v-for="workflow in selected.preset.summary.applies_to_workflows"
-                :key="workflow"
-                tone="accent"
+        <section class="rounded-md border border-subtle bg-bg-surface p-3">
+          <h4 class="text-sm font-semibold text-fg-strong">Mission</h4>
+          <p class="mt-2 text-sm text-fg-muted">
+            {{ selected.preset.preset.prompt_contract.mission }}
+          </p>
+        </section>
+
+        <section class="rounded-md border border-subtle bg-bg-surface p-3">
+          <h4 class="text-sm font-semibold text-fg-strong">Project adaptation</h4>
+          <p class="mt-2 text-sm text-fg-muted">
+            {{ selected.project_adaptation.instruction }}
+          </p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <UiBadge tone="warning">do not use verbatim</UiBadge>
+            <UiBadge tone="info">project-specific setup required</UiBadge>
+          </div>
+        </section>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <section class="rounded-md border border-subtle bg-bg-surface p-3">
+            <h4 class="text-sm font-semibold text-fg-strong">Must do</h4>
+            <ul class="mt-2 space-y-1 text-sm text-fg-muted">
+              <li
+                v-for="item in selected.preset.preset.prompt_contract.must_do ?? []"
+                :key="item"
               >
-                {{ workflow }}
-              </UiBadge>
-            </div>
+                {{ item }}
+              </li>
+            </ul>
           </section>
+          <section class="rounded-md border border-subtle bg-bg-surface p-3">
+            <h4 class="text-sm font-semibold text-fg-strong">Success criteria</h4>
+            <ul class="mt-2 space-y-1 text-sm text-fg-muted">
+              <li
+                v-for="item in selected.preset.preset.prompt_contract.success_criteria ?? []"
+                :key="item"
+              >
+                {{ item }}
+              </li>
+            </ul>
+          </section>
+        </div>
 
-          <details class="rounded-md border border-subtle bg-bg-surface">
-            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-              Preset JSON
-            </summary>
-            <div class="border-t border-subtle p-3">
-              <UiJsonBlock
-                :data="selectedRaw"
-                density="compact"
-                max-height="18rem"
-                wrap
-              />
-            </div>
-          </details>
+        <section
+          v-if="selected.preset.summary.applies_to_workflows.length"
+          class="rounded-md border border-subtle bg-bg-surface p-3"
+        >
+          <h4 class="text-sm font-semibold text-fg-strong">Workflow coverage</h4>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <UiBadge
+              v-for="workflow in selected.preset.summary.applies_to_workflows"
+              :key="workflow"
+              tone="accent"
+            >
+              {{ workflow }}
+            </UiBadge>
+          </div>
+        </section>
+
+        <details class="rounded-md border border-subtle bg-bg-surface">
+          <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
+            Preset JSON
+          </summary>
+          <div class="border-t border-subtle p-3">
+            <UiJsonBlock
+              :data="selectedRaw"
+              density="compact"
+              max-height="18rem"
+              wrap
+            />
+          </div>
+        </details>
       </div>
     </InspectableDetailDrawer>
   </UiPageShell>

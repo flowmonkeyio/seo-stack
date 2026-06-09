@@ -1027,7 +1027,7 @@ describe('ConnectionsView', () => {
     const wrapper = mountConnections(router)
     await vi.waitFor(() => expect(wrapper.text()).toContain('Workspace Slack Bot'))
 
-    expect(wrapper.text()).toContain('Communication Setup')
+    expect(wrapper.text()).toContain('Communication setup')
     expect(wrapper.text()).toContain('1 operators')
     expect(wrapper.text()).toContain('Roadmap channel')
     expect(wrapper.text()).toContain('Internal roadmap planning and critical architecture alignment.')

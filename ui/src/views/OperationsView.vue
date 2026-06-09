@@ -15,7 +15,6 @@ import {
   UiCallout,
   UiJsonBlock,
   UiPageShell,
-  UiPanel,
   UiSectionHeader,
   UiSegmentedControl,
 } from '@/components/ui'
@@ -45,7 +44,7 @@ const surfaceOptions = [
 ]
 
 const columns: DataTableColumn<OperationRow>[] = [
-  { key: 'name', label: 'Operation', widthClass: 'w-56' },
+  { key: 'name', label: 'Operation', widthClass: 'w-56', cellClass: 'font-mono text-xs' },
   { key: 'summary', label: 'Summary' },
   { key: 'surfaces', label: 'Surfaces', widthClass: 'w-40' },
   { key: 'grant_policy', label: 'Grant', widthClass: 'w-48' },
@@ -143,7 +142,7 @@ onBeforeRouteUpdate((to) => {
       {{ error }}
     </UiCallout>
 
-    <UiPanel class="p-4">
+    <section aria-label="Operations catalog">
       <UiSectionHeader
         title="Catalog"
         as="h3"
@@ -158,21 +157,17 @@ onBeforeRouteUpdate((to) => {
           <UiBadge>{{ rows.length }}</UiBadge>
         </template>
       </UiSectionHeader>
-
       <DataTable
         :items="rows"
         :columns="columns"
         :loading="loading"
         :selected-id="selected?.name"
-        max-height="calc(100vh - 18rem)"
+        max-height="calc(100vh - 16rem)"
         aria-label="StackOS operations"
-        empty-message="No operations."
+        empty-message="No operations for this surface — operations are registered by StackOS core and plugins."
         interactive
         @row-click="selectOperation"
       >
-        <template #cell:name="{ value }">
-          <span class="font-medium text-fg-strong">{{ value }}</span>
-        </template>
         <template #cell:surfaces="{ row }">
           <span class="flex flex-wrap gap-1">
             <UiBadge
@@ -190,7 +185,7 @@ onBeforeRouteUpdate((to) => {
           </UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
     <InspectableDetailDrawer
       v-model="detailOpen"
@@ -206,7 +201,7 @@ onBeforeRouteUpdate((to) => {
           <div class="flex flex-wrap items-center gap-2">
             <h2
               :id="titleId"
-              class="t-h1 text-fg-strong"
+              class="t-h2 text-fg-strong"
             >
               {{ selected?.name ?? 'Operation' }}
             </h2>
@@ -250,7 +245,7 @@ onBeforeRouteUpdate((to) => {
         </div>
 
         <div class="grid gap-4 lg:grid-cols-3">
-          <section class="space-y-2 rounded-md border border-subtle p-3">
+          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
             <h4 class="text-sm font-semibold text-fg-strong">When</h4>
             <ul class="space-y-1 text-sm text-fg-muted">
               <li
@@ -261,7 +256,7 @@ onBeforeRouteUpdate((to) => {
               </li>
             </ul>
           </section>
-          <section class="space-y-2 rounded-md border border-subtle p-3">
+          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
             <h4 class="text-sm font-semibold text-fg-strong">Requires</h4>
             <ul class="space-y-1 text-sm text-fg-muted">
               <li
@@ -272,7 +267,7 @@ onBeforeRouteUpdate((to) => {
               </li>
             </ul>
           </section>
-          <section class="space-y-2 rounded-md border border-subtle p-3">
+          <section class="space-y-2 rounded-md border border-subtle bg-bg-surface p-3">
             <h4 class="text-sm font-semibold text-fg-strong">Returns</h4>
             <ul class="space-y-1 text-sm text-fg-muted">
               <li
@@ -294,7 +289,7 @@ onBeforeRouteUpdate((to) => {
             <article
               v-for="example in selected.examples"
               :key="example.title"
-              class="rounded-md border border-subtle p-3"
+              class="rounded-md border border-subtle bg-bg-surface p-3"
             >
               <p class="mb-2 text-sm font-medium text-fg-strong">{{ example.title }}</p>
               <UiJsonBlock
@@ -308,7 +303,7 @@ onBeforeRouteUpdate((to) => {
 
         <div class="grid gap-4 lg:grid-cols-2">
           <section class="space-y-2">
-            <h4 class="text-sm font-semibold text-fg-strong">Input Schema</h4>
+            <h4 class="text-sm font-semibold text-fg-strong">Input schema</h4>
             <UiJsonBlock
               :data="selected.input_schema"
               density="compact"
@@ -316,7 +311,7 @@ onBeforeRouteUpdate((to) => {
             />
           </section>
           <section class="space-y-2">
-            <h4 class="text-sm font-semibold text-fg-strong">Output Schema</h4>
+            <h4 class="text-sm font-semibold text-fg-strong">Output schema</h4>
             <UiJsonBlock
               :data="selected.output_schema"
               density="compact"

@@ -95,25 +95,31 @@ function relationSummary(ticket: TrackerTicket): string {
   >
     <div
       v-if="ticket"
-      class="space-y-4"
+      class="space-y-5"
     >
-      <section class="space-y-3 rounded-md border border-subtle bg-bg-surface-alt px-3 py-3">
+      <section class="space-y-3 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-3">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-xs font-semibold uppercase text-fg-subtle">Overview</p>
+            <h3 class="t-h3 text-fg-strong">
+              Overview
+            </h3>
             <div class="mt-1.5 flex flex-wrap items-center gap-2">
               <TrackerStatusBadge :status="ticket.status" />
               <UiBadge
                 v-if="isWorkflowLinked"
                 tone="accent"
               >
-                run-plan linked
+                Run plan linked
               </UiBadge>
             </div>
           </div>
           <div class="min-w-0 text-right">
-            <p class="text-xs font-semibold uppercase text-fg-subtle">Relationships</p>
-            <p class="mt-1.5 text-sm text-fg-muted">{{ relationSummary(ticket) }}</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Relationships
+            </p>
+            <p class="mt-1.5 text-sm text-fg-default">
+              {{ relationSummary(ticket) }}
+            </p>
           </div>
         </div>
         <UiMetadataStrip
@@ -121,7 +127,7 @@ function relationSummary(ticket: TrackerTicket): string {
           aria-label="Ticket core metadata"
         />
         <details class="rounded-sm border border-subtle bg-bg-surface px-2.5 py-1.5">
-          <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">
+          <summary class="focus-ring cursor-pointer rounded-xs text-xs font-medium text-fg-muted">
             Trace
           </summary>
           <UiMetadataStrip
@@ -136,7 +142,9 @@ function relationSummary(ticket: TrackerTicket): string {
         v-if="ticket.goal"
         class="space-y-2"
       >
-        <p class="text-xs font-semibold uppercase text-fg-subtle">Summary</p>
+        <h3 class="t-h3 text-fg-strong">
+          Summary
+        </h3>
         <p class="max-w-[76ch] text-sm leading-6 text-fg-default">
           {{ ticket.goal }}
         </p>
@@ -145,7 +153,7 @@ function relationSummary(ticket: TrackerTicket): string {
       <UiCallout
         v-if="
           !isTerminalTrackerStatus(ticket.status) &&
-          (ticket.blocker_reason || ticket.blocked_by.length)
+            (ticket.blocker_reason || ticket.blocked_by.length)
         "
         tone="warning"
         density="compact"
@@ -155,13 +163,15 @@ function relationSummary(ticket: TrackerTicket): string {
 
       <section
         v-if="ticket.dependency_keys.length || ticket.blocked_by.length"
-        class="grid gap-3 border-t border-subtle pt-3 md:grid-cols-2"
+        class="grid gap-4 border-t border-subtle pt-4 md:grid-cols-2"
       >
         <div
           v-if="ticket.dependency_keys.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Depends on</p>
+          <h3 class="t-h3 text-fg-strong">
+            Depends on
+          </h3>
           <div class="flex flex-wrap gap-1.5">
             <UiBadge
               v-for="item in ticket.dependency_keys"
@@ -176,7 +186,9 @@ function relationSummary(ticket: TrackerTicket): string {
           v-if="ticket.blocked_by.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Blocked by</p>
+          <h3 class="t-h3 text-fg-strong">
+            Blocked by
+          </h3>
           <div class="flex flex-wrap gap-1.5">
             <UiBadge
               v-for="item in ticket.blocked_by"
@@ -192,13 +204,15 @@ function relationSummary(ticket: TrackerTicket): string {
 
       <section
         v-if="ticket.definition_of_done_json.length || ticket.expected_changes_json.length"
-        class="grid gap-3 border-t border-subtle pt-3 md:grid-cols-2"
+        class="grid gap-4 border-t border-subtle pt-4 md:grid-cols-2"
       >
         <div
           v-if="ticket.definition_of_done_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Definition of done</p>
+          <h3 class="t-h3 text-fg-strong">
+            Definition of done
+          </h3>
           <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
             <li
               v-for="item in ticket.definition_of_done_json"
@@ -213,7 +227,9 @@ function relationSummary(ticket: TrackerTicket): string {
           v-if="ticket.expected_changes_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Expected changes</p>
+          <h3 class="t-h3 text-fg-strong">
+            Expected changes
+          </h3>
           <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
             <li
               v-for="item in ticket.expected_changes_json"
@@ -228,18 +244,20 @@ function relationSummary(ticket: TrackerTicket): string {
 
       <section
         v-if="ticket.allowed_paths_json.length || ticket.constraints_json.length"
-        class="grid gap-3 border-t border-subtle pt-3 md:grid-cols-2"
+        class="grid gap-4 border-t border-subtle pt-4 md:grid-cols-2"
       >
         <div
           v-if="ticket.allowed_paths_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Allowed paths</p>
+          <h3 class="t-h3 text-fg-strong">
+            Allowed paths
+          </h3>
           <ul class="grid gap-1.5 text-xs leading-5 text-fg-default">
             <li
               v-for="item in ticket.allowed_paths_json"
               :key="item"
-              class="rounded-sm bg-bg-surface-alt px-2 py-1 font-mono break-all"
+              class="break-all rounded-sm bg-bg-surface-alt px-2 py-1 font-mono"
             >
               {{ item }}
             </li>
@@ -249,7 +267,9 @@ function relationSummary(ticket: TrackerTicket): string {
           v-if="ticket.constraints_json.length"
           class="space-y-2"
         >
-          <p class="text-xs font-semibold uppercase text-fg-subtle">Constraints</p>
+          <h3 class="t-h3 text-fg-strong">
+            Constraints
+          </h3>
           <ul class="grid gap-1.5 text-sm leading-5 text-fg-default">
             <li
               v-for="item in ticket.constraints_json"
@@ -264,19 +284,21 @@ function relationSummary(ticket: TrackerTicket): string {
 
       <section
         v-if="ticket.outcome"
-        class="space-y-2 border-t border-subtle pt-3"
+        class="space-y-2 border-t border-subtle pt-4"
       >
-        <p class="text-xs font-semibold uppercase text-fg-subtle">Outcome</p>
-        <p class="rounded-md border border-subtle bg-bg-surface-alt px-3 py-2 text-sm leading-6 text-fg-default">
+        <h3 class="t-h3 text-fg-strong">
+          Outcome
+        </h3>
+        <p class="rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2 text-sm leading-6 text-fg-default">
           {{ ticket.outcome }}
         </p>
       </section>
 
       <details
         v-if="hasTicketJson"
-        class="rounded-md border border-subtle bg-bg-surface px-3 py-2"
+        class="rounded-lg border border-subtle bg-bg-surface px-3 py-2"
       >
-        <summary class="cursor-pointer text-xs font-semibold uppercase text-fg-subtle">
+        <summary class="focus-ring cursor-pointer rounded-xs text-xs font-medium text-fg-muted">
           Raw metadata
         </summary>
         <div class="mt-3 space-y-4">
@@ -284,7 +306,9 @@ function relationSummary(ticket: TrackerTicket): string {
             v-if="hasJsonObject(ticket.completion_evidence_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Completion evidence</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Completion evidence
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(ticket.completion_evidence_json)"
               density="compact"
@@ -296,7 +320,9 @@ function relationSummary(ticket: TrackerTicket): string {
             v-if="hasJsonObject(ticket.source_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Source</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Source
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(ticket.source_json)"
               density="compact"
@@ -308,7 +334,9 @@ function relationSummary(ticket: TrackerTicket): string {
             v-if="hasJsonObject(ticket.context_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Context</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Context
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(ticket.context_json)"
               density="compact"
@@ -320,7 +348,9 @@ function relationSummary(ticket: TrackerTicket): string {
             v-if="hasJsonObject(ticket.metadata_json)"
             class="space-y-2"
           >
-            <p class="text-sm font-medium text-fg-default">Metadata</p>
+            <p class="text-xs font-medium text-fg-muted">
+              Metadata
+            </p>
             <UiJsonBlock
               :data="sanitizeForDisplay(ticket.metadata_json)"
               density="compact"

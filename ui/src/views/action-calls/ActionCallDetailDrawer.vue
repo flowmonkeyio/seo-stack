@@ -7,9 +7,11 @@ import {
   UiCallout,
   UiFactGroups,
   UiJsonBlock,
+  UiMetadataStrip,
   UiSidePanel,
 } from '@/components/ui'
 import type { UiFactGroup } from '@/components/ui/UiFactGroups.vue'
+import type { UiMetadataStripItem } from '@/components/ui/UiMetadataStrip.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 
 const props = defineProps<{
@@ -21,11 +23,24 @@ defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
-const title = computed(() => (props.call ? `Action Call #${props.call.id}` : 'Action Call'))
+const title = computed(() => (props.call ? `Action call #${props.call.id}` : 'Action call'))
 const description = computed(() => (props.call ? callTitle(props.call) : undefined))
 
 const executionContext = computed(() => recordValue(props.call?.metadata_json?.execution_context))
 const fileBackedOutput = computed(() => recordValue(props.call?.metadata_json?.file_backed_output))
+
+const headerFacts = computed<UiMetadataStripItem[]>(() => {
+  const call = props.call
+  if (!call) return []
+  return [
+    { label: 'Provider', value: call.provider_key ?? null },
+    { label: 'Operation', value: call.operation, mono: true, title: call.operation },
+    { label: 'Cost', value: `${call.cost_cents} cents` },
+    { label: 'Duration', value: formatDuration(call.duration_ms) },
+    { label: 'Dry run', value: call.dry_run },
+    { label: 'Created', value: formatDateTime(call.created_at) },
+  ]
+})
 
 const summaryGroups = computed<UiFactGroup[]>(() => {
   const call = props.call
@@ -149,9 +164,9 @@ function numberValue(value: unknown): number | null {
         <div class="flex flex-wrap items-center gap-2">
           <h2
             :id="titleId"
-            class="t-h1 text-fg-strong"
+            class="t-h2 text-fg-strong"
           >
-            Action Call #{{ call.id }}
+            Action call #{{ call.id }}
           </h2>
           <StatusBadge
             :status="call.status"
@@ -180,55 +195,72 @@ function numberValue(value: unknown): number | null {
         {{ call.error }}
       </UiCallout>
 
+      <UiMetadataStrip
+        :items="headerFacts"
+        aria-label="Action call facts"
+      />
+
       <UiFactGroups
         :groups="summaryGroups"
         density="compact"
         aria-label="Action call summary"
       />
 
-      <section class="grid gap-2 border-t border-subtle pt-4">
-        <h3 class="text-xs font-medium uppercase text-fg-subtle">Request</h3>
-        <UiJsonBlock
-          :data="sanitizeForDisplay(call.request_json ?? {})"
-          density="compact"
-          max-height="14rem"
-          wrap
-          aria-label="Action call request"
-        />
-      </section>
+      <div class="grid gap-4 border-t border-subtle pt-4 lg:grid-cols-2">
+        <section class="grid min-w-0 content-start gap-2">
+          <h3 class="text-xs font-medium text-fg-muted">
+            Request
+          </h3>
+          <UiJsonBlock
+            :data="sanitizeForDisplay(call.request_json ?? {})"
+            density="compact"
+            max-height="16rem"
+            wrap
+            aria-label="Action call request"
+          />
+        </section>
 
-      <section class="grid gap-2 border-t border-subtle pt-4">
-        <h3 class="text-xs font-medium uppercase text-fg-subtle">Provider Context</h3>
-        <UiJsonBlock
-          :data="sanitizeForDisplay(call.provider_context_json ?? {})"
-          density="compact"
-          max-height="10rem"
-          wrap
-          aria-label="Action call provider context"
-        />
-      </section>
+        <section class="grid min-w-0 content-start gap-2">
+          <h3 class="text-xs font-medium text-fg-muted">
+            Response
+          </h3>
+          <UiJsonBlock
+            :data="sanitizeForDisplay(call.response_json ?? {})"
+            density="compact"
+            max-height="16rem"
+            wrap
+            aria-label="Action call response"
+          />
+        </section>
+      </div>
 
-      <section class="grid gap-2 border-t border-subtle pt-4">
-        <h3 class="text-xs font-medium uppercase text-fg-subtle">Response</h3>
-        <UiJsonBlock
-          :data="sanitizeForDisplay(call.response_json ?? {})"
-          density="compact"
-          max-height="16rem"
-          wrap
-          aria-label="Action call response"
-        />
-      </section>
+      <div class="grid gap-4 border-t border-subtle pt-4 lg:grid-cols-2">
+        <section class="grid min-w-0 content-start gap-2">
+          <h3 class="text-xs font-medium text-fg-muted">
+            Provider context
+          </h3>
+          <UiJsonBlock
+            :data="sanitizeForDisplay(call.provider_context_json ?? {})"
+            density="compact"
+            max-height="12rem"
+            wrap
+            aria-label="Action call provider context"
+          />
+        </section>
 
-      <section class="grid gap-2 border-t border-subtle pt-4">
-        <h3 class="text-xs font-medium uppercase text-fg-subtle">Metadata</h3>
-        <UiJsonBlock
-          :data="sanitizeForDisplay(call.metadata_json ?? {})"
-          density="compact"
-          max-height="12rem"
-          wrap
-          aria-label="Action call metadata"
-        />
-      </section>
+        <section class="grid min-w-0 content-start gap-2">
+          <h3 class="text-xs font-medium text-fg-muted">
+            Metadata
+          </h3>
+          <UiJsonBlock
+            :data="sanitizeForDisplay(call.metadata_json ?? {})"
+            density="compact"
+            max-height="12rem"
+            wrap
+            aria-label="Action call metadata"
+          />
+        </section>
+      </div>
     </div>
   </UiSidePanel>
 </template>

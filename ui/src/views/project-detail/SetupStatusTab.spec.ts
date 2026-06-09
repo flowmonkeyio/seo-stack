@@ -174,7 +174,7 @@ describe('SetupStatusTab', () => {
     const wrapper = mount(SetupStatusTab, { global: { plugins: [router] } })
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('1 of 2'))
-    expect(wrapper.text()).toContain('Setup Status')
+    expect(wrapper.text()).toContain('Setup status')
     expect(wrapper.text()).toContain('Daemon')
     expect(wrapper.text()).toContain('Database')
     expect(wrapper.text()).toContain('Enabled plugins')

@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import {
-  UiButton,
-  UiFormField,
-  UiInput,
-  UiPanel,
-  UiSegmentedControl,
-  UiSelect,
-} from '@/components/ui'
+import { UiButton, UiFormField, UiInput, UiSegmentedControl, UiSelect } from '@/components/ui'
 
 import type {
   StatusFilter,
@@ -64,50 +57,51 @@ const statusSelectOptions = computed(() =>
 </script>
 
 <template>
-  <UiPanel class="tracker-command-panel">
-    <div class="tracker-command-panel__primary">
-      <UiFormField class="tracker-command-panel__task" label="Task">
+  <div class="tracker-command-panel rounded-lg border border-default bg-bg-surface px-3 py-2.5 shadow-xs">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="min-w-0 grow basis-72">
         <UiSelect
           :model-value="activeTaskKey"
           :options="taskOptions"
           placeholder="Select active task"
+          aria-label="Active task"
           @change="$emit('taskSelect', $event)"
-        />
-      </UiFormField>
-
-      <div class="tracker-command-panel__segment tracker-command-panel__view">
-        <span>View</span>
-        <UiSegmentedControl
-          :model-value="viewMode"
-          label="Task tracker view"
-          :options="viewOptions"
-          @select="$emit('update:viewMode', String($event) as ViewMode)"
         />
       </div>
 
-      <UiButton
-        class="tracker-command-panel__filters-toggle"
-        variant="secondary"
-        size="sm"
-        :aria-expanded="filtersExpanded"
-        @click="$emit('update:filtersExpanded', !filtersExpanded)"
-      >
-        {{ filterLabel }}
-      </UiButton>
+      <UiSegmentedControl
+        :model-value="viewMode"
+        label="Task tracker view"
+        :options="viewOptions"
+        @select="$emit('update:viewMode', String($event) as ViewMode)"
+      />
 
-      <UiButton
-        v-if="filtersActive"
-        class="tracker-command-panel__clear"
-        variant="ghost"
-        size="sm"
-        @click="$emit('clear')"
-      >
-        Clear
-      </UiButton>
+      <div class="ml-auto flex items-center gap-2">
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="filter"
+          :aria-expanded="filtersExpanded"
+          @click="$emit('update:filtersExpanded', !filtersExpanded)"
+        >
+          {{ filterLabel }}
+        </UiButton>
+        <UiButton
+          v-if="filtersActive"
+          variant="ghost"
+          size="sm"
+          @click="$emit('clear')"
+        >
+          Clear
+        </UiButton>
+      </div>
     </div>
 
-    <div v-if="filtersExpanded" class="tracker-command-panel__filters-panel">
-      <UiFormField class="tracker-command-panel__search" label="Search">
+    <div
+      v-if="filtersExpanded"
+      class="mt-2.5 grid gap-3 border-t border-subtle pt-3 sm:grid-cols-2 xl:grid-cols-4"
+    >
+      <UiFormField label="Search">
         <UiInput
           :model-value="search"
           placeholder="Ticket, task, owner, outcome"
@@ -115,7 +109,7 @@ const statusSelectOptions = computed(() =>
         />
       </UiFormField>
 
-      <UiFormField class="tracker-command-panel__status" label="Status">
+      <UiFormField label="Status">
         <UiSelect
           :model-value="statusFilter"
           :options="statusSelectOptions"
@@ -123,7 +117,7 @@ const statusSelectOptions = computed(() =>
         />
       </UiFormField>
 
-      <UiFormField class="tracker-command-panel__workflow" label="Workflow">
+      <UiFormField label="Workflow">
         <UiSelect
           :model-value="workflowFilter"
           :options="workflowOptions"
@@ -131,7 +125,7 @@ const statusSelectOptions = computed(() =>
         />
       </UiFormField>
 
-      <UiFormField class="tracker-command-panel__assignee" label="Assignee">
+      <UiFormField label="Assignee">
         <UiSelect
           :model-value="assigneeFilter"
           :options="assigneeOptions"
@@ -140,157 +134,47 @@ const statusSelectOptions = computed(() =>
       </UiFormField>
     </div>
 
-    <div class="tracker-command-panel__meta">
-      <span>{{ taskRowsCount }}/{{ tasksCount }} tasks</span>
-      <span>{{ filteredTicketCount }}/{{ ticketsCount }} tickets</span>
-      <span v-if="activeTerminalCount !== null && activeTotalCount !== null">
-        {{ activeTerminalCount }}/{{ activeTotalCount }} terminal
+    <p class="tracker-command-panel__meta mt-2.5 border-t border-subtle pt-2 text-xs text-fg-muted">
+      <span>
+        <span class="font-medium tabular-nums text-fg-default">{{ taskRowsCount }}/{{ tasksCount }}</span>
+        tasks
       </span>
-      <span>{{ blockedCount }} blocked</span>
-      <span>{{ workflowCount }} workflows</span>
-    </div>
-  </UiPanel>
+      <span>
+        <span class="font-medium tabular-nums text-fg-default">{{ filteredTicketCount }}/{{ ticketsCount }}</span>
+        tickets
+      </span>
+      <span v-if="activeTerminalCount !== null && activeTotalCount !== null">
+        <span class="font-medium tabular-nums text-fg-default">{{ activeTerminalCount }}/{{ activeTotalCount }}</span>
+        terminal
+      </span>
+      <span>
+        <span class="font-medium tabular-nums text-fg-default">{{ blockedCount }}</span>
+        blocked
+      </span>
+      <span>
+        <span class="font-medium tabular-nums text-fg-default">{{ workflowCount }}</span>
+        workflows
+      </span>
+    </p>
+  </div>
 </template>
 
 <style scoped>
 .tracker-command-panel {
-  display: grid;
   flex: none;
-  gap: 8px;
-  padding: 10px 12px;
-}
-
-.tracker-command-panel__primary {
-  display: grid;
-  grid-template-columns: minmax(24rem, 1fr) minmax(12rem, 16rem) auto auto;
-  gap: 10px;
-  align-items: end;
-  min-width: 0;
-}
-
-.tracker-command-panel__filters-panel {
-  display: grid;
-  grid-template-columns: minmax(16rem, 1.1fr) minmax(26rem, 1.8fr) minmax(12rem, 1fr) minmax(
-      12rem,
-      1fr
-    );
-  gap: 10px;
-  align-items: end;
-  min-width: 0;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 8px;
-}
-
-.tracker-command-panel :deep(.ui-form-field) {
-  gap: 6px;
-}
-
-.tracker-command-panel :deep(.ui-form-field__label-row) {
-  min-height: 14px;
-}
-
-.tracker-command-panel :deep(.ui-form-field__label-row label),
-.tracker-command-panel__segment > span {
-  color: var(--color-fg-muted);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 14px;
-  text-transform: uppercase;
-}
-
-.tracker-command-panel__segment {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.tracker-command-panel__search,
-.tracker-command-panel__task,
-.tracker-command-panel__view {
-  min-width: 0;
-}
-
-.tracker-command-panel__filters-toggle,
-.tracker-command-panel__clear {
-  justify-self: end;
-  min-height: 32px;
-}
-
-.tracker-command-panel__view :deep(.ui-segmented-control) {
-  box-sizing: border-box;
-  width: 100%;
-  height: 32px;
-  min-height: 32px;
-  flex-wrap: nowrap;
-  gap: 2px;
-  padding: 1px;
-}
-
-.tracker-command-panel__view :deep(.ui-segmented-control button) {
-  height: 28px;
-  flex: 1 1 0;
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 1;
 }
 
 .tracker-command-panel__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 8px;
-  color: var(--color-fg-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
+  column-gap: 8px;
+  row-gap: 4px;
 }
 
-@media (max-width: 1180px) {
-  .tracker-command-panel__primary {
-    grid-template-columns: minmax(18rem, 1fr) minmax(11rem, 14rem) auto auto;
-  }
-
-  .tracker-command-panel__filters-panel {
-    grid-template-columns: minmax(16rem, 1fr) minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 980px) {
-  .tracker-command-panel__primary {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .tracker-command-panel__task {
-    grid-column: 1 / -1;
-  }
-
-  .tracker-command-panel__view {
-    grid-column: 1 / 2;
-  }
-}
-
-@media (max-width: 720px) {
-  .tracker-command-panel__primary,
-  .tracker-command-panel__filters-panel {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tracker-command-panel__search,
-  .tracker-command-panel__status,
-  .tracker-command-panel__task,
-  .tracker-command-panel__workflow,
-  .tracker-command-panel__assignee,
-  .tracker-command-panel__view,
-  .tracker-command-panel__filters-toggle,
-  .tracker-command-panel__clear {
-    grid-column: 1 / -1;
-  }
-
-  .tracker-command-panel__filters-toggle,
-  .tracker-command-panel__clear {
-    justify-self: start;
-  }
+.tracker-command-panel__meta > span + span::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--color-fg-subtle);
 }
 </style>

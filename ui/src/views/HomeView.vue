@@ -96,7 +96,7 @@ const schedulerLabel = computed<string>(() => {
       class="p-5"
     >
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 class="t-h2 text-fg-strong">
+        <h2 class="t-h3 text-fg-strong">
           Daemon health
         </h2>
         <UiButton
@@ -170,7 +170,7 @@ const schedulerLabel = computed<string>(() => {
       </div>
     </UiPanel>
 
-    <footer class="text-xs text-fg-muted">
+    <footer class="text-sm text-fg-muted">
       Use the project switcher to choose a workspace and continue operating StackOS.
     </footer>
   </UiPageShell>

@@ -60,7 +60,7 @@ describe('AgentRequestsView', () => {
     )
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('Telegram message needs launch review'))
-    expect(wrapper.text()).toContain('Agent Requests')
+    expect(wrapper.text()).toContain('Agent requests')
     expect(wrapper.text()).toContain('telegram-bot')
     await clickRow(wrapper, 'Telegram message needs launch review')
     expect(wrapper.text()).toContain('telegram:update:7')

@@ -84,16 +84,16 @@ describe('ResourceExplorerView', () => {
     const w = mount({ template: '<RouterView />' }, { global: { plugins: [router] } })
     await vi.waitFor(() => expect(w.text()).toContain('Learning'))
 
-    expect(w.text()).toContain('Communications Data')
+    expect(w.text()).toContain('Communications data')
     const schemaRow = w
       .findAll('tr')
       .find((row) => row.text().includes('Learning') && row.text().includes('Durable observation.'))
     await schemaRow?.trigger('click')
     await vi.waitFor(() =>
-      expect(document.body.textContent ?? '').toContain('Schema Details'),
+      expect(document.body.textContent ?? '').toContain('Schema details'),
     )
     expect(document.body.textContent ?? '').toContain('Schema JSON')
-    expect(document.body.textContent ?? '').toContain('UI Schema JSON')
+    expect(document.body.textContent ?? '').toContain('UI schema JSON')
     expect(w.text()).toContain('Lesson')
     const recordRow = w
       .findAll('tr')

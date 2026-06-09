@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 
 import type { SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
-import { UiBadge, UiJsonBlock, UiPanel, UiSectionHeader } from '@/components/ui'
+import { UiAdvancedJsonPanel, UiBadge, UiDescriptionList, UiJsonBlock, UiPanel } from '@/components/ui'
+import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 
 const props = defineProps<{
@@ -34,73 +35,72 @@ const metadata = computed(() => {
   if (isRecordView.value) return sanitizeForDisplay(props.record?.provenance_json)
   return sanitizeForDisplay(props.resource?.config_json)
 })
+
+const recordFacts = computed<DLItem[]>(() => {
+  if (!props.record) return []
+  return [
+    { label: 'External ID', value: props.record.external_id, mono: true },
+    { label: 'Record', value: `#${props.record.id}`, mono: true },
+    { label: 'Created', value: formatDateTime(props.record.created_at) },
+    { label: 'Updated', value: formatDateTime(props.record.updated_at) },
+  ]
+})
 </script>
 
 <template>
-  <UiPanel
-    class="p-4"
-    :aria-label="`${title} resource`"
-  >
-    <UiSectionHeader
-      :title="title"
-      :description="description ?? undefined"
-      as="h3"
-    >
-      <template #actions>
+  <UiPanel :aria-label="`${title} resource`">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div class="min-w-0">
+        <h3
+          class="t-h3 truncate text-fg-strong"
+          :title="title"
+        >
+          {{ title }}
+        </h3>
+        <p
+          v-if="description"
+          class="mt-0.5 text-xs text-fg-muted"
+        >
+          {{ description }}
+        </p>
+      </div>
+      <div class="flex shrink-0 items-center gap-1.5">
         <UiBadge
           v-if="pluginSlug"
           tone="accent"
         >
           {{ pluginSlug }}
         </UiBadge>
-        <UiBadge v-if="resourceKey">{{ resourceKey }}</UiBadge>
-      </template>
-    </UiSectionHeader>
+        <UiBadge v-if="resourceKey">
+          {{ resourceKey }}
+        </UiBadge>
+      </div>
+    </div>
 
-    <dl
+    <UiDescriptionList
       v-if="record"
-      class="mb-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4"
-    >
-      <div>
-        <dt class="text-xs text-fg-muted">External id</dt>
-        <dd class="truncate font-mono text-fg-default">{{ record.external_id ?? '-' }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-fg-muted">Created</dt>
-        <dd>{{ formatDateTime(record.created_at) }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-fg-muted">Updated</dt>
-        <dd>{{ formatDateTime(record.updated_at) }}</dd>
-      </div>
-      <div>
-        <dt class="text-xs text-fg-muted">Record</dt>
-        <dd class="font-mono">#{{ record.id }}</dd>
-      </div>
-    </dl>
+      class="mt-3"
+      layout="grid"
+      :columns="4"
+      :items="recordFacts"
+      aria-label="Record facts"
+    />
 
     <UiJsonBlock
+      class="mt-3"
       :data="schema"
       density="compact"
       max-height="18rem"
       wrap
     />
 
-    <details
+    <UiAdvancedJsonPanel
       v-if="metadata"
-      class="mt-3 rounded-md border border-subtle bg-bg-surface"
-    >
-      <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-        Metadata
-      </summary>
-      <div class="border-t border-subtle p-3">
-        <UiJsonBlock
-          :data="metadata"
-          density="compact"
-          max-height="14rem"
-          wrap
-        />
-      </div>
-    </details>
+      class="mt-3"
+      title="Metadata"
+      summary="Raw JSON"
+      :data="metadata"
+      max-height="14rem"
+    />
   </UiPanel>
 </template>

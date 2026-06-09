@@ -9,6 +9,9 @@ import DataTable from '@/components/DataTable.vue'
 import {
   UiBadge,
   UiButton,
+  UiCallout,
+  UiCard,
+  UiEmptyState,
   UiMetricCard,
   UiProgressBar,
   UiSectionHeader,
@@ -143,9 +146,9 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="space-y-6">
+  <section class="space-y-5">
     <UiSectionHeader
-      title="Cost & Budget"
+      title="Cost & budget"
       description="Read-only spend, budget caps, and vendor pacing for agent-owned integrations."
     >
       <template #actions>
@@ -160,7 +163,7 @@ onMounted(load)
       </template>
     </UiSectionHeader>
 
-    <div class="grid gap-3 md:grid-cols-4">
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <UiMetricCard
         label="Current month"
         :value="formatUsd(cost?.total_usd)"
@@ -197,33 +200,20 @@ onMounted(load)
       />
     </div>
 
-    <div
+    <UiCallout
       v-if="hasNoSpendYet"
-      class="rounded-md border border-subtle bg-bg-surface px-4 py-3 text-sm"
+      tone="info"
+      title="No spend recorded yet"
     >
-      <p class="font-semibold text-fg-strong">
-        No spend recorded yet
-      </p>
-      <p class="mt-0.5 text-fg-muted">
-        Cost rows will appear after integrations make tracked vendor calls.
-      </p>
-    </div>
+      Cost rows will appear after integrations make tracked vendor calls.
+    </UiCallout>
 
-    <section
-      class="space-y-3"
-      aria-labelledby="cs-current-spend"
-    >
-      <div>
-        <h2
-          id="cs-current-spend"
-          class="text-base font-semibold text-fg-strong"
-        >
-          Current month spend
-        </h2>
-        <p class="mt-0.5 text-sm text-fg-muted">
-          Vendor spend recorded for {{ month ?? 'the selected period' }}.
-        </p>
-      </div>
+    <section aria-label="Current month spend">
+      <UiSectionHeader
+        title="Current month spend"
+        :description="`Vendor spend recorded for ${month ?? 'the selected period'}.`"
+        as="h3"
+      />
       <DataTable
         :items="integrationCostRows"
         :columns="integrationColumns"
@@ -233,138 +223,108 @@ onMounted(load)
       />
     </section>
 
-    <section
-      class="space-y-3"
-      aria-labelledby="cs-budget-caps"
-    >
-      <div>
-        <h2
-          id="cs-budget-caps"
-          class="text-base font-semibold text-fg-strong"
-        >
-          Budget caps
-        </h2>
-        <p class="mt-0.5 text-sm text-fg-muted">
-          Per-vendor monthly caps, alert thresholds, and request pacing.
-        </p>
-      </div>
+    <section aria-label="Budget caps">
+      <UiSectionHeader
+        title="Budget caps"
+        description="Per-vendor monthly caps, alert thresholds, and request pacing."
+        as="h3"
+      />
 
-      <div
+      <UiEmptyState
         v-if="!loading && budgets.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface px-4 py-8 text-center"
-      >
-        <p class="text-sm font-semibold text-fg-strong">
-          No budget caps
-        </p>
-        <p class="mt-1 text-sm text-fg-muted">
-          Agent-owned caps will appear here with alert thresholds and pacing.
-        </p>
-      </div>
+        title="No budget caps"
+        description="Agent-owned caps will appear here with alert thresholds and pacing."
+        icon="banknotes"
+        class="rounded-lg border border-dashed border-default bg-bg-surface"
+      />
 
       <div
         v-else
-        class="grid gap-3"
+        class="grid gap-4"
       >
-        <article
+        <UiCard
           v-for="budget in budgets"
           :key="budget.id"
-          class="overflow-hidden rounded-md border border-default bg-bg-surface shadow-xs"
         >
-          <div class="space-y-4 p-4">
-            <header class="space-y-1.5">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-sm font-semibold text-fg-strong">
-                  {{ integrationLabel(budget.kind) }}
-                </h3>
-                <UiBadge :tone="budgetTone(budget)">
-                  {{ budgetStatusLabel(budget) }}
-                </UiBadge>
-              </div>
-              <p class="text-sm text-fg-muted">
-                {{ formatUsd(budget.current_month_spend) }} spent from a
-                {{ formatUsd(budget.monthly_budget_usd) }} monthly cap.
-              </p>
-            </header>
+          <template #header>
+            <h4 class="t-h3 text-fg-strong">
+              {{ integrationLabel(budget.kind) }}
+            </h4>
+            <UiBadge :tone="budgetTone(budget)">
+              {{ budgetStatusLabel(budget) }}
+            </UiBadge>
+          </template>
 
-            <UiProgressBar
-              :value="budget.current_month_spend"
-              :max="budget.monthly_budget_usd || 1"
-              :tone="budgetTone(budget)"
-              show-label
-              :format="() => `${budgetUsage(budget).toFixed(0)}%`"
-              :aria-label="`${integrationLabel(budget.kind)} budget usage`"
-            />
+          <p class="text-sm text-fg-muted">
+            {{ formatUsd(budget.current_month_spend) }} spent from a
+            {{ formatUsd(budget.monthly_budget_usd) }} monthly cap.
+          </p>
 
-            <dl class="grid gap-3 border-t border-subtle pt-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+          <UiProgressBar
+            class="mt-3"
+            :value="budget.current_month_spend"
+            :max="budget.monthly_budget_usd || 1"
+            :tone="budgetTone(budget)"
+            show-label
+            :format="() => `${budgetUsage(budget).toFixed(0)}%`"
+            :aria-label="`${integrationLabel(budget.kind)} budget usage`"
+          />
+
+          <template #footer>
+            <dl class="grid w-full gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <div>
-                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                <dt class="text-xs font-medium text-fg-muted">
                   Alert
                 </dt>
-                <dd class="mt-1 text-fg-default">
+                <dd class="mt-0.5 tabular-nums text-fg-default">
                   {{ Number(budget.alert_threshold_pct).toFixed(0) }}%
                 </dd>
               </div>
               <div>
-                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                <dt class="text-xs font-medium text-fg-muted">
                   Calls
                 </dt>
-                <dd class="mt-1 text-fg-default">
+                <dd class="mt-0.5 tabular-nums text-fg-default">
                   {{ budget.current_month_calls }}
                 </dd>
               </div>
               <div>
-                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                <dt class="text-xs font-medium text-fg-muted">
                   QPS
                 </dt>
-                <dd class="mt-1 text-fg-default">
+                <dd class="mt-0.5 tabular-nums text-fg-default">
                   {{ budget.qps }}
                 </dd>
               </div>
               <div>
-                <dt class="text-[11px] font-semibold uppercase tracking-wide text-fg-subtle">
+                <dt class="text-xs font-medium text-fg-muted">
                   Run-plan guard
                 </dt>
-                <dd class="mt-1 text-fg-muted">
+                <dd class="mt-0.5 text-fg-muted">
                   Checked before vendor calls.
                 </dd>
               </div>
             </dl>
-          </div>
-        </article>
+          </template>
+        </UiCard>
       </div>
     </section>
 
-    <section
-      class="space-y-3"
-      aria-labelledby="cs-cost-history"
-    >
-      <div>
-        <h2
-          id="cs-cost-history"
-          class="text-base font-semibold text-fg-strong"
-        >
-          12-month history
-        </h2>
-        <p class="mt-0.5 text-sm text-fg-muted">
-          Quick trend view for vendor spend over time.
-        </p>
-      </div>
+    <section aria-label="12-month history">
+      <UiSectionHeader
+        title="12-month history"
+        description="Quick trend view for vendor spend over time."
+        as="h3"
+      />
 
-      <div
+      <UiEmptyState
         v-if="sparkline.length === 0 || !historyHasSpend"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface px-4 py-8 text-center"
-      >
-        <p class="text-sm font-semibold text-fg-strong">
-          No cost history yet
-        </p>
-        <p class="mt-1 text-sm text-fg-muted">
-          The trend appears once a monthly snapshot records vendor spend.
-        </p>
-      </div>
-      <div
-        v-else
-        class="rounded-md border border-default bg-bg-surface p-3 shadow-xs"
-      >
+        title="No cost history yet"
+        description="The trend appears once a monthly snapshot records vendor spend."
+        icon="banknotes"
+        class="rounded-lg border border-dashed border-default bg-bg-surface"
+      />
+      <UiCard v-else>
         <svg
           viewBox="0 0 200 40"
           width="100%"
@@ -375,9 +335,8 @@ onMounted(load)
           <path
             :d="sparklinePath"
             fill="none"
-            stroke="currentColor"
             stroke-width="2"
-            class="text-accent"
+            style="stroke: var(--color-accent-primary)"
           />
           <circle
             v-for="point in sparkline"
@@ -385,7 +344,7 @@ onMounted(load)
             :cx="point.x"
             :cy="point.y"
             r="2"
-            class="fill-accent"
+            style="fill: var(--color-accent-primary)"
           >
             <title>{{ point.ym }}: ${{ point.total.toFixed(2) }}</title>
           </circle>
@@ -398,7 +357,7 @@ onMounted(load)
             {{ point.ym }}: ${{ point.total.toFixed(2) }}
           </li>
         </ul>
-      </div>
+      </UiCard>
     </section>
   </section>
 </template>

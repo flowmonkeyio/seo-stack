@@ -99,7 +99,7 @@ const attentionOptions = [
 ]
 
 const columns: DataTableColumn<AgentRequestOut>[] = [
-  { key: 'id', label: 'ID', widthClass: 'w-20', format: (value) => `#${value}` },
+  { key: 'id', label: 'ID', widthClass: 'w-20', cellClass: 'font-mono text-xs', format: (value) => `#${value}` },
   { key: 'priority', label: 'Priority', widthClass: 'w-24' },
   { key: 'title', label: 'Title' },
   { key: 'status', label: 'Status', widthClass: 'w-32' },
@@ -112,8 +112,9 @@ const columns: DataTableColumn<AgentRequestOut>[] = [
   },
   {
     key: 'run_plan_id',
-    label: 'Run Plan',
+    label: 'Run plan',
     widthClass: 'w-28',
+    cellClass: 'font-mono text-xs',
     format: (value) => (value === null || value === undefined ? '-' : `#${value}`),
   },
   {
@@ -258,9 +259,9 @@ onMounted(fetchRequests)
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Agent Requests"
+      title="Agent requests"
       description="Generic claimable queue state for agents, scripts, triggers, and project-local tooling."
-      :breadcrumbs="[{ label: 'Agent Requests' }]"
+      :breadcrumbs="[{ label: 'Agent requests' }]"
     />
 
     <UiCallout
@@ -313,7 +314,7 @@ onMounted(fetchRequests)
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
+    <section aria-label="Agent request queue">
       <UiSectionHeader
         title="Queue"
         as="h3"
@@ -331,7 +332,7 @@ onMounted(fetchRequests)
         :selected-id="selectedRequest?.id"
         max-height="calc(100vh - 24rem)"
         aria-label="Agent request queue"
-        empty-message="No agent requests match these filters."
+        empty-message="No agent requests match these filters — requests are created by plugins, triggers, and agents for other agents to claim."
         interactive
         @row-click="selectRequest"
         @load-more="fetchRequests({ append: true })"
@@ -377,11 +378,11 @@ onMounted(fetchRequests)
           </span>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
     <InspectableDetailDrawer
       v-model="detailOpen"
-      :title="selectedRequest ? `Request #${selectedRequest.id}` : 'Agent Request'"
+      :title="selectedRequest ? `Request #${selectedRequest.id}` : 'Agent request'"
       :description="selectedRequest?.request_key"
       size="lg"
       :has-detail="Boolean(selectedRequest)"
@@ -396,7 +397,7 @@ onMounted(fetchRequests)
           <div class="flex flex-wrap items-center gap-2">
             <h2
               :id="titleId"
-              class="t-h1 text-fg-strong"
+              class="t-h2 text-fg-strong"
             >
               Request #{{ selectedRequest.id }}
             </h2>

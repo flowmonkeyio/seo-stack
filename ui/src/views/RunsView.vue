@@ -15,12 +15,14 @@ import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
+  UiBadge,
   UiButton,
   UiCallout,
   UiFormField,
   UiInput,
   UiPageShell,
   UiPanel,
+  UiSectionHeader,
   UiSegmentedControl,
   UiSelect,
 } from '@/components/ui'
@@ -58,7 +60,7 @@ const kindOptions = computed(() => [
 ])
 
 const columns: DataTableColumn<Run>[] = [
-  { key: 'id', label: 'ID', widthClass: 'w-20' },
+  { key: 'id', label: 'ID', widthClass: 'w-20', cellClass: 'font-mono text-xs' },
   { key: 'kind', label: 'Kind' },
   { key: 'status', label: 'Status', widthClass: 'w-24' },
   { key: 'parent_run_id', label: 'Parent', widthClass: 'w-20' },
@@ -218,45 +220,55 @@ onMounted(load)
         </div>
       </UiPanel>
 
-      <DataTable
-        :items="filteredItems"
-        :columns="columns"
-        :loading="loading"
-        :next-cursor="nextCursor"
-        aria-label="Runs"
-        empty-message="No runs match the filters."
-        interactive
-        :sort-key="runsStore.sort.replace(/^-/, '')"
-        :sort-dir="runsStore.sort.startsWith('-') ? 'desc' : 'asc'"
-        @row-click="onRowClick"
-        @sort="
-          (col: string, dir: 'asc' | 'desc' | null) =>
-            runsStore.setSort(
-              `${dir === 'desc' ? '-' : ''}${col}` as 'started_at' | '-started_at' | 'id' | '-id',
-            )
-        "
-        @load-more="loadMore"
-      >
-        <template #cell:status="{ row }">
-          <div class="flex items-center gap-2">
-            <StatusBadge
-              :status="(row as Run).status"
-              kind="run"
-            />
-          </div>
-        </template>
-        <template #cell:parent_run_id="{ row }">
-          <UiButton
-            v-if="(row as Run).parent_run_id !== null"
-            variant="link"
-            size="sm"
-            @click.stop="router.push(`/projects/${projectId}/runs/${(row as Run).parent_run_id}`)"
-          >
-            #{{ (row as Run).parent_run_id }}
-          </UiButton>
-          <span v-else>—</span>
-        </template>
-      </DataTable>
+      <section aria-label="Run history">
+        <UiSectionHeader
+          title="History"
+          as="h3"
+        >
+          <template #actions>
+            <UiBadge>{{ filteredItems.length }}</UiBadge>
+          </template>
+        </UiSectionHeader>
+        <DataTable
+          :items="filteredItems"
+          :columns="columns"
+          :loading="loading"
+          :next-cursor="nextCursor"
+          aria-label="Runs"
+          empty-message="No runs match these filters — runs are recorded when agents execute plans, skills, and tools."
+          interactive
+          :sort-key="runsStore.sort.replace(/^-/, '')"
+          :sort-dir="runsStore.sort.startsWith('-') ? 'desc' : 'asc'"
+          @row-click="onRowClick"
+          @sort="
+            (col: string, dir: 'asc' | 'desc' | null) =>
+              runsStore.setSort(
+                `${dir === 'desc' ? '-' : ''}${col}` as 'started_at' | '-started_at' | 'id' | '-id',
+              )
+          "
+          @load-more="loadMore"
+        >
+          <template #cell:status="{ row }">
+            <div class="flex items-center gap-2">
+              <StatusBadge
+                :status="(row as Run).status"
+                kind="run"
+              />
+            </div>
+          </template>
+          <template #cell:parent_run_id="{ row }">
+            <UiButton
+              v-if="(row as Run).parent_run_id !== null"
+              variant="link"
+              size="sm"
+              @click.stop="router.push(`/projects/${projectId}/runs/${(row as Run).parent_run_id}`)"
+            >
+              #{{ (row as Run).parent_run_id }}
+            </UiButton>
+            <span v-else>—</span>
+          </template>
+        </DataTable>
+      </section>
     </div>
   </UiPageShell>
 </template>

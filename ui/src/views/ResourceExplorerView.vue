@@ -43,14 +43,14 @@ const selectedPlugin = computed(
   () => enabledPlugins.value.find((plugin) => plugin.slug === pluginSlug.value) ?? null,
 )
 const pageTitle = computed(() =>
-  selectedPlugin.value ? `${selectedPlugin.value.name} Data` : 'Data Explorer',
+  selectedPlugin.value ? `${selectedPlugin.value.name} data` : 'Data explorer',
 )
 const pageDescription = computed(() =>
   selectedPlugin.value
     ? `Schemas, records, and artifacts owned by ${selectedPlugin.value.name}.`
     : 'Plugin data schemas, project records, and artifact references.',
 )
-const breadcrumbLabel = computed(() => (selectedPlugin.value ? 'Data' : 'Data Explorer'))
+const breadcrumbLabel = computed(() => (selectedPlugin.value ? 'Data' : 'Data explorer'))
 const selectedSchemaJson = computed(() =>
   selectedResource.value ? sanitizeForDisplay(selectedResource.value.schema_json ?? null) : null,
 )
@@ -85,15 +85,15 @@ const resourceOptions = computed(() => [
 
 const resourceColumns: DataTableColumn<SchemaResourceOut>[] = [
   { key: 'plugin_slug', label: 'Plugin' },
-  { key: 'key', label: 'Key' },
-  { key: 'name', label: 'Name' },
+  { key: 'key', label: 'Key', cellClass: 'font-mono text-xs' },
+  { key: 'name', label: 'Name', cellClass: 'font-medium text-fg-strong' },
   { key: 'description', label: 'Description' },
 ]
 
 const recordColumns: DataTableColumn<SchemaResourceRecordOut>[] = [
   { key: 'plugin_slug', label: 'Plugin' },
-  { key: 'resource_key', label: 'Resource' },
-  { key: 'title', label: 'Title', format: (value) => String(value ?? '-') },
+  { key: 'resource_key', label: 'Resource', cellClass: 'font-mono text-xs' },
+  { key: 'title', label: 'Title', cellClass: 'font-medium text-fg-strong', format: (value) => String(value ?? '-') },
   { key: 'updated_at', label: 'Updated', format: (value) => formatDateTime(String(value)) },
 ]
 
@@ -222,77 +222,79 @@ onBeforeRouteUpdate((to) => {
       </div>
     </UiPanel>
 
-    <div class="space-y-4">
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Schemas"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ resources.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="resources"
-          :columns="resourceColumns"
-          :loading="loading"
-          :selected-id="detailKind === 'resource' ? selectedResource?.id : null"
-          max-height="18rem"
-          aria-label="Resource schemas"
-          empty-message="No resource schemas."
-          interactive
-          @row-click="openResource"
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <UiPanel class="p-4">
-        <UiSectionHeader
-          title="Records"
-          as="h3"
-        >
-          <template #actions>
-            <UiBadge>{{ records.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <DataTable
-          :items="records"
-          :columns="recordColumns"
-          :loading="loading"
-          :selected-id="detailKind === 'record' ? selectedRecord?.id : null"
-          max-height="calc(100vh - 31rem)"
-          aria-label="Resource records"
-          empty-message="No resource records."
-          interactive
-          @row-click="openRecord"
-        >
-          <template #cell:plugin_slug="{ value }">
-            <UiBadge tone="accent">{{ value }}</UiBadge>
-          </template>
-        </DataTable>
-      </UiPanel>
-
-      <section
-        v-if="artifacts.length > 0"
-        class="space-y-3"
+    <section aria-label="Resource schemas">
+      <UiSectionHeader
+        title="Schemas"
+        as="h3"
       >
-        <UiSectionHeader title="Artifacts">
-          <template #actions>
-            <UiBadge>{{ artifacts.length }}</UiBadge>
-          </template>
-        </UiSectionHeader>
-        <div class="grid gap-3 xl:grid-cols-2">
-          <ArtifactRenderer
-            v-for="artifact in artifacts"
-            :key="artifact.id"
-            :artifact="artifact"
-          />
-        </div>
-      </section>
-    </div>
+        <template #actions>
+          <UiBadge>{{ resources.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="resources"
+        :columns="resourceColumns"
+        :loading="loading"
+        :selected-id="detailKind === 'resource' ? selectedResource?.id : null"
+        max-height="18rem"
+        aria-label="Resource schemas"
+        empty-message="No resource schemas — plugins declare schemas when they are enabled for the project."
+        interactive
+        @row-click="openResource"
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </section>
+
+    <section aria-label="Resource records">
+      <UiSectionHeader
+        title="Records"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ records.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <DataTable
+        :items="records"
+        :columns="recordColumns"
+        :loading="loading"
+        :selected-id="detailKind === 'record' ? selectedRecord?.id : null"
+        max-height="calc(100vh - 31rem)"
+        aria-label="Resource records"
+        empty-message="No records yet — agents and triggers write records through resource operations."
+        interactive
+        @row-click="openRecord"
+      >
+        <template #cell:plugin_slug="{ value }">
+          <UiBadge tone="accent">{{ value }}</UiBadge>
+        </template>
+      </DataTable>
+    </section>
+
+    <section
+      v-if="artifacts.length > 0"
+      class="space-y-3"
+      aria-label="Artifacts"
+    >
+      <UiSectionHeader
+        title="Artifacts"
+        as="h3"
+      >
+        <template #actions>
+          <UiBadge>{{ artifacts.length }}</UiBadge>
+        </template>
+      </UiSectionHeader>
+      <div class="grid gap-3 xl:grid-cols-2">
+        <ArtifactRenderer
+          v-for="artifact in artifacts"
+          :key="artifact.id"
+          :artifact="artifact"
+        />
+      </div>
+    </section>
 
     <InspectableDetailDrawer
       v-model="detailOpen"
@@ -308,7 +310,7 @@ onBeforeRouteUpdate((to) => {
         class="space-y-4"
       >
         <UiSectionHeader
-          title="Schema Details"
+          title="Schema details"
           :description="selectedResource.description"
         >
           <template #actions>
@@ -324,7 +326,7 @@ onBeforeRouteUpdate((to) => {
           </div>
           <div class="min-w-0">
             <dt class="text-xs text-fg-muted">Key</dt>
-            <dd class="truncate font-mono">{{ selectedResource.key }}</dd>
+            <dd class="truncate font-mono text-xs">{{ selectedResource.key }}</dd>
           </div>
         </dl>
 
@@ -344,7 +346,7 @@ onBeforeRouteUpdate((to) => {
 
         <details class="rounded-md border border-subtle bg-bg-surface">
           <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-fg-default focus-ring">
-            UI Schema JSON
+            UI schema JSON
           </summary>
           <div class="border-t border-subtle p-3">
             <UiJsonBlock

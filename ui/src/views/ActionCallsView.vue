@@ -241,9 +241,9 @@ onMounted(load)
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Action Calls"
+      title="Action calls"
       description="Audited external tool calls with redacted inputs, outputs, credential refs, and execution metadata."
-      :breadcrumbs="[{ label: 'Action Calls' }]"
+      :breadcrumbs="[{ label: 'Action calls' }]"
     >
       <template #actions>
         <UiButton
@@ -316,9 +316,9 @@ onMounted(load)
       </div>
     </UiPanel>
 
-    <UiPanel class="p-4">
+    <section aria-label="Action call audit ledger">
       <UiSectionHeader
-        title="Audit Ledger"
+        title="Audit ledger"
         description="Newest calls are listed first. Select a row to inspect redacted details."
         as="h3"
       >
@@ -334,7 +334,7 @@ onMounted(load)
         :selected-id="detailPanelOpen ? selectedCall?.id : null"
         max-height="calc(100vh - 24rem)"
         aria-label="Action call audit rows"
-        empty-message="No action calls match these filters."
+        empty-message="No action calls match these filters — calls are recorded when agents execute actions."
         interactive
         @row-click="openCall"
         @load-more="fetchCalls({ append: true })"
@@ -370,7 +370,7 @@ onMounted(load)
           <span class="text-xs text-fg-muted">{{ runLabel(row) }}</span>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
     <ActionCallDetailDrawer
       v-model="detailPanelOpen"

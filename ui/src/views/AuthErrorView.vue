@@ -42,6 +42,7 @@ async function retry(): Promise<void> {
     <UiEmptyState
       title="Daemon unreachable"
       :description="`${errorMessage}${errorStatus !== null ? ` (HTTP ${errorStatus})` : ''}`"
+      icon="shield-check"
       size="lg"
     >
       <template #actions>

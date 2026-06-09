@@ -1,20 +1,26 @@
 <script setup lang="ts">
 import type { SchemaAuthProviderOut } from '@/api'
-import { UiBadge, UiButton, UiCallout, UiPanel, UiSectionHeader } from '@/components/ui'
+import {
+  UiBadge,
+  UiButton,
+  UiCallout,
+  UiCard,
+  UiEmptyState,
+  UiIcon,
+  UiSectionHeader,
+  UiSkeleton,
+} from '@/components/ui'
 import { formatDateTime } from '@/lib/stackos/json'
 
 import {
   accountLabel,
-  connectionCountLabel,
   connectionTitle,
   formatAuthType,
   methodLabel,
   pluginLabel,
   serviceName,
-  serviceStatusDotClass,
   serviceStatusLabel,
   serviceStatusTone,
-  statusDotClass,
   statusTone,
 } from './formatters'
 import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
@@ -40,193 +46,230 @@ function connectionActionKey(credentialRef: string, action: string): string {
 </script>
 
 <template>
-  <UiPanel class="p-4">
+  <section
+    class="space-y-3"
+    aria-label="Connected services"
+  >
     <UiSectionHeader
-      title="Connected Services"
+      title="Connected services"
       description="Each service can have multiple named connections for different accounts, workspaces, or client profiles."
+      as="h3"
     >
       <template #actions>
         <UiBadge>{{ connectionsCount }}</UiBadge>
       </template>
     </UiSectionHeader>
 
-    <div
+    <UiCard
       v-if="loading"
-      class="rounded-md border border-subtle bg-bg-surface p-4 text-sm text-fg-muted"
+      aria-label="Loading connections"
     >
-      Loading connections...
-    </div>
+      <UiSkeleton
+        shape="line"
+        :lines="3"
+      />
+    </UiCard>
+
+    <UiEmptyState
+      v-else-if="serviceGroups.length === 0"
+      title="No services connected."
+      description="Add the first connection for a provider account or internal tool. The daemon stores the secret and exposes only status, labels, and credential refs."
+      icon="plug"
+      class="rounded-lg border border-dashed border-default bg-bg-surface px-4 py-8"
+    >
+      <template #actions>
+        <UiButton
+          variant="primary"
+          icon-left="plus"
+          @click="$emit('add-connection')"
+        >
+          Add connection
+        </UiButton>
+      </template>
+    </UiEmptyState>
 
     <div
-      v-else-if="serviceGroups.length === 0"
-      class="rounded-md border border-dashed border-default bg-bg-surface p-6 text-center"
+      v-else
+      class="grid gap-4"
     >
-      <p class="font-medium text-fg-strong">No services connected.</p>
-      <p class="mx-auto mt-1 max-w-xl text-sm text-fg-muted">
-        Add the first connection for a provider account or internal tool. The daemon stores the
-        secret and exposes only status, labels, and credential refs.
-      </p>
-      <UiButton class="mt-4" variant="primary" icon-left="plus" @click="$emit('add-connection')">
-        Add connection
-      </UiButton>
-    </div>
-
-    <ul v-else class="grid gap-3">
-      <li
+      <UiCard
         v-for="group in serviceGroups"
         :key="group.providerKey"
-        class="overflow-hidden rounded-md border border-subtle bg-bg-surface shadow-xs"
+        section
+        :aria-label="serviceName(group)"
+        :padded="false"
       >
-        <div class="border-b border-subtle bg-bg-surface-alt px-4 py-4 sm:px-5">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div class="flex min-w-0 gap-3">
-              <span
-                :class="['mt-1 h-2.5 w-2.5 shrink-0 rounded-full', serviceStatusDotClass(group)]"
-                aria-hidden="true"
-              />
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-base font-semibold leading-6 text-fg-strong">
-                    {{ serviceName(group) }}
-                  </h3>
-                  <UiBadge v-if="group.provider" tone="accent">
-                    {{ pluginLabel(group.provider.plugin_slug) }}
-                  </UiBadge>
-                  <UiBadge :tone="serviceStatusTone(group)">
-                    {{ serviceStatusLabel(group) }}
-                  </UiBadge>
-                </div>
-                <p
-                  v-if="group.provider?.description"
-                  class="mt-1 max-w-3xl text-sm leading-5 text-fg-muted"
-                >
-                  {{ group.provider.description }}
-                </p>
-                <dl class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                  <div class="flex min-w-0 items-center gap-1.5">
-                    <dt class="shrink-0 text-fg-muted">Provider</dt>
-                    <dd class="truncate font-mono text-fg-default">{{ group.providerKey }}</dd>
-                  </div>
-                  <div v-if="group.provider" class="flex items-center gap-1.5">
-                    <dt class="text-fg-muted">Auth</dt>
-                    <dd class="text-fg-default">
-                      {{ formatAuthType(group.provider.auth_type) }}
-                    </dd>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <dt class="text-fg-muted">Saved</dt>
-                    <dd class="text-fg-default">{{ connectionCountLabel(group) }}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-            <UiButton
-              v-if="group.provider && canAddProvider(group.provider)"
-              class="shrink-0"
-              size="sm"
-              icon-left="plus"
-              @click="$emit('add-connection', group.provider.key)"
+        <template #header>
+          <div class="flex min-w-0 items-center gap-3">
+            <span
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-accent-fg"
+              aria-hidden="true"
             >
-              Add another
-            </UiButton>
+              <UiIcon
+                name="plug"
+                class="h-[18px] w-[18px]"
+              />
+            </span>
+            <div class="min-w-0">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <h4 class="truncate text-sm font-semibold text-fg-strong">
+                  {{ serviceName(group) }}
+                </h4>
+                <UiBadge
+                  v-if="group.provider"
+                  tone="accent"
+                >
+                  {{ pluginLabel(group.provider.plugin_slug) }}
+                </UiBadge>
+                <UiBadge
+                  :tone="serviceStatusTone(group)"
+                  :dot="serviceStatusTone(group) === 'success'"
+                >
+                  {{ serviceStatusLabel(group) }}
+                </UiBadge>
+              </div>
+              <p class="mt-0.5 truncate text-xs text-fg-subtle">
+                <span class="font-mono text-2xs">{{ group.providerKey }}</span>
+                <template v-if="group.provider?.description">
+                  · {{ group.provider.description }}
+                </template>
+              </p>
+            </div>
           </div>
-        </div>
+          <UiButton
+            v-if="group.provider && canAddProvider(group.provider)"
+            class="shrink-0"
+            size="sm"
+            variant="secondary"
+            icon-left="plus"
+            @click="$emit('add-connection', group.provider.key)"
+          >
+            Add another
+          </UiButton>
+        </template>
 
-        <div class="divide-y divide-subtle">
-          <article
+        <ul
+          class="divide-y divide-border-subtle"
+          :aria-label="`${serviceName(group)} connections`"
+        >
+          <li
             v-for="connection in group.connections"
             :key="connection.credential_ref"
-            class="grid gap-3 px-4 py-4 sm:px-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(26rem,1.5fr)_auto] xl:items-center"
+            class="px-4 py-3"
           >
-            <div class="flex min-w-0 gap-3">
-              <span
-                :class="['mt-2 h-2 w-2 shrink-0 rounded-full', statusDotClass(connection)]"
-                aria-hidden="true"
-              />
-              <div class="min-w-0">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
+              <div class="min-w-0 xl:flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h4 class="truncate text-sm font-semibold leading-5 text-fg-strong">
+                  <h5 class="truncate text-sm font-medium text-fg-strong">
                     {{ connectionTitle(connection) }}
-                  </h4>
-                  <UiBadge :tone="statusTone(connection)">
+                  </h5>
+                  <UiBadge
+                    :tone="statusTone(connection)"
+                    :dot="statusTone(connection) === 'success'"
+                  >
                     {{ connection.status }}
                   </UiBadge>
                 </div>
-                <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-                  <span class="truncate font-mono">{{ connection.credential_ref }}</span>
-                  <span aria-hidden="true">&middot;</span>
-                  <span>{{ formatAuthType(connection.auth_type) }}</span>
-                  <template
-                    v-if="
-                      group.provider &&
-                      methodLabel(group.provider, connection.auth_method_key) !==
-                        formatAuthType(connection.auth_type)
-                    "
-                  >
-                    <span aria-hidden="true">&middot;</span>
-                    <span>{{ methodLabel(group.provider, connection.auth_method_key) }}</span>
-                  </template>
+                <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 font-mono text-2xs text-fg-subtle">
+                  <span class="truncate">{{ connection.credential_ref }}</span>
+                  <span aria-hidden="true">·</span>
+                  <span class="truncate">{{ connection.profile_key }}</span>
+                </p>
+              </div>
+
+              <dl class="grid shrink-0 grid-cols-2 gap-x-6 gap-y-2 text-xs sm:flex sm:flex-wrap sm:items-center">
+                <div class="min-w-0">
+                  <dt class="text-fg-subtle">
+                    Account
+                  </dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{ accountLabel(connection) }}
+                  </dd>
                 </div>
-              </div>
-            </div>
+                <div class="min-w-0">
+                  <dt class="text-fg-subtle">
+                    Auth
+                  </dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{
+                      group.provider
+                        ? methodLabel(group.provider, connection.auth_method_key)
+                        : formatAuthType(connection.auth_type)
+                    }}
+                  </dd>
+                </div>
+                <div class="min-w-0">
+                  <dt class="text-fg-subtle">
+                    Last tested
+                  </dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{ formatDateTime(connection.last_tested_at) }}
+                  </dd>
+                </div>
+                <div
+                  v-if="connection.expires_at"
+                  class="min-w-0"
+                >
+                  <dt class="text-fg-subtle">
+                    Expires
+                  </dt>
+                  <dd class="mt-0.5 truncate text-fg-default">
+                    {{ formatDateTime(connection.expires_at) }}
+                  </dd>
+                </div>
+              </dl>
 
-            <dl class="grid gap-3 text-sm sm:grid-cols-2 2xl:grid-cols-4">
-              <div class="min-w-0">
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Connection name</dt>
-                <dd class="mt-0.5 truncate font-mono text-xs text-fg-default">
-                  {{ connection.profile_key }}
-                </dd>
+              <div class="flex shrink-0 items-center gap-1.5 xl:justify-end">
+                <UiButton
+                  size="sm"
+                  variant="secondary"
+                  icon-left="bolt"
+                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'test')"
+                  :disabled="connection.revoked_at !== null"
+                  @click="$emit('test-connection', connection)"
+                >
+                  Test
+                </UiButton>
+                <UiButton
+                  size="sm"
+                  variant="ghost"
+                  icon-left="trash"
+                  class="btn-danger-quiet"
+                  :loading="busyAction === connectionActionKey(connection.credential_ref, 'revoke')"
+                  :disabled="connection.revoked_at !== null"
+                  @click="$emit('revoke-connection', connection)"
+                >
+                  Revoke
+                </UiButton>
               </div>
-              <div class="min-w-0">
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Account</dt>
-                <dd class="mt-0.5 truncate text-fg-default">{{ accountLabel(connection) }}</dd>
-              </div>
-              <div class="min-w-0">
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Expires</dt>
-                <dd class="mt-0.5 truncate text-fg-default">
-                  {{ formatDateTime(connection.expires_at) }}
-                </dd>
-              </div>
-              <div class="min-w-0">
-                <dt class="text-2xs font-medium uppercase text-fg-muted">Last tested</dt>
-                <dd class="mt-0.5 truncate text-fg-default">
-                  {{ formatDateTime(connection.last_tested_at) }}
-                </dd>
-              </div>
-            </dl>
-
-            <div class="flex shrink-0 flex-wrap gap-2 xl:justify-end">
-              <UiButton
-                size="sm"
-                icon-left="plug-zap"
-                :loading="busyAction === connectionActionKey(connection.credential_ref, 'test')"
-                :disabled="connection.revoked_at !== null"
-                @click="$emit('test-connection', connection)"
-              >
-                Test
-              </UiButton>
-              <UiButton
-                size="sm"
-                variant="danger"
-                icon-left="ban"
-                :loading="busyAction === connectionActionKey(connection.credential_ref, 'revoke')"
-                :disabled="connection.revoked_at !== null"
-                @click="$emit('revoke-connection', connection)"
-              >
-                Revoke
-              </UiButton>
             </div>
 
             <UiCallout
               v-if="connectionMessages[connection.credential_ref]"
               :tone="connectionMessages[connection.credential_ref].tone"
-              class="xl:col-span-3"
+              density="compact"
+              class="mt-3"
             >
               {{ connectionMessages[connection.credential_ref].text }}
             </UiCallout>
-          </article>
-        </div>
-      </li>
-    </ul>
-  </UiPanel>
+          </li>
+        </ul>
+      </UiCard>
+    </div>
+  </section>
 </template>
+
+<style scoped>
+/* Destructive-quiet ghost button: danger text, danger-subtle hover tint. */
+.btn-danger-quiet {
+  color: var(--color-danger-fg);
+}
+.btn-danger-quiet:hover:not(:disabled),
+.btn-danger-quiet:active:not(:disabled) {
+  color: var(--color-danger-fg);
+  background-color: var(--color-danger-subtle);
+}
+.btn-danger-quiet:disabled {
+  color: var(--color-fg-disabled);
+}
+</style>

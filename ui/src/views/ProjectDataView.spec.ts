@@ -37,8 +37,8 @@ describe('ProjectDataView', () => {
       },
     )
 
-    await vi.waitFor(() => expect(wrapper.find('section').text()).toContain('No artifacts.'))
-    expect(wrapper.text()).not.toContain('No timeline events.')
+    await vi.waitFor(() => expect(wrapper.find('section').text()).toContain('No artifacts yet'))
+    expect(wrapper.text()).not.toContain('No timeline events')
   })
 })
 

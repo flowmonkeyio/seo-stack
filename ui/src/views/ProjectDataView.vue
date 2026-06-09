@@ -6,7 +6,7 @@ import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
-import { UiBadge, UiCallout, UiJsonBlock, UiMetricCard, UiPageShell, UiPanel, UiSectionHeader, UiSegmentedControl } from '@/components/ui'
+import { UiBadge, UiCallout, UiEmptyState, UiJsonBlock, UiMetricCard, UiPageShell, UiSectionHeader, UiSegmentedControl } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import type {
   SchemaContextSnapshotOut,
@@ -151,9 +151,9 @@ function syncTabToUrl(tab: DataTab): void {
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      title="Project Data"
+      title="Project data"
       description="Context snapshots, learnings, experiments, decisions, artifacts, metrics, and timeline."
-      :breadcrumbs="[{ label: 'Project Data' }]"
+      :breadcrumbs="[{ label: 'Project data' }]"
     />
 
     <UiCallout
@@ -174,18 +174,16 @@ function syncTabToUrl(tab: DataTab): void {
       <UiMetricCard label="Metrics" :value="metrics.length" density="compact" />
     </div>
 
-    <UiPanel class="p-4">
-      <UiSegmentedControl
-        :model-value="activeTab"
-        :options="tabOptions"
-        label="Project data"
-        @select="setTab"
-      />
-    </UiPanel>
+    <UiSegmentedControl
+      :model-value="activeTab"
+      :options="tabOptions"
+      label="Project data"
+      @select="setTab"
+    />
 
-    <UiPanel
+    <section
       v-if="activeTab === 'timeline'"
-      class="p-4"
+      aria-label="Project timeline"
     >
       <UiSectionHeader title="Timeline" as="h3" />
       <DataTable
@@ -194,13 +192,13 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Project timeline"
-        empty-message="No timeline events."
+        empty-message="No timeline events yet — events are recorded as agents and plugins act on the project."
       />
-    </UiPanel>
+    </section>
 
-    <UiPanel
+    <section
       v-else-if="activeTab === 'learnings'"
-      class="p-4"
+      aria-label="Learnings"
     >
       <UiSectionHeader title="Learnings" as="h3" />
       <DataTable
@@ -209,17 +207,17 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Learnings"
-        empty-message="No learnings."
+        empty-message="No learnings yet — agents record durable learnings as they work."
       >
         <template #cell:review_state="{ value }">
           <UiBadge>{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
-    <UiPanel
+    <section
       v-else-if="activeTab === 'experiments'"
-      class="p-4"
+      aria-label="Experiments"
     >
       <UiSectionHeader title="Experiments" as="h3" />
       <DataTable
@@ -228,17 +226,17 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Experiments"
-        empty-message="No experiments."
+        empty-message="No experiments yet — agents register experiments to track hypotheses."
       >
         <template #cell:status="{ value }">
           <UiBadge tone="info">{{ value }}</UiBadge>
         </template>
       </DataTable>
-    </UiPanel>
+    </section>
 
-    <UiPanel
+    <section
       v-else-if="activeTab === 'observations'"
-      class="p-4"
+      aria-label="Observations"
     >
       <UiSectionHeader title="Observations" as="h3" />
       <DataTable
@@ -247,13 +245,13 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Observations"
-        empty-message="No observations."
+        empty-message="No observations yet — observations are recorded against running experiments."
       />
-    </UiPanel>
+    </section>
 
-    <UiPanel
+    <section
       v-else-if="activeTab === 'decisions'"
-      class="p-4"
+      aria-label="Decisions"
     >
       <UiSectionHeader title="Decisions" as="h3" />
       <DataTable
@@ -262,22 +260,22 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Decisions"
-        empty-message="No decisions."
+        empty-message="No decisions yet — agents log decisions with their rationale."
       />
-    </UiPanel>
+    </section>
 
-    <UiPanel
+    <section
       v-else-if="activeTab === 'snapshots'"
-      class="p-4"
+      aria-label="Context snapshots"
     >
-      <UiSectionHeader title="Context Snapshots" as="h3" />
+      <UiSectionHeader title="Context snapshots" as="h3" />
       <DataTable
         :items="snapshots"
         :columns="snapshotColumns"
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Context snapshots"
-        empty-message="No snapshots."
+        empty-message="No snapshots yet — agents store context snapshots during runs."
       />
       <details
         v-for="snapshot in snapshots.slice(0, 3)"
@@ -296,19 +294,21 @@ function syncTabToUrl(tab: DataTab): void {
           />
         </div>
       </details>
-    </UiPanel>
+    </section>
 
     <section
       v-else-if="activeTab === 'artifacts'"
       class="space-y-3"
+      aria-label="Artifacts"
     >
-      <UiSectionHeader title="Artifacts" />
-      <p
+      <UiSectionHeader title="Artifacts" as="h3" />
+      <UiEmptyState
         v-if="artifacts.length === 0"
-        class="rounded-md border border-dashed border-subtle bg-bg-surface-alt px-4 py-5 text-sm text-fg-muted"
-      >
-        No artifacts.
-      </p>
+        title="No artifacts yet"
+        description="Runs attach generated files, exports, and reports here as agents work."
+        icon="archive"
+        size="sm"
+      />
       <ArtifactRenderer
         v-for="artifact in artifacts"
         :key="artifact.id"
@@ -316,9 +316,9 @@ function syncTabToUrl(tab: DataTab): void {
       />
     </section>
 
-    <UiPanel
+    <section
       v-else
-      class="p-4"
+      aria-label="Metrics"
     >
       <UiSectionHeader title="Metrics" as="h3" />
       <DataTable
@@ -327,8 +327,8 @@ function syncTabToUrl(tab: DataTab): void {
         :loading="loading"
         max-height="calc(100vh - 22rem)"
         aria-label="Metrics"
-        empty-message="No metric snapshots."
+        empty-message="No metric snapshots yet — metrics are captured by runs and triggers."
       />
-    </UiPanel>
+    </section>
   </UiPageShell>
 </template>

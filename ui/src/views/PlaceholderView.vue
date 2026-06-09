@@ -35,10 +35,13 @@ withDefaults(defineProps<Props>(), {
         </UiBadge>
       </template>
     </UiPageHeader>
-    <UiEmptyState
-      title="Workflow unavailable"
-      :description="description || 'Use the surrounding project navigation to continue the current workflow.'"
-      size="md"
-    />
+    <div class="flex min-h-[40vh] items-center justify-center">
+      <UiEmptyState
+        title="Workflow unavailable"
+        :description="description || 'Use the surrounding project navigation to continue the current workflow.'"
+        icon="wrench"
+        size="md"
+      />
+    </div>
   </UiPageShell>
 </template>
