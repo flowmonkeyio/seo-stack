@@ -6,7 +6,9 @@ updated during connector delivery. `utils.image.generate` / `utils.image.edit`
 `utils.reve.image.generate`, `utils.reve.image.edit`, and
 `utils.reve.image.remix`, and provider-specific xAI Imagine actions
 `utils.xai.image.generate`, `utils.xai.image.edit`, and
-`utils.xai.video.generate` are executable. Provider-neutral
+`utils.xai.video.generate`, plus Google Gemini image actions
+`utils.google.image.generate` and `utils.google.image.edit`, are executable.
+Provider-neutral
 `utils.video.generate` remains deferred (`deferred-video-backend-selection`).
 
 Shape of the list: the top four per category by leaderboard rank and API
@@ -197,14 +199,17 @@ already registered and integrated.
 
 ### 3. Nano Banana 2 — Google (`gemini-3.1-flash-image`)
 
-- Status: GA on the Gemini API; #3 LMArena text-to-image. Released
-  2026-02-26. Vertex AI parity is not signed off in this contract yet.
+- Status: executable in StackOS as `utils.google.image.generate` and
+  `utils.google.image.edit`. GA on the Gemini API; #3 LMArena text-to-image.
+  Released 2026-02-26. Vertex AI parity is not signed off in this contract yet.
 - Models: `gemini-3.1-flash-image` (Nano Banana 2),
   `gemini-3-pro-image` (Nano Banana Pro), `gemini-2.5-flash-image` (Nano
   Banana).
 - API shape: synchronous Gemini `generateContent` on the Developer API
   (`x-goog-api-key`). Inline image outputs should be persisted from returned
-  MIME/base64 parts; docs do not define a selectable output format.
+  MIME/base64 parts. The API reference defines output image MIME/delivery
+  controls, but StackOS v1 defers those controls and persists returned inline
+  parts as-is.
 - Modes: text-to-image, text+image editing, reference composition, Image
   Search grounding, and strong multilingual in-image text. Gemini 3 image
   models support up to 14 references; the 3.1 Flash docs split this as up to
@@ -226,16 +231,34 @@ already registered and integrated.
 - Inputs: image inputs support PNG, JPEG, WEBP, HEIC, and HEIF. Inline
   requests must stay under 20 MB; the Files API supports larger media but files
   auto-delete after 48 hours.
-- StackOS v1 scope decision: implement the Gemini API path first. Expose
-  text/image-reference generation and editing; list video input and Vertex AI
-  parity as unsupported until the connector implements their separate upload,
-  retention, and credential behavior.
+- StackOS v1 scope delivered: Gemini Developer API only, API-key auth,
+  synchronous `generateContent`, generated-assets persistence, generic image
+  artifact registration, and provider-specific budget kind
+  `google-gemini-image`. `utils.google.image.generate` supports
+  text-to-image. `utils.google.image.edit` supports generated-assets image refs
+  for image-to-image, reference composition, style transfer, object-preserving
+  edits, and character consistency. StackOS v1 local refs support
+  jpg/jpeg/png/webp; add HEIC/HEIF only with parser/test coverage. The
+  connector enforces the inline 20 MB request envelope before provider calls.
+  `gemini-2.5-flash-image` input refs are capped at 3; Gemini 3 image refs are
+  capped at 14.
+- StackOS v1 unsupported scope: Google Search/Image grounding tools,
+  conversational multi-turn chat state, video input, Files API input,
+  output compression/MIME controls, person-generation controls, and Vertex AI
+  parity. `512` image size is exposed only for `gemini-3.1-flash-image`, per
+  the current image-generation guide.
 - Pricing: `gemini-3.1-flash-image` output prices are $0.045 (0.5K),
   $0.067 (1K), $0.101 (2K), and $0.151 (4K) per image, plus token-based input
-  cost. `gemini-2.5-flash-image` is documented at $0.039/image standard.
+  cost. `gemini-3-pro-image` output is $0.134 for 1K/2K and $0.24 for 4K,
+  with input image equivalent $0.0011 each. `gemini-2.5-flash-image` is
+  documented at $0.039/image standard. StackOS pre-call estimates include
+  output image price and the documented Gemini 3 Pro Image input-image
+  equivalent where applicable; provider tokenized text/image input charges
+  remain invoice-side.
 - Docs: image generation <https://ai.google.dev/gemini-api/docs/image-generation>,
   image inputs <https://ai.google.dev/gemini-api/docs/image-understanding>,
-  Files API <https://ai.google.dev/gemini-api/docs/files>, pricing
+  generateContent API <https://ai.google.dev/api/generate-content>, Files API
+  <https://ai.google.dev/gemini-api/docs/files>, pricing
   <https://ai.google.dev/gemini-api/docs/pricing>.
 
 ### 4. Ideogram 4.0 — Ideogram

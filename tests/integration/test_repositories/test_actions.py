@@ -1019,6 +1019,8 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.reve.image.generate": ("reve", True, "unknown"),
         "utils.reve.image.edit": ("reve", True, "unknown"),
         "utils.reve.image.remix": ("reve", True, "unknown"),
+        "utils.google.image.generate": ("google-gemini-image", True, "unknown"),
+        "utils.google.image.edit": ("google-gemini-image", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -1716,6 +1718,371 @@ def test_reve_remix_pixel_preflight_fails_before_budget_or_action_call(
     assert httpx_mock.get_requests() == []
     assert session.exec(select(ActionCall)).all() == []
     budget = IntegrationBudgetRepository(session).get(project_id, "reve")
+    assert budget.current_month_spend == 0
+    assert budget.current_month_calls == 0
+
+
+def test_google_gemini_image_actions_reject_invalid_model_specific_controls(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    for index in range(4):
+        (source_dir / f"ref-{index}.png").write_bytes(b"ref")
+    (source_dir / "unsupported.heic").write_bytes(b"heic")
+    (source_dir / "unsupported.heif").write_bytes(b"heif")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        secret_payload=b"gemini-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
+
+    validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.google.image.edit",
+        input_json={
+            "prompt": "edit with legacy model",
+            "model": "gemini-2.5-flash-image",
+            "image_size": "2K",
+            "aspect_ratio": "1:8",
+            "input_image_refs": [
+                f"/generated-assets/uploads/ref-{index}.png" for index in range(4)
+            ],
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.image_size" for issue in validation.issues)
+    assert any(issue.path == "$.aspect_ratio" for issue in validation.issues)
+    assert any(
+        issue.path == "$.input_image_refs" and issue.code == "range" for issue in validation.issues
+    )
+
+    pro_validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.google.image.generate",
+        input_json={
+            "prompt": "pro model at unsupported size",
+            "model": "gemini-3-pro-image",
+            "image_size": "512",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert pro_validation.valid is False
+    assert any(issue.path == "$.image_size" for issue in pro_validation.issues)
+
+    unsupported_format_validations = [
+        ActionRepository(session, asset_dir=tmp_path).validate(
+            project_id=project_id,
+            action_ref="utils.google.image.edit",
+            input_json={
+                "prompt": f"edit unsupported local {suffix} format",
+                "input_image_refs": [f"/generated-assets/uploads/unsupported.{suffix}"],
+            },
+            credential_ref=credential_ref,
+        )
+        for suffix in ("heic", "heif")
+    ]
+    traversal_validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.google.image.edit",
+        input_json={
+            "prompt": "escape generated assets",
+            "input_image_refs": ["/generated-assets/../outside.png"],
+        },
+        credential_ref=credential_ref,
+    )
+
+    for format_validation in unsupported_format_validations:
+        assert format_validation.valid is False
+        assert any(
+            issue.path == "$.input_image_refs" and issue.code == "invalid_image_ref"
+            for issue in format_validation.issues
+        )
+    assert traversal_validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs" and issue.code == "invalid_image_ref"
+        for issue in traversal_validation.issues
+    )
+
+
+def test_google_gemini_image_generate_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        secret_payload=b"gemini-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1/models/"
+            "gemini-3.1-flash-image:generateContent"
+        ),
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "image/png",
+                                    "data": base64.b64encode(b"gemini-image").decode("ascii"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "usageMetadata": {
+                "totalTokenCount": 1680,
+                "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 84}],
+            },
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.google.image.generate",
+            input_json={
+                "prompt": "poster",
+                "aspect_ratio": "16:9",
+                "image_size": "2K",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert body["generationConfig"]["responseFormat"]["image"] == {
+        "aspectRatio": "16:9",
+        "imageSize": "2K",
+    }
+    assert result.cost_cents == 10
+    assert item["url"].startswith("/generated-assets/google-gemini-image/google-gemini-image-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"]]
+    assert result.output_json["usage"] == {
+        "total_count": 1680,
+        "prompt_units_details": [{"modality": "TEXT", "count": 84}],
+    }
+    assert "usageMetadata" not in result.output_json
+    assert "gemini-key" not in rendered
+    assert "tokenCount" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"gemini-image"
+
+
+def test_google_gemini_image_generate_action_omits_image_size_when_unset(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        secret_payload=b"gemini-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1/models/"
+            "gemini-3.1-flash-image:generateContent"
+        ),
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "image/png",
+                                    "data": base64.b64encode(b"default-size").decode("ascii"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.google.image.generate",
+            input_json={"prompt": "poster", "aspect_ratio": "16:9"},
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    assert body["generationConfig"]["responseFormat"]["image"] == {"aspectRatio": "16:9"}
+    assert result.cost_cents == 7
+
+
+def test_google_gemini_image_edit_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "source.webp"
+    source.write_bytes(b"source-webp")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        secret_payload=b"gemini-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1/models/gemini-3-pro-image:generateContent"
+        ),
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "image/jpeg",
+                                    "data": base64.b64encode(b"gemini-edit").decode("ascii"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.google.image.edit",
+            input_json={
+                "prompt": "keep product, change set",
+                "model": "gemini-3-pro-image",
+                "input_image_refs": ["/generated-assets/uploads/source.webp"],
+                "aspect_ratio": "3:2",
+                "image_size": "4K",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    body = json.loads(httpx_mock.get_requests()[0].content.decode("utf-8"))
+    parts = body["contents"][0]["parts"]
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert parts[1]["inline_data"] == {
+        "mime_type": "image/webp",
+        "data": base64.b64encode(b"source-webp").decode("ascii"),
+    }
+    assert body["generationConfig"]["responseFormat"]["image"] == {
+        "aspectRatio": "3:2",
+        "imageSize": "4K",
+    }
+    assert result.cost_cents == 24
+    assert item["file_format"] == "jpg"
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert "gemini-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"gemini-edit"
+
+
+def test_google_gemini_inline_preflight_fails_before_budget_or_action_call(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "too-large.png"
+    source.write_bytes(b"x" * 15_000_000)
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        secret_payload=b"gemini-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="google-gemini-image",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "google-gemini-image")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="utils.google.image.edit",
+        input_json={
+            "prompt": "oversized",
+            "input_image_refs": ["/generated-assets/uploads/too-large.png"],
+        },
+        credential_ref=credential_ref,
+    )
+    with pytest.raises(ValidationError) as exc_info:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.google.image.edit",
+                input_json={
+                    "prompt": "oversized",
+                    "input_image_refs": ["/generated-assets/uploads/too-large.png"],
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs"
+        and issue.code == "invalid_image_ref"
+        and "under 20 MB" in issue.message
+        for issue in validation.issues
+    )
+    assert "under 20 MB" in json.dumps(exc_info.value.data)
+    assert httpx_mock.get_requests() == []
+    assert session.exec(select(ActionCall)).all() == []
+    budget = IntegrationBudgetRepository(session).get(project_id, "google-gemini-image")
     assert budget.current_month_spend == 0
     assert budget.current_month_calls == 0
 

@@ -23,6 +23,7 @@ from stackos.actions.dataforseo import DataForSeoActionConnector
 from stackos.actions.firecrawl import FirecrawlActionConnector
 from stackos.actions.ghost import GhostActionConnector
 from stackos.actions.google_ads import GoogleAdsActionConnector
+from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
 from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
 from stackos.actions.http import HttpActionConnector
 from stackos.actions.hubspot import HubSpotActionConnector
@@ -64,6 +65,7 @@ from stackos.actions.xai_imagine import XAIImagineActionConnector
 DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(GoogleGeminiImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -117,6 +119,7 @@ __all__ = [
     "FirecrawlActionConnector",
     "GhostActionConnector",
     "GoogleAdsActionConnector",
+    "GoogleGeminiImageActionConnector",
     "GoogleWorkspaceActionConnector",
     "HttpActionConnector",
     "HubSpotActionConnector",

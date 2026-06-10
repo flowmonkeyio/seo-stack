@@ -653,6 +653,43 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(
+                key="google-gemini-image",
+                name="Google Gemini Image",
+                description="Gemini Nano Banana image generation and editing provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Gemini API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Gemini Developer API key from Google AI Studio. "
+                        "StackOS resolves it inside the daemon for Gemini image "
+                        "generation and editing actions."
+                    ),
+                    "docs": [
+                        "https://ai.google.dev/gemini-api/docs/image-generation",
+                        "https://ai.google.dev/gemini-api/docs/image-understanding",
+                        "https://ai.google.dev/api/generate-content",
+                        "https://ai.google.dev/gemini-api/docs/pricing",
+                    ],
+                },
+            ),
+            ProviderManifest(
                 key="video-generation",
                 name="Video Generation",
                 description=(
@@ -1884,6 +1921,397 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "https://api.reve.com/console/docs/remix",
                         "https://api.reve.com/console/pricing",
                     ],
+                },
+            ),
+            ActionManifest(
+                key="google.image.generate",
+                name="Generate Google Gemini Image",
+                description=(
+                    "Generate and persist image artifacts through Google's Gemini Nano "
+                    "Banana image models."
+                ),
+                provider="google-gemini-image",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "gemini-3.1-flash-image",
+                                "gemini-3-pro-image",
+                                "gemini-2.5-flash-image",
+                            ],
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": [
+                                "1:1",
+                                "1:4",
+                                "1:8",
+                                "2:3",
+                                "3:2",
+                                "3:4",
+                                "4:1",
+                                "4:3",
+                                "4:5",
+                                "5:4",
+                                "8:1",
+                                "9:16",
+                                "16:9",
+                                "21:9",
+                            ],
+                        },
+                        "image_size": {
+                            "type": "string",
+                            "enum": ["512", "1K", "2K", "4K"],
+                            "description": (
+                                "Gemini 3 image size. 512 is valid only for "
+                                "gemini-3.1-flash-image; image_size is not valid "
+                                "for gemini-2.5-flash-image."
+                            ),
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "google-gemini-image",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "google-gemini-image",
+                    "enforce_budget": True,
+                    "default_model": "gemini-3.1-flash-image",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["image"]},
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/models/{model}:generateContent",
+                            "persistence": (
+                                "Gemini inline base64 image parts are written to generated "
+                                "assets and registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "inline_request_max_bytes": 20_000_000,
+                            "default_aspect_ratio": "1:1",
+                        },
+                        "models": {
+                            "gemini-3.1-flash-image": {
+                                "label": "Nano Banana 2",
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "1:4",
+                                    "1:8",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:1",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "8:1",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["512", "1K", "2K", "4K"],
+                                "pricing_usd_per_output": {
+                                    "512": 0.045,
+                                    "1K": 0.067,
+                                    "2K": 0.101,
+                                    "4K": 0.151,
+                                },
+                            },
+                            "gemini-3-pro-image": {
+                                "label": "Nano Banana Pro",
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["1K", "2K", "4K"],
+                                "pricing_usd_per_output": {
+                                    "1K": 0.134,
+                                    "2K": 0.134,
+                                    "4K": 0.24,
+                                },
+                            },
+                            "gemini-2.5-flash-image": {
+                                "label": "Nano Banana",
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["fixed 1024-class output"],
+                                "pricing_usd_per_output": 0.039,
+                            },
+                        },
+                        "pricing": {
+                            "pre_call_estimate": (
+                                "Output image price only, plus Gemini 3 Pro Image "
+                                "documented input-image equivalent where applicable. "
+                                "Text/image input token charges are provider-invoiced "
+                                "and not pre-estimated by StackOS."
+                            ),
+                            "docs": ["https://ai.google.dev/gemini-api/docs/pricing"],
+                        },
+                        "safety": {
+                            "watermark": "Generated images include Google's SynthID watermark.",
+                            "policy": "Google Gemini API image generation policies apply.",
+                        },
+                        "unsupported_provider_features": [
+                            "conversational multi-turn chat state",
+                            "Google Search grounding tools",
+                            "video input for image generation",
+                            "Files API image input",
+                            "output compression controls",
+                            "output MIME type controls",
+                            "person_generation control",
+                        ],
+                        "docs": [
+                            "https://ai.google.dev/gemini-api/docs/image-generation",
+                            "https://ai.google.dev/api/generate-content",
+                            "https://ai.google.dev/gemini-api/docs/pricing",
+                        ],
+                    },
+                },
+            ),
+            ActionManifest(
+                key="google.image.edit",
+                name="Edit Google Gemini Image",
+                description=(
+                    "Generate an image from text plus one or more generated-assets "
+                    "reference images through Gemini Nano Banana image models."
+                ),
+                provider="google-gemini-image",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt", "input_image_refs"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "input_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 14,
+                            "description": (
+                                "Generated-assets refs for JPEG, PNG, or WEBP images. "
+                                "Inline request payload must remain under 20 MB."
+                            ),
+                        },
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "gemini-3.1-flash-image",
+                                "gemini-3-pro-image",
+                                "gemini-2.5-flash-image",
+                            ],
+                        },
+                        "aspect_ratio": {
+                            "type": "string",
+                            "enum": [
+                                "1:1",
+                                "1:4",
+                                "1:8",
+                                "2:3",
+                                "3:2",
+                                "3:4",
+                                "4:1",
+                                "4:3",
+                                "4:5",
+                                "5:4",
+                                "8:1",
+                                "9:16",
+                                "16:9",
+                                "21:9",
+                            ],
+                        },
+                        "image_size": {
+                            "type": "string",
+                            "enum": ["512", "1K", "2K", "4K"],
+                            "description": (
+                                "Gemini 3 image size. 512 is valid only for "
+                                "gemini-3.1-flash-image; image_size is not valid "
+                                "for gemini-2.5-flash-image."
+                            ),
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "google-gemini-image",
+                    "operation": "image.edit",
+                    "requires_credential": True,
+                    "budget_kind": "google-gemini-image",
+                    "enforce_budget": True,
+                    "default_model": "gemini-3.1-flash-image",
+                    "agent_guidance": (
+                        "Use this action when the output must preserve or combine "
+                        "existing visual references. Keep references as generated-assets "
+                        "refs; StackOS sends them inline and does not expose secrets."
+                    ),
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["image"]},
+                        "modes": [
+                            "image-to-image",
+                            "multi-image-reference",
+                            "style-transfer",
+                            "object-preserving-edit",
+                            "character-consistency",
+                        ],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/models/{model}:generateContent",
+                            "persistence": (
+                                "Gemini inline base64 image parts are written to generated "
+                                "assets and registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "inline_request_max_bytes": 20_000_000,
+                            "input_image_formats": ["jpg", "jpeg", "png", "webp"],
+                            "max_input_images_by_model": {
+                                "gemini-3.1-flash-image": 14,
+                                "gemini-3-pro-image": 14,
+                                "gemini-2.5-flash-image": 3,
+                            },
+                            "default_output_shape": (
+                                "Provider defaults to matching the input image size or "
+                                "generating 1:1 when no input size applies."
+                            ),
+                        },
+                        "models": {
+                            "gemini-3.1-flash-image": {
+                                "label": "Nano Banana 2",
+                                "max_input_images": 14,
+                                "reference_guidance": (
+                                    "Up to 10 object references plus up to 4 character "
+                                    "references in one workflow."
+                                ),
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "1:4",
+                                    "1:8",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:1",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "8:1",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["512", "1K", "2K", "4K"],
+                                "pricing_usd_per_output": {
+                                    "512": 0.045,
+                                    "1K": 0.067,
+                                    "2K": 0.101,
+                                    "4K": 0.151,
+                                },
+                            },
+                            "gemini-3-pro-image": {
+                                "label": "Nano Banana Pro",
+                                "max_input_images": 14,
+                                "reference_guidance": (
+                                    "Up to 5 high-fidelity character references and up to "
+                                    "14 images total."
+                                ),
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["1K", "2K", "4K"],
+                                "pricing_usd_per_input_image": 0.0011,
+                                "pricing_usd_per_output": {
+                                    "1K": 0.134,
+                                    "2K": 0.134,
+                                    "4K": 0.24,
+                                },
+                            },
+                            "gemini-2.5-flash-image": {
+                                "label": "Nano Banana",
+                                "max_input_images": 3,
+                                "aspect_ratios": [
+                                    "1:1",
+                                    "2:3",
+                                    "3:2",
+                                    "3:4",
+                                    "4:3",
+                                    "4:5",
+                                    "5:4",
+                                    "9:16",
+                                    "16:9",
+                                    "21:9",
+                                ],
+                                "image_sizes": ["fixed 1024-class output"],
+                                "pricing_usd_per_output": 0.039,
+                            },
+                        },
+                        "pricing": {
+                            "pre_call_estimate": (
+                                "Output image price only, plus Gemini 3 Pro Image "
+                                "documented input-image equivalent where applicable. "
+                                "Text/image input token charges are provider-invoiced "
+                                "and not pre-estimated by StackOS."
+                            ),
+                            "docs": ["https://ai.google.dev/gemini-api/docs/pricing"],
+                        },
+                        "safety": {
+                            "watermark": "Generated images include Google's SynthID watermark.",
+                            "policy": "Google Gemini API image generation policies apply.",
+                        },
+                        "unsupported_provider_features": [
+                            "conversational multi-turn chat state",
+                            "Google Search grounding tools",
+                            "video input for image generation",
+                            "Files API image input",
+                            "output compression controls",
+                            "output MIME type controls",
+                            "person_generation control",
+                        ],
+                        "docs": [
+                            "https://ai.google.dev/gemini-api/docs/image-generation",
+                            "https://ai.google.dev/gemini-api/docs/image-understanding",
+                            "https://ai.google.dev/api/generate-content",
+                            "https://ai.google.dev/gemini-api/docs/pricing",
+                        ],
+                    },
                 },
             ),
             ActionManifest(

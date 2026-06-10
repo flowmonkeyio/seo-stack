@@ -20,6 +20,7 @@ from stackos.integrations.ahrefs import AhrefsIntegration
 from stackos.integrations.dataforseo import DataForSeoIntegration
 from stackos.integrations.firecrawl import FirecrawlIntegration
 from stackos.integrations.ghost import GhostIntegration
+from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
 from stackos.integrations.google_paa import GooglePaaIntegration
 from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
@@ -46,6 +47,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "openai-images": OpenAIImagesIntegration,
     "xai-imagine": XAIImagineIntegration,
     "reve": ReveImagesIntegration,
+    "google-gemini-image": GoogleGeminiImageIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -79,6 +81,7 @@ __all__ = [
     "DataForSeoIntegration",
     "FirecrawlIntegration",
     "GhostIntegration",
+    "GoogleGeminiImageIntegration",
     "GooglePaaIntegration",
     "ImapIntegration",
     "IntegrationCallResult",

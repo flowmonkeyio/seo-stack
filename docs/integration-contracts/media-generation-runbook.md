@@ -19,6 +19,10 @@ Every concrete media tool uses the same StackOS split:
   static action payload, estimates budget, calls the wrapper, and returns safe
   action output. It must not choose strategy, rewrite workflow intent, or
   silently downgrade unsupported features.
+- Agent-visible output must avoid raw provider blobs and secret-looking key
+  names. Normalize provider usage metadata before returning it if keys include
+  words such as `token`, `secret`, or `credential`; the shared redactor treats
+  those as sensitive by design.
 - `stackos/plugins/manifest.py`: provider metadata, auth method, independent
   action rows, schemas, budget kind, and `capability_metadata`.
 - `stackos/actions/__init__.py` and `stackos/integrations/__init__.py`:

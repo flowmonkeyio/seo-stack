@@ -33,6 +33,13 @@
   estimates, official 32M-pixel remix input preflight, and `credits_used` cost
   reconciliation. Reve `auth.test` is intentionally non-billable format-only
   because the provider does not document a free live credential probe.
+- Added Google Gemini Image actions `utils.google.image.generate` and
+  `utils.google.image.edit` for Gemini Nano Banana image models, with
+  generated-assets persistence, generic image artifact registration, run-plan
+  grant coverage, official-doc capability metadata, model-specific aspect
+  ratios/image sizes/input counts, inline 20 MB request preflight, and official
+  output image budget estimates. Google Gemini image `auth.test` is non-billable
+  format-only because the provider does not document a free live image probe.
 
 ## 1.0.0 - 2026-05-26
 

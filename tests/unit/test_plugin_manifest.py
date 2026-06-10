@@ -102,7 +102,9 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "openrouter" in utils_providers
     assert "xai-imagine" in utils_providers
     assert "reve" in utils_providers
+    assert "google-gemini-image" in utils_providers
     assert _auth_field_keys(utils_providers["reve"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["google-gemini-image"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -269,6 +271,52 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "max_total_input_image_bytes" not in reve_remix_capabilities["limits"]
     assert reve_remix_capabilities["models"]["reve-remix-fast@20251030"]["status"] == (
         "Pinned fast remix version"
+    )
+    google_image_generate = utils_actions["google.image.generate"]
+    assert google_image_generate.provider == "google-gemini-image"
+    assert google_image_generate.config["connector"] == "google-gemini-image"
+    assert google_image_generate.config["operation"] == "image.generate"
+    assert google_image_generate.config["budget_kind"] == "google-gemini-image"
+    google_generate_capabilities = google_image_generate.config["capability_metadata"]
+    assert google_generate_capabilities["execution"]["mode"] == "sync"
+    assert google_generate_capabilities["models"]["gemini-3.1-flash-image"]["label"] == (
+        "Nano Banana 2"
+    )
+    assert google_generate_capabilities["models"]["gemini-3.1-flash-image"]["image_sizes"] == [
+        "512",
+        "1K",
+        "2K",
+        "4K",
+    ]
+    assert (
+        google_generate_capabilities["models"]["gemini-3.1-flash-image"]["pricing_usd_per_output"][
+            "512"
+        ]
+        == 0.045
+    )
+    assert (
+        google_generate_capabilities["models"]["gemini-3.1-flash-image"]["pricing_usd_per_output"][
+            "2K"
+        ]
+        == 0.101
+    )
+    assert (
+        "512/0.5K request size for Gemini 3.1 Flash Image"
+        not in google_generate_capabilities["unsupported_provider_features"]
+    )
+    google_image_edit = utils_actions["google.image.edit"]
+    assert google_image_edit.config["operation"] == "image.edit"
+    assert google_image_edit.input_schema["required"] == ["prompt", "input_image_refs"]
+    google_edit_capabilities = google_image_edit.config["capability_metadata"]
+    assert google_edit_capabilities["limits"]["max_input_images_by_model"] == {
+        "gemini-3.1-flash-image": 14,
+        "gemini-3-pro-image": 14,
+        "gemini-2.5-flash-image": 3,
+    }
+    assert google_edit_capabilities["limits"]["inline_request_max_bytes"] == 20_000_000
+    assert (
+        google_edit_capabilities["models"]["gemini-3-pro-image"]["pricing_usd_per_input_image"]
+        == 0.0011
     )
     assert "video-generation" in utils_providers
     assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]

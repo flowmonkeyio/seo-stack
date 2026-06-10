@@ -200,6 +200,8 @@ cover the migrated clean path for:
   `utils.xai.video.generate`
 - `reve`: `utils.reve.image.generate`, `utils.reve.image.edit`, and
   `utils.reve.image.remix`
+- `google-gemini-image`: `utils.google.image.generate` and
+  `utils.google.image.edit`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -262,6 +264,15 @@ returns local artifact refs plus safe provider job metadata. Successful xAI
 responses reconcile action-call cost from `usage.cost_in_usd_ticks` when
 present; pre-call budget checks still reserve the estimate and top up only when
 the actual connector cost is higher.
+
+The Google Gemini Image connector uses Gemini Developer API
+`models/{model}:generateContent` for `gemini-3.1-flash-image`,
+`gemini-3-pro-image`, and `gemini-2.5-flash-image`. It persists inline
+MIME/base64 image parts under generated assets, registers generic `image`
+artifacts, and validates generated-assets image refs plus model-specific
+shape/input-count limits before provider calls. StackOS v1 does not expose
+Gemini Files API input, Google Search grounding tools, video input, chat state,
+or Vertex AI parity through these actions.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across

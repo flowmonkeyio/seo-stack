@@ -298,6 +298,20 @@ def _create_reve_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_google_gemini_image_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/google-gemini-image/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "gemini-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "google-gemini-image"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
@@ -477,6 +491,34 @@ def _reve_image_action_plan_json() -> dict:
             {
                 "id": "generate-reve-image",
                 "title": "Generate Reve image",
+                "action_refs": action_refs,
+            }
+        ],
+    }
+
+
+def _google_gemini_image_action_plan_json() -> dict:
+    action_refs = [
+        "utils.google.image.generate",
+        "utils.google.image.edit",
+    ]
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.google-gemini-image-action.run",
+        "title": "Google Gemini image action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "generate-google-gemini-image",
+                    "tool": "action.execute",
+                    "action_refs": action_refs,
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "generate-google-gemini-image",
+                "title": "Generate Google Gemini image",
                 "action_refs": action_refs,
             }
         ],
@@ -1290,6 +1332,162 @@ def test_action_execute_reve_image_grant_returns_sanitized_artifact_refs(
         out["data"]["output_json"]["data"][0]["artifact_id"],
         edit_out["data"]["output_json"]["data"][0]["artifact_id"],
         remix_out["data"]["output_json"]["data"][0]["artifact_id"],
+    }
+    assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
+
+
+def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_google_gemini_image_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "google-gemini-image", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+    input_dir = mcp_settings.generated_assets_dir / "uploads"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "google-edit.png").write_bytes(b"google-edit-source")
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _google_gemini_image_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-google-gemini-image",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1/models/"
+            "gemini-3.1-flash-image:generateContent"
+        ),
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "image/png",
+                                    "data": base64.b64encode(b"google-image").decode("ascii"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ],
+            "usageMetadata": {"totalTokenCount": 1680},
+        },
+    )
+
+    def assert_google_artifact(
+        result: dict,
+        *,
+        expected_bytes: bytes,
+        expected_cost_cents: int,
+    ) -> None:
+        data = result["data"]
+        item = data["output_json"]["data"][0]
+        rendered = json.dumps(data)
+        assert data["credential_ref"] == credential_ref
+        assert data["action_call"]["credential_ref"] == credential_ref
+        assert data["action_call"]["provider_key"] == "google-gemini-image"
+        assert data["action_call"]["connector_key"] == "google-gemini-image"
+        assert data["action_call"]["run_id"] == started["data"]["run_id"]
+        assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+        assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+        assert data["cost_cents"] == expected_cost_cents
+        assert item["url"].startswith("/generated-assets/google-gemini-image/google-gemini-image-")
+        assert item["artifact_ref"] == item["url"]
+        assert isinstance(item["artifact_id"], int)
+        assert data["output_json"]["artifact_refs"] == [item["url"]]
+        assert "candidates" not in data["output_json"]
+        assert "credential_id" not in rendered
+        assert "gemini-key" not in rendered
+        path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+        assert path.read_bytes() == expected_bytes
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.google.image.generate",
+            "input_json": {
+                "prompt": "editorial hero",
+                "aspect_ratio": "16:9",
+                "image_size": "2K",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    assert_google_artifact(out, expected_bytes=b"google-image", expected_cost_cents=10)
+    httpx_mock.add_response(
+        method="POST",
+        url=(
+            "https://generativelanguage.googleapis.com/v1/models/gemini-3-pro-image:generateContent"
+        ),
+        json={
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "image/jpeg",
+                                    "data": base64.b64encode(b"google-edit-image").decode("ascii"),
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+    )
+    edit_out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.google.image.edit",
+            "input_json": {
+                "prompt": "make the product brighter",
+                "input_image_refs": ["/generated-assets/uploads/google-edit.png"],
+                "model": "gemini-3-pro-image",
+                "aspect_ratio": "1:1",
+                "image_size": "4K",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_google_artifact(
+        edit_out,
+        expected_bytes=b"google-edit-image",
+        expected_cost_cents=24,
+    )
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "image"},
+    )
+    artifact_ids = {
+        out["data"]["output_json"]["data"][0]["artifact_id"],
+        edit_out["data"]["output_json"]["data"][0]["artifact_id"],
     }
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 
