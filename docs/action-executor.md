@@ -202,6 +202,8 @@ cover the migrated clean path for:
   `utils.reve.image.remix`
 - `google-gemini-image`: `utils.google.image.generate` and
   `utils.google.image.edit`
+- `ideogram`: `utils.ideogram.image.generate` and
+  `utils.ideogram.image.remix`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -273,6 +275,14 @@ artifacts, and validates generated-assets image refs plus model-specific
 shape/input-count limits before provider calls. StackOS v1 does not expose
 Gemini Files API input, Google Search grounding tools, video input, chat state,
 or Vertex AI parity through these actions.
+
+The Ideogram connector uses multipart Ideogram 4.0 generate/remix endpoints,
+downloads temporary provider image URLs immediately, strips signed provider
+URLs from action outputs and audit records, persists images under generated
+assets, and registers generic `image` artifacts. StackOS v1 exposes text prompt
+generation and one-image remix only; structured `json_prompt`, magic-prompt,
+describe, v3 background utilities, remove-background, upscale, legacy edit, and
+`rendering_speed=FLASH` remain deferred until each endpoint contract is modeled.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across

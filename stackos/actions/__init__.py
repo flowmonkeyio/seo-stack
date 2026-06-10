@@ -27,6 +27,7 @@ from stackos.actions.google_gemini_image import GoogleGeminiImageActionConnector
 from stackos.actions.google_workspace import GoogleWorkspaceActionConnector
 from stackos.actions.http import HttpActionConnector
 from stackos.actions.hubspot import HubSpotActionConnector
+from stackos.actions.ideogram_images import IdeogramImagesActionConnector
 from stackos.actions.imap import ImapActionConnector
 from stackos.actions.jina import JinaActionConnector
 from stackos.actions.manifest import (
@@ -66,6 +67,7 @@ DEFAULT_ACTION_CONNECTORS.register(OpenAIImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleGeminiImageActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(IdeogramImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -123,6 +125,7 @@ __all__ = [
     "GoogleWorkspaceActionConnector",
     "HttpActionConnector",
     "HubSpotActionConnector",
+    "IdeogramImagesActionConnector",
     "ImapActionConnector",
     "JinaActionConnector",
     "MetaAdsActionConnector",

@@ -312,6 +312,20 @@ def _create_google_gemini_image_credential(mcp: MCPClient, project_id: int) -> s
     return status["connections"][0]["credential_ref"]
 
 
+def _create_ideogram_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/ideogram/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "ideo-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "ideogram"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
@@ -519,6 +533,34 @@ def _google_gemini_image_action_plan_json() -> dict:
             {
                 "id": "generate-google-gemini-image",
                 "title": "Generate Google Gemini image",
+                "action_refs": action_refs,
+            }
+        ],
+    }
+
+
+def _ideogram_image_action_plan_json() -> dict:
+    action_refs = [
+        "utils.ideogram.image.generate",
+        "utils.ideogram.image.remix",
+    ]
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.ideogram-image-action.run",
+        "title": "Ideogram image action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "generate-ideogram-image",
+                    "tool": "action.execute",
+                    "action_refs": action_refs,
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "generate-ideogram-image",
+                "title": "Generate Ideogram image",
                 "action_refs": action_refs,
             }
         ],
@@ -1488,6 +1530,165 @@ def test_action_execute_google_gemini_image_grant_returns_sanitized_artifact_ref
     artifact_ids = {
         out["data"]["output_json"]["data"][0]["artifact_id"],
         edit_out["data"]["output_json"]["data"][0]["artifact_id"],
+    }
+    assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
+
+
+def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_ideogram_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "ideogram", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+    input_dir = mcp_settings.generated_assets_dir / "uploads"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "ideogram-source.png").write_bytes(_png_header(32, 32))
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _ideogram_image_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-ideogram-image",
+            "run_token": run_token,
+        },
+    )
+
+    def assert_ideogram_artifact(
+        result: dict,
+        *,
+        expected_bytes: bytes,
+        expected_cost_cents: int,
+    ) -> None:
+        data = result["data"]
+        item = data["output_json"]["data"][0]
+        rendered = json.dumps(data)
+        assert data["credential_ref"] == credential_ref
+        assert data["action_call"]["credential_ref"] == credential_ref
+        assert data["action_call"]["provider_key"] == "ideogram"
+        assert data["action_call"]["connector_key"] == "ideogram"
+        assert data["action_call"]["run_id"] == started["data"]["run_id"]
+        assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+        assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+        assert data["cost_cents"] == expected_cost_cents
+        assert item["url"].startswith("/generated-assets/ideogram/ideogram-")
+        assert item["artifact_ref"] == item["url"]
+        assert isinstance(item["artifact_id"], int)
+        assert data["output_json"]["artifact_refs"] == [item["url"]]
+        assert "ephemeral" not in rendered
+        assert "sig=secret" not in rendered
+        assert "credential_id" not in rendered
+        assert "ideo-key" not in rendered
+        path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+        assert path.read_bytes() == expected_bytes
+
+    generate_provider_url = "https://ideogram.ai/api/images/ephemeral/generated.png?sig=secret"
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.ideogram.ai/v1/ideogram-v4/generate",
+        json={
+            "created": "2026-06-10 00:00:00+00:00",
+            "data": [
+                {
+                    "prompt": "editorial hero",
+                    "resolution": "2048x2048",
+                    "is_image_safe": True,
+                    "seed": 12345,
+                    "url": generate_provider_url,
+                }
+            ],
+            "response_type": "url",
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=generate_provider_url,
+        content=b"ideogram-image",
+        headers={"content-type": "image/png"},
+    )
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.ideogram.image.generate",
+            "input_json": {
+                "text_prompt": "editorial hero",
+                "resolution": "2048x2048",
+                "rendering_speed": "TURBO",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_ideogram_artifact(out, expected_bytes=b"ideogram-image", expected_cost_cents=3)
+
+    remix_provider_url = "https://ideogram.ai/api/images/ephemeral/remix.webp?sig=secret"
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.ideogram.ai/v1/ideogram-v4/remix",
+        json={
+            "created": "2026-06-10 00:00:00+00:00",
+            "data": [
+                {
+                    "prompt": "remix",
+                    "resolution": "3072x1024",
+                    "is_image_safe": True,
+                    "seed": 67890,
+                    "url": remix_provider_url,
+                }
+            ],
+            "response_type": "url",
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=remix_provider_url,
+        content=b"ideogram-remix",
+        headers={"content-type": "image/webp"},
+    )
+    remix_out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.ideogram.image.remix",
+            "input_json": {
+                "text_prompt": "remix",
+                "input_image_ref": "/generated-assets/uploads/ideogram-source.png",
+                "image_weight": 75,
+                "resolution": "3072x1024",
+                "rendering_speed": "QUALITY",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_ideogram_artifact(
+        remix_out,
+        expected_bytes=b"ideogram-remix",
+        expected_cost_cents=10,
+    )
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "image"},
+    )
+    artifact_ids = {
+        out["data"]["output_json"]["data"][0]["artifact_id"],
+        remix_out["data"]["output_json"]["data"][0]["artifact_id"],
     }
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 

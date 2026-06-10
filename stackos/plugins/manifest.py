@@ -690,6 +690,42 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(
+                key="ideogram",
+                name="Ideogram",
+                description="Ideogram 4.0 image generation and remix provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="Ideogram API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the Ideogram API key from the Ideogram API dashboard. "
+                        "StackOS resolves it inside the daemon for Ideogram image "
+                        "generation and remix actions."
+                    ),
+                    "docs": [
+                        "https://developer.ideogram.ai/api-reference/api-reference/generate-v4",
+                        "https://developer.ideogram.ai/api-reference/api-reference/remix-v4",
+                        "https://ideogram.ai/api-pricing/",
+                    ],
+                },
+            ),
+            ProviderManifest(
                 key="video-generation",
                 name="Video Generation",
                 description=(
@@ -2310,6 +2346,290 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "https://ai.google.dev/gemini-api/docs/image-understanding",
                             "https://ai.google.dev/api/generate-content",
                             "https://ai.google.dev/gemini-api/docs/pricing",
+                        ],
+                    },
+                },
+            ),
+            ActionManifest(
+                key="ideogram.image.generate",
+                name="Generate Ideogram Image",
+                description=("Generate and persist image artifacts through Ideogram 4.0."),
+                provider="ideogram",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["text_prompt"],
+                    "properties": {
+                        "text_prompt": {"type": "string", "minLength": 1},
+                        "resolution": {
+                            "type": "string",
+                            "enum": [
+                                "2048x2048",
+                                "1440x2880",
+                                "2880x1440",
+                                "1664x2496",
+                                "2496x1664",
+                                "1792x2240",
+                                "2240x1792",
+                                "1440x2560",
+                                "2560x1440",
+                                "1600x2560",
+                                "2560x1600",
+                                "1728x2304",
+                                "2304x1728",
+                                "1296x3168",
+                                "3168x1296",
+                                "1152x2944",
+                                "2944x1152",
+                                "1248x3328",
+                                "3328x1248",
+                                "1280x3072",
+                                "3072x1280",
+                                "1024x3072",
+                                "3072x1024",
+                            ],
+                        },
+                        "rendering_speed": {
+                            "type": "string",
+                            "enum": ["TURBO", "DEFAULT", "QUALITY"],
+                            "description": (
+                                "Ideogram 4.0 speed tier. FLASH is documented as "
+                                "coming soon and currently returns 400, so it is not "
+                                "exposed."
+                            ),
+                        },
+                        "enable_copyright_detection": {"type": "boolean"},
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ideogram",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "ideogram",
+                    "enforce_budget": True,
+                    "default_model": "ideogram-v4",
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["image"]},
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/ideogram-v4/generate",
+                            "persistence": (
+                                "Ideogram temporary image URLs are downloaded "
+                                "immediately, written to generated assets, and "
+                                "registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "temporary_provider_urls": "download-and-strip",
+                            "resolution_count": 23,
+                        },
+                        "models": {
+                            "ideogram-v4": {
+                                "label": "Ideogram 4.0",
+                                "resolutions": [
+                                    "2048x2048",
+                                    "1440x2880",
+                                    "2880x1440",
+                                    "1664x2496",
+                                    "2496x1664",
+                                    "1792x2240",
+                                    "2240x1792",
+                                    "1440x2560",
+                                    "2560x1440",
+                                    "1600x2560",
+                                    "2560x1600",
+                                    "1728x2304",
+                                    "2304x1728",
+                                    "1296x3168",
+                                    "3168x1296",
+                                    "1152x2944",
+                                    "2944x1152",
+                                    "1248x3328",
+                                    "3328x1248",
+                                    "1280x3072",
+                                    "3072x1280",
+                                    "1024x3072",
+                                    "3072x1024",
+                                ],
+                                "rendering_speeds": ["TURBO", "DEFAULT", "QUALITY"],
+                                "pricing_usd_per_output": {
+                                    "TURBO": 0.03,
+                                    "DEFAULT": 0.06,
+                                    "QUALITY": 0.10,
+                                },
+                            }
+                        },
+                        "unsupported_provider_features": [
+                            "rendering_speed FLASH",
+                            "structured json_prompt",
+                            "magic-prompt helper endpoint",
+                            "describe endpoint",
+                            "legacy edit",
+                            "Ideogram 3.0 inpaint/reframe/replace-background",
+                            "remove background",
+                            "upscale",
+                        ],
+                        "docs": [
+                            "https://developer.ideogram.ai/api-reference/api-reference/generate-v4",
+                            "https://ideogram.ai/api-pricing/",
+                        ],
+                    },
+                },
+            ),
+            ActionManifest(
+                key="ideogram.image.remix",
+                name="Remix Ideogram Image",
+                description=(
+                    "Generate an Ideogram 4.0 image from a prompt and one "
+                    "generated-assets reference image."
+                ),
+                provider="ideogram",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["text_prompt", "input_image_ref"],
+                    "properties": {
+                        "text_prompt": {"type": "string", "minLength": 1},
+                        "input_image_ref": {
+                            "type": "string",
+                            "description": (
+                                "Generated-assets ref for a JPEG, PNG, or WEBP image at most 10 MB."
+                            ),
+                        },
+                        "image_weight": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                        },
+                        "resolution": {
+                            "type": "string",
+                            "enum": [
+                                "2048x2048",
+                                "1440x2880",
+                                "2880x1440",
+                                "1664x2496",
+                                "2496x1664",
+                                "1792x2240",
+                                "2240x1792",
+                                "1440x2560",
+                                "2560x1440",
+                                "1600x2560",
+                                "2560x1600",
+                                "1728x2304",
+                                "2304x1728",
+                                "1296x3168",
+                                "3168x1296",
+                                "1152x2944",
+                                "2944x1152",
+                                "1248x3328",
+                                "3328x1248",
+                                "1280x3072",
+                                "3072x1280",
+                                "1024x3072",
+                                "3072x1024",
+                            ],
+                        },
+                        "rendering_speed": {
+                            "type": "string",
+                            "enum": ["TURBO", "DEFAULT", "QUALITY"],
+                            "description": (
+                                "Ideogram 4.0 speed tier. FLASH is documented as "
+                                "coming soon and currently returns 400, so it is not "
+                                "exposed."
+                            ),
+                        },
+                        "enable_copyright_detection": {"type": "boolean"},
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "ideogram",
+                    "operation": "image.remix",
+                    "requires_credential": True,
+                    "budget_kind": "ideogram",
+                    "enforce_budget": True,
+                    "default_model": "ideogram-v4",
+                    "agent_guidance": (
+                        "Use this action when an Ideogram 4.0 output should follow "
+                        "one existing generated-assets image. Keep the provider's "
+                        "temporary URL out of prompts and logs."
+                    ),
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["image"]},
+                        "modes": ["image-remix", "image-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/ideogram-v4/remix",
+                            "persistence": (
+                                "Ideogram temporary image URLs are downloaded "
+                                "immediately, written to generated assets, and "
+                                "registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "max_input_images": 1,
+                            "max_input_image_bytes": 10_000_000,
+                            "input_image_formats": ["jpg", "jpeg", "png", "webp"],
+                            "image_weight": {"minimum": 1, "maximum": 100},
+                            "temporary_provider_urls": "download-and-strip",
+                        },
+                        "models": {
+                            "ideogram-v4": {
+                                "label": "Ideogram 4.0",
+                                "resolutions": [
+                                    "2048x2048",
+                                    "1440x2880",
+                                    "2880x1440",
+                                    "1664x2496",
+                                    "2496x1664",
+                                    "1792x2240",
+                                    "2240x1792",
+                                    "1440x2560",
+                                    "2560x1440",
+                                    "1600x2560",
+                                    "2560x1600",
+                                    "1728x2304",
+                                    "2304x1728",
+                                    "1296x3168",
+                                    "3168x1296",
+                                    "1152x2944",
+                                    "2944x1152",
+                                    "1248x3328",
+                                    "3328x1248",
+                                    "1280x3072",
+                                    "3072x1280",
+                                    "1024x3072",
+                                    "3072x1024",
+                                ],
+                                "rendering_speeds": ["TURBO", "DEFAULT", "QUALITY"],
+                                "pricing_usd_per_output": {
+                                    "TURBO": 0.03,
+                                    "DEFAULT": 0.06,
+                                    "QUALITY": 0.10,
+                                },
+                            }
+                        },
+                        "unsupported_provider_features": [
+                            "rendering_speed FLASH",
+                            "structured json_prompt",
+                            "magic-prompt helper endpoint",
+                            "describe endpoint",
+                            "legacy edit",
+                            "Ideogram 3.0 inpaint/reframe/replace-background",
+                            "remove background",
+                            "upscale",
+                        ],
+                        "docs": [
+                            "https://developer.ideogram.ai/api-reference/api-reference/remix-v4",
+                            "https://ideogram.ai/api-pricing/",
                         ],
                     },
                 },

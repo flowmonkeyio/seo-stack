@@ -53,6 +53,10 @@ def _png_header(width: int, height: int) -> bytes:
     )
 
 
+def _webp_header() -> bytes:
+    return b"RIFF\x10\x00\x00\x00WEBPideogram-webp"
+
+
 class _FakeConnector:
     key = "fake.echo"
 
@@ -1021,6 +1025,8 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.reve.image.remix": ("reve", True, "unknown"),
         "utils.google.image.generate": ("google-gemini-image", True, "unknown"),
         "utils.google.image.edit": ("google-gemini-image", True, "unknown"),
+        "utils.ideogram.image.generate": ("ideogram", True, "unknown"),
+        "utils.ideogram.image.remix": ("ideogram", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -2083,6 +2089,292 @@ def test_google_gemini_inline_preflight_fails_before_budget_or_action_call(
     assert httpx_mock.get_requests() == []
     assert session.exec(select(ActionCall)).all() == []
     budget = IntegrationBudgetRepository(session).get(project_id, "google-gemini-image")
+    assert budget.current_month_spend == 0
+    assert budget.current_month_calls == 0
+
+
+def test_ideogram_image_actions_reject_invalid_contract_controls(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    (source_dir / "source.heic").write_bytes(b"heic")
+    (source_dir / "source.png").write_bytes(b"png")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        secret_payload=b"ideo-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "ideogram")
+
+    generate_validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.ideogram.image.generate",
+        input_json={
+            "text_prompt": "poster",
+            "resolution": "1024x1024",
+            "rendering_speed": "FLASH",
+            "json_prompt": {"scene": "unsupported"},
+        },
+        credential_ref=credential_ref,
+    )
+    remix_validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.ideogram.image.remix",
+        input_json={
+            "text_prompt": "remix",
+            "input_image_ref": "/generated-assets/uploads/source.heic",
+            "image_weight": 101,
+        },
+        credential_ref=credential_ref,
+    )
+    traversal_validation = ActionRepository(session, asset_dir=tmp_path).validate(
+        project_id=project_id,
+        action_ref="utils.ideogram.image.remix",
+        input_json={
+            "text_prompt": "remix",
+            "input_image_ref": "/generated-assets/../outside.png",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert generate_validation.valid is False
+    assert any(issue.path == "$.resolution" for issue in generate_validation.issues)
+    assert any(issue.path == "$.rendering_speed" for issue in generate_validation.issues)
+    assert any(issue.path == "$.json_prompt" for issue in generate_validation.issues)
+    assert remix_validation.valid is False
+    assert any(issue.path == "$.image_weight" for issue in remix_validation.issues)
+    assert any(issue.path == "$.input_image_ref" for issue in remix_validation.issues)
+    assert traversal_validation.valid is False
+    assert any(issue.path == "$.input_image_ref" for issue in traversal_validation.issues)
+
+
+def test_ideogram_image_generate_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    provider_url = "https://ideogram.ai/api/images/ephemeral/generated.png?sig=secret"
+    provider_url_2 = "https://ideogram.ai/api/images/ephemeral/generated-2.png?sig=secret"
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        secret_payload=b"ideo-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "ideogram")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.ideogram.ai/v1/ideogram-v4/generate",
+        json={
+            "created": "2026-06-10 00:00:00+00:00",
+            "data": [
+                {
+                    "prompt": "poster",
+                    "resolution": "2048x2048",
+                    "is_image_safe": True,
+                    "seed": 12345,
+                    "url": provider_url,
+                },
+                {
+                    "prompt": "poster",
+                    "resolution": "2048x2048",
+                    "is_image_safe": True,
+                    "seed": 67890,
+                    "url": provider_url_2,
+                },
+            ],
+            "response_type": "url",
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url,
+        content=b"ideogram-image",
+        headers={"content-type": "image/png"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url_2,
+        content=b"ideogram-image-2",
+        headers={"content-type": "image/png"},
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.ideogram.image.generate",
+            input_json={
+                "text_prompt": "poster",
+                "resolution": "2048x2048",
+                "rendering_speed": "TURBO",
+                "enable_copyright_detection": True,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    post_request = httpx_mock.get_requests()[0]
+    item = result.output_json["data"][0]
+    item_2 = result.output_json["data"][1]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert post_request.headers["Api-Key"] == "ideo-key"
+    assert b'name="rendering_speed"\r\n\r\nTURBO' in post_request.content
+    assert result.cost_cents == 6
+    assert item["url"].startswith("/generated-assets/ideogram/ideogram-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert item_2["artifact_ref"] == item_2["url"]
+    assert isinstance(item_2["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"], item_2["url"]]
+    assert provider_url not in rendered
+    assert provider_url_2 not in rendered
+    assert "ideo-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    path_2 = tmp_path / item_2["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"ideogram-image"
+    assert path_2.read_bytes() == b"ideogram-image-2"
+
+
+def test_ideogram_image_remix_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    (source_dir / "source.webp").write_bytes(_webp_header())
+    provider_url = "https://ideogram.ai/api/images/ephemeral/remix.webp?sig=secret"
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        secret_payload=b"ideo-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "ideogram")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.ideogram.ai/v1/ideogram-v4/remix",
+        json={
+            "created": "2026-06-10 00:00:00+00:00",
+            "data": [
+                {
+                    "prompt": "remix",
+                    "resolution": "3072x1024",
+                    "is_image_safe": True,
+                    "seed": 12345,
+                    "url": provider_url,
+                }
+            ],
+            "response_type": "url",
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url,
+        content=b"ideogram-remix",
+        headers={"content-type": "image/webp"},
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.ideogram.image.remix",
+            input_json={
+                "text_prompt": "remix",
+                "input_image_ref": "/generated-assets/uploads/source.webp",
+                "image_weight": 75,
+                "resolution": "3072x1024",
+                "rendering_speed": "QUALITY",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    post_request = httpx_mock.get_requests()[0]
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+    assert (
+        b'name="image"; filename="source.webp"\r\nContent-Type: image/webp' in post_request.content
+    )
+    assert b'name="image_weight"\r\n\r\n75' in post_request.content
+    assert result.cost_cents == 10
+    assert item["file_format"] == "webp"
+    assert item["artifact_ref"] == item["url"]
+    assert provider_url not in rendered
+    assert "ideo-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"ideogram-remix"
+
+
+def test_ideogram_remix_preflight_fails_before_budget_or_action_call(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "too-large.png"
+    source.write_bytes(b"x" * 10_000_001)
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        secret_payload=b"ideo-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="ideogram",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "ideogram")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="utils.ideogram.image.remix",
+        input_json={
+            "text_prompt": "oversized remix",
+            "input_image_ref": "/generated-assets/uploads/too-large.png",
+        },
+        credential_ref=credential_ref,
+    )
+    with pytest.raises(ValidationError) as exc_info:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.ideogram.image.remix",
+                input_json={
+                    "text_prompt": "oversized remix",
+                    "input_image_ref": "/generated-assets/uploads/too-large.png",
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.input_image_ref"
+        and issue.code == "invalid_image_ref"
+        and "at most 10 MB" in issue.message
+        for issue in validation.issues
+    )
+    assert "at most 10 MB" in json.dumps(exc_info.value.data)
+    assert httpx_mock.get_requests() == []
+    assert session.exec(select(ActionCall)).all() == []
+    budget = IntegrationBudgetRepository(session).get(project_id, "ideogram")
     assert budget.current_month_spend == 0
     assert budget.current_month_calls == 0
 

@@ -40,6 +40,14 @@
   ratios/image sizes/input counts, inline 20 MB request preflight, and official
   output image budget estimates. Google Gemini image `auth.test` is non-billable
   format-only because the provider does not document a free live image probe.
+- Added Ideogram actions `utils.ideogram.image.generate` and
+  `utils.ideogram.image.remix` for Ideogram 4.0, with multipart API execution,
+  immediate temporary URL download, generated-assets persistence, generic image
+  artifact registration, run-plan grant coverage, exact 23-resolution metadata,
+  `FLASH` exclusion, signed JPEG/PNG/WEBP remix upload validation at the
+  official 10 MB cap, and official per-output rendering-speed budget estimates
+  reconciled against returned image count. Ideogram `auth.test` is non-billable
+  format-only because the provider does not document a free live image probe.
 
 ## 1.0.0 - 2026-05-26
 

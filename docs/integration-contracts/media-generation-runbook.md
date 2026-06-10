@@ -149,6 +149,11 @@ one path explicitly:
 - leave the whole action/mode deferred with `execution_mode` and
   `deferred_reason`.
 
+If a provider returns temporary or signed media URLs, the wrapper must download
+them immediately, persist local generated-assets refs, strip the provider URLs
+from returned output and action-call audit, and test that no signed URL or query
+signature reaches agent-visible payloads.
+
 Never omit a known provider feature silently. Recent misses to guard against:
 mask uploads, URL/file-id image references, streaming partial images,
 background controls, moderation controls, output compression, Responses API

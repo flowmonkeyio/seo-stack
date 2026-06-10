@@ -103,8 +103,10 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "xai-imagine" in utils_providers
     assert "reve" in utils_providers
     assert "google-gemini-image" in utils_providers
+    assert "ideogram" in utils_providers
     assert _auth_field_keys(utils_providers["reve"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["google-gemini-image"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["ideogram"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -318,6 +320,40 @@ def test_builtin_plugin_manifests_validate() -> None:
         google_edit_capabilities["models"]["gemini-3-pro-image"]["pricing_usd_per_input_image"]
         == 0.0011
     )
+    ideogram_image_generate = utils_actions["ideogram.image.generate"]
+    assert ideogram_image_generate.provider == "ideogram"
+    assert ideogram_image_generate.config["connector"] == "ideogram"
+    assert ideogram_image_generate.config["operation"] == "image.generate"
+    assert ideogram_image_generate.config["budget_kind"] == "ideogram"
+    ideogram_generate_capabilities = ideogram_image_generate.config["capability_metadata"]
+    ideogram_resolutions = ideogram_generate_capabilities["models"]["ideogram-v4"]["resolutions"]
+    assert len(ideogram_resolutions) == 23
+    assert ideogram_resolutions[0] == "2048x2048"
+    assert ideogram_resolutions[-1] == "3072x1024"
+    assert ideogram_generate_capabilities["models"]["ideogram-v4"]["rendering_speeds"] == [
+        "TURBO",
+        "DEFAULT",
+        "QUALITY",
+    ]
+    assert (
+        ideogram_generate_capabilities["models"]["ideogram-v4"]["pricing_usd_per_output"]["QUALITY"]
+        == 0.10
+    )
+    assert (
+        "rendering_speed FLASH" in ideogram_generate_capabilities["unsupported_provider_features"]
+    )
+    ideogram_image_remix = utils_actions["ideogram.image.remix"]
+    assert ideogram_image_remix.config["operation"] == "image.remix"
+    assert ideogram_image_remix.input_schema["required"] == ["text_prompt", "input_image_ref"]
+    ideogram_remix_capabilities = ideogram_image_remix.config["capability_metadata"]
+    assert ideogram_remix_capabilities["limits"]["max_input_images"] == 1
+    assert ideogram_remix_capabilities["limits"]["max_input_image_bytes"] == 10_000_000
+    assert ideogram_remix_capabilities["limits"]["input_image_formats"] == [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+    ]
     assert "video-generation" in utils_providers
     assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]
     video_generate = utils_actions["video.generate"]

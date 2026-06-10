@@ -7,7 +7,9 @@ updated during connector delivery. `utils.image.generate` / `utils.image.edit`
 `utils.reve.image.remix`, and provider-specific xAI Imagine actions
 `utils.xai.image.generate`, `utils.xai.image.edit`, and
 `utils.xai.video.generate`, plus Google Gemini image actions
-`utils.google.image.generate` and `utils.google.image.edit`, are executable.
+`utils.google.image.generate` and `utils.google.image.edit`, plus Ideogram
+image actions `utils.ideogram.image.generate` and
+`utils.ideogram.image.remix`, are executable.
 Provider-neutral
 `utils.video.generate` remains deferred (`deferred-video-backend-selection`).
 
@@ -263,7 +265,9 @@ already registered and integrated.
 
 ### 4. Ideogram 4.0 — Ideogram
 
-- Status: GA first-party API (`POST /v1/ideogram-v4/generate`), released
+- Status: executable in StackOS as `utils.ideogram.image.generate` and
+  `utils.ideogram.image.remix`. GA first-party API (`POST
+  /v1/ideogram-v4/generate` and `/v1/ideogram-v4/remix`), released
   2026-06-03; LMArena text-to-image top-10. First open-weight Ideogram
   (weights non-commercial; commercial use via the API).
 - API shape: synchronous multipart API with `Api-Key` header. Generate v4
@@ -278,17 +282,28 @@ already registered and integrated.
 - Size control: `resolution` enum of documented 2K Ideogram 4.0 values from
   `2048x2048` to panoramics like `3072x1024`; `rendering_speed` allows
   `TURBO | DEFAULT | QUALITY`. The docs list `FLASH`, but note that v4
-  requests with `FLASH` currently return 400.
-- StackOS v1 scope decision: start with v4 generate and v4 remix as the
-  executable image actions. Keep legacy edit, v3 background utilities, remove
-  background, and upscale as separate endpoint-specific actions only when their
+  requests with `FLASH` currently return 400. StackOS exposes:
+  `2048x2048`, `1440x2880`, `2880x1440`, `1664x2496`, `2496x1664`,
+  `1792x2240`, `2240x1792`, `1440x2560`, `2560x1440`, `1600x2560`,
+  `2560x1600`, `1728x2304`, `2304x1728`, `1296x3168`, `3168x1296`,
+  `1152x2944`, `2944x1152`, `1248x3328`, `3328x1248`, `1280x3072`,
+  `3072x1280`, `1024x3072`, and `3072x1024`.
+- StackOS v1 scope delivered: v4 text-prompt generate and v4 one-image remix.
+  The connector downloads temporary provider URLs immediately, strips signed
+  provider URLs from output/audit, persists images to generated assets, and
+  registers generic image artifacts. Local remix inputs support generated-assets
+  JPEG/PNG/WEBP refs at <=10 MB (10,000,000 bytes) with matching image
+  signatures. Keep structured `json_prompt`, legacy edit, magic-prompt,
+  describe, v3 background utilities, remove background, upscale, and
+  custom-model paths as separate endpoint-specific actions only when their
   contracts are implemented; omit `FLASH` from executable schemas until the
   provider endpoint accepts it.
 - Pricing (official): $0.03 (Turbo) / $0.06 (Default) / $0.10 (Quality) per
-  image for generate/remix/edit/reframe/replace-background; instructional edit
-  is $0.20/image; Ideogram Upscale up to 2X is $0.06/input image, while Topaz
-  Upscale is separately priced by output resolution; describe is
-  $0.01/input image.
+  output image for generate/remix/edit/reframe/replace-background. StackOS
+  preflights one output and reconciles cost against the actual returned output
+  count. Instructional edit is $0.20/image; Ideogram Upscale up to 2X is
+  $0.06/input image, while Topaz Upscale is separately priced by output
+  resolution; describe is $0.01/input image.
 - Docs: generate v4
   <https://developer.ideogram.ai/api-reference/api-reference/generate-v4>,
   remix v4

@@ -22,6 +22,7 @@ from stackos.integrations.firecrawl import FirecrawlIntegration
 from stackos.integrations.ghost import GhostIntegration
 from stackos.integrations.google_gemini_image import GoogleGeminiImageIntegration
 from stackos.integrations.google_paa import GooglePaaIntegration
+from stackos.integrations.ideogram_images import IdeogramImagesIntegration
 from stackos.integrations.imap import ImapIntegration
 from stackos.integrations.jina_reader import JinaReaderIntegration
 from stackos.integrations.openai_images import OpenAIImagesIntegration
@@ -48,6 +49,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "xai-imagine": XAIImagineIntegration,
     "reve": ReveImagesIntegration,
     "google-gemini-image": GoogleGeminiImageIntegration,
+    "ideogram": IdeogramImagesIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -83,6 +85,7 @@ __all__ = [
     "GhostIntegration",
     "GoogleGeminiImageIntegration",
     "GooglePaaIntegration",
+    "IdeogramImagesIntegration",
     "ImapIntegration",
     "IntegrationCallResult",
     "JinaReaderIntegration",
