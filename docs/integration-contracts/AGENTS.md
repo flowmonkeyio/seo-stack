@@ -69,6 +69,11 @@ Before an integration delivery is signed off, verify:
 - setup metadata tells operators which safe refs/scopes/accounts are needed
   without exposing tokens, API keys, passwords, or raw provider ids
 
+For media-generation image or video tools, also follow
+[`media-generation-runbook.md`](./media-generation-runbook.md). It is the
+required checklist for capability metadata, generated-asset persistence,
+async video jobs, unsupported provider features, and per-provider signoff.
+
 ## Comments And Links
 
 When implementation files need provider-specific details, add concise comments
