@@ -239,8 +239,10 @@ directly instead of treating them as missing connectors. Outbrain and user-owned
 webhook actions remain deferred until endpoint-level contracts or project-local
 static HTTP config are supplied.
 
-The OpenAI Images connector persists base64 image bytes under generated assets
-and returns local artifact URLs with no `b64_json` payload. For
+The OpenAI Images connector persists base64 image bytes under generated assets,
+registers the persisted files as generic `image` artifacts when action
+execution has repository context, and returns local artifact URLs/ids with no
+`b64_json` payload. For
 `utils.image.edit` it loads generated-assets input refs daemon-side and submits
 them as multipart `image` file uploads. JSON edit requests use `images` only
 for public URL or file-id references, not local generated-assets files.

@@ -10,8 +10,11 @@
   presets, and the campaign production orchestrator skill preset.
 - Added `utils.image.edit`: GPT Image edits with input reference images from
   generated assets for product-faithful marketing shots, including
-  `input_fidelity` handling and gpt-image-2 free-form sizes on both image
-  actions.
+  `input_fidelity` handling for supported GPT Image 1.x models. OpenAI image
+  actions now expose capability metadata, enforce documented prompt/input-image
+  limits, keep gpt-image-2 custom sizes deferred until budget modeling lands,
+  and register persisted outputs as generic image artifacts during
+  repository-backed execution.
 - Added the provider-neutral `video-generation` provider with credential
   wiring and the deferred `utils.video.generate` action contract
   (`deferred-video-backend-selection`); execution becomes available once a

@@ -131,9 +131,61 @@ def test_builtin_plugin_manifests_validate() -> None:
         "image-generation",
         "video-generation",
     }
+    image_generate_capabilities = utils_actions["image.generate"].config["capability_metadata"]
+    assert image_generate_capabilities["modalities"] == {
+        "input": ["text"],
+        "output": ["image"],
+    }
+    assert image_generate_capabilities["modes"] == ["text-to-image"]
+    assert image_generate_capabilities["execution"]["mode"] == "sync"
+    assert image_generate_capabilities["models"]["gpt-image-2"]["sizes"] == [
+        "auto",
+        "1024x1024",
+        "1536x1024",
+        "1024x1536",
+    ]
+    assert "auto" in image_generate_capabilities["models"]["gpt-image-1.5"]["sizes"]
+    assert (
+        utils_actions["image.generate"].input_schema["properties"]["prompt"]["maxLength"] == 32000
+    )
+    assert utils_actions["image.generate"].output_schema["properties"]["data"]["type"] == "array"
+    assert (
+        "output_compression parameter"
+        in image_generate_capabilities["unsupported_provider_features"]
+    )
+    assert (
+        "gpt-image-2 custom WxH sizes beyond StackOS presets"
+        in image_generate_capabilities["unsupported_provider_features"]
+    )
+    assert image_generate_capabilities["limits"]["prompt_max_chars"] == 32000
     assert utils_actions["image.edit"].config["connector"] == "openai-images"
     assert utils_actions["image.edit"].config["operation"] == "image.edit"
     assert utils_actions["image.edit"].config["budget_kind"] == "openai-images"
+    image_edit_capabilities = utils_actions["image.edit"].config["capability_metadata"]
+    assert image_edit_capabilities["modalities"] == {
+        "input": ["text", "image"],
+        "output": ["image"],
+    }
+    assert image_edit_capabilities["modes"] == ["image-to-image", "reference-image-compose"]
+    assert image_edit_capabilities["models"]["gpt-image-2"]["max_input_images"] == 16
+    assert "auto" in image_edit_capabilities["models"]["gpt-image-1"]["sizes"]
+    assert image_edit_capabilities["models"]["gpt-image-2"]["max_input_image_bytes"] == 52_428_800
+    assert (
+        image_edit_capabilities["models"]["gpt-image-2"]["input_fidelity"]
+        == "always-high; do not send parameter"
+    )
+    assert image_edit_capabilities["models"]["gpt-image-1-mini"]["input_fidelity"] == [
+        "low",
+        "high",
+    ]
+    assert image_edit_capabilities["limits"]["prompt_max_chars"] == 32000
+    assert image_edit_capabilities["limits"]["max_input_image_bytes"] == 52_428_800
+    assert "explicit mask uploads" in image_edit_capabilities["unsupported_provider_features"]
+    assert (
+        "gpt-image-2 custom WxH sizes beyond StackOS presets"
+        in image_edit_capabilities["unsupported_provider_features"]
+    )
+    assert "moderation parameter" in image_edit_capabilities["unsupported_provider_features"]
     assert utils_actions["image.edit"].input_schema["required"] == [
         "prompt",
         "input_image_refs",
@@ -144,6 +196,7 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert video_generate.provider == "video-generation"
     assert video_generate.config["execution_mode"] == "deferred-video-backend-selection"
     assert video_generate.config["budget_kind"] == "video-generation"
+    assert video_generate.config["capability_metadata"]["execution"]["mode"] == "deferred"
     assert "connector" not in video_generate.config
     trackbooth = next(
         manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "trackbooth"

@@ -278,6 +278,27 @@ _ARTIFACT_RESOURCE_SCHEMA = {
     },
     "required": ["uri"],
 }
+_IMAGE_ACTION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "data": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "url": {"type": "string"},
+                    "artifact_ref": {"type": "string"},
+                    "artifact_id": {"type": "integer"},
+                    "file_format": {"type": "string", "enum": ["webp", "png", "jpg", "jpeg"]},
+                    "source_model": {"type": "string"},
+                },
+            },
+        },
+        "artifact_refs": {"type": "array", "items": {"type": "string"}},
+    },
+}
 _WEB_SCRAPE_INPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -774,15 +795,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "additionalProperties": False,
                     "required": ["prompt"],
                     "properties": {
-                        "prompt": {"type": "string"},
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 32000},
                         "size": {
                             "type": "string",
                             "description": (
-                                "Size profile (auto, 1024x1024, 1536x1024, 1024x1536). "
-                                "gpt-image-2 also accepts free-form WxH with both edges <= "
-                                "3840 and divisible by 16, ratio at most 3:1, and "
-                                "655360..8294400 total pixels, e.g. 1088x1920 for 9:16 "
-                                "placements."
+                                "StackOS-supported size profile: auto, 1024x1024, "
+                                "1536x1024, or 1024x1536."
                             ),
                         },
                         "quality": {
@@ -802,7 +820,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "output_format": {"type": "string", "enum": ["webp", "png", "jpeg"]},
                     },
                 },
-                output_schema=_OBJECT_SCHEMA,
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
                 config={
                     "schema_version": "stackos.action.v1",
                     "connector": "openai-images",
@@ -815,10 +833,6 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "gpt-image-2": {
                             "qualities": ["auto", "low", "medium", "high"],
                             "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
-                            "freeform_sizes": (
-                                "WxH with edges <= 3840 and divisible by 16, ratio <= 3:1, "
-                                "655360..8294400 total pixels"
-                            ),
                             "output_formats": ["webp", "png", "jpeg"],
                             "transparent_background": False,
                             "docs": [
@@ -828,7 +842,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         },
                         "gpt-image-1.5": {
                             "qualities": ["auto", "low", "medium", "high"],
-                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
                             "output_formats": ["webp", "png", "jpeg"],
                             "docs": [
                                 "https://developers.openai.com/api/docs/guides/image-generation",
@@ -837,7 +851,7 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         },
                         "gpt-image-1": {
                             "qualities": ["auto", "low", "medium", "high"],
-                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
                             "output_formats": ["webp", "png", "jpeg"],
                             "docs": [
                                 "https://developers.openai.com/api/docs/guides/image-generation",
@@ -846,13 +860,83 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         },
                         "gpt-image-1-mini": {
                             "qualities": ["auto", "low", "medium", "high"],
-                            "sizes": ["1024x1024", "1536x1024", "1024x1536"],
+                            "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
                             "output_formats": ["webp", "png", "jpeg"],
                             "docs": [
                                 "https://developers.openai.com/api/docs/guides/image-generation",
                                 "https://developers.openai.com/api/reference/resources/images",
                             ],
                         },
+                    },
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text"],
+                            "output": ["image"],
+                        },
+                        "modes": ["text-to-image"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/images/generations",
+                            "persistence": (
+                                "OpenAI base64 image outputs are written to generated "
+                                "assets and registered as generic image artifacts; action "
+                                "responses return artifact URLs and artifact ids when "
+                                "execution has a repository session."
+                            ),
+                        },
+                        "limits": {
+                            "prompt_max_chars": 32000,
+                            "max_outputs_per_request": 10,
+                        },
+                        "models": {
+                            "gpt-image-2": {
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                                "max_outputs_per_request": 10,
+                                "transparent_background": False,
+                            },
+                            "gpt-image-1.5": {
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                            "gpt-image-1": {
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                            "gpt-image-1-mini": {
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                        },
+                        "safety": {
+                            "moderation": "OpenAI image generation moderation applies.",
+                            "transparent_background": "Not supported for gpt-image-2.",
+                            "watermark": "No StackOS-exposed watermark toggle.",
+                        },
+                        "unsupported_provider_features": [
+                            "background parameter",
+                            "gpt-image-2 custom WxH sizes beyond StackOS presets",
+                            "moderation parameter",
+                            "output_compression parameter",
+                            "streaming partial images",
+                            "Responses API conversational image generation",
+                        ],
+                        "doc_notes": [
+                            (
+                                "OpenAI's image guide and gpt-image-2 model page document "
+                                "gpt-image-2 Image API support; some API-reference enum "
+                                "snippets can lag that model listing."
+                            )
+                        ],
+                        "docs": [
+                            "https://developers.openai.com/api/docs/guides/image-generation",
+                            "https://developers.openai.com/api/docs/models/gpt-image-2",
+                            "https://developers.openai.com/api/reference/resources/images/methods/generate",
+                        ],
                     },
                 },
             ),
@@ -871,24 +955,23 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                     "additionalProperties": False,
                     "required": ["prompt", "input_image_refs"],
                     "properties": {
-                        "prompt": {"type": "string"},
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 32000},
                         "input_image_refs": {
                             "type": "array",
                             "items": {"type": "string"},
                             "minItems": 1,
                             "maxItems": 16,
                             "description": (
-                                "Generated-assets artifact refs (png, jpg, webp) used as "
-                                "input reference images; the first image anchors edits."
+                                "Generated-assets artifact refs (png, jpg, webp, max 50 MB "
+                                "each) used as input reference images; the first image "
+                                "anchors edits."
                             ),
                         },
                         "size": {
                             "type": "string",
                             "description": (
-                                "Size profile (auto, 1024x1024, 1536x1024, 1024x1536). "
-                                "gpt-image-2 also accepts free-form WxH with both edges <= "
-                                "3840 and divisible by 16, ratio at most 3:1, and "
-                                "655360..8294400 total pixels."
+                                "StackOS-supported size profile: auto, 1024x1024, "
+                                "1536x1024, or 1024x1536."
                             ),
                         },
                         "quality": {
@@ -910,13 +993,14 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             "type": "string",
                             "enum": ["high", "low"],
                             "description": (
-                                "Input image fidelity control for gpt-image-1.5 and "
-                                "gpt-image-1 only; gpt-image-2 always uses high fidelity."
+                                "Input image fidelity control for gpt-image-1.5, "
+                                "gpt-image-1, and gpt-image-1-mini; gpt-image-2 always "
+                                "uses high fidelity."
                             ),
                         },
                     },
                 },
-                output_schema=_OBJECT_SCHEMA,
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
                 config={
                     "schema_version": "stackos.action.v1",
                     "connector": "openai-images",
@@ -930,6 +1014,93 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "faithful to an existing product, logo, or label. Restate the "
                         "preserve list in the prompt on every iteration."
                     ),
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["image"],
+                        },
+                        "modes": ["image-to-image", "reference-image-compose"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/v1/images/edits",
+                            "persistence": (
+                                "OpenAI base64 image outputs are written to generated "
+                                "assets and registered as generic image artifacts; action "
+                                "responses return artifact URLs and artifact ids when "
+                                "execution has a repository session."
+                            ),
+                        },
+                        "limits": {
+                            "prompt_max_chars": 32000,
+                            "max_input_image_bytes": 52428800,
+                            "max_outputs_per_request": 10,
+                        },
+                        "models": {
+                            "gpt-image-2": {
+                                "max_input_images": 16,
+                                "max_input_image_bytes": 52428800,
+                                "input_image_formats": ["png", "jpg", "jpeg", "webp"],
+                                "input_fidelity": "always-high; do not send parameter",
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                            "gpt-image-1.5": {
+                                "max_input_images": 16,
+                                "max_input_image_bytes": 52428800,
+                                "input_image_formats": ["png", "jpg", "jpeg", "webp"],
+                                "input_fidelity": ["low", "high"],
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                            "gpt-image-1": {
+                                "max_input_images": 16,
+                                "max_input_image_bytes": 52428800,
+                                "input_image_formats": ["png", "jpg", "jpeg", "webp"],
+                                "input_fidelity": ["low", "high"],
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                            "gpt-image-1-mini": {
+                                "max_input_images": 16,
+                                "max_input_image_bytes": 52428800,
+                                "input_image_formats": ["png", "jpg", "jpeg", "webp"],
+                                "input_fidelity": ["low", "high"],
+                                "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                                "qualities": ["auto", "low", "medium", "high"],
+                                "output_formats": ["webp", "png", "jpeg"],
+                            },
+                        },
+                        "safety": {
+                            "moderation": "OpenAI image generation moderation applies.",
+                            "transparent_background": "Not supported for gpt-image-2.",
+                            "watermark": "No StackOS-exposed watermark toggle.",
+                        },
+                        "unsupported_provider_features": [
+                            "background parameter",
+                            "explicit mask uploads",
+                            "gpt-image-2 custom WxH sizes beyond StackOS presets",
+                            "JSON image_url or file_id references",
+                            "moderation parameter",
+                            "output_compression parameter",
+                            "Responses API multi-turn edits",
+                            "streaming partial images",
+                        ],
+                        "doc_notes": [
+                            (
+                                "OpenAI's image guide and gpt-image-2 model page document "
+                                "gpt-image-2 Image API support; some API-reference enum "
+                                "snippets can lag that model listing."
+                            )
+                        ],
+                        "docs": [
+                            "https://developers.openai.com/api/docs/guides/image-generation",
+                            "https://developers.openai.com/api/docs/models/gpt-image-2",
+                            "https://developers.openai.com/api/reference/resources/images/methods/edit",
+                        ],
+                    },
                     "docs": [
                         "https://developers.openai.com/api/docs/guides/image-generation",
                         "https://developers.openai.com/api/reference/resources/images",
@@ -999,6 +1170,23 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "the gap at readiness time and let the operator choose an "
                         "image-only downgrade or a stop."
                     ),
+                    "capability_metadata": {
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["video"],
+                        },
+                        "modes": ["text-to-video", "image-to-video"],
+                        "execution": {
+                            "mode": "deferred",
+                            "reason": "provider backend not selected",
+                            "required_pattern": "async submit/poll/download/persist",
+                        },
+                        "models": {},
+                        "safety": {
+                            "watermark": "provider-specific; unresolved until backend selection",
+                        },
+                        "docs": ["docs/integration-contracts/media-generation.md"],
+                    },
                 },
             ),
             ActionManifest(

@@ -71,6 +71,10 @@ def test_action_describe_reports_project_availability(
     assert described["execution_available"] is True
     assert described["availability"]["credential_state"] == "available"
     assert described["availability"]["budget_state"] == "available"
+    capability_metadata = described["manifest"]["config_json"]["capability_metadata"]
+    assert capability_metadata["modes"] == ["text-to-image"]
+    assert capability_metadata["limits"]["prompt_max_chars"] == 32000
+    assert described["manifest"]["output_schema_json"]["properties"]["data"]["type"] == "array"
     image_items = [item for item in listed["items"] if item["action_ref"] == "utils.image.generate"]
     assert image_items
     assert image_items[0]["exposure"]["visible_by_default"] is True
@@ -901,12 +905,27 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     assert data["action_call"]["run_plan_id"] == created["data"]["id"]
     assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
     assert item["url"].startswith("/generated-assets/openai-images/openai-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert data["output_json"]["artifact_refs"] == [item["url"]]
     assert "b64_json" not in item
     assert "credential_id" not in rendered
     assert "sk-openai" not in rendered
     assert "Authorization" not in rendered
     path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
     assert path.read_bytes() == b"webp"
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "image"},
+    )
+    artifact_rows = [row for row in artifacts["items"] if row["id"] == item["artifact_id"]]
+    assert artifact_rows
+    artifact = mcp_client.call_tool_structured(
+        "artifact.get",
+        {"artifact_id": item["artifact_id"]},
+    )
+    assert artifact["uri"] == item["url"]
+    assert artifact["plugin_slug"] == "utils"
 
 
 def test_action_execute_openai_image_edit_uses_input_reference_images(
@@ -977,6 +996,8 @@ def test_action_execute_openai_image_edit_uses_input_reference_images(
     assert b"product-photo" in vendor_body
     assert b"data:image/png;base64" not in vendor_body
     assert item["url"].startswith("/generated-assets/openai-images/openai-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
     assert "b64_json" not in item
     assert "sk-openai" not in rendered
     path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")

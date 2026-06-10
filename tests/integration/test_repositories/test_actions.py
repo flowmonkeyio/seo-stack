@@ -1056,7 +1056,7 @@ def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
     )
 
 
-def test_openai_image_action_rejects_gpt_image_2_freeform_size_over_max_edge(
+def test_openai_image_action_rejects_gpt_image_2_freeform_size_until_budget_modeled(
     session: Session,
     project_id: int,
 ) -> None:
@@ -1073,7 +1073,7 @@ def test_openai_image_action_rejects_gpt_image_2_freeform_size_over_max_edge(
         input_json={
             "prompt": "asset prompt",
             "model": "gpt-image-2",
-            "size": "4096x1600",
+            "size": "1088x1920",
         },
         credential_ref=credential_ref,
     )
@@ -1082,6 +1082,78 @@ def test_openai_image_action_rejects_gpt_image_2_freeform_size_over_max_edge(
     assert any(
         issue.path == "$.size" and issue.code == "enum_mismatch" for issue in validation.issues
     )
+
+
+def test_openai_image_action_rejects_prompt_over_openai_limit(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="openai-images",
+        secret_payload=b"sk-openai",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "openai-images")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.image.generate",
+        input_json={
+            "prompt": "x" * 32_001,
+            "model": "gpt-image-2",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(issue.path == "$.prompt" and issue.code == "range" for issue in validation.issues)
+
+
+def test_openai_image_edit_action_rejects_ref_cap_and_wrong_fidelity_model(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="openai-images",
+        secret_payload=b"sk-openai",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "openai-images")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.image.edit",
+        input_json={
+            "prompt": "asset prompt",
+            "model": "gpt-image-2",
+            "input_image_refs": [f"/generated-assets/ref-{index}.png" for index in range(17)],
+            "input_fidelity": "high",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs" and issue.code == "range" for issue in validation.issues
+    )
+    assert any(
+        issue.path == "$.input_fidelity" and issue.code == "model_mismatch"
+        for issue in validation.issues
+    )
+
+    mini_validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.image.edit",
+        input_json={
+            "prompt": "asset prompt",
+            "model": "gpt-image-1-mini",
+            "input_image_refs": ["/generated-assets/ref-0.png"],
+            "input_fidelity": "high",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert mini_validation.valid is True
 
 
 def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(

@@ -94,8 +94,12 @@ class OpenAIImagesIntegration(BaseIntegration):
     _DALL_E_MODELS: ClassVar[frozenset[str]] = frozenset({"dall-e-2", "dall-e-3"})
     # gpt-image-2 always processes input images at high fidelity; the API
     # rejects an explicit input_fidelity parameter for it.
-    _INPUT_FIDELITY_MODELS: ClassVar[frozenset[str]] = frozenset({"gpt-image-1.5", "gpt-image-1"})
+    _INPUT_FIDELITY_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {"gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
+    )
+    MAX_PROMPT_CHARS: ClassVar[int] = 32_000
     MAX_EDIT_INPUT_IMAGES: ClassVar[int] = 16
+    MAX_EDIT_INPUT_IMAGE_BYTES: ClassVar[int] = 50 * 1024 * 1024
     _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
         "jpeg": "jpg",
         "png": "png",
@@ -169,6 +173,7 @@ class OpenAIImagesIntegration(BaseIntegration):
         configured, the wrapper writes those bytes to disk and returns a
         response with local ``url`` fields and no ``b64_json`` payloads.
         """
+        self._validate_prompt(prompt, model=model)
         body = {
             "prompt": prompt,
             "n": n,
@@ -232,6 +237,7 @@ class OpenAIImagesIntegration(BaseIntegration):
                 f"OpenAI Images edit accepts at most {self.MAX_EDIT_INPUT_IMAGES} input images",
                 data={"vendor": "openai-images", "model": model},
             )
+        self._validate_prompt(prompt, model=model)
         form_body: dict[str, Any] = {
             "prompt": prompt,
             "n": str(n),
@@ -286,7 +292,29 @@ class OpenAIImagesIntegration(BaseIntegration):
                 "OpenAI Images edit input image could not be read",
                 data={"vendor": "openai-images", "file": path.name},
             ) from exc
+        if len(raw) > self.MAX_EDIT_INPUT_IMAGE_BYTES:
+            raise IntegrationDownError(
+                "OpenAI Images edit input images must be at most 50 MB",
+                data={
+                    "vendor": "openai-images",
+                    "file": path.name,
+                    "bytes": len(raw),
+                    "max_bytes": self.MAX_EDIT_INPUT_IMAGE_BYTES,
+                },
+            )
         return path.name, raw, mime
+
+    def _validate_prompt(self, prompt: str, *, model: str) -> None:
+        if len(prompt) > self.MAX_PROMPT_CHARS:
+            raise IntegrationDownError(
+                "OpenAI Images prompt must be at most 32000 characters",
+                data={
+                    "vendor": "openai-images",
+                    "model": model,
+                    "chars": len(prompt),
+                    "max_chars": self.MAX_PROMPT_CHARS,
+                },
+            )
 
     def _persist_base64_images(
         self,

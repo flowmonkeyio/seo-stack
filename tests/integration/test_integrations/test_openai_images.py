@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from pytest_httpx import HTTPXMock
 
 from stackos.integrations.openai_images import OpenAIImagesIntegration
+from stackos.mcp.errors import IntegrationDownError
 
 
 def test_generate_uses_gpt_image_defaults(httpx_mock: HTTPXMock, project_id: int) -> None:
@@ -74,6 +76,18 @@ def test_generate_persists_gpt_image_base64(
     assert path.read_bytes() == image_bytes
 
 
+def test_generate_rejects_prompt_over_openai_limit(project_id: int) -> None:
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = OpenAIImagesIntegration(
+                payload=b"sk-openai", project_id=project_id, http=client
+            )
+            return await integ.generate(prompt="x" * 32_001)
+
+    with pytest.raises(IntegrationDownError, match="at most 32000 characters"):
+        asyncio.run(go())
+
+
 def test_edit_uploads_input_images_as_multipart_files(
     httpx_mock: HTTPXMock,
     project_id: int,
@@ -120,10 +134,12 @@ def test_edit_uploads_input_images_as_multipart_files(
     assert result.data["data"][0]["url"].endswith("edited.png")
 
 
+@pytest.mark.parametrize("model", ["gpt-image-1.5", "gpt-image-1-mini"])
 def test_edit_forwards_input_fidelity_for_supported_models(
     httpx_mock: HTTPXMock,
     project_id: int,
     tmp_path: Path,
+    model: str,
 ) -> None:
     source = tmp_path / "product.webp"
     source.write_bytes(b"fake-webp-bytes")
@@ -141,13 +157,13 @@ def test_edit_forwards_input_fidelity_for_supported_models(
             return await integ.edit(
                 prompt="same product, beach scene",
                 input_image_paths=[source],
-                model="gpt-image-1.5",
+                model=model,
                 input_fidelity="high",
             )
 
     asyncio.run(go())
     content = httpx_mock.get_requests()[0].content
-    assert b"gpt-image-1.5" in content
+    assert model.encode("utf-8") in content
     assert b'name="input_fidelity"' in content
     assert b"high" in content
 
@@ -185,6 +201,51 @@ def test_edit_persists_gpt_image_base64(
     assert item["url"].startswith("/generated-assets/openai-images/openai-")
     path = tmp_path / item["url"].removeprefix("/generated-assets/")
     assert path.read_bytes() == edited_bytes
+
+
+def test_edit_rejects_input_image_over_openai_file_limit(
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(OpenAIImagesIntegration, "MAX_EDIT_INPUT_IMAGE_BYTES", 8)
+    source = tmp_path / "oversized.png"
+    source.write_bytes(b"too-large")
+
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = OpenAIImagesIntegration(
+                payload=b"sk-openai", project_id=project_id, http=client
+            )
+            return await integ.edit(prompt="edit prompt", input_image_paths=[source])
+
+    with pytest.raises(IntegrationDownError, match="at most 50 MB"):
+        asyncio.run(go())
+
+
+def test_generate_rejects_invalid_base64_provider_output(
+    httpx_mock: HTTPXMock,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.openai.com/v1/images/generations",
+        json={"data": [{"b64_json": "not valid base64"}]},
+    )
+
+    async def go() -> Any:
+        async with httpx.AsyncClient() as client:
+            integ = OpenAIImagesIntegration(
+                payload=b"sk-openai",
+                project_id=project_id,
+                http=client,
+                asset_dir=tmp_path,
+            )
+            return await integ.generate(prompt="image prompt")
+
+    with pytest.raises(IntegrationDownError, match="invalid base64 image data"):
+        asyncio.run(go())
 
 
 def test_test_credentials_lists_models(httpx_mock: HTTPXMock, project_id: int) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -14,17 +15,7 @@ from stackos.actions.connectors import (
 from stackos.config import Settings
 from stackos.integrations.openai_images import OpenAIImagesIntegration
 from stackos.repositories.base import ValidationError
-
-# gpt-image-2 free-form size constraints from the official image guide:
-# https://developers.openai.com/api/docs/guides/image-generation
-# both edges <= 3840px, both edges divisible by 16, long:short ratio <=
-# 3:1, and total pixels inside the documented bounds.
-_FREEFORM_SIZE_MODELS = frozenset({"gpt-image-2"})
-_FREEFORM_EDGE_DIVISOR = 16
-_FREEFORM_MAX_EDGE = 3840
-_FREEFORM_MAX_RATIO = 3.0
-_FREEFORM_MIN_PIXELS = 655_360
-_FREEFORM_MAX_PIXELS = 8_294_400
+from stackos.repositories.resources import ArtifactRepository
 
 
 class OpenAIImagesActionConnector:
@@ -38,6 +29,7 @@ class OpenAIImagesActionConnector:
     _SUPPORTED_QUALITIES = frozenset({"auto", "low", "medium", "high"})
     _SUPPORTED_FORMATS = frozenset({"webp", "png", "jpeg"})
     _SUPPORTED_FIDELITY = frozenset({"high", "low"})
+    _PROMPT_MAX_CHARS = OpenAIImagesIntegration.MAX_PROMPT_CHARS
 
     def validate(self, request: ActionConnectorRequest) -> list[ActionValidationIssue]:
         issues = self._validate_common(request)
@@ -55,6 +47,14 @@ class OpenAIImagesActionConnector:
                     path="$.prompt",
                     message="prompt is required",
                     code="required",
+                )
+            )
+        elif len(prompt) > self._PROMPT_MAX_CHARS:
+            issues.append(
+                ActionValidationIssue(
+                    path="$.prompt",
+                    message=f"prompt must be at most {self._PROMPT_MAX_CHARS} characters",
+                    code="range",
                 )
             )
         model = payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)
@@ -82,9 +82,8 @@ class OpenAIImagesActionConnector:
                 ActionValidationIssue(
                     path="$.size",
                     message=(
-                        "size must be a supported GPT Image size profile; gpt-image-2 "
-                        "also accepts WxH with both edges <= 3840 and divisible by 16, "
-                        "ratio at most 3:1, and total pixels between 655360 and 8294400"
+                        "size must be a supported StackOS GPT Image size profile: "
+                        "auto, 1024x1024, 1536x1024, or 1024x1536"
                     ),
                     code="enum_mismatch",
                 )
@@ -149,8 +148,9 @@ class OpenAIImagesActionConnector:
                     ActionValidationIssue(
                         path="$.input_fidelity",
                         message=(
-                            "input_fidelity is only configurable for gpt-image-1.5 and "
-                            "gpt-image-1; gpt-image-2 always uses high input fidelity"
+                            "input_fidelity is configurable for gpt-image-1.5, "
+                            "gpt-image-1, and gpt-image-1-mini; gpt-image-2 always "
+                            "uses high input fidelity"
                         ),
                         code="model_mismatch",
                     )
@@ -163,24 +163,8 @@ class OpenAIImagesActionConnector:
 
     @classmethod
     def _size_supported(cls, *, model: str, size: str) -> bool:
-        if size in cls._SUPPORTED_SIZES:
-            return True
-        if model not in _FREEFORM_SIZE_MODELS:
-            return False
-        width_text, separator, height_text = size.partition("x")
-        if not separator or not width_text.isdigit() or not height_text.isdigit():
-            return False
-        width = int(width_text)
-        height = int(height_text)
-        if width <= 0 or height <= 0:
-            return False
-        if width % _FREEFORM_EDGE_DIVISOR or height % _FREEFORM_EDGE_DIVISOR:
-            return False
-        if max(width, height) > _FREEFORM_MAX_EDGE:
-            return False
-        if max(width, height) / min(width, height) > _FREEFORM_MAX_RATIO:
-            return False
-        return _FREEFORM_MIN_PIXELS <= width * height <= _FREEFORM_MAX_PIXELS
+        del model
+        return size in cls._SUPPORTED_SIZES
 
     def estimate_cost_cents(self, request: ActionConnectorRequest) -> int:
         payload = request.input_json
@@ -195,7 +179,9 @@ class OpenAIImagesActionConnector:
             quality=quality,
             n=n,
         )
-        return max(0, round(estimated * 100))
+        if estimated <= 0:
+            return 0
+        return max(1, round(estimated * 100))
 
     async def execute(self, request: ActionConnectorRequest) -> ActionConnectorResult:
         if request.credential is None:
@@ -234,10 +220,12 @@ class OpenAIImagesActionConnector:
                         model=str(payload.get("model", OpenAIImagesIntegration.DEFAULT_MODEL)),
                         output_format=str(payload.get("output_format", "webp")),
                     )
+        output_json = result.data if isinstance(result.data, dict) else {"data": result.data}
+        output_json = _register_generated_image_artifacts(request, output_json)
         return ActionConnectorResult(
-            output_json=result.data if isinstance(result.data, dict) else {"data": result.data},
+            output_json=output_json,
             metadata_json={"vendor": "openai-images"},
-            cost_cents=max(0, round(result.cost_usd * 100)),
+            cost_cents=_cost_usd_to_cents(result.cost_usd),
         )
 
 
@@ -256,6 +244,76 @@ def _artifact_path(asset_dir: Path, artifact_ref: str) -> Path:
     if not candidate.is_file():
         raise ValidationError(f"input image ref {artifact_ref!r} does not point to a file")
     return candidate
+
+
+def _register_generated_image_artifacts(
+    request: ActionConnectorRequest,
+    output_json: dict[str, Any],
+) -> dict[str, Any]:
+    """Register persisted generated image files as generic StackOS artifacts."""
+    if request.session is None:
+        return output_json
+    items = output_json.get("data")
+    if not isinstance(items, list):
+        return output_json
+    asset_dir = (request.asset_dir or Settings().generated_assets_dir).resolve()
+    repository = ArtifactRepository(request.session)
+    registered_items: list[Any] = []
+    artifact_refs: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            registered_items.append(item)
+            continue
+        uri = item.get("url")
+        if not isinstance(uri, str) or not uri.startswith("/generated-assets/"):
+            registered_items.append(item)
+            continue
+        path = _artifact_path(asset_dir, uri)
+        file_format = str(item.get("file_format") or path.suffix.removeprefix(".") or "webp")
+        artifact = repository.create(
+            project_id=request.project_id,
+            plugin_slug="utils",
+            kind="image",
+            uri=uri,
+            name=path.name,
+            mime_type=_image_mime_type(file_format),
+            size_bytes=path.stat().st_size,
+            metadata_json={
+                "provider_key": "openai-images",
+                "operation": request.operation,
+                "model": item.get("source_model"),
+                "file_format": file_format,
+            },
+            provenance_json={
+                "source": "openai-images-action",
+                "action_ref": request.action_ref,
+            },
+        ).data
+        clean = dict(item)
+        clean["artifact_ref"] = uri
+        clean["artifact_id"] = artifact.id
+        registered_items.append(clean)
+        artifact_refs.append(uri)
+    if not artifact_refs:
+        return output_json
+    out = dict(output_json)
+    out["data"] = registered_items
+    out["artifact_refs"] = artifact_refs
+    return out
+
+
+def _image_mime_type(file_format: str) -> str:
+    if file_format == "png":
+        return "image/png"
+    if file_format in {"jpg", "jpeg"}:
+        return "image/jpeg"
+    return "image/webp"
+
+
+def _cost_usd_to_cents(cost_usd: float) -> int:
+    if cost_usd <= 0:
+        return 0
+    return max(1, round(cost_usd * 100))
 
 
 __all__ = ["OpenAIImagesActionConnector"]

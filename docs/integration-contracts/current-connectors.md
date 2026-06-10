@@ -32,7 +32,7 @@ Important consequence: provider docs should shape action schemas and connector c
 
 | Connector key | Action refs | Current implementation refs | Manifest refs | Auth/setup implication |
 | --- | --- | --- | --- | --- |
-| `openai-images` | `utils.image.generate` | `stackos/actions/openai_images.py:17`, `stackos/integrations/openai_images.py:22` | `stackos/plugins/manifest.py:372`, `stackos/plugins/manifest.py:398` | API key payload; budget enforced by `openai-images` kind. |
+| `openai-images` | `utils.image.generate`, `utils.image.edit` | `stackos/actions/openai_images.py`, `stackos/integrations/openai_images.py` | `stackos/plugins/manifest.py` built-in utils media actions | API key payload; budget enforced by `openai-images` kind. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
@@ -64,18 +64,32 @@ Important consequence: provider docs should shape action schemas and connector c
 
 ### OpenAI Images
 
-Current: `utils.image.generate` maps to `OpenAIImagesActionConnector`, validates prompt, explicit GPT Image model profile, size, quality, `n`, and output format, then calls `/v1/images/generations` with default model `gpt-image-2`.
+Current: `utils.image.generate` and `utils.image.edit` map to
+`OpenAIImagesActionConnector`. The connector validates prompt length, explicit
+GPT Image model profile, size, quality, `n`, output format, generated-asset
+input refs, edit ref count, and `input_fidelity` model support. It then calls
+`/v1/images/generations` or `/v1/images/edits` with default model
+`gpt-image-2`.
 
 Gaps/mismatches:
 
 - Resolved: manifest and connector now share GPT Image profiles for `gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, and `gpt-image-1-mini`. Legacy DALL-E quality names are not accepted by the generic StackOS action.
 - Resolved: budget estimates use the current GPT Image table for the supported model/size/quality presets. `auto` quality is estimated conservatively as high for pre-check purposes.
+- Resolved: GPT Image base64 outputs are persisted under generated assets,
+  registered as generic `image` artifacts during repository-backed execution,
+  and returned as artifact URLs/ids instead of raw `b64_json`.
+- Resolved: edit inputs are bounded to generated-asset png/jpg/webp refs and
+  preflighted against OpenAI's 50 MB input image limit before vendor upload.
 - Remaining: `gpt-image-2` supports broader arbitrary resolutions in OpenAI docs, but StackOS exposes only explicit presets plus `auto` until arbitrary-size budget estimates and UI affordances are modeled.
+- Remaining: OpenAI's image guide and `gpt-image-2` model page document
+  `gpt-image-2` Image API generation/edit support, while some API-reference
+  enum snippets can lag the model listing. Treat the guide/model page as the
+  source for `gpt-image-2` support and re-check before changing defaults.
 
 Recommended corrections:
 
 - Add a scheduled provider-doc audit for OpenAI image pricing and model profile changes.
-- Keep persisted output URL behavior documented in the manifest or action docs, because consumers should not expect raw base64.
+- Keep persisted output URL/artifact-id behavior documented in the manifest or action docs, because consumers should not expect raw base64.
 
 ### Firecrawl
 
