@@ -4,9 +4,14 @@ Authentication: Bearer ``Authorization: Bearer <api_key>``. This is a
 daemon-side vendor key for image generation only; prose generation uses
 the current operator agent's runtime credentials outside StackOS.
 
-Operation:
+Operations:
 
 - ``generate(prompt, size, quality, n)`` — GPT Image generation.
+- ``edit(prompt, input_image_paths, ...)`` — GPT Image edits with input
+  reference images, used for product-faithful marketing shots. Input
+  images are uploaded as multipart ``image`` files on ``/images/edits``.
+  The JSON edit shape uses ``images`` only for public URL or file-id
+  references, not daemon-local generated-asset files.
 
 The current OpenAI Image API returns base64 for GPT Image models. This
 wrapper persists those bytes into the daemon's generated-assets directory
@@ -87,10 +92,20 @@ class OpenAIImagesIntegration(BaseIntegration):
         {"gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"}
     )
     _DALL_E_MODELS: ClassVar[frozenset[str]] = frozenset({"dall-e-2", "dall-e-3"})
+    # gpt-image-2 always processes input images at high fidelity; the API
+    # rejects an explicit input_fidelity parameter for it.
+    _INPUT_FIDELITY_MODELS: ClassVar[frozenset[str]] = frozenset({"gpt-image-1.5", "gpt-image-1"})
+    MAX_EDIT_INPUT_IMAGES: ClassVar[int] = 16
     _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
         "jpeg": "jpg",
         "png": "png",
         "webp": "webp",
+    }
+    _INPUT_IMAGE_MIME: ClassVar[dict[str, str]] = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
     }
 
     def __init__(
@@ -105,11 +120,11 @@ class OpenAIImagesIntegration(BaseIntegration):
         self._asset_dir = asset_dir
         self._asset_url_prefix = asset_url_prefix.rstrip("/")
 
-    def _auth_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
+    def _auth_headers(self, *, content_type: str | None = "application/json") -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        if content_type is not None:
+            headers["Content-Type"] = content_type
+        return headers
 
     def _estimate_cost_usd(self, op: str, **kwargs: Any) -> float:
         """Estimate cost from ``size`` + ``quality`` keyword args."""
@@ -186,6 +201,92 @@ class OpenAIImagesIntegration(BaseIntegration):
             duration_ms=result.duration_ms,
             cached=result.cached,
         )
+
+    async def edit(
+        self,
+        *,
+        prompt: str,
+        input_image_paths: list[Path],
+        size: str = "auto",
+        quality: str = "medium",
+        n: int = 1,
+        model: str = DEFAULT_MODEL,
+        output_format: str = "webp",
+        input_fidelity: str | None = None,
+    ) -> IntegrationCallResult:
+        """Edit/compose images from ``prompt`` plus input reference images.
+
+        GPT Image edits keep the referenced subject (product, logo, label)
+        faithful while changing scene, style, or composition. Input images
+        are submitted as multipart file uploads. ``input_fidelity`` is
+        forwarded only for models that accept it; gpt-image-2 always runs
+        at high input fidelity.
+        """
+        if not input_image_paths:
+            raise IntegrationDownError(
+                "OpenAI Images edit requires at least one input image",
+                data={"vendor": "openai-images", "model": model},
+            )
+        if len(input_image_paths) > self.MAX_EDIT_INPUT_IMAGES:
+            raise IntegrationDownError(
+                f"OpenAI Images edit accepts at most {self.MAX_EDIT_INPUT_IMAGES} input images",
+                data={"vendor": "openai-images", "model": model},
+            )
+        form_body: dict[str, Any] = {
+            "prompt": prompt,
+            "n": str(n),
+            "model": model,
+            "size": size,
+            "quality": quality,
+            "output_format": output_format,
+        }
+        if input_fidelity is not None and model in self._INPUT_FIDELITY_MODELS:
+            form_body["input_fidelity"] = input_fidelity
+
+        files: list[tuple[str, tuple[str, bytes, str]]] = []
+        image_log: list[dict[str, Any]] = []
+        for path in input_image_paths:
+            filename, raw, mime = self._read_input_image(path)
+            files.append(("image", (filename, raw, mime)))
+            image_log.append({"filename": filename, "mime_type": mime, "bytes": len(raw)})
+        request_log = dict(form_body)
+        request_log["image_files"] = image_log
+        result = await self.call(
+            op="edit",
+            method="POST",
+            url=f"{self.BASE_URL}/images/edits",
+            data_body=form_body,
+            files=files,
+            headers=self._auth_headers(content_type=None),
+            request_log_body=request_log,
+        )
+        return IntegrationCallResult(
+            data=self._persist_base64_images(
+                result.data,
+                output_format=output_format,
+                model=model,
+            ),
+            cost_usd=result.cost_usd,
+            duration_ms=result.duration_ms,
+            cached=result.cached,
+        )
+
+    def _read_input_image(self, path: Path) -> tuple[str, bytes, str]:
+        """Read one local input image for multipart upload."""
+        mime = self._INPUT_IMAGE_MIME.get(path.suffix.lower())
+        if mime is None:
+            raise IntegrationDownError(
+                "OpenAI Images edit input images must be png, jpg, or webp",
+                data={"vendor": "openai-images", "file": path.name},
+            )
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise IntegrationDownError(
+                "OpenAI Images edit input image could not be read",
+                data={"vendor": "openai-images", "file": path.name},
+            ) from exc
+        return path.name, raw, mime
 
     def _persist_base64_images(
         self,

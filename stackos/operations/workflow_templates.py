@@ -9,6 +9,7 @@ from stackos.mcp.tools.workflows import (
     WorkflowExtensionListInput,
     WorkflowExtensionUpsertInput,
     WorkflowExtensionValidateInput,
+    WorkflowTemplateAuthoringGuideInput,
     WorkflowTemplateDescribeInput,
     WorkflowTemplateForkInput,
     WorkflowTemplateListInput,
@@ -19,6 +20,7 @@ from stackos.mcp.tools.workflows import (
     _extension_list,
     _extension_upsert,
     _extension_validate,
+    _template_authoring_guide,
     _template_describe,
     _template_fork,
     _template_list,
@@ -29,6 +31,7 @@ from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample
 from stackos.workflows import (
     LoadedWorkflowTemplate,
+    WorkflowAuthoringGuideOut,
     WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
@@ -192,6 +195,34 @@ def operation_specs():
             grant_policy="direct-setup-write",
         ),
         operation_spec(
+            name="workflowTemplate.authoringGuide",
+            summary="Return the canonical StackOS workflow authoring guide.",
+            input_model=WorkflowTemplateAuthoringGuideInput,
+            output_model=WorkflowAuthoringGuideOut,
+            handler=_template_authoring_guide,
+            purpose=(
+                "Use this as the single source of truth for creating, extending, "
+                "validating, saving, forking, and executing StackOS workflows from "
+                "any repository."
+            ),
+            when_to_use=(
+                "An agent outside the StackOS source checkout needs to author or "
+                "change a workflow.",
+                "A caller needs to decide between a new template, workflow extension, "
+                "or one-off run plan.",
+                "Docs, skills, or operation descriptions need to point to the "
+                "canonical workflow authoring contract.",
+            ),
+            returns=(
+                "Structured authoring principles, decision path, contract fields, "
+                "forbidden template content, canonical operations, and a minimal "
+                "template example.",
+            ),
+            examples=(OperationExample(title="Read workflow authoring guide", arguments={}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        operation_spec(
             name="workflowTemplate.list",
             summary="List effective reusable workflow templates without executing them.",
             input_model=WorkflowTemplateListInput,
@@ -223,7 +254,8 @@ def operation_specs():
             handler=_template_describe,
             purpose=(
                 "Use this before creating a run plan. The response contains inputs, steps, "
-                "agents, skills, grants, outputs, approval gates, and setup notes."
+                "agents, skills, grants, outputs, approval gates, setup notes, and any "
+                "enabled project extension layered over the reusable base workflow."
             ),
             when_to_use=("The agent has a template key such as engineering.tracked-delivery.",),
             returns=("One loaded template with normalized workflow metadata.",),
@@ -243,12 +275,14 @@ def operation_specs():
             output_model=WorkflowTemplateValidationOut,
             handler=_template_validate,
             purpose=(
-                "Use this to validate template JSON/YAML before saving, or to validate an "
-                "existing template key before runPlan.create."
+                "Use this after workflowTemplate.authoringGuide to validate template JSON/YAML "
+                "before saving, or to validate an existing template key before runPlan.create."
             ),
             when_to_use=(
                 "A caller drafted template_json/template_yaml and wants validation only.",
                 "An agent wants to verify an existing template key is parseable.",
+                "An agent outside the StackOS source repo needs model-readable errors while "
+                "building a workflow from the canonical authoring guide.",
             ),
             returns=("Validation status plus model-readable errors and warnings.",),
             examples=(
@@ -266,8 +300,18 @@ def operation_specs():
             input_model=WorkflowTemplateSaveInput,
             output_model=WriteEnvelope[LoadedWorkflowTemplate],
             handler=_template_save,
-            purpose="Use this only for explicit local-admin workflow template setup.",
-            prerequisites=("Requires operator/admin authority and reviewed template JSON/YAML.",),
+            purpose=(
+                "Use this only for explicit local-admin workflow template setup after "
+                "workflowTemplate.validate succeeds and the operator wants the draft to become "
+                "a reusable project or user template."
+            ),
+            prerequisites=(
+                "Read workflowTemplate.authoringGuide first.",
+                "Requires operator/admin authority and reviewed template JSON/YAML.",
+                "Use workflowExtension.validate/upsert instead when the base workflow should "
+                "stay reusable and only project defaults, context, guardrails, agent/skill "
+                "requirements, or step guidance need to change.",
+            ),
             examples=(
                 OperationExample(
                     title="Save project template",
@@ -283,8 +327,16 @@ def operation_specs():
             input_model=WorkflowTemplateForkInput,
             output_model=WriteEnvelope[LoadedWorkflowTemplate],
             handler=_template_fork,
-            purpose="Use this only for explicit local-admin template customization.",
-            prerequisites=("Requires operator/admin authority and a new stable template key.",),
+            purpose=(
+                "Use this only for explicit local-admin template customization when the "
+                "result should become a separately named reusable workflow identity."
+            ),
+            prerequisites=(
+                "Read workflowTemplate.authoringGuide first.",
+                "Requires operator/admin authority and a new stable template key.",
+                "Validate project-specific overlays as workflow extensions before deciding "
+                "that a forked template identity is actually needed.",
+            ),
             examples=(
                 OperationExample(
                     title="Fork template",

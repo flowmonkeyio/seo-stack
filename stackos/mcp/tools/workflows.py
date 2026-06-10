@@ -15,6 +15,7 @@ from stackos.operations.registry import OperationRegistry, build_operation_regis
 from stackos.repositories.base import ValidationError
 from stackos.workflows import (
     LoadedWorkflowTemplate,
+    WorkflowAuthoringGuideOut,
     WorkflowTemplateExtensionDeleteOut,
     WorkflowTemplateExtensionGetOut,
     WorkflowTemplateExtensionListOut,
@@ -25,8 +26,13 @@ from stackos.workflows import (
     WorkflowTemplateValidationOut,
     parse_workflow_template_obj,
     parse_workflow_template_yaml,
+    workflow_authoring_guide,
 )
 from stackos.workflows.template_schema import WorkflowTemplateIssue
+
+
+class WorkflowTemplateAuthoringGuideInput(MCPInput):
+    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {}})
 
 
 class WorkflowTemplateListInput(MCPInput):
@@ -177,6 +183,14 @@ class WorkflowExtensionValidateInput(MCPInput):
 class WorkflowExtensionUpsertInput(WorkflowExtensionValidateInput):
     enabled: bool = True
     created_by: str | None = None
+
+
+async def _template_authoring_guide(
+    _inp: WorkflowTemplateAuthoringGuideInput,
+    _ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WorkflowAuthoringGuideOut:
+    return workflow_authoring_guide()
 
 
 async def _template_list(
@@ -408,6 +422,7 @@ def register(registry: ToolRegistry) -> None:
             "workflowExtension.delete",
             "workflowExtension.validate",
             "workflowExtension.upsert",
+            "workflowTemplate.authoringGuide",
             "workflowTemplate.list",
             "workflowTemplate.describe",
             "workflowTemplate.validate",

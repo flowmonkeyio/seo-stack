@@ -143,6 +143,10 @@ run token.
   external action counts, and safe setup links. Do not use broad `auth.status`
   as the first answer for one selected workflow/action unless diagnostics need
   all provider rows.
+- Author workflows from any repo: call `toolbox.call` for
+  `workflowTemplate.authoringGuide` and treat that response as the canonical
+  contract. Do not duplicate workflow-authoring rules into repo docs or long
+  skill text.
 - Plan direct work: use tracker tasks/tickets when the agent is planning or
   delivering scoped work outside a concrete workflow run and the operator did
   not invoke a workflow. Create dependencies, blockers, definition of done, and

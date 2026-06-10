@@ -56,6 +56,7 @@ from stackos.workflows.run_plan_schema import (
     find_run_plan_secret_paths,
     parse_run_plan_obj,
     run_plan_from_template,
+    run_plan_readiness_warnings,
     validate_run_plan_obj,
 )
 from stackos.workflows.template_loader import LoadedWorkflowTemplate, WorkflowTemplateLoader
@@ -260,7 +261,11 @@ class RunPlanRepository:
                 valid=False,
                 errors=[RunPlanIssue(path="$", message=str(exc), code="template_error")],
             )
-        return RunPlanValidationOut(valid=True, plan=plan)
+        return RunPlanValidationOut(
+            valid=True,
+            plan=plan,
+            warnings=run_plan_readiness_warnings(plan),
+        )
 
     def create(
         self,

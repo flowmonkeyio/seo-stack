@@ -13,6 +13,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         "support",
         "communications",
         "gtm",
+        "marketing",
         "media-buying",
         "trackbooth",
         "publishing",

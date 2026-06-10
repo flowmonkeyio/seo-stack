@@ -7,10 +7,11 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 167
+    assert len(names) == 168
     assert {
         "action.execute",
         "auth.status",
+        "workflowTemplate.authoringGuide",
         "workflowTemplate.describe",
         "resource.query",
         "resource.upsert",
@@ -250,6 +251,14 @@ def test_operation_registry_documents_core_operations() -> None:
     assert workflow_extension.surfaces["cli"].command == "ops call workflowExtension.upsert"
     assert workflow_extension.grant_policy == "direct-setup-write"
     assert any("base workflow should stay generic" in item for item in [workflow_extension.purpose])
+
+    authoring_guide = registry.get("workflowTemplate.authoringGuide").describe_out()
+    assert authoring_guide.category == "workflow"
+    assert authoring_guide.surfaces["mcp"].enabled is True
+    assert authoring_guide.surfaces["rest"].enabled is True
+    assert authoring_guide.surfaces["cli"].command == "ops call workflowTemplate.authoringGuide"
+    assert authoring_guide.grant_policy == "direct-read"
+    assert any("single source of truth" in item for item in [authoring_guide.purpose])
 
     run_plan = registry.get("runPlan.claimStep").describe_out()
     assert run_plan.surfaces["mcp"].enabled is True

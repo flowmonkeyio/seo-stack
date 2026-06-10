@@ -139,13 +139,11 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     }
     assert engineering_skill_refs == {"stackos:stackos"}
     engineering_skill_preset_refs = {
-        item["skill_preset_ref"]
-        for item in engineering_resolved["skill_preset_requirements"]
+        item["skill_preset_ref"] for item in engineering_resolved["skill_preset_requirements"]
     }
     assert engineering_skill_preset_refs == {"stackos.sdlc.delivery-orchestrator"}
     assert {
-        item["preset"]["summary"]["key"]
-        for item in engineering_resolved["required_skill_presets"]
+        item["preset"]["summary"]["key"] for item in engineering_resolved["required_skill_presets"]
     } == {"stackos.sdlc.delivery-orchestrator"}
     assert intake_resolved["workflow"]["key"] == "communications.customer-feedback-intake"
     intake_required_agent_keys = {
@@ -184,3 +182,62 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert handoff_recommended_agent_keys == {
         "stackos.sdlc.planning",
     }
+
+
+def test_marketing_campaign_production_presets_resolve_end_to_end(
+    mcp_client: MCPClient,
+) -> None:
+    resolved = mcp_client.call_tool_structured(
+        "agentPreset.resolveForWorkflow",
+        {
+            "workflow_key": "marketing.campaign-production",
+            "plugin_slug": "marketing",
+            "response_mode": "raw",
+        },
+    )
+    skill_resolved = mcp_client.call_tool_structured(
+        "skillPreset.resolveForWorkflow",
+        {
+            "workflow_key": "marketing.campaign-production",
+            "plugin_slug": "marketing",
+            "response_mode": "raw",
+        },
+    )
+
+    assert resolved["workflow"]["key"] == "marketing.campaign-production"
+    required_agent_keys = {
+        agent["preset"]["summary"]["key"] for agent in resolved["required_agents"]
+    }
+    assert required_agent_keys == {
+        "marketing.campaign.brief-analyst",
+        "marketing.campaign.creative-director",
+        "marketing.campaign.media-producer",
+        "marketing.campaign.landing-page-builder",
+        "marketing.campaign.visual-signoff-reviewer",
+    }
+    assert resolved["unresolved_requirements"] == []
+    assert resolved["unresolved_skill_preset_requirements"] == []
+    assert all(
+        agent["preset"]["summary"]["plugin_slug"] == "marketing"
+        for agent in resolved["required_agents"]
+    )
+
+    assert skill_resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
+        "marketing.campaign-production-orchestrator"
+    )
+    assert skill_resolved["unresolved_skill_preset_requirements"] == []
+
+    producer = mcp_client.call_tool_structured(
+        "agentPreset.describe",
+        {"key": "marketing.campaign.media-producer", "response_mode": "raw"},
+    )
+    producer_contract = producer["preset"]["preset"]["prompt_contract"]
+    producer_text = " ".join(
+        [
+            *producer_contract["responsibilities"],
+            *producer_contract["must_do"],
+            *producer_contract["must_not_do"],
+        ]
+    ).lower()
+    assert "preserve" in producer_text
+    assert producer["project_adaptation"]["adaptation_required"] is True

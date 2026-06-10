@@ -367,6 +367,7 @@ The current core operation registry includes:
 - `workflowExtension.delete`
 - `workflowExtension.validate`
 - `workflowExtension.upsert`
+- `workflowTemplate.authoringGuide`
 - `workflowTemplate.list`
 - `workflowTemplate.describe`
 - `workflowTemplate.validate`

@@ -9,6 +9,7 @@ only opaque credential refs and the daemon resolves backing credentials.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from pydantic import (
@@ -22,11 +23,13 @@ from pydantic import (
 )
 
 from stackos.artifacts import redact_secret_text
+from stackos.plugins.manifest import BUILTIN_PLUGIN_MANIFESTS
 from stackos.workflows.run_plan_grants import (
     RunPlanMcpToolGrant,
     parse_run_plan_mcp_tool_grants,
     validate_run_plan_mcp_tool_grants,
 )
+from stackos.workflows.template_schema import ActionContractSpec
 
 if TYPE_CHECKING:
     from stackos.workflows.template_loader import LoadedWorkflowTemplate
@@ -357,6 +360,11 @@ def validate_run_plan_obj(data: dict[str, Any]) -> RunPlanValidationOut:
     )
 
 
+def run_plan_readiness_warnings(plan: RunPlanSpec) -> list[RunPlanIssue]:
+    """Return executable-readiness warnings for an already-validated plan."""
+    return _executable_readiness_warnings(plan)
+
+
 def _grants_for_step(plan: RunPlanSpec, step_id: str) -> list[RunPlanMcpToolGrant]:
     try:
         grants = parse_run_plan_mcp_tool_grants(plan.grant_snapshot_json)
@@ -373,6 +381,96 @@ def _covered_action_refs(grants: list[RunPlanMcpToolGrant]) -> set[str]:
     return refs
 
 
+@lru_cache(maxsize=1)
+def _builtin_action_records() -> tuple[dict[str, str | None], ...]:
+    records: list[dict[str, str | None]] = []
+    for manifest in BUILTIN_PLUGIN_MANIFESTS:
+        for action in manifest.actions:
+            records.append(
+                {
+                    "ref": f"{manifest.slug}.{action.key}",
+                    "plugin_slug": manifest.slug,
+                    "key": action.key,
+                    "provider": action.provider,
+                    "capability": action.capability,
+                }
+            )
+    return tuple(records)
+
+
+@lru_cache(maxsize=1)
+def _builtin_plugin_slugs() -> frozenset[str]:
+    return frozenset(manifest.slug for manifest in BUILTIN_PLUGIN_MANIFESTS)
+
+
+def _contract_value(contract: ActionContractSpec | dict[str, Any], field: str) -> Any:
+    if isinstance(contract, dict):
+        return contract.get(field)
+    return getattr(contract, field)
+
+
+def _record_matches_contract(
+    record: dict[str, str | None],
+    contract: ActionContractSpec | dict[str, Any],
+) -> bool:
+    provider = _contract_value(contract, "provider")
+    if isinstance(provider, str) and provider and record.get("provider") != provider:
+        return False
+    capability = _contract_value(contract, "capability")
+    return not (
+        isinstance(capability, str) and capability and record.get("capability") != capability
+    )
+
+
+def _resolve_action_contract_ref(
+    contract: ActionContractSpec | dict[str, Any],
+    *,
+    template_plugin_slug: str | None,
+) -> str | None:
+    action = _contract_value(contract, "action")
+    if not isinstance(action, str) or not action:
+        return None
+    first_segment = action.split(".", 1)[0]
+    if first_segment in _builtin_plugin_slugs():
+        return action
+
+    records = _builtin_action_records()
+    candidates: list[str] = []
+    if isinstance(template_plugin_slug, str) and template_plugin_slug:
+        local_ref = f"{template_plugin_slug}.{action}"
+        candidates.extend(
+            str(record["ref"])
+            for record in records
+            if record.get("ref") == local_ref and _record_matches_contract(record, contract)
+        )
+    candidates.extend(
+        str(record["ref"])
+        for record in records
+        if record.get("key") == action and _record_matches_contract(record, contract)
+    )
+    if candidates:
+        return next(iter(dict.fromkeys(candidates)))
+    if isinstance(template_plugin_slug, str) and template_plugin_slug:
+        return f"{template_plugin_slug}.{action}"
+    return action
+
+
+def _template_action_contract_refs(
+    contracts: list[ActionContractSpec],
+    *,
+    template_plugin_slug: str | None,
+) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for contract in contracts:
+        action_ref = _resolve_action_contract_ref(
+            contract,
+            template_plugin_slug=template_plugin_slug,
+        )
+        if action_ref is not None:
+            out[contract.key] = action_ref
+    return out
+
+
 def _template_action_contract_map(plan: RunPlanSpec) -> dict[str, str]:
     snapshot = plan.grant_snapshot_json or {}
     raw_contracts = snapshot.get("action_contracts")
@@ -387,13 +485,11 @@ def _template_action_contract_map(plan: RunPlanSpec) -> dict[str, str]:
         action = item.get("action")
         if not isinstance(key, str) or not isinstance(action, str) or not action:
             continue
-        if (
-            isinstance(plugin_slug, str)
-            and plugin_slug
-            and not action.startswith(f"{plugin_slug}.")
-        ):
-            action = f"{plugin_slug}.{action}"
-        out[key] = action
+        resolved = _resolve_action_contract_ref(
+            item,
+            template_plugin_slug=plugin_slug if isinstance(plugin_slug, str) else None,
+        )
+        out[key] = resolved or action
     return out
 
 
@@ -497,6 +593,53 @@ def _string_list(value: Any) -> list[str]:
     return []
 
 
+def _default_mcp_tool_grants(
+    spec: Any,
+    steps: list[RunPlanStepSpec],
+    *,
+    resource_contract_map: dict[str, str],
+) -> list[dict[str, Any]]:
+    context_requirements = {item.id: item for item in spec.context_requirements}
+    grants: list[dict[str, Any]] = []
+    for step in steps:
+        if step.action_refs:
+            grants.append(
+                {
+                    "step_id": step.id,
+                    "tool": "action.execute",
+                    "action_refs": step.action_refs,
+                }
+            )
+        for resource_ref in dict.fromkeys(step.resource_refs):
+            grants.append(
+                {
+                    "step_id": step.id,
+                    "tool": "resource.upsert",
+                    "resource_key": resource_contract_map.get(resource_ref, resource_ref),
+                }
+            )
+        sources: set[str] = set()
+        fields: set[str] = set()
+        for context_ref in step.context_refs:
+            requirement = context_requirements.get(context_ref)
+            if requirement is None:
+                continue
+            sources.add(requirement.source)
+            fields.update(requirement.fields)
+        if sources and fields:
+            grants.append(
+                {
+                    "step_id": step.id,
+                    "tool": "context.query",
+                    "sources": sorted(sources),
+                    "fields": sorted(fields),
+                }
+            )
+        if step.output_refs:
+            grants.append({"step_id": step.id, "tool": "artifact.create"})
+    return grants
+
+
 def run_plan_from_template(
     loaded: LoadedWorkflowTemplate,
     *,
@@ -565,6 +708,12 @@ def run_plan_from_template(
     ]
     steps: list[RunPlanStepSpec] = []
     step_overrides = active_extension.step_overrides_json if active_extension is not None else {}
+    template_plugin_slug = loaded.summary.plugin_slug
+    action_contract_refs = _template_action_contract_refs(
+        spec.action_contracts,
+        template_plugin_slug=template_plugin_slug,
+    )
+    resource_contract_map = {item.key: item.resource for item in spec.resource_contracts}
     for index, step in enumerate(spec.steps):
         override = step_overrides.get(step.id) if isinstance(step_overrides, dict) else None
         override = override if isinstance(override, dict) else {}
@@ -601,7 +750,7 @@ def run_plan_from_template(
                 depends_on=step.depends_on,
                 input_refs=step.input_refs,
                 context_refs=step.context_refs,
-                action_refs=step.action_refs,
+                action_refs=[action_contract_refs.get(ref, ref) for ref in step.action_refs],
                 resource_refs=step.resource_refs,
                 policy_refs=step.policy_refs,
                 approval_refs=step.approval_refs,
@@ -612,7 +761,7 @@ def run_plan_from_template(
             )
         )
     grants = {
-        "template_plugin_slug": loaded.summary.plugin_slug,
+        "template_plugin_slug": template_plugin_slug,
         "capability_requirements": [
             item.model_dump(mode="json", exclude_none=True) for item in spec.capability_requirements
         ],
@@ -622,9 +771,18 @@ def run_plan_from_template(
         "action_contracts": [
             item.model_dump(mode="json", exclude_none=True) for item in spec.action_contracts
         ],
+        "resolved_action_contracts": [
+            {"key": key, "action_ref": action_ref}
+            for key, action_ref in action_contract_refs.items()
+        ],
         "resource_contracts": [
             item.model_dump(mode="json", exclude_none=True) for item in spec.resource_contracts
         ],
+        "mcp_tool_grants": _default_mcp_tool_grants(
+            spec,
+            steps,
+            resource_contract_map=resource_contract_map,
+        ),
     }
     return RunPlanSpec(
         key=key or f"{spec.key}.run",
@@ -671,5 +829,6 @@ __all__ = [
     "find_run_plan_secret_paths",
     "parse_run_plan_obj",
     "run_plan_from_template",
+    "run_plan_readiness_warnings",
     "validate_run_plan_obj",
 ]

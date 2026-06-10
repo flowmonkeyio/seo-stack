@@ -836,6 +836,33 @@ def test_run_plan_validate_can_enforce_template_required_inputs(
     assert with_inputs["plan"]["key"] == "core.project-memory-review.run"
 
 
+def test_run_plan_validate_marketing_template_wires_current_image_flow(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    validation = mcp_client.call_tool_structured(
+        "runPlan.validate",
+        {"project_id": project_id, "workflow_key": "marketing.campaign-production"},
+    )
+
+    assert validation["valid"] is True
+    assert validation["warnings"] == []
+    plan = validation["plan"]
+    produce_media = next(step for step in plan["steps"] if step["id"] == "produce-media")
+    assert produce_media["action_refs"] == ["utils.image.generate", "utils.image.edit"]
+    grants = plan["grant_snapshot_json"]["mcp_tool_grants"]
+    produce_action_grant = next(
+        grant
+        for grant in grants
+        if grant["step_id"] == "produce-media" and grant["tool"] == "action.execute"
+    )
+    assert produce_action_grant["action_refs"] == ["utils.image.generate", "utils.image.edit"]
+    assert "utils.video.generate" not in produce_media["action_refs"]
+    assert all("video" not in ref for grant in grants for ref in grant.get("action_refs", []))
+
+
 def test_run_plan_template_and_workflow_key_must_match(
     mcp_client: MCPClient,
     seeded_project: dict,

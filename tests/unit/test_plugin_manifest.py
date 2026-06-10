@@ -33,6 +33,7 @@ def test_builtin_plugin_manifests_validate() -> None:
         "support",
         "communications",
         "gtm",
+        "marketing",
         "media-buying",
         "trackbooth",
         "publishing",
@@ -126,6 +127,24 @@ def test_builtin_plugin_manifests_validate() -> None:
     }
     assert utils_actions["reddit.search-subreddit"].config["connector"] == "reddit"
     assert all(action.provider != "openrouter" for action in utils.actions)
+    assert {capability.key for capability in utils.capabilities} >= {
+        "image-generation",
+        "video-generation",
+    }
+    assert utils_actions["image.edit"].config["connector"] == "openai-images"
+    assert utils_actions["image.edit"].config["operation"] == "image.edit"
+    assert utils_actions["image.edit"].config["budget_kind"] == "openai-images"
+    assert utils_actions["image.edit"].input_schema["required"] == [
+        "prompt",
+        "input_image_refs",
+    ]
+    assert "video-generation" in utils_providers
+    assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]
+    video_generate = utils_actions["video.generate"]
+    assert video_generate.provider == "video-generation"
+    assert video_generate.config["execution_mode"] == "deferred-video-backend-selection"
+    assert video_generate.config["budget_kind"] == "video-generation"
+    assert "connector" not in video_generate.config
     trackbooth = next(
         manifest for manifest in BUILTIN_PLUGIN_MANIFESTS if manifest.slug == "trackbooth"
     )

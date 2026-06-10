@@ -4,6 +4,14 @@ Workflow templates are reusable setup for agent work. They are not hidden
 automation. A template gives the agent a strong starting structure, then the
 agent creates a concrete run plan for the current project and goal.
 
+## Authoring Source
+
+The canonical workflow authoring guide is the StackOS operation
+`workflowTemplate.authoringGuide`. Agents should call it through
+`toolbox.call`, REST, or CLI from any repository, then validate drafts with
+`workflowTemplate.validate`. Keep this page as repo-local reference material,
+not a second copy of the authoring path.
+
 ## Template Schema
 
 A template should be generic across domains and include:

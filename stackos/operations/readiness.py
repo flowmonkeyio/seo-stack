@@ -386,7 +386,9 @@ def _contract_action_ref(
         return action
     candidates: list[str] = []
     if plugin_slug:
-        candidates.append(f"{plugin_slug}.{action}")
+        local_ref = f"{plugin_slug}.{action}"
+        if local_ref in action_index.get(action, []):
+            candidates.append(local_ref)
     candidates.extend(action_index.get(action, []))
     if contract.provider:
         provider_matches = [
@@ -404,7 +406,9 @@ def _contract_action_ref(
         ]
         if capability_matches:
             return capability_matches[0]
-    return candidates[0] if candidates else None
+    if candidates:
+        return candidates[0]
+    return f"{plugin_slug}.{action}" if plugin_slug else None
 
 
 def _action_resolution_index(ctx: MCPContext, *, project_id: int) -> dict[str, list[str]]:

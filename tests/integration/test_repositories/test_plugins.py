@@ -31,6 +31,7 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
         "support",
         "communications",
         "gtm",
+        "marketing",
         "media-buying",
         "trackbooth",
         "publishing",

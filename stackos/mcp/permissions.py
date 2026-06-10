@@ -213,6 +213,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "workflowExtension.delete",
         "workflowExtension.upsert",
         "workflowExtension.validate",
+        "workflowTemplate.authoringGuide",
         "workflowTemplate.describe",
         "workflowTemplate.list",
         "workflowTemplate.validate",

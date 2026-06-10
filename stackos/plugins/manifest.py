@@ -473,6 +473,12 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 kind="utility",
             ),
             CapabilityManifest(
+                key="video-generation",
+                name="Video Generation",
+                description="Generate short video artifacts through configured providers.",
+                kind="utility",
+            ),
+            CapabilityManifest(
                 key="web-retrieval",
                 name="Web Retrieval",
                 description="Read, scrape, and normalize external web content.",
@@ -522,6 +528,41 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         ],
                     )
                 ],
+            ),
+            ProviderManifest(
+                key="video-generation",
+                name="Video Generation",
+                description=(
+                    "Provider-neutral video generation connection; the concrete vendor "
+                    "backend is selected per deployment."
+                ),
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Credential storage and grants are wired; the vendor backend is "
+                        "not selected yet. The OpenAI Sora Videos API was deprecated for "
+                        "removal on 2026-09-24, so the first backend will be chosen among "
+                        "actively supported video APIs before video.generate is enabled."
+                    ),
+                },
             ),
             ProviderManifest(
                 key="openrouter",
@@ -736,7 +777,13 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "prompt": {"type": "string"},
                         "size": {
                             "type": "string",
-                            "enum": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                            "description": (
+                                "Size profile (auto, 1024x1024, 1536x1024, 1024x1536). "
+                                "gpt-image-2 also accepts free-form WxH with both edges <= "
+                                "3840 and divisible by 16, ratio at most 3:1, and "
+                                "655360..8294400 total pixels, e.g. 1088x1920 for 9:16 "
+                                "placements."
+                            ),
                         },
                         "quality": {
                             "type": "string",
@@ -768,6 +815,10 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "gpt-image-2": {
                             "qualities": ["auto", "low", "medium", "high"],
                             "sizes": ["auto", "1024x1024", "1536x1024", "1024x1536"],
+                            "freeform_sizes": (
+                                "WxH with edges <= 3840 and divisible by 16, ratio <= 3:1, "
+                                "655360..8294400 total pixels"
+                            ),
                             "output_formats": ["webp", "png", "jpeg"],
                             "transparent_background": False,
                             "docs": [
@@ -803,6 +854,151 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                             ],
                         },
                     },
+                },
+            ),
+            ActionManifest(
+                key="image.edit",
+                name="Edit Image With References",
+                description=(
+                    "Compose or restyle images from input reference images (for example "
+                    "a product photo) while keeping the referenced subject faithful."
+                ),
+                provider="openai-images",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt", "input_image_refs"],
+                    "properties": {
+                        "prompt": {"type": "string"},
+                        "input_image_refs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 16,
+                            "description": (
+                                "Generated-assets artifact refs (png, jpg, webp) used as "
+                                "input reference images; the first image anchors edits."
+                            ),
+                        },
+                        "size": {
+                            "type": "string",
+                            "description": (
+                                "Size profile (auto, 1024x1024, 1536x1024, 1024x1536). "
+                                "gpt-image-2 also accepts free-form WxH with both edges <= "
+                                "3840 and divisible by 16, ratio at most 3:1, and "
+                                "655360..8294400 total pixels."
+                            ),
+                        },
+                        "quality": {
+                            "type": "string",
+                            "enum": ["auto", "low", "medium", "high"],
+                        },
+                        "n": {"type": "integer"},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "gpt-image-2",
+                                "gpt-image-1.5",
+                                "gpt-image-1",
+                                "gpt-image-1-mini",
+                            ],
+                        },
+                        "output_format": {"type": "string", "enum": ["webp", "png", "jpeg"]},
+                        "input_fidelity": {
+                            "type": "string",
+                            "enum": ["high", "low"],
+                            "description": (
+                                "Input image fidelity control for gpt-image-1.5 and "
+                                "gpt-image-1 only; gpt-image-2 always uses high fidelity."
+                            ),
+                        },
+                    },
+                },
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "openai-images",
+                    "operation": "image.edit",
+                    "requires_credential": True,
+                    "budget_kind": "openai-images",
+                    "enforce_budget": True,
+                    "default_model": "gpt-image-2",
+                    "agent_guidance": (
+                        "Use image.edit instead of image.generate when output must stay "
+                        "faithful to an existing product, logo, or label. Restate the "
+                        "preserve list in the prompt on every iteration."
+                    ),
+                    "docs": [
+                        "https://developers.openai.com/api/docs/guides/image-generation",
+                        "https://developers.openai.com/api/reference/resources/images",
+                    ],
+                },
+            ),
+            ActionManifest(
+                key="video.generate",
+                name="Generate Video",
+                description=(
+                    "Deferred provider-neutral video generation contract; execution is "
+                    "enabled once a supported vendor backend and connector are selected."
+                ),
+                provider="video-generation",
+                capability="video-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": (
+                                "Single-shot video prompt: prose scene first, then "
+                                "labeled cinematography, action, and audio cues."
+                            ),
+                        },
+                        "model": {"type": "string"},
+                        "size": {
+                            "type": "string",
+                            "description": "Target resolution as WxH, e.g. 720x1280 or 1920x1080.",
+                        },
+                        "seconds": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 60,
+                            "description": (
+                                "Requested clip duration; vendors clamp to supported steps."
+                            ),
+                        },
+                        "input_reference_ref": {
+                            "type": "string",
+                            "description": (
+                                "Optional generated-assets artifact ref used as the "
+                                "first-frame anchor, for example a product photo."
+                            ),
+                        },
+                    },
+                },
+                output_schema=_OBJECT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "operation": "video.generate",
+                    "execution_mode": "deferred-video-backend-selection",
+                    "deferred_reason": (
+                        "No video vendor backend is wired yet. The OpenAI Sora Videos "
+                        "API is deprecated for removal on 2026-09-24, so enable this "
+                        "action only after an actively supported backend connector "
+                        "lands; the credential, budget, and grant path is already "
+                        "prepared under the video-generation provider."
+                    ),
+                    "budget_kind": "video-generation",
+                    "agent_guidance": (
+                        "Treat video.generate as plannable but not executable. When a "
+                        "run plan needs video and this action is still deferred, surface "
+                        "the gap at readiness time and let the operator choose an "
+                        "image-only downgrade or a stop."
+                    ),
                 },
             ),
             ActionManifest(

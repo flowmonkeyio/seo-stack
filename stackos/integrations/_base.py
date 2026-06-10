@@ -47,6 +47,7 @@ DEFAULT_BACKOFF_BASE = 0.5  # seconds; grows 2x each attempt.
 MAX_LOG_BYTES = 4096
 
 type JsonBody = dict[str, Any] | list[Any]
+type FormBody = dict[str, Any]
 
 
 @dataclass
@@ -181,6 +182,8 @@ class BaseIntegration:
         *,
         op: str,
         json: JsonBody | None = None,
+        data: FormBody | None = None,
+        files: Any | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
@@ -203,6 +206,8 @@ class BaseIntegration:
                     method,
                     url,
                     json=json,
+                    data=data,
+                    files=files,
                     params=params,
                     headers=headers,
                     auth=auth,
@@ -302,9 +307,12 @@ class BaseIntegration:
         method: str = "POST",
         url: str,
         json_body: JsonBody | None = None,
+        data_body: FormBody | None = None,
+        files: Any | None = None,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
+        request_log_body: JsonBody | None = None,
     ) -> IntegrationCallResult:
         """Issue one vendor call with budget + retry + audit trail.
 
@@ -324,7 +332,8 @@ class BaseIntegration:
            use the estimate).
         4. ``RunStepCallRepository.record_call`` if a run-step is bound.
         """
-        estimated = self._estimate_cost_usd(op, json=json_body, params=params)
+        body_for_cost = json_body if json_body is not None else data_body
+        estimated = self._estimate_cost_usd(op, json=body_for_cost, params=params)
 
         if self._budget_repo is not None and estimated > 0:
             self._budget_repo.record_call(
@@ -334,13 +343,18 @@ class BaseIntegration:
             )
 
         started = perf_counter()
-        request_log = self._sanitize_request(json_body)
+        request_for_log = request_log_body
+        if request_for_log is None:
+            request_for_log = body_for_cost
+        request_log = self._sanitize_request(request_for_log)
         try:
             response = await self._request_with_retry(
                 method,
                 url,
                 op=op,
                 json=json_body,
+                data=data_body,
+                files=files,
                 params=params,
                 headers=headers,
                 auth=auth,
@@ -367,7 +381,7 @@ class BaseIntegration:
 
         actual_cost = self._extract_actual_cost_usd(
             op,
-            request=json_body,
+            request=request_for_log,
             response=data,
             estimated=estimated,
         )
@@ -435,6 +449,7 @@ __all__ = [
     "DEFAULT_MAX_RETRIES",
     "MAX_LOG_BYTES",
     "BaseIntegration",
+    "FormBody",
     "IntegrationCallResult",
     "JsonBody",
 ]

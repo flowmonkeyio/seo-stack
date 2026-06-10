@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from stackos.workflows.authoring_guide import (
+    WorkflowAuthoringExample,
+    WorkflowAuthoringGuideOut,
+    WorkflowAuthoringOperationRef,
+    workflow_authoring_guide,
+)
 from stackos.workflows.run_plan_schema import (
     RunPlanSpec,
     RunPlanValidationOut,
@@ -22,8 +28,8 @@ from stackos.workflows.template_loader import (
 )
 from stackos.workflows.template_schema import (
     WorkflowAgentRequirementSpec,
-    WorkflowSkillRequirementSpec,
     WorkflowSkillPresetRequirementSpec,
+    WorkflowSkillRequirementSpec,
     WorkflowTemplateSpec,
     WorkflowTemplateValidationOut,
     parse_workflow_template_obj,
@@ -37,8 +43,11 @@ __all__ = [
     "RunPlanSpec",
     "RunPlanValidationOut",
     "WorkflowAgentRequirementSpec",
-    "WorkflowSkillRequirementSpec",
+    "WorkflowAuthoringExample",
+    "WorkflowAuthoringGuideOut",
+    "WorkflowAuthoringOperationRef",
     "WorkflowSkillPresetRequirementSpec",
+    "WorkflowSkillRequirementSpec",
     "WorkflowTemplateExtensionDeleteOut",
     "WorkflowTemplateExtensionGetOut",
     "WorkflowTemplateExtensionListOut",
@@ -56,4 +65,5 @@ __all__ = [
     "validate_run_plan_obj",
     "validate_workflow_template_obj",
     "validate_workflow_template_yaml",
+    "workflow_authoring_guide",
 ]

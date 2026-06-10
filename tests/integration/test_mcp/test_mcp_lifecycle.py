@@ -53,7 +53,7 @@ EXPECTED_NAMESPACE_COUNTS = {
     "toolProfile": 1,
     "tracker": 21,
     "workflowExtension": 5,
-    "workflowTemplate": 5,
+    "workflowTemplate": 6,
     "workspace": 6,
 }
 

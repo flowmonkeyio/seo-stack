@@ -222,6 +222,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "workflowExtension.delete",
         "workflowExtension.upsert",
         "workflowExtension.validate",
+        "workflowTemplate.authoringGuide",
         "workflowTemplate.describe",
         "workflowTemplate.list",
         "workflowTemplate.validate",

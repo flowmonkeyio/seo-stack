@@ -50,6 +50,9 @@ First-party plugin coverage currently includes:
 
 - **Engineering**: tracked delivery workflows, SDLC agent role presets,
   engineering decisions/evidence, and release closeout flow.
+- **Marketing**: end-to-end campaign production from brand/product intake
+  through planned media generation, landing page variants, visual signoff
+  evidence, and a local campaign gallery.
 - **SEO**: keyword research, SERP analysis, PAA extraction, competitor/backlink
   research, SEO resources, and reusable SEO templates.
 - **Media buying**: paid media providers, campaign and creative resources,
@@ -60,8 +63,9 @@ First-party plugin coverage currently includes:
   history, Telegram and Slack bot actions, SMTP send, and IMAP mailbox/message
   lifecycle.
 - **Publishing**: WordPress and Ghost publishing actions.
-- **Utilities**: image generation, web retrieval, sitemap fetching, Reddit
-  research, and generic configured HTTP tools.
+- **Utilities**: image generation and reference-image edits, web retrieval,
+  sitemap fetching, Reddit research, generic configured HTTP tools, and a
+  deferred provider-neutral video generation contract.
 
 The plugin model is intentionally open-ended. A project can add internal tools
 or new provider domains without changing the core runtime.

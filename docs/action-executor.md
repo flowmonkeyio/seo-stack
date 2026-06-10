@@ -195,7 +195,7 @@ must agree before the connector is invoked.
 Registered first-party connectors are one provider per connector file and now
 cover the migrated clean path for:
 
-- `openai-images`: `utils.image.generate`
+- `openai-images`: `utils.image.generate`, `utils.image.edit`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -226,17 +226,27 @@ operator approval boundary.
 
 Actions that are intentionally not executable use explicit `execution_mode`
 metadata, such as `deferred-partner-api`, `deferred-inbound`,
-`deferred-firecrawl-async-extract`, or `project-local-http`. `utils.web.extract`
+`deferred-firecrawl-async-extract`, `deferred-video-backend-selection`, or
+`project-local-http`. `utils.web.extract`
 is intentionally deferred until StackOS has an explicit Firecrawl status-poll
-action and output artifact contract. Catalog availability reports those modes
+action and output artifact contract. `utils.video.generate` is intentionally
+deferred until a supported video vendor backend is selected and its connector
+lands; the provider-neutral `video-generation` provider, credential wiring,
+input contract, and `video-generation` budget kind are already in place so the
+action becomes executable by adding the connector and dropping the deferred
+mode. Catalog availability reports those modes
 directly instead of treating them as missing connectors. Outbrain and user-owned
 webhook actions remain deferred until endpoint-level contracts or project-local
 static HTTP config are supplied.
 
 The OpenAI Images connector persists base64 image bytes under generated assets
-and returns local artifact URLs with no `b64_json` payload. Other connectors
-normalize wrapper results into action output JSON and record the provider,
-operation, cost, status, and redacted payloads in `action_calls`.
+and returns local artifact URLs with no `b64_json` payload. For
+`utils.image.edit` it loads generated-assets input refs daemon-side and submits
+them as multipart `image` file uploads. JSON edit requests use `images` only
+for public URL or file-id references, not local generated-assets files.
+`input_fidelity` is forwarded only for the models that accept it. Other
+connectors normalize wrapper results into action output JSON and record the
+provider, operation, cost, status, and redacted payloads in `action_calls`.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across

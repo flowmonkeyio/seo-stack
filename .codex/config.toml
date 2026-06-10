@@ -1,0 +1,20 @@
+[agents.sdlc_requirements_flow_definer]
+config_file = "agents/sdlc-requirements-flow-definer.toml"
+
+[agents.sdlc_codebase_explorer]
+config_file = "agents/sdlc-codebase-explorer.toml"
+
+[agents.sdlc_planning]
+config_file = "agents/sdlc-planning.toml"
+
+[agents.sdlc_architecture]
+config_file = "agents/sdlc-architecture.toml"
+
+[agents.sdlc_test_designer]
+config_file = "agents/sdlc-test-designer.toml"
+
+[agents.sdlc_delivery]
+config_file = "agents/sdlc-delivery.toml"
+
+[agents.sdlc_delivery_reviewer]
+config_file = "agents/sdlc-delivery-reviewer.toml"

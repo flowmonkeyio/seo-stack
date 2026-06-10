@@ -158,6 +158,10 @@ An operation change should define or update:
 - tests for visibility, grants, validation, and audit
 - generated UI API types when REST/resource routes change
 - documentation
+- the packaged `stackos:stackos` skill only when the global agent entrypoint
+  changes. Keep that skill short and pointer-based, then reinstall the managed
+  mirrors with `stackos install --skills-only` or `make install-skills-codex`
+  / `make install-skills-claude`.
 
 Direct MCP tools are only for generic StackOS primitives. Provider/vendor
 operations should be plugin actions executed through `action.run` for one

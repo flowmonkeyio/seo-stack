@@ -16,7 +16,7 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 from stackos.repositories.base import NotFoundError
-from stackos.skill_presets import SkillPresetListOut, SkillPresetLoader, LoadedSkillPreset
+from stackos.skill_presets import LoadedSkillPreset, SkillPresetListOut, SkillPresetLoader
 from stackos.skill_presets.schema import SkillPresetSpec, SkillProjectAdaptationSpec
 from stackos.workflows.template_loader import WorkflowTemplateLoader, WorkflowTemplateSummaryOut
 from stackos.workflows.template_schema import WorkflowSkillPresetRequirementSpec

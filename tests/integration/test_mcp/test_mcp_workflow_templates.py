@@ -56,6 +56,7 @@ outputs:
         "workflowTemplate.validate",
         {"key": "core.project-memory-review", "repo_root": str(tmp_path)},
     )
+    authoring_guide = mcp_client.call_tool_structured("workflowTemplate.authoringGuide", {})
 
     sources = {
         item["source"]
@@ -78,6 +79,10 @@ outputs:
     assert validation_by_key["valid"] is True
     assert validation_by_key["template"]["key"] == "core.project-memory-review"
     assert validation_by_key["template"]["name"] == "Repo Project Memory Review"
+    assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
+    assert "workflowTemplate.validate" in {
+        item["name"] for item in authoring_guide["canonical_operations"]
+    }
 
     gtm_listing = mcp_client.call_tool_structured(
         "workflowTemplate.list",
@@ -367,3 +372,52 @@ def test_workflow_template_writes_are_registered_but_not_system_granted(
         err = mcp_client.call_tool_error(tool_name, arguments)
         assert err["code"] == -32007
         assert err["message"] == "ToolNotGrantedError"
+
+
+def test_marketing_campaign_production_template_validates_and_describes(
+    mcp_client: MCPClient,
+) -> None:
+    validation = mcp_client.call_tool_structured(
+        "workflowTemplate.validate",
+        {"key": "marketing.campaign-production"},
+    )
+    described = mcp_client.call_tool_structured(
+        "workflowTemplate.describe",
+        {"key": "marketing.campaign-production", "plugin_slug": "marketing"},
+    )
+
+    assert validation["valid"] is True
+    assert validation["template"]["key"] == "marketing.campaign-production"
+
+    spec = described["spec"]
+    assert [item["id"] for item in spec["steps"]] == [
+        "intake-brief",
+        "setup-workspace",
+        "plan-campaign",
+        "produce-media",
+        "build-landing-pages",
+        "visual-signoff",
+        "build-gallery",
+        "closeout",
+    ]
+    assert {item["agent_preset_ref"] for item in spec["agent_requirements"]} == {
+        "marketing.campaign.brief-analyst",
+        "marketing.campaign.creative-director",
+        "marketing.campaign.media-producer",
+        "marketing.campaign.landing-page-builder",
+        "marketing.campaign.visual-signoff-reviewer",
+    }
+    assert spec["skill_preset_requirements"][0]["skill_preset_ref"] == (
+        "marketing.campaign-production-orchestrator"
+    )
+    media_request = next(item for item in spec["inputs"] if item["key"] == "media_request")
+    assert media_request["required"] is True
+    gates = {gate["key"]: gate for gate in spec["approval_gates"]}
+    assert gates["plan_confirmation"]["required_when"] == "always"
+    produce_media = next(step for step in spec["steps"] if step["id"] == "produce-media")
+    assert "plan_confirmation" in produce_media["approval_refs"]
+    assert produce_media["action_refs"] == ["image_generate", "image_edit"]
+    actions = {contract["action"] for contract in spec["action_contracts"]}
+    assert actions == {"image.generate", "image.edit", "video.generate"}
+    shared_resources = {contract["resource"] for contract in spec["resource_contracts"]}
+    assert {"creative", "landing-page", "campaign-brief", "campaign-evidence"} <= shared_resources

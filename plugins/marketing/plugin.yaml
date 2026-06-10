@@ -1,0 +1,374 @@
+slug: marketing
+name: Marketing
+version: 0.1.0
+description: First-party StackOS domain package for marketing campaign production workflows, brand and campaign state, and creative production agent presets.
+display_order: 35
+source: builtin
+capabilities:
+  - key: creative-production
+    name: Creative Production
+    description: Plan and produce campaign media, landing page variants, and gallery surfaces through workflow execution.
+    kind: domain
+  - key: creative-review
+    name: Creative Review
+    description: Visually verify produced campaign assets and pages against the approved campaign plan with rendered evidence.
+    kind: domain
+resources:
+  - key: brand-profile
+    name: Brand Profile
+    description: Durable brand identity reused across campaigns; voice, palette, typography, logo refs, and imagery rules.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - brand_name
+      properties:
+        brand_name:
+          type: string
+          description: Operator-facing brand name.
+        tagline:
+          type: string
+        voice:
+          type: string
+          description: Brand voice summary used to steer copy and art direction.
+        tone_words:
+          type: array
+          items:
+            type: string
+        palette:
+          type: array
+          description: Brand colors as hex plus descriptive name and role.
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              name:
+                type: string
+              hex:
+                type: string
+              role:
+                type: string
+        typography:
+          type: object
+          additionalProperties: false
+          properties:
+            heading:
+              type: string
+            body:
+              type: string
+            notes:
+              type: string
+        logo_artifact_refs:
+          type: array
+          items:
+            type: string
+        imagery_style:
+          type: string
+          description: Photography and illustration direction for generated media.
+        do_not_rules:
+          type: array
+          description: Mandatories and prohibitions that constrain creative output.
+          items:
+            type: string
+        website_url:
+          type: string
+        notes:
+          type: string
+    ui_schema:
+      table_columns:
+        - brand_name
+        - tagline
+        - website_url
+      summary_fields:
+        - voice
+        - imagery_style
+      detail_sections:
+        - title: Identity
+          fields:
+            - brand_name
+            - tagline
+            - voice
+            - tone_words
+            - website_url
+        - title: Visual System
+          fields:
+            - palette
+            - typography
+            - logo_artifact_refs
+            - imagery_style
+        - title: Guardrails
+          fields:
+            - do_not_rules
+            - notes
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: brand-profile
+      agent_guidance: Store one durable profile per brand; update it instead of duplicating per campaign, and keep palette entries as hex plus descriptive name.
+  - key: campaign-brief
+    name: Campaign Brief
+    description: Campaign production record; structured brief, media request, workspace and gallery links, and lifecycle status.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_name
+        - product_description
+        - status
+      properties:
+        campaign_name:
+          type: string
+        campaign_slug:
+          type: string
+          description: Workspace directory slug under creatives/.
+        status:
+          type: string
+          enum:
+            - intake
+            - planned
+            - approved
+            - producing
+            - signoff
+            - complete
+            - abandoned
+        objective:
+          type: string
+          description: Single measurable campaign goal.
+        product_description:
+          type: string
+        audience:
+          type: string
+        awareness_level:
+          type: string
+          description: Audience awareness level the creative angles assume.
+        single_minded_proposition:
+          type: string
+          description: The one idea every deliverable must communicate.
+        tone:
+          type: string
+        mandatories:
+          type: array
+          description: Legal, brand, and do-not-say constraints production must keep.
+          items:
+            type: string
+        media_request:
+          type: object
+          description: Operator-chosen media formats, counts, and aspect ratios; required before planning.
+          additionalProperties: false
+          properties:
+            kinds:
+              type: array
+              items:
+                type: string
+                enum:
+                  - image
+                  - video
+            counts:
+              type: object
+              additionalProperties: false
+              properties:
+                image:
+                  type: integer
+                video:
+                  type: integer
+            aspect_ratios:
+              type: array
+              items:
+                type: string
+            notes:
+              type: string
+        deliverables:
+          type: array
+          description: Placement-resolved deliverables list from the approved plan.
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              placement:
+                type: string
+              aspect_ratio:
+                type: string
+              status:
+                type: string
+        variant_count:
+          type: integer
+          description: Number of landing page variants; more than one means an A/B set.
+        variant_angles:
+          type: array
+          items:
+            type: string
+        brand_profile_ref:
+          type: string
+        input_photo_refs:
+          type: array
+          items:
+            type: string
+        workspace_path:
+          type: string
+          description: Repository-relative campaign workspace path under creatives/.
+        gallery_path:
+          type: string
+          description: Repository-relative path of the local gallery page.
+        success_metrics:
+          type: array
+          items:
+            type: string
+        decisions:
+          type: array
+          description: Key plan and approval decisions with rationale.
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              decision:
+                type: string
+              rationale:
+                type: string
+              decided_at:
+                type: string
+        notes:
+          type: string
+    ui_schema:
+      table_columns:
+        - campaign_name
+        - status
+        - variant_count
+        - workspace_path
+      summary_fields:
+        - objective
+        - single_minded_proposition
+      detail_sections:
+        - title: Brief
+          fields:
+            - campaign_name
+            - status
+            - objective
+            - product_description
+            - audience
+            - awareness_level
+            - single_minded_proposition
+            - tone
+            - mandatories
+        - title: Production
+          fields:
+            - media_request
+            - deliverables
+            - variant_count
+            - variant_angles
+            - input_photo_refs
+            - brand_profile_ref
+        - title: Outputs
+          fields:
+            - workspace_path
+            - gallery_path
+            - success_metrics
+            - decisions
+            - notes
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: campaign-brief
+      agent_guidance: Keep one brief per campaign as the canonical production record; update status and links as the run progresses instead of creating duplicates.
+  - key: campaign-evidence
+    name: Campaign Evidence
+    description: Visual signoff and verification evidence for produced campaign assets and pages.
+    schema:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+        - evidence_type
+        - summary
+        - status
+      properties:
+        title:
+          type: string
+        evidence_type:
+          type: string
+          enum:
+            - visual-signoff
+            - render-check
+            - copy-verification
+            - safe-zone-check
+            - page-weight-check
+            - operator-approval
+            - limitation
+        summary:
+          type: string
+          description: What was verified against the campaign plan, or what limitation remains.
+        status:
+          type: string
+          enum:
+            - passed
+            - failed
+            - blocked
+            - informational
+        campaign_ref:
+          type: string
+          description: Campaign brief external id or campaign slug this evidence belongs to.
+        manifest_entry_id:
+          type: string
+          description: Media manifest or deliverable id the verdict applies to.
+        target_ref:
+          type: string
+          description: Artifact ref or workspace-relative path that was reviewed.
+        findings:
+          type: array
+          description: Specific blocking or non-blocking findings with repair guidance.
+          items:
+            type: string
+        artifact_refs:
+          type: array
+          description: Screenshot or rendered-evidence artifact refs.
+          items:
+            type: string
+        reviewer:
+          type: string
+        run_plan_id:
+          type: integer
+        checked_at:
+          type: string
+          format: date-time
+    ui_schema:
+      table_columns:
+        - title
+        - evidence_type
+        - status
+        - checked_at
+      summary_fields:
+        - summary
+      detail_sections:
+        - title: Evidence
+          fields:
+            - title
+            - evidence_type
+            - status
+            - summary
+            - findings
+        - title: Traceability
+          fields:
+            - campaign_ref
+            - manifest_entry_id
+            - target_ref
+            - artifact_refs
+            - reviewer
+            - run_plan_id
+    config:
+      schema_version: stackos.resource.v1
+      record_kind: campaign-evidence
+      agent_guidance: Record one verdict per reviewed manifest entry or page with rendered evidence refs; separate blocking findings from notes explicitly.
+ui:
+  nav:
+    section: Marketing
+    items:
+      - key: marketing.resources
+        label: Data
+        to: resources?plugin_slug=marketing
+        matchPrefix: true
+      - key: marketing.templates
+        label: Workflows
+        to: workflow-templates?plugin_slug=marketing
+config:
+  schema_version: stackos.plugin.v1

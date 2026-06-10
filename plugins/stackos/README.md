@@ -89,6 +89,7 @@ tools until the workspace is connected. Agents should start with
 one hidden tool at a time through `toolbox.call`. This keeps the model context
 small without removing the daemon's richer capabilities.
 
-The installed plugin provides the StackOS entrypoint skill. Domain behavior
-lives in plugin manifests and workflow templates rather than hard-coded
-workflow skills.
+The installed plugin provides a short StackOS entrypoint skill. Keep it as
+navigation only: domain behavior belongs in plugin manifests and workflow
+templates, reusable main-agent guidance belongs in skill presets, and workflow
+authoring rules belong in `workflowTemplate.authoringGuide`.

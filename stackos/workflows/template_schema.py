@@ -562,9 +562,7 @@ class WorkflowTemplateSpec(BaseModel):
         skill_refs = {item.skill_ref for item in self.skill_requirements}
         if len(skill_refs) != len(self.skill_requirements):
             raise ValueError("duplicate skill requirement refs are not allowed")
-        skill_preset_refs = {
-            item.skill_preset_ref for item in self.skill_preset_requirements
-        }
+        skill_preset_refs = {item.skill_preset_ref for item in self.skill_preset_requirements}
         if len(skill_preset_refs) != len(self.skill_preset_requirements):
             raise ValueError("duplicate skill preset requirement refs are not allowed")
 
@@ -718,8 +716,8 @@ __all__ = [
     "TemplateIOSpec",
     "TemplateOwnerSpec",
     "WorkflowAgentRequirementSpec",
-    "WorkflowSkillRequirementSpec",
     "WorkflowSkillPresetRequirementSpec",
+    "WorkflowSkillRequirementSpec",
     "WorkflowStepTemplateSpec",
     "WorkflowTemplateIssue",
     "WorkflowTemplateSpec",

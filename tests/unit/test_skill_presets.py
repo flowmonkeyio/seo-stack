@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import stackos.skill_presets.loader as loader_module
+from stackos.operations.skill_presets import resolve_skill_preset_requirements
 from stackos.skill_presets import SkillPresetLoader, parse_skill_preset_bundle_yaml
 from stackos.skill_presets.schema import validate_skill_preset_obj
-from stackos.operations.skill_presets import resolve_skill_preset_requirements
 from stackos.workflows.template_schema import WorkflowSkillPresetRequirementSpec
 
 
@@ -20,9 +20,7 @@ def test_skill_preset_loader_lists_bundled_presets() -> None:
     assert all(item.adaptation_required for item in listing.presets)
     by_key = {item.key: item for item in listing.presets}
     assert by_key["stackos.sdlc.delivery-orchestrator"].plugin_slug == "engineering"
-    assert by_key["stackos.sdlc.delivery-orchestrator"].skill_type == (
-        "main-agent-orchestration"
-    )
+    assert by_key["stackos.sdlc.delivery-orchestrator"].skill_type == ("main-agent-orchestration")
 
 
 def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
@@ -63,9 +61,10 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
         "high_risk",
         "blocked",
     }
-    assert "Broad suites require a stated risk reason" in calibration["proof_selection"][
-        "broad_test_rule"
-    ]
+    assert (
+        "Broad suites require a stated risk reason"
+        in calibration["proof_selection"]["broad_test_rule"]
+    )
     assert calibration["proof_selection"]["examples"][0]["proof"] == (
         "YAML load plus skillPreset/agentPreset resolver smoke, not full repository tests."
     )
@@ -80,9 +79,9 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     assert "Agents/reviewers: <names or none>" in reporting["ticket_end"]["fields"]
     assert "interpreted fixed issue" in reporting["ticket_end"]["fields"][-1]
     assert "synthesize useful TLDR content" in reporting["ticket_end"]["content_rule"]
-    assert "Calibration: <micro/standard/high-risk/blocked and why>" in reporting[
-        "task_end"
-    ]["fields"]
+    assert (
+        "Calibration: <micro/standard/high-risk/blocked and why>" in reporting["task_end"]["fields"]
+    )
     assert "One-brain architecture: ✅/❌" in reporting["task_end"]["fields"]
     assert reporting["task_end"]["style"]["no_long_paragraphs"] is True
     assert "do not restate every mechanical step" in reporting["task_end"]["content_rule"]

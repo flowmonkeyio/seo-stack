@@ -163,7 +163,7 @@ def test_run_plan_schema_warns_when_action_refs_lack_executable_grants() -> None
     assert "action.execute" in result.warnings[0].message
 
 
-def test_run_plan_schema_warns_for_template_derived_contracts_without_grants() -> None:
+def test_run_plan_schema_builds_template_derived_grants() -> None:
     template = WorkflowTemplateSpec.model_validate(
         {
             "schema_version": "stackos.workflow-template.v1",
@@ -220,14 +220,22 @@ def test_run_plan_schema_warns_for_template_derived_contracts_without_grants() -
     result = validate_run_plan_obj(plan.model_dump(mode="json"))
 
     assert result.valid is True
-    codes = {warning.code for warning in result.warnings}
-    assert {
-        "missing_action_execute_grant",
-        "missing_resource_upsert_grant",
-        "missing_context_query_grant",
-        "missing_artifact_create_grant",
-    } <= codes
-    assert "send_email -> communications.smtp.email.send" in result.warnings[0].message
+    assert result.warnings == []
+    assert plan.steps[0].action_refs == ["communications.smtp.email.send"]
+    grants = plan.grant_snapshot_json["mcp_tool_grants"]
+    assert {(grant["step_id"], grant["tool"]) for grant in grants} == {
+        ("notify", "action.execute"),
+        ("notify", "resource.upsert"),
+        ("notify", "context.query"),
+        ("notify", "artifact.create"),
+    }
+    action_grant = next(grant for grant in grants if grant["tool"] == "action.execute")
+    resource_grant = next(grant for grant in grants if grant["tool"] == "resource.upsert")
+    context_grant = next(grant for grant in grants if grant["tool"] == "context.query")
+    assert action_grant["action_refs"] == ["communications.smtp.email.send"]
+    assert resource_grant["resource_key"] == "communication-delivery"
+    assert context_grant["sources"] == ["agent_requests"]
+    assert context_grant["fields"] == ["status", "summary"]
 
 
 def test_run_plan_schema_requires_communication_reply_sources() -> None:

@@ -13,10 +13,15 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 30
+    assert len(keys) == 35
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
+    assert "marketing.campaign.brief-analyst" in keys
+    assert "marketing.campaign.creative-director" in keys
+    assert "marketing.campaign.media-producer" in keys
+    assert "marketing.campaign.landing-page-builder" in keys
+    assert "marketing.campaign.visual-signoff-reviewer" in keys
     assert "support.workflow.issue-investigator" in keys
     assert "support.workflow.delivery-handoff" in keys
     assert "stackos.sdlc.test-designer" in keys
@@ -34,6 +39,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     by_key = {item.key: item for item in listing.presets}
     assert by_key["stackos.workflow.project-memory-review"].plugin_slug == "core"
     assert by_key["stackos.sdlc.planning"].plugin_slug == "engineering"
+    assert by_key["marketing.campaign.media-producer"].plugin_slug == "marketing"
     assert by_key["support.workflow.issue-investigator"].plugin_slug == "support"
     assert by_key["support.workflow.delivery-handoff"].plugin_slug == "support"
     assert by_key["communications.workflow.customer-feedback-intake"].plugin_slug == (

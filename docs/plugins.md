@@ -46,11 +46,19 @@ actions:
 - `core`: project memory, learnings, experiments, decisions, and shared context.
 - `communications`: Telegram bot, Slack bot, SMTP, IMAP, communication
   resources, and generic agent request triggers.
+- `engineering`: tracked delivery workflow, SDLC agent presets, and engineering
+  decision/evidence records.
 - `gtm`: go-to-market and RevOps provider contracts, resources, and templates.
+- `marketing`: campaign production workflow, brand profile and campaign brief
+  records, signoff evidence, and creative production agent presets.
 - `media-buying`: paid media provider contracts, resources, and templates.
 - `publishing`: CMS publishing providers, post actions, and publication records.
 - `seo`: SEO content/search resources, providers, actions, and templates.
-- `utils`: reusable utility actions such as image generation and web retrieval.
+- `support`: customer issue investigation and delivery handoff workflows.
+- `trackbooth`: Trackbooth Agent API action bridge for permission-filtered
+  catalog discovery and explicit operation execution.
+- `utils`: reusable utility actions such as image generation and edits, web
+  retrieval, and the deferred video generation contract.
 
 ## Actions
 

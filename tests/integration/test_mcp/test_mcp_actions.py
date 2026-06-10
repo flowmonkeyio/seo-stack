@@ -386,6 +386,30 @@ def _image_action_plan_json() -> dict:
     }
 
 
+def _image_edit_action_plan_json() -> dict:
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.image-edit-action.run",
+        "title": "Image edit action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "edit-image",
+                    "tool": "action.execute",
+                    "action_refs": ["utils.image.edit"],
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "edit-image",
+                "title": "Edit image",
+                "action_refs": ["utils.image.edit"],
+            }
+        ],
+    }
+
+
 def _firecrawl_action_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
@@ -883,6 +907,80 @@ def test_action_execute_openai_images_grant_returns_sanitized_artifact_refs(
     assert "Authorization" not in rendered
     path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
     assert path.read_bytes() == b"webp"
+
+
+def test_action_execute_openai_image_edit_uses_input_reference_images(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_openai_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "openai-images", "monthly_budget_usd": 10.0},
+        headers={"authorization": f"Bearer {mcp_client.auth_token}"},
+    )
+    assert budget_resp.status_code == 200
+    input_dir = mcp_settings.generated_assets_dir / "uploads"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "product.png").write_bytes(b"product-photo")
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _image_edit_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "edit-image",
+            "run_token": run_token,
+        },
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.openai.com/v1/images/edits",
+        json={"data": [{"b64_json": base64.b64encode(b"edited-webp").decode("ascii")}]},
+    )
+
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.image.edit",
+            "input_json": {
+                "prompt": "same product on a marble table",
+                "input_image_refs": ["/generated-assets/uploads/product.png"],
+                "n": 1,
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+
+    data = out["data"]
+    item = data["output_json"]["data"][0]
+    rendered = json.dumps(data)
+    vendor_request = httpx_mock.get_requests()[-1]
+    assert vendor_request.headers["content-type"].startswith("multipart/form-data; boundary=")
+    vendor_body = vendor_request.content
+    assert b'name="prompt"' in vendor_body
+    assert b"same product on a marble table" in vendor_body
+    assert b'name="image"; filename="product.png"' in vendor_body
+    assert b"Content-Type: image/png" in vendor_body
+    assert b"product-photo" in vendor_body
+    assert b"data:image/png;base64" not in vendor_body
+    assert item["url"].startswith("/generated-assets/openai-images/openai-")
+    assert "b64_json" not in item
+    assert "sk-openai" not in rendered
+    path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"edited-webp"
 
 
 def test_action_execute_firecrawl_grant_uses_generic_connector(

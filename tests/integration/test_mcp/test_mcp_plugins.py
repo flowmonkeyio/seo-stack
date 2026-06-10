@@ -12,6 +12,7 @@ def test_plugin_catalog_read_tools_are_callable(mcp_client: MCPClient) -> None:
         "support",
         "communications",
         "gtm",
+        "marketing",
         "media-buying",
         "trackbooth",
         "publishing",

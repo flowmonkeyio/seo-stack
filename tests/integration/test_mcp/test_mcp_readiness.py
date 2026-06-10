@@ -175,3 +175,23 @@ def test_readiness_check_resolves_cross_plugin_utility_action_contracts(
     assert "media-buying.image.generate" not in media_refs
     assert all(item["code"] != "action_not_found" for item in gtm["missing"])
     assert all(item["code"] != "action_not_found" for item in media["missing"])
+
+
+def test_readiness_check_marketing_campaign_scopes_current_image_flow_only(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+
+    readiness = mcp_client.call_tool_structured(
+        "readiness.check",
+        {"project_id": project_id, "workflow_key": "marketing.campaign-production"},
+    )
+
+    refs = {item["action_ref"] for item in readiness["actions"]}
+    providers = {item["provider_key"] for item in readiness["missing"]}
+    assert refs == {"utils.image.generate", "utils.image.edit"}
+    assert providers == {"openai-images"}
+    assert "utils.video.generate" not in refs
+    assert all(item["code"] != "action_not_found" for item in readiness["missing"])
+    assert readiness["next_steps"][0]["tool"] == "runPlan.create"

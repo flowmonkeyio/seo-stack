@@ -1,0 +1,560 @@
+schema_version: stackos.workflow-template.v1
+key: marketing.campaign-production
+name: Marketing Campaign Production
+version: 0.1.0
+description: Reusable end-to-end campaign production workflow from brand and product intake through planned media generation, landing page variants, visual signoff, and a local gallery of all produced artifacts.
+domain: marketing
+owner:
+  team: StackOS
+when_to_use:
+  - A user asks to produce a marketing campaign from a brand identity, product description, and product photo.
+  - Campaign media (images, short videos), landing page variants, and a reviewable gallery should be produced together with durable state and signoff evidence.
+  - Landing page A/B variants and their media requirements should be planned and approved before any generation spend.
+when_not_to_use:
+  - The user wants one ad-hoc image or video with no campaign state; use the utils actions directly through a one-off run plan.
+  - The work is paid media distribution such as campaign launch, budget changes, or experiments on live traffic; use the media-buying workflows.
+  - The user only wants copy or a single page edit with no media production or signoff.
+agent_requirements:
+  - role: campaign-brief-analyst
+    requirement: required
+    agent_preset_ref: marketing.campaign.brief-analyst
+    purpose: Convert raw operator inputs into a complete structured campaign brief with persisted input artifacts and an explicit, operator-chosen media request.
+    applies_to_steps:
+      - intake-brief
+  - role: creative-director
+    requirement: required
+    agent_preset_ref: marketing.campaign.creative-director
+    purpose: Turn the approved brief into the campaign plan and media manifest that production executes and signoff verifies against.
+    applies_to_steps:
+      - plan-campaign
+  - role: media-producer
+    requirement: required
+    agent_preset_ref: marketing.campaign.media-producer
+    purpose: Execute approved manifest entries through granted generation actions with product fidelity, set consistency, and budget discipline.
+    applies_to_steps:
+      - produce-media
+  - role: landing-page-builder
+    requirement: required
+    agent_preset_ref: marketing.campaign.landing-page-builder
+    purpose: Build self-contained landing page variants and the local gallery from approved plans and produced media.
+    applies_to_steps:
+      - build-landing-pages
+      - build-gallery
+  - role: visual-signoff-reviewer
+    requirement: required
+    agent_preset_ref: marketing.campaign.visual-signoff-reviewer
+    purpose: Verify every produced asset and page against the approved plan with rendered evidence and explicit verdicts.
+    applies_to_steps:
+      - visual-signoff
+skill_requirements:
+  - skill_ref: stackos:stackos
+    requirement: recommended
+    purpose: Teach the main agent how to operate StackOS MCP, workflow templates, run plans, tracker state, grants, and evidence.
+    setup_notes:
+      - Use this skill before planning or executing the workflow when the host supports skills.
+      - Keep run-plan state canonical for execution; campaign.md in the workspace is the operator-readable mirror, not a replacement.
+skill_preset_requirements:
+  - skill_preset_ref: marketing.campaign-production-orchestrator
+    requirement: required
+    purpose: Give the main agent the project-adapted campaign production loop for intake gates, workspace and campaign.md upkeep, plan-first discipline, traceability, and truthful closeout.
+    applies_to_steps:
+      - intake-brief
+      - setup-workspace
+      - plan-campaign
+      - produce-media
+      - build-landing-pages
+      - visual-signoff
+      - build-gallery
+      - closeout
+    setup_notes:
+      - Resolve and adapt this preset before execution; do not use it as a global installed skill.
+      - The main agent stays accountable for integration, approvals, and final claims across all specialist handoffs.
+inputs:
+  - key: campaign_name
+    name: Campaign Name
+    type: string
+    required: false
+    description: Operator-facing campaign name; the intake step proposes one and a workspace slug when missing.
+  - key: brand_identity
+    name: Brand Identity
+    type: object
+    required: false
+    description: Inline brand identity (name, voice, palette, typography, logo refs, rules). Optional only when brand_profile_ref or a stored brand-profile resource resolves it; intake must elicit it otherwise.
+  - key: brand_profile_ref
+    name: Brand Profile Ref
+    type: string
+    required: false
+    description: External id or title of a stored brand-profile resource to reuse instead of inline brand_identity.
+  - key: product_description
+    name: Product Description
+    type: string
+    required: true
+    description: What the product is, who it serves, and what outcome it delivers.
+  - key: product_photo_refs
+    name: Product Photo Refs
+    type: array
+    required: true
+    description: Product photos as URLs or local file paths; intake persists each one as an artifact before planning.
+  - key: media_request
+    name: Media Request
+    type: object
+    required: true
+    description: Operator-chosen media formats (image, video, or both), counts, and aspect ratios. This choice is never defaulted; intake stops and elicits it when missing or ambiguous.
+  - key: landing_page_variant_count
+    name: Landing Page Variant Count
+    type: integer
+    required: false
+    description: Number of landing page variants to produce; values above one create an A/B set with one explicit angle per variant. Defaults to one.
+  - key: audience
+    name: Audience
+    type: string
+    required: false
+    description: Target audience and any known awareness level.
+  - key: offer
+    name: Offer
+    type: string
+    required: false
+    description: Offer, price framing, or call-to-action intent for the campaign.
+context_requirements:
+  - id: brand_profiles
+    source: resources
+    purpose: Reuse stored brand identity instead of re-eliciting it each campaign.
+    filters:
+      plugin_slug: marketing
+      resource_keys:
+        - brand-profile
+    fields:
+      - resource_key
+      - title
+      - data_json
+      - updated_at
+    max_items: 5
+    return_mode: compact
+  - id: prior_campaigns
+    source: resources
+    purpose: Read prior campaign briefs for naming, angles, and reusable decisions before planning a new one.
+    filters:
+      plugin_slug: marketing
+      resource_keys:
+        - campaign-brief
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 10
+    return_mode: compact
+  - id: existing_creatives
+    source: resources
+    purpose: Read existing creative and landing-page records so new production extends instead of duplicating them.
+    filters:
+      plugin_slug: media-buying
+      resource_keys:
+        - creative
+        - landing-page
+    fields:
+      - resource_key
+      - title
+      - status
+      - data_json
+      - updated_at
+    max_items: 20
+    return_mode: compact
+  - id: campaign_learnings
+    source: learnings
+    purpose: Apply prior campaign production lessons such as prompt patterns and signoff pitfalls.
+    filters:
+      tags:
+        - marketing
+        - campaign-production
+      statuses:
+        - active
+    fields:
+      - statement
+      - confidence
+      - evidence_json
+      - tags
+    max_items: 15
+    return_mode: compact
+  - id: recent_runs
+    source: runs
+    purpose: Check recent campaign runs and failed signoffs before repeating production work.
+    fields:
+      - kind
+      - status
+      - last_step
+      - metadata_json
+    max_items: 10
+    return_mode: compact
+capability_requirements:
+  - key: creative-production
+    required: true
+    description: Campaign planning, media production, page building, and gallery output through workflow execution.
+  - key: creative-review
+    required: true
+    description: Rendered-evidence visual signoff of produced assets and pages against the approved plan.
+  - key: image-generation
+    required: true
+    description: Image generation and reference-image edits for campaign media.
+    preferred_providers:
+      - openai-images
+  - key: video-generation
+    required: false
+    description: Short video generation; required at readiness time only when the media request includes video. The video.generate action is deferred until a vendor backend is wired.
+    preferred_providers:
+      - video-generation
+auth_requirements:
+  - key: openai_images
+    provider: openai-images
+    auth_type: api-key
+    optional: false
+    description: Daemon-held OpenAI key for image generation and reference edits.
+  - key: video_generation
+    provider: video-generation
+    auth_type: api-key
+    optional: true
+    description: Daemon-held key for the selected video backend; optional until the video connector is enabled.
+action_contracts:
+  - key: image_generate
+    action: image.generate
+    capability: image-generation
+    provider: openai-images
+    risk_level: cost
+    auth_ref: openai_images
+    approval_ref: generation_budget_review
+  - key: image_edit
+    action: image.edit
+    capability: image-generation
+    provider: openai-images
+    risk_level: cost
+    auth_ref: openai_images
+    approval_ref: generation_budget_review
+  - key: video_generate
+    action: video.generate
+    capability: video-generation
+    provider: video-generation
+    risk_level: cost
+    auth_ref: video_generation
+    approval_ref: generation_budget_review
+resource_contracts:
+  - key: brand_profiles
+    resource: brand-profile
+    purpose: Store or update the durable brand identity used to steer prompts, pages, and signoff checks.
+  - key: campaign_briefs
+    resource: campaign-brief
+    purpose: Store the canonical campaign record; brief, media request, plan decisions, workspace and gallery paths, and lifecycle status.
+  - key: campaign_evidence
+    resource: campaign-evidence
+    purpose: Store per-item signoff verdicts with rendered evidence refs and explicit findings.
+  - key: creatives
+    resource: creative
+    purpose: Store produced media records in the shared media-buying creative resource so paid-media workflows can consume them without copying.
+  - key: landing_pages
+    resource: landing-page
+    purpose: Store landing page variant records with angle metadata in the shared media-buying resource consumed by experiment and launch workflows.
+policies:
+  - key: agent_decides_strategy
+    kind: boundary
+    description: The workflow defines campaign production contracts; agents still decide creative strategy from brief, brand, and project context.
+  - key: media_choice_explicit
+    kind: boundary
+    description: The media format request (image, video, or both, with counts and ratios) is an operator decision; agents elicit it when missing and never default or assume it.
+  - key: plan_before_production
+    kind: approval
+    description: No media generation, spend, or page building happens before the operator approves the campaign plan at the plan_confirmation gate.
+  - key: requirement_traceability
+    kind: verification
+    description: Every produced artifact maps to one approved manifest entry, and signoff verifies the artifact against that entry's acceptance criteria.
+  - key: brand_fidelity
+    kind: quality
+    description: Brand palette is specified as hex plus descriptive names, product output stays faithful to input photos through reference edits, and one campaign style block is reused across the set.
+  - key: workspace_canonical
+    kind: delivery
+    description: The repository workspace creatives/{campaign-slug}/ with campaign.md is the operator-readable campaign record; daemon resources, artifacts, and audit rows remain the execution truth; pages reference media by relative paths.
+  - key: local_gallery_only
+    kind: boundary
+    description: Landing pages and the gallery are local files for review; this workflow performs no external publishing, sends, or deploys.
+  - key: evidence_over_assertion
+    kind: verification
+    description: Signoff verdicts come from rendered output and recorded evidence, not from producer claims or prompt intent.
+  - key: no_secret_exposure
+    kind: auth
+    description: Provider credentials stay daemon-side; agents see only safe refs and opaque credential refs during generation calls.
+approval_gates:
+  - key: plan_confirmation
+    description: Operator reviews the campaign brief, plan, media manifest, variant angles, and estimated generation cost before any production starts.
+    required_when: always
+  - key: generation_budget_review
+    description: Operator reviews estimated generation spend when it exceeds the project threshold.
+    required_when: estimated_cost_above_project_threshold
+steps:
+  - id: intake-brief
+    title: Intake Campaign Brief
+    purpose: Convert operator inputs into a complete structured campaign brief with persisted input artifacts and an explicit media request.
+    instructions:
+      - Resolve brand identity from brand_identity, brand_profile_ref, or stored brand-profile resources; elicit it when none resolves.
+      - Treat the media request as a required operator decision; when kinds, counts, or aspect ratios are missing or ambiguous, stop and ask instead of assuming.
+      - Persist every product photo as an artifact so downstream steps reference stable refs; reject inputs that are neither reachable URLs nor readable files.
+      - Complete the brief to professional standard; objective, audience and awareness level, single-minded proposition, tone, mandatories and do-not-say rules, placement-resolved deliverables, and a success metric per deliverable.
+      - Propose campaign_name and a campaign slug when missing, and record the campaign-brief resource with status intake.
+      - When the media request includes video, check video.generate availability now and carry the result into planning as an explicit operator decision point.
+    input_refs:
+      - campaign_name
+      - brand_identity
+      - brand_profile_ref
+      - product_description
+      - product_photo_refs
+      - media_request
+      - landing_page_variant_count
+      - audience
+      - offer
+    context_refs:
+      - brand_profiles
+      - prior_campaigns
+      - campaign_learnings
+      - recent_runs
+    policy_refs:
+      - media_choice_explicit
+      - agent_decides_strategy
+    resource_refs:
+      - brand_profiles
+      - campaign_briefs
+    output_refs:
+      - campaign_brief
+    success_criteria:
+      - The media request is explicit, operator-chosen, and complete enough to plan counts and ratios per placement.
+      - Brand identity, product description, and persisted product photo artifacts are resolved and referenced from the brief.
+      - The campaign-brief resource exists with status intake and a proposed workspace slug.
+  - id: setup-workspace
+    title: Set Up Campaign Workspace
+    purpose: Create the repository campaign workspace and scaffold campaign.md as the operator-readable campaign ledger.
+    instructions:
+      - Create creatives/{campaign-slug}/ in the repository root with inputs/, media/, and pages/ subdirectories.
+      - Scaffold campaign.md from the brief; campaign summary, inputs, brand voice, media request, and placeholders for plan, production log, signoff, and final links.
+      - Copy persisted input photos into inputs/ so the workspace is self-contained.
+      - Record workspace_path on the campaign-brief resource and keep campaign.md updated at the fixed checkpoints for plan approval, production, signoff, and closeout.
+    policy_refs:
+      - workspace_canonical
+    resource_refs:
+      - campaign_briefs
+    depends_on:
+      - intake-brief
+    output_refs:
+      - workspace_summary
+    success_criteria:
+      - The workspace exists with the expected layout and a campaign.md scaffold a non-engineer can read.
+      - The campaign-brief resource points at the workspace path.
+  - id: plan-campaign
+    title: Plan Campaign And Media Manifest
+    purpose: Produce the campaign plan that production executes and signoff verifies; media manifest, landing page variant plans, gallery plan, and cost estimate.
+    instructions:
+      - Write a media manifest where every asset has an id, kind, purpose and placement, prompt draft, aspect ratio, and checkable acceptance criteria.
+      - Cover each image concept across its required placements with the ratio set the deliverables name, and diversify three to five distinct creative angles before adding executions of one angle.
+      - Plan each landing page variant in advance with its own media requirements, assigned angle or hypothesis, and message-match to the ad creatives pointing at it.
+      - For video entries, plan single short clips with a hook in the first two to three seconds, one camera move and one action per shot, named palette anchors, and product-only reference frames.
+      - Estimate generation cost from the draft-cheap finalize-high ladder and include it in the plan for the approval gate.
+      - When video was requested but video.generate is deferred or its provider is unconfigured, present the operator an explicit image-only downgrade or stop decision inside the plan instead of silently dropping video.
+      - After the plan_confirmation gate passes, record the approved plan and its decisions with rationale in campaign.md and update the campaign-brief resource to status approved.
+    context_refs:
+      - existing_creatives
+      - campaign_learnings
+    policy_refs:
+      - plan_before_production
+      - media_choice_explicit
+      - requirement_traceability
+      - agent_decides_strategy
+    resource_refs:
+      - campaign_briefs
+    depends_on:
+      - setup-workspace
+    output_refs:
+      - campaign_plan
+    success_criteria:
+      - Every manifest entry traces to a brief requirement and carries acceptance criteria the signoff reviewer can check.
+      - Landing page variants have explicit angles and pre-planned media requirements.
+      - The plan names estimated cost and any video downgrade decision explicitly.
+  - id: produce-media
+    title: Produce Campaign Media
+    purpose: Execute approved manifest entries through granted generation actions and materialize results into the campaign workspace.
+    instructions:
+      - Execute only approved manifest entries; scope changes go back to planning instead of being improvised during production.
+      - Use image.edit with the product photo as the first input image whenever output must contain the actual product, and restate the preserve list in every iteration.
+      - Reuse one fixed campaign style block verbatim across all assets, specify brand colors as hex plus descriptive name, and mark literal in-image text as exact.
+      - Draft on cheap profiles and finalize on high quality; change one variable per retry and stop for operator guidance instead of burning budget after repeated misses.
+      - Record each produced asset against its manifest id with prompt, model, and cost in campaign.md, store artifacts, and upsert creative resource records with workspace and artifact refs.
+      - Copy final assets from generated assets into the workspace media/ directory so pages and the gallery use relative references.
+    action_refs:
+      - image_generate
+      - image_edit
+    approval_refs:
+      - plan_confirmation
+      - generation_budget_review
+    policy_refs:
+      - plan_before_production
+      - brand_fidelity
+      - requirement_traceability
+      - no_secret_exposure
+    resource_refs:
+      - creatives
+      - campaign_briefs
+    depends_on:
+      - plan-campaign
+    output_refs:
+      - media_production_log
+    success_criteria:
+      - Every approved manifest entry has a produced asset in the workspace or an explicit recorded blocker.
+      - Production stayed within approved scope and budget gates, with prompts and costs logged per asset.
+  - id: build-landing-pages
+    title: Build Landing Page Variants
+    purpose: Build each planned variant as a self-contained static page in the workspace using produced media and the approved angle.
+    instructions:
+      - Build one self-contained HTML file per variant under pages/ with relative media references and no external scripts, trackers, or fonts.
+      - Follow the planned page anatomy; benefit-led headline, subhead, hero media, one primary call to action above the fold, then trust, benefits, how-it-works, social proof near decisions, objection handling, and a final call to action.
+      - Keep pages mobile-first with adequate tap targets and a hero media weight budget; use a static hero unless the plan explicitly chose motion.
+      - Implement each variant's assigned angle faithfully and keep message-match with the ad creatives that will point at it.
+      - Upsert landing-page resource records with variant angle metadata, workspace paths, and campaign refs.
+    policy_refs:
+      - brand_fidelity
+      - requirement_traceability
+      - workspace_canonical
+      - local_gallery_only
+    resource_refs:
+      - landing_pages
+      - campaign_briefs
+    depends_on:
+      - produce-media
+    output_refs:
+      - pages_summary
+    success_criteria:
+      - Each planned variant exists as a self-contained page that renders from the local filesystem with working relative references.
+      - Variant angles match the approved plan and pages reference only produced, signoff-eligible media.
+  - id: visual-signoff
+    title: Visual Signoff
+    purpose: Verify every produced asset and page against the approved plan with rendered evidence and explicit per-item verdicts.
+    instructions:
+      - Render every asset and page before judging; review rendered output across a mobile-to-desktop viewport sweep, never source alone.
+      - Check each manifest entry's acceptance criteria one by one; product and label fidelity, palette against brand hex, exact in-image and on-page text, ratio and safe-zone compliance, relative path integrity, and page weight budget.
+      - Record one campaign-evidence verdict per reviewed item with screenshot artifact refs, separating blocking findings from notes.
+      - Return failures to the producing step with concrete repair guidance and re-verify after fixes instead of softening criteria.
+      - Update the signoff section of campaign.md with per-item outcomes.
+    policy_refs:
+      - evidence_over_assertion
+      - requirement_traceability
+    resource_refs:
+      - campaign_evidence
+      - campaign_briefs
+    depends_on:
+      - build-landing-pages
+    output_refs:
+      - signoff_report
+    success_criteria:
+      - Every manifest entry and page has a recorded verdict with rendered evidence refs.
+      - No blocking finding remains open or hidden as a note.
+  - id: build-gallery
+    title: Build Campaign Gallery
+    purpose: Build the local human-readable gallery page that presents everything the campaign produced to a non-engineer.
+    instructions:
+      - Build gallery.html in the workspace root with relative links only; a plain-language campaign summary on top, a visual grid of every asset with readable labels and playable videos, and one card per landing page variant stating its angle in one sentence.
+      - Show signoff status per item in plain language and keep all technical identifiers, JSON, and run-plan jargon out of the page.
+      - Record gallery_path on the campaign-brief resource and in campaign.md.
+    policy_refs:
+      - workspace_canonical
+      - local_gallery_only
+    resource_refs:
+      - campaign_briefs
+    depends_on:
+      - visual-signoff
+    output_refs:
+      - gallery_summary
+    success_criteria:
+      - The gallery opens from the local filesystem and presents all assets, pages, and statuses readably for a non-engineer.
+      - The campaign-brief resource and campaign.md point at the gallery path.
+  - id: closeout
+    title: Campaign Closeout
+    purpose: Reconcile state, finalize the campaign ledger, and hand the operator one front door to everything produced.
+    instructions:
+      - Verify every brief requirement maps to produced artifacts and signoff evidence; record gaps as explicit limitations instead of claiming completeness.
+      - Finalize campaign.md with final links, decisions, limitations, and the production log, and set the campaign-brief resource status to complete.
+      - Hand the operator the gallery path as the single entry point, with variant pages and the workspace listed beneath it.
+      - Name the natural next steps without executing them; media-buying experiment or launch workflows can consume the stored creative and landing-page records directly.
+      - Capture durable lessons through the learning hook only when evidence supports them.
+    policy_refs:
+      - evidence_over_assertion
+      - workspace_canonical
+    resource_refs:
+      - campaign_briefs
+      - campaign_evidence
+    depends_on:
+      - build-gallery
+    output_refs:
+      - closeout_summary
+    success_criteria:
+      - Closeout claims match recorded evidence, resources, and workspace state with no unrecorded gaps.
+      - The operator receives the gallery path plus a truthful summary of produced scope, limitations, and handoffs.
+outputs:
+  - key: campaign_brief
+    name: Campaign Brief
+    type: object
+    required: true
+  - key: workspace_summary
+    name: Workspace Summary
+    type: object
+    required: true
+  - key: campaign_plan
+    name: Campaign Plan
+    type: object
+    required: true
+  - key: media_production_log
+    name: Media Production Log
+    type: object
+    required: true
+  - key: pages_summary
+    name: Pages Summary
+    type: object
+    required: true
+  - key: signoff_report
+    name: Signoff Report
+    type: object
+    required: true
+  - key: gallery_summary
+    name: Gallery Summary
+    type: object
+    required: true
+  - key: closeout_summary
+    name: Closeout Summary
+    type: object
+    required: true
+learning_hooks:
+  - key: campaign_production_learning
+    prompt: Record durable campaign production lessons such as prompt patterns, brand adaptation rules, and signoff pitfalls only when supported by explicit evidence and provenance.
+    tags:
+      - marketing
+      - campaign-production
+failure_handling:
+  - If required inputs are missing, especially the media format request, stop intake and elicit the operator decision instead of defaulting it.
+  - If video is requested while video.generate is deferred or its provider is unconfigured, surface the gap before planning completes and record the operator's downgrade or stop decision in the plan.
+  - If a generation repeatedly misses acceptance criteria, change one variable per retry, then stop for operator guidance instead of burning budget.
+  - If the budget or plan approval gate is denied, store the brief and plan without generating and report the denial truthfully.
+  - If visual signoff finds blocking issues, return to the specific producing step with the recorded findings and re-verify after fixes.
+  - If shared creative or landing-page resource writes are unavailable in this project, record produced assets on the campaign brief and report the missing grant instead of inventing a replacement store.
+metadata:
+  builtin: true
+  run_mode: stackos_run_plan
+  workflow_family: campaign-production
+  baseline: brief_to_gallery
+  agent_subset:
+    - campaign-brief-analyst
+    - creative-director
+    - media-producer
+    - landing-page-builder
+    - visual-signoff-reviewer
+  step_ids:
+    - intake-brief
+    - setup-workspace
+    - plan-campaign
+    - produce-media
+    - build-landing-pages
+    - visual-signoff
+    - build-gallery
+    - closeout

@@ -15,6 +15,8 @@ from stackos.operations.skill_presets import (
     ResolvedWorkflowSkillPresetOut,
     UnresolvedWorkflowSkillPresetOut,
     resolve_skill_preset_requirements,
+)
+from stackos.operations.skill_presets import (
     setup_guidance as skill_preset_setup_guidance,
 )
 from stackos.operations.spec import (
@@ -27,8 +29,8 @@ from stackos.repositories.base import NotFoundError
 from stackos.workflows.template_loader import WorkflowTemplateLoader, WorkflowTemplateSummaryOut
 from stackos.workflows.template_schema import (
     WorkflowAgentRequirementSpec,
-    WorkflowSkillRequirementSpec,
     WorkflowSkillPresetRequirementSpec,
+    WorkflowSkillRequirementSpec,
 )
 
 AgentRequirementKind = Literal["required", "recommended", "optional"]

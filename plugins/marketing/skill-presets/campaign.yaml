@@ -1,0 +1,122 @@
+presets:
+  - schema_version: stackos.skill-preset.v1
+    key: marketing.campaign-production-orchestrator
+    name: Campaign Production Orchestrator
+    version: 0.1.0
+    description: Generic main-agent orchestration preset for end-to-end marketing campaign production from intake brief through plan approval, media production, landing pages, visual signoff, and gallery closeout.
+    domain: marketing
+    skill_type: main-agent-orchestration
+    generic_preset: true
+    applies_to_workflows:
+      - marketing.campaign-production
+    recommended_tools:
+      - workspace.startSession
+      - workflowTemplate.describe
+      - agentPreset.resolveForWorkflow
+      - skillPreset.resolveForWorkflow
+      - readiness.check
+      - runPlan.create
+      - runPlan.start
+      - runPlan.claimStep
+      - runPlan.recordStep
+      - action.execute
+      - resource.upsert
+      - resource.query
+      - artifact.create
+      - learning.create
+    project_adaptation:
+      required: true
+      do_not_use_verbatim: true
+      instruction: Adapt this generic campaign production loop to the active project before acting. Preserve the lifecycle gates, but rewrite brand rules, creatives directory conventions, workspace paths, tools, budget policy, and signoff expectations from project context.
+      required_context_refs:
+        - ref: AGENTS.md
+          purpose: Project rules, command prefixes, allowed tools, and local constraints.
+        - ref: stackos:stackos
+          purpose: Host-side StackOS skill for MCP, workflow, run-plan, resource, action, artifact, and evidence mechanics.
+        - ref: project-local docs and skills
+          purpose: Repository README, docs router, local skills, or other project-specific guidance when present; do not assume StackOS docs are checked into customer repos.
+        - ref: brand guidelines and identity sources
+          purpose: Brand voice, palette, logo usage, typography, claims rules, and do-not-say constraints from brand-profile resources or repo brand docs when present.
+      conditional_context_refs:
+        - ref: existing creatives directory conventions
+          purpose: Local naming, layout, and ledger conventions for campaign workspaces under creatives/.
+          when: A creatives/ directory already exists in the repository.
+        - ref: prior campaign workspaces under creatives/
+          purpose: Earlier campaign directories, campaign.md ledgers, manifests, and produced assets that establish precedent and reusable learnings.
+          when: Earlier campaign workspaces exist in the repository.
+        - ref: brand asset library
+          purpose: Logo files, product photo sets, fonts, and approved imagery used as generation inputs and fidelity references.
+          when: The project or operator provides brand asset files or directories.
+        - ref: docs/README.md
+          purpose: Use as the project docs router when the current repository provides one.
+          when: The file exists in the current repository.
+      prompt_assembly_order:
+        - generic_skill_preset
+        - project_adaptation_overlay
+        - workflow_skill_preset_requirements
+        - workflow_agent_requirements
+        - current_tracker_or_run_plan_context
+        - user_request
+      required_agent_action: >-
+        Before execution, create an adapted campaign operating brief for this
+        project. Read project guidance, brand guidelines, and prior campaign
+        workspaces; resolve the workflow template, agent presets, and readiness
+        state; and inspect existing StackOS run-plan state before creating a
+        new one. Keep campaign.md plus StackOS resources, artifacts, and
+        run-plan records canonical for campaign state instead of chat. Use
+        granted actions through action.execute with a discovered or created
+        execution context passed as context_ref, and inspect file-backed
+        generated assets through executionContext.artifact.* before re-running
+        provider calls. Delegate step work to the campaign specialist roles for
+        depth, but do not delegate away accountability for integration and
+        final claims.
+    operating_contract:
+      mission: Give the main agent a project-adapted operating loop for end-to-end campaign production from intake brief through gallery closeout.
+      responsibilities:
+        - Capture the operator request, constraints, and provided inputs into the brief intake step.
+        - Create the campaign workspace and scaffold campaign.md as soon as the run plan starts.
+        - Maintain campaign.md as the human-readable campaign ledger updated at fixed checkpoints.
+        - "Keep a traceability ledger: requirement -> manifest entry -> artifact -> evidence."
+        - "Sequence production strictly: media, then pages, then signoff, then gallery."
+        - Materialize generated media from daemon generated-assets into the workspace media/ directory so pages use relative refs.
+        - Keep variant integrity for A/B so each landing page variant implements its assigned angle.
+        - "Keep budget awareness across production: drafts cheap, finals high."
+        - Delegate step work to the five campaign specialist roles, while staying accountable for integration and final claims.
+      must_do:
+        - "Refuse to proceed past intake while required inputs are missing: media format choice, product photo, product description, and brand identity. Elicit them instead of defaulting."
+        - Create the campaign workspace creatives/{campaign-slug}/ with inputs/, media/, and pages/ subdirectories immediately after the run plan starts, and scaffold campaign.md.
+        - "Update campaign.md at fixed checkpoints: scaffold at setup; approved plan and decisions with rationale after the plan gate; production log with per-asset prompt, model, and cost during production; signoff verdicts; final links at closeout."
+        - "Enforce plan-before-production: no generation before the plan_confirmation approval gate passes."
+        - Record every requirement-to-manifest-to-artifact-to-evidence link so any produced item can be traced both ways.
+        - Run media production before pages, pages before signoff, and signoff before the gallery is finalized.
+        - Materialize generated media into the workspace media/ directory before page building so every page reference is a relative path.
+        - "Respect the generation_budget_review gate: draft on cheap settings, finalize on high, and stop for approval before exceeding budget."
+        - When video is requested but utils.video.generate is deferred or unconfigured, surface the gap during planning and record the explicit operator decision in the plan, either image-only downgrade or stop.
+        - "Close out truthfully: hand the operator the gallery link as the single front door, with closeout claims that match recorded evidence."
+      must_not_do:
+        - Do not generate media before plan approval.
+        - Do not decide the media format on the operator's behalf.
+        - Do not scatter campaign state across chat instead of campaign.md plus StackOS records.
+        - Do not let signoff failures pass as notes.
+      required_outputs:
+        - Campaign brief with operator-confirmed media format
+        - Campaign workspace scaffold with campaign.md ledger
+        - Approved campaign plan with media manifest and A/B angle assignments
+        - Traceability ledger from requirement to manifest entry to artifact to evidence
+        - Production log with per-asset prompt, model, and cost
+        - Landing page variants and gallery.html in the workspace
+        - Signoff verdicts with stored evidence
+        - Closeout summary with the gallery link as the single front door
+      success_criteria:
+        - No media is generated before the plan_confirmation gate passes, and required intake inputs are operator-provided, never defaulted.
+        - campaign.md, StackOS records, and the workspace contents agree with each other at every checkpoint.
+        - Every requirement traces to a manifest entry, artifact, and evidence record, and every variant keeps its assigned angle.
+        - The operator receives one working gallery link whose contents match recorded verdicts and evidence.
+      self_check:
+        - Did I elicit every missing required input instead of defaulting it?
+        - Did the plan_confirmation gate pass before any generation ran?
+        - Is campaign.md current for the checkpoint I just passed?
+        - Does every produced item trace back to a manifest entry and a brief requirement?
+        - Did media, pages, signoff, and gallery run in order, with media materialized for relative refs?
+        - Did I record an explicit operator decision for any deferred video capability?
+        - Do my closeout claims match the recorded evidence and signoff verdicts?

@@ -1056,6 +1056,34 @@ def test_openai_image_action_rejects_legacy_quality_for_gpt_profiles(
     )
 
 
+def test_openai_image_action_rejects_gpt_image_2_freeform_size_over_max_edge(
+    session: Session,
+    project_id: int,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="openai-images",
+        secret_payload=b"sk-openai",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "openai-images")
+
+    validation = ActionRepository(session).validate(
+        project_id=project_id,
+        action_ref="utils.image.generate",
+        input_json={
+            "prompt": "asset prompt",
+            "model": "gpt-image-2",
+            "size": "4096x1600",
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.size" and issue.code == "enum_mismatch" for issue in validation.issues
+    )
+
+
 def test_trackbooth_catalog_search_filters_live_catalog_and_uses_api_key_header(
     session: Session,
     project_id: int,
