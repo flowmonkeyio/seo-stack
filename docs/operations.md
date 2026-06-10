@@ -420,7 +420,10 @@ workflow key or action ref. It answers the scoped question: is this workflow or
 action executable now, and which exact credentials, budgets, connectors, or
 setup items are missing? For workflow templates, `ready=true` means the template
 is usable for planning/run-plan creation; `execution_ready=false` means only the
-listed action dependencies need setup before affected steps execute.
+listed action dependencies need setup before affected steps execute. Optional
+action-contract gaps are reported as `required_for:
+optional_action_execution`; resolve them only when the operator selected that
+branch.
 
 ## Execution Context Refs
 

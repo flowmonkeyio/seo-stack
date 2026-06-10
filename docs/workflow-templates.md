@@ -178,6 +178,11 @@ agent derives a run plan, it must resolve that contract to concrete action refs
 and MCP grants such as `action.execute` with `action_refs:
 [communications.smtp.email.send]`. `runPlan.validate` returns warnings when a
 template-derived plan is structurally valid but lacks the grants needed to run.
+Set `optional: true` on an action contract only for a branch the workflow can
+legitimately skip, such as one of several provider-specific video generators.
+Readiness still reports missing setup for optional contracts, but those gaps use
+`required_for: optional_action_execution` so the base workflow can remain
+execution-ready when the optional branch is not selected.
 
 Workflow templates are inert reusable contracts. They do not act by themselves.
 An agent turns a template into concrete workflow state with `runPlan.create`,

@@ -335,6 +335,7 @@ class ActionContractSpec(BaseModel):
     capability: str | None = Field(default=None, max_length=160)
     action: str | None = Field(default=None, max_length=160)
     provider: str | None = Field(default=None, max_length=160)
+    optional: bool = False
     risk_level: str = Field(default="read", max_length=40)
     input_schema_json: dict[str, Any] = Field(
         default_factory=dict,

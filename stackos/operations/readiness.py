@@ -228,6 +228,9 @@ def _workflow_readiness(
         referenced_contract_keys=_referenced_action_contract_keys(loaded.spec.steps),
     )
     missing = _dedupe_missing([item for action in actions for item in action.missing])
+    blocking_missing = [
+        item for item in missing if item.required_for != "optional_action_execution"
+    ]
     contract_blocked = any(item.code == "action_not_found" for item in missing)
     next_steps = [
         ReadinessNextStepOut(
@@ -265,7 +268,7 @@ def _workflow_readiness(
         scope="workflow",
         project_id=project_id,
         ready=not contract_blocked,
-        execution_ready=not missing and not contract_blocked,
+        execution_ready=not blocking_missing and not contract_blocked,
         missing=missing,
         warnings=warnings,
         next_steps=next_steps,
@@ -314,6 +317,7 @@ def _workflow_action_readiness(
             and (auth_by_key.get(contract.auth_ref) is not None)
             and auth_by_key[contract.auth_ref].optional
         )
+        optional_action = contract.optional
         try:
             described = ActionRepository(ctx.session).describe(
                 project_id=project_id,
@@ -359,6 +363,7 @@ def _workflow_action_readiness(
             credential_refs=described.availability.credential_refs,
             workflow_key=workflow_key,
             optional_auth=optional_auth,
+            optional_action=optional_action,
         )
         actions.append(action)
     return actions, warnings
@@ -439,6 +444,7 @@ def _action_out(
     credential_refs: list[str],
     workflow_key: str | None = None,
     optional_auth: bool = False,
+    optional_action: bool = False,
 ) -> ReadinessActionOut:
     missing = [
         _missing_item(
@@ -450,6 +456,7 @@ def _action_out(
             credential_refs=credential_refs,
             reason=reason,
             optional_auth=optional_auth,
+            optional_action=optional_action,
         )
         for reason in availability_reasons
     ]
@@ -478,8 +485,14 @@ def _missing_item(
     credential_refs: list[str],
     reason: str,
     optional_auth: bool,
+    optional_action: bool,
 ) -> ReadinessMissingItemOut | None:
     if reason == "credential_required":
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=optional_auth,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="credential",
             code=reason,
@@ -488,9 +501,7 @@ def _missing_item(
                 if provider_key
                 else f"Connect the required provider credential before executing {action_ref}."
             ),
-            required_for="action_execution_optional_provider"
-            if optional_auth
-            else "action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -499,11 +510,16 @@ def _missing_item(
             ui_url=_connections_url(project_id),
         )
     if reason == "credential_not_connected":
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=False,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="credential",
             code=reason,
             message=f"Existing credential for {action_ref} is not connected.",
-            required_for="action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -513,11 +529,16 @@ def _missing_item(
             ui_url=_connections_url(project_id),
         )
     if reason == "budget_required":
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=False,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="budget",
             code=reason,
             message=f"Set a {budget_kind!r} budget before executing {action_ref}.",
-            required_for="action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -526,11 +547,16 @@ def _missing_item(
             next_tool="budget.set",
         )
     if reason == "budget_exhausted":
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=False,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="budget",
             code=reason,
             message=f"Budget {budget_kind!r} is exhausted for {action_ref}.",
-            required_for="action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -539,11 +565,16 @@ def _missing_item(
             next_tool="budget.update",
         )
     if reason in {"plugin_disabled", "provider_disabled", "connector_not_registered"}:
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=False,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="setup",
             code=reason,
             message=f"Setup issue blocks {action_ref}: {reason}.",
-            required_for="action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -551,11 +582,16 @@ def _missing_item(
             next_tool="action.describe",
         )
     if reason.startswith("execution_mode:"):
+        required_for = _required_for(
+            default="action_execution",
+            optional_auth=False,
+            optional_action=optional_action,
+        )
         return ReadinessMissingItemOut(
             kind="setup",
             code="execution_mode_not_directly_executable",
             message=f"{action_ref} is not directly executable through action.execute/run.",
-            required_for="action_execution",
+            required_for=required_for,
             action_ref=action_ref,
             action_refs=[action_ref],
             workflow_key=workflow_key,
@@ -565,6 +601,19 @@ def _missing_item(
     if reason.startswith("project_id_required"):
         return None
     return None
+
+
+def _required_for(
+    *,
+    default: str,
+    optional_auth: bool,
+    optional_action: bool,
+) -> str:
+    if optional_action:
+        return "optional_action_execution"
+    if optional_auth:
+        return "action_execution_optional_provider"
+    return default
 
 
 def _dedupe_missing(items: list[ReadinessMissingItemOut]) -> list[ReadinessMissingItemOut]:

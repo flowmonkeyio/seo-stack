@@ -27,6 +27,10 @@ _SECRET_TEXT_RE = re.compile(
 _AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
 _BEARER_TEXT_RE = re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+")
 _TELEGRAM_BOT_URL_RE = re.compile(r"(?i)(/bot)\d{5,}:[A-Za-z0-9_-]+(?=/)")
+_SIGNED_URL_PARAM_RE = re.compile(
+    r"(?i)([?&](?:x-amz-[^=&\s\"']+|x-goog-[^=&\s\"']+|x-oss-[^=&\s\"']+|"
+    r"signature|sig|expires|expiresat|policy|security-token|token)=)[^&#\s\"']+"
+)
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -44,12 +48,15 @@ def redact_secrets(value: Any) -> Any:
         return redacted
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [redact_secrets(item) for item in value]
+    if isinstance(value, str):
+        return redact_secret_text(value)
     return value
 
 
 def redact_secret_text(value: str) -> str:
     """Redact secret-like assignments inside vendor-controlled text."""
     redacted = _AUTH_BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", value)
+    redacted = _SIGNED_URL_PARAM_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _SECRET_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     redacted = _TELEGRAM_BOT_URL_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)
     return _BEARER_TEXT_RE.sub(lambda match: f"{match.group(1)}[redacted]", redacted)

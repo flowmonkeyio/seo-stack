@@ -187,6 +187,7 @@ class BaseIntegration:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         auth: httpx.BasicAuth | None = None,
+        follow_redirects: bool = False,
         max_retries: int = DEFAULT_MAX_RETRIES,
         backoff_base: float = DEFAULT_BACKOFF_BASE,
     ) -> httpx.Response:
@@ -211,6 +212,7 @@ class BaseIntegration:
                     params=params,
                     headers=headers,
                     auth=auth,
+                    follow_redirects=follow_redirects,
                 )
             except httpx.HTTPError as exc:
                 _log.warning(

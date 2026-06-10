@@ -124,7 +124,9 @@ budget needed by `seo.keyword-research`, instead of making the project look
 blocked because unrelated providers are disconnected. Workflow readiness can be
 `ready=true` while `execution_ready=false`: the agent may still create or plan
 the run, but should connect the listed providers before executing affected
-action steps.
+action steps. Missing setup with `required_for:
+optional_action_execution` belongs to a branch the workflow can skip unless the
+operator selected that branch.
 
 Use `action.list` as the normal "what can I use now?" discovery path. It hides
 external-provider actions whose required integration is not connected, and it
