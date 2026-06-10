@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from stackos.integrations._base import BaseIntegration, IntegrationCallResult
 from stackos.integrations.ahrefs import AhrefsIntegration
+from stackos.integrations.byteplus_ark import BytePlusArkIntegration
 from stackos.integrations.dataforseo import DataForSeoIntegration
 from stackos.integrations.firecrawl import FirecrawlIntegration
 from stackos.integrations.ghost import GhostIntegration
@@ -50,6 +51,7 @@ REGISTRY: dict[str, type[BaseIntegration]] = {
     "reve": ReveImagesIntegration,
     "google-gemini-image": GoogleGeminiImageIntegration,
     "ideogram": IdeogramImagesIntegration,
+    "byteplus-ark": BytePlusArkIntegration,
     "openrouter": OpenRouterIntegration,
     "reddit": RedditIntegration,
     "google-paa": GooglePaaIntegration,
@@ -80,6 +82,7 @@ __all__ = [
     "REGISTRY",
     "AhrefsIntegration",
     "BaseIntegration",
+    "BytePlusArkIntegration",
     "DataForSeoIntegration",
     "FirecrawlIntegration",
     "GhostIntegration",

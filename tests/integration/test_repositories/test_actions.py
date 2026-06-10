@@ -31,7 +31,12 @@ from stackos.db.models import (
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.actions import ActionListInput, action_list
-from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
+from stackos.repositories.base import (
+    BudgetExceededError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from stackos.repositories.execution_contexts import ExecutionContextRepository
 from stackos.repositories.projects import (
     IntegrationBudgetRepository,
@@ -54,7 +59,8 @@ def _png_header(width: int, height: int) -> bytes:
 
 
 def _webp_header() -> bytes:
-    return b"RIFF\x10\x00\x00\x00WEBPideogram-webp"
+    payload = b"\x00\x00\x00\x00" + (31).to_bytes(3, "little") + (31).to_bytes(3, "little")
+    return b"RIFF" + (22).to_bytes(4, "little") + b"WEBPVP8X" + (10).to_bytes(4, "little") + payload
 
 
 class _FakeConnector:
@@ -1027,6 +1033,8 @@ def test_builtin_action_connectors_describe_availability(session: Session) -> No
         "utils.google.image.edit": ("google-gemini-image", True, "unknown"),
         "utils.ideogram.image.generate": ("ideogram", True, "unknown"),
         "utils.ideogram.image.remix": ("ideogram", True, "unknown"),
+        "utils.byteplus.image.generate": ("byteplus-seedream", True, "unknown"),
+        "utils.byteplus.image.edit": ("byteplus-seedream", True, "unknown"),
         "utils.web.scrape": ("firecrawl", True, "unknown"),
         "utils.web.read": ("jina", False, "ready"),
         "utils.sitemap.fetch": ("sitemap", False, "ready"),
@@ -2375,6 +2383,365 @@ def test_ideogram_remix_preflight_fails_before_budget_or_action_call(
     assert httpx_mock.get_requests() == []
     assert session.exec(select(ActionCall)).all() == []
     budget = IntegrationBudgetRepository(session).get(project_id, "ideogram")
+    assert budget.current_month_spend == 0
+    assert budget.current_month_calls == 0
+
+
+def test_byteplus_seedream_image_actions_reject_invalid_contract_controls(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    (source_dir / "source.png").write_bytes(_png_header(32, 32))
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        secret_payload=b"ark-key",
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+
+    invalid_generate = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.image.generate",
+        input_json={
+            "prompt": "poster",
+            "model": "seedream-5-0-260128",
+            "region": "eu-west-1",
+            "size": "1500x1500",
+            "sequential_image_generation": "disabled",
+            "max_images": 2,
+            "output_format": "webp",
+        },
+        credential_ref=credential_ref,
+    )
+    invalid_edit = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.image.edit",
+        input_json={
+            "prompt": "edit",
+            "input_image_refs": ["/generated-assets/uploads/source.png"],
+            "model": "seedream-4-0-250828",
+            "region": "eu-west-1",
+            "output_format": "png",
+        },
+        credential_ref=credential_ref,
+    )
+    invalid_combined_edit = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.image.edit",
+        input_json={
+            "prompt": "edit",
+            "input_image_refs": ["/generated-assets/uploads/source.png"] * 14,
+            "sequential_image_generation": "auto",
+            "max_images": 2,
+        },
+        credential_ref=credential_ref,
+    )
+
+    assert invalid_generate.valid is False
+    assert any(issue.path == "$.model" for issue in invalid_generate.issues)
+    assert any(issue.path == "$.size" for issue in invalid_generate.issues)
+    assert any(issue.path == "$.max_images" for issue in invalid_generate.issues)
+    assert any(issue.path == "$.output_format" for issue in invalid_generate.issues)
+    assert invalid_edit.valid is False
+    assert any(issue.path == "$.region" for issue in invalid_edit.issues)
+    assert any(issue.path == "$.output_format" for issue in invalid_edit.issues)
+    assert invalid_combined_edit.valid is False
+    assert any(
+        issue.path == "$.max_images" and "plus requested generated images" in issue.message
+        for issue in invalid_combined_edit.issues
+    )
+    assert (
+        repo.validate(
+            project_id=project_id,
+            action_ref="utils.byteplus.image.generate",
+            input_json={
+                "prompt": "poster",
+                "model": "seedream-4-5-251128",
+                "size": "3K",
+            },
+            credential_ref=credential_ref,
+        ).valid
+        is False
+    )
+    assert (
+        repo.validate(
+            project_id=project_id,
+            action_ref="utils.byteplus.image.generate",
+            input_json={
+                "prompt": "poster",
+                "model": "seedream-4-0-250828",
+                "size": "1K",
+            },
+            credential_ref=credential_ref,
+        ).valid
+        is True
+    )
+
+
+def test_byteplus_seedream_generate_action_executes_and_registers_artifacts(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    provider_url = "https://ark-output.byteplus.test/generated-1.jpeg?token=secret"
+    provider_url_2 = "https://ark-output.byteplus.test/generated-2.jpeg?token=secret"
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        secret_payload=b"ark-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
+        json={
+            "model": "seedream-4-5-251128",
+            "data": [
+                {"url": provider_url, "size": "2048x2048"},
+                {"url": provider_url_2, "size": "2048x2048"},
+            ],
+            "usage": {"generated_images": 2},
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url,
+        content=b"byteplus-image-one",
+        headers={"content-type": "image/jpeg"},
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url_2,
+        content=b"byteplus-image-two",
+        headers={"content-type": "image/jpeg"},
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.byteplus.image.generate",
+            input_json={
+                "prompt": "poster",
+                "model": "seedream-4-5-251128",
+                "size": "2K",
+                "sequential_image_generation": "auto",
+                "max_images": 2,
+                "watermark": False,
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    post_request = httpx_mock.get_requests()[0]
+    body = json.loads(post_request.content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    item_2 = result.output_json["data"][1]
+    rendered = json.dumps(result.model_dump(mode="json"))
+
+    assert post_request.headers["Authorization"] == "Bearer ark-key"
+    assert body["model"] == "seedream-4-5-251128"
+    assert body["response_format"] == "url"
+    assert body["sequential_image_generation"] == "auto"
+    assert body["sequential_image_generation_options"] == {"max_images": 2}
+    assert result.cost_cents == 8
+    assert item["url"].startswith("/generated-assets/byteplus-ark/byteplus-ark-")
+    assert item["artifact_ref"] == item["url"]
+    assert isinstance(item["artifact_id"], int)
+    assert item_2["artifact_ref"] == item_2["url"]
+    assert isinstance(item_2["artifact_id"], int)
+    assert result.output_json["artifact_refs"] == [item["url"], item_2["url"]]
+    assert provider_url not in rendered
+    assert provider_url_2 not in rendered
+    assert "ark-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    path_2 = tmp_path / item_2["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"byteplus-image-one"
+    assert path_2.read_bytes() == b"byteplus-image-two"
+
+
+def test_byteplus_seedream_multi_output_estimate_preempts_budget(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        secret_payload=b"ark-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        monthly_budget_usd=0.04,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.image.generate",
+        input_json={
+            "prompt": "poster",
+            "model": "seedream-4-5-251128",
+            "sequential_image_generation": "auto",
+            "max_images": 2,
+        },
+        credential_ref=credential_ref,
+    )
+
+    with pytest.raises(BudgetExceededError) as exc_info:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.byteplus.image.generate",
+                input_json={
+                    "prompt": "poster",
+                    "model": "seedream-4-5-251128",
+                    "sequential_image_generation": "auto",
+                    "max_images": 2,
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    budget = IntegrationBudgetRepository(session).get(project_id, "byteplus-ark")
+    assert validation.estimated_cost_cents == 8
+    assert "budget exceeded" in str(exc_info.value)
+    assert httpx_mock.get_requests() == []
+    assert budget.current_month_spend == 0
+    assert budget.current_month_calls == 0
+
+
+def test_byteplus_seedream_edit_action_executes_and_registers_artifact(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    (source_dir / "source.webp").write_bytes(_webp_header())
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        secret_payload=b"ark-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
+        json={
+            "model": "seedream-4-0-250828",
+            "data": [
+                {
+                    "b64_json": base64.b64encode(b"byteplus-edit").decode("ascii"),
+                    "size": "2048x2048",
+                }
+            ],
+            "usage": {"generated_images": 1},
+        },
+    )
+
+    result = asyncio.run(
+        ActionRepository(session, asset_dir=tmp_path).execute(
+            project_id=project_id,
+            action_ref="utils.byteplus.image.edit",
+            input_json={
+                "prompt": "keep the product, change the background",
+                "input_image_refs": ["/generated-assets/uploads/source.webp"],
+                "model": "seedream-4-0-250828",
+                "size": "2048x2048",
+            },
+            credential_ref=credential_ref,
+        )
+    ).data
+
+    post_request = httpx_mock.get_requests()[0]
+    body = json.loads(post_request.content.decode("utf-8"))
+    item = result.output_json["data"][0]
+    rendered = json.dumps(result.model_dump(mode="json"))
+
+    assert body["image"].startswith("data:image/webp;base64,")
+    assert result.cost_cents == 3
+    assert item["provider_b64_persisted"] is True
+    assert item["artifact_ref"] == item["url"]
+    assert "b64_json" not in rendered
+    assert "ark-key" not in rendered
+    path = tmp_path / item["url"].removeprefix("/generated-assets/")
+    assert path.read_bytes() == b"byteplus-edit"
+
+
+def test_byteplus_seedream_preflight_fails_before_budget_or_action_call(
+    session: Session,
+    project_id: int,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    source_dir = tmp_path / "uploads"
+    source_dir.mkdir()
+    source = source_dir / "fake.png"
+    source.write_bytes(b"not-png")
+    IntegrationCredentialRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        secret_payload=b"ark-key",
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=project_id,
+        kind="byteplus-ark",
+        monthly_budget_usd=10.0,
+    )
+    credential_ref = _provider_credential_ref(session, project_id, "byteplus-ark")
+    repo = ActionRepository(session, asset_dir=tmp_path)
+
+    validation = repo.validate(
+        project_id=project_id,
+        action_ref="utils.byteplus.image.edit",
+        input_json={
+            "prompt": "bad edit",
+            "input_image_refs": ["/generated-assets/uploads/fake.png"],
+        },
+        credential_ref=credential_ref,
+    )
+    with pytest.raises(ValidationError) as exc_info:
+        asyncio.run(
+            repo.execute(
+                project_id=project_id,
+                action_ref="utils.byteplus.image.edit",
+                input_json={
+                    "prompt": "bad edit",
+                    "input_image_refs": ["/generated-assets/uploads/fake.png"],
+                },
+                credential_ref=credential_ref,
+            )
+        )
+
+    assert validation.valid is False
+    assert any(
+        issue.path == "$.input_image_refs"
+        and issue.code == "invalid_image_ref"
+        and "valid JPEG, PNG, or WEBP bytes" in issue.message
+        for issue in validation.issues
+    )
+    assert "valid JPEG, PNG, or WEBP bytes" in json.dumps(exc_info.value.data)
+    assert httpx_mock.get_requests() == []
+    assert session.exec(select(ActionCall)).all() == []
+    budget = IntegrationBudgetRepository(session).get(project_id, "byteplus-ark")
     assert budget.current_month_spend == 0
     assert budget.current_month_calls == 0
 

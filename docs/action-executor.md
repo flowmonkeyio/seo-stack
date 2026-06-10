@@ -204,6 +204,8 @@ cover the migrated clean path for:
   `utils.google.image.edit`
 - `ideogram`: `utils.ideogram.image.generate` and
   `utils.ideogram.image.remix`
+- `byteplus-ark`: `utils.byteplus.image.generate` and
+  `utils.byteplus.image.edit`
 - `firecrawl`: `utils.web.scrape`, `utils.web.crawl`, `utils.web.map`
 - `jina`: `utils.web.read` with optional credentials
 - `sitemap`: `utils.sitemap.fetch`
@@ -283,6 +285,16 @@ assets, and registers generic `image` artifacts. StackOS v1 exposes text prompt
 generation and one-image remix only; structured `json_prompt`, magic-prompt,
 describe, v3 background utilities, remove-background, upscale, legacy edit, and
 `rendering_speed=FLASH` remain deferred until each endpoint contract is modeled.
+
+The BytePlus Seedream connector uses the reusable `byteplus-ark` ModelArk
+wrapper for `POST /api/v3/images/generations`, supports text generation and
+generated-assets reference-image edits, downloads 24-hour provider URLs or
+persists returned base64 bytes immediately, strips provider media payloads from
+outputs/audit, and registers generic `image` artifacts. StackOS v1 exposes
+priced Seedream 5 Lite, 4.5, and 4.0 model ids only with model-specific size
+shortcut validation; streaming partial images, external URL inputs, non-lite
+Seedream 5.0, Seededit controls, and extra BMP/TIFF/GIF/HEIC/HEIF input
+formats remain deferred until separately modeled.
 
 Communication setup is not an action connector. Telegram communication profile
 setup uses the shared `communicationProfile.upsert/get/list` operations across

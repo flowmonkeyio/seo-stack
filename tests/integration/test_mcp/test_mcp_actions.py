@@ -326,6 +326,20 @@ def _create_ideogram_credential(mcp: MCPClient, project_id: int) -> str:
     return status["connections"][0]["credential_ref"]
 
 
+def _create_byteplus_ark_credential(mcp: MCPClient, project_id: int) -> str:
+    response = mcp.test_client.post(
+        f"/api/v1/projects/{project_id}/auth/byteplus-ark/credentials",
+        json={"auth_method_key": "api_key", "fields": {"api_key": "ark-key"}},
+        headers=mcp._headers(),
+    )
+    response.raise_for_status()
+    status = mcp.call_tool_structured(
+        "auth.status",
+        {"project_id": project_id, "provider_key": "byteplus-ark"},
+    )
+    return status["connections"][0]["credential_ref"]
+
+
 def _create_firecrawl_credential(mcp: MCPClient, project_id: int) -> str:
     response = mcp.test_client.post(
         f"/api/v1/projects/{project_id}/auth/firecrawl/credentials",
@@ -561,6 +575,34 @@ def _ideogram_image_action_plan_json() -> dict:
             {
                 "id": "generate-ideogram-image",
                 "title": "Generate Ideogram image",
+                "action_refs": action_refs,
+            }
+        ],
+    }
+
+
+def _byteplus_seedream_image_action_plan_json() -> dict:
+    action_refs = [
+        "utils.byteplus.image.generate",
+        "utils.byteplus.image.edit",
+    ]
+    return {
+        "schema_version": "stackos.run-plan.v1",
+        "key": "utils.byteplus-seedream-image-action.run",
+        "title": "BytePlus Seedream image action",
+        "grants": {
+            "mcp_tool_grants": [
+                {
+                    "step_id": "generate-byteplus-seedream-image",
+                    "tool": "action.execute",
+                    "action_refs": action_refs,
+                }
+            ]
+        },
+        "steps": [
+            {
+                "id": "generate-byteplus-seedream-image",
+                "title": "Generate BytePlus Seedream image",
                 "action_refs": action_refs,
             }
         ],
@@ -1689,6 +1731,147 @@ def test_action_execute_ideogram_image_grant_returns_sanitized_artifact_refs(
     artifact_ids = {
         out["data"]["output_json"]["data"][0]["artifact_id"],
         remix_out["data"]["output_json"]["data"][0]["artifact_id"],
+    }
+    assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
+
+
+def test_action_execute_byteplus_seedream_image_grant_returns_sanitized_artifact_refs(
+    mcp_client: MCPClient,
+    seeded_project: dict,
+    httpx_mock: HTTPXMock,
+    mcp_settings: Settings,
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    credential_ref = _create_byteplus_ark_credential(mcp_client, project_id)
+    budget_resp = mcp_client.test_client.post(
+        f"/api/v1/projects/{project_id}/budgets",
+        json={"kind": "byteplus-ark", "monthly_budget_usd": 10.0},
+        headers=mcp_client._headers(),
+    )
+    assert budget_resp.status_code == 200
+    input_dir = mcp_settings.generated_assets_dir / "uploads"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "byteplus-source.png").write_bytes(_png_header(32, 32))
+    created = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _byteplus_seedream_image_action_plan_json()},
+    )
+    started = mcp_client.call_tool_structured(
+        "runPlan.start",
+        {"project_id": project_id, "run_plan_id": created["data"]["id"]},
+    )
+    run_token = started["data"]["run_token"]
+    claimed = mcp_client.call_tool_structured(
+        "runPlan.claimStep",
+        {
+            "run_plan_id": created["data"]["id"],
+            "step_id": "generate-byteplus-seedream-image",
+            "run_token": run_token,
+        },
+    )
+
+    def assert_byteplus_artifact(
+        result: dict,
+        *,
+        expected_bytes: bytes,
+        expected_cost_cents: int,
+    ) -> None:
+        data = result["data"]
+        item = data["output_json"]["data"][0]
+        rendered = json.dumps(data)
+        assert data["credential_ref"] == credential_ref
+        assert data["action_call"]["credential_ref"] == credential_ref
+        assert data["action_call"]["provider_key"] == "byteplus-ark"
+        assert data["action_call"]["connector_key"] == "byteplus-seedream"
+        assert data["action_call"]["run_id"] == started["data"]["run_id"]
+        assert data["action_call"]["run_plan_id"] == created["data"]["id"]
+        assert data["action_call"]["run_plan_step_id"] == claimed["data"]["id"]
+        assert data["cost_cents"] == expected_cost_cents
+        assert item["url"].startswith("/generated-assets/byteplus-ark/byteplus-ark-")
+        assert item["artifact_ref"] == item["url"]
+        assert isinstance(item["artifact_id"], int)
+        assert data["output_json"]["artifact_refs"] == [item["url"]]
+        assert "ark-output.byteplus.test" not in rendered
+        assert "token=secret" not in rendered
+        assert "b64_json" not in rendered
+        assert "credential_id" not in rendered
+        assert "ark-key" not in rendered
+        path = mcp_settings.generated_assets_dir / item["url"].removeprefix("/generated-assets/")
+        assert path.read_bytes() == expected_bytes
+
+    provider_url = "https://ark-output.byteplus.test/generated.jpeg?token=secret"
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
+        json={
+            "model": "seedream-5-0-lite-260128",
+            "data": [{"url": provider_url, "size": "2048x2048"}],
+            "usage": {"generated_images": 1},
+        },
+    )
+    httpx_mock.add_response(
+        method="GET",
+        url=provider_url,
+        content=b"byteplus-image",
+        headers={"content-type": "image/jpeg"},
+    )
+    out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.byteplus.image.generate",
+            "input_json": {
+                "prompt": "editorial hero",
+                "size": "2K",
+                "watermark": False,
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_byteplus_artifact(out, expected_bytes=b"byteplus-image", expected_cost_cents=4)
+
+    httpx_mock.add_response(
+        method="POST",
+        url="https://ark.ap-southeast.bytepluses.com/api/v3/images/generations",
+        json={
+            "model": "seedream-4-0-250828",
+            "data": [
+                {
+                    "b64_json": base64.b64encode(b"byteplus-edit").decode("ascii"),
+                    "size": "2048x2048",
+                }
+            ],
+            "usage": {"generated_images": 1},
+        },
+    )
+    edit_out = mcp_client.call_tool_structured(
+        "action.execute",
+        {
+            "project_id": project_id,
+            "action_ref": "utils.byteplus.image.edit",
+            "input_json": {
+                "prompt": "remix the product scene",
+                "input_image_refs": ["/generated-assets/uploads/byteplus-source.png"],
+                "model": "seedream-4-0-250828",
+                "size": "2048x2048",
+            },
+            "credential_ref": credential_ref,
+            "run_token": run_token,
+        },
+    )
+    assert_byteplus_artifact(
+        edit_out,
+        expected_bytes=b"byteplus-edit",
+        expected_cost_cents=3,
+    )
+    artifacts = mcp_client.call_tool_structured(
+        "artifact.query",
+        {"project_id": project_id, "kind": "image"},
+    )
+    artifact_ids = {
+        out["data"]["output_json"]["data"][0]["artifact_id"],
+        edit_out["data"]["output_json"]["data"][0]["artifact_id"],
     }
     assert artifact_ids.issubset({row["id"] for row in artifacts["items"]})
 

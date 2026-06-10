@@ -1,0 +1,668 @@
+"""BytePlus ModelArk media integration wrapper.
+
+Official docs:
+
+- https://docs.byteplus.com/en/docs/ModelArk/1541523
+- https://docs.byteplus.com/en/docs/ModelArk/1330310
+- https://docs.byteplus.com/en/docs/ModelArk/1544106
+
+Seedream image generation returns either temporary image URLs or base64 data.
+StackOS requests URL responses, downloads them immediately, and returns
+generated-assets refs instead of provider URLs.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import hashlib
+import re
+from pathlib import Path
+from typing import Any, ClassVar
+from urllib.parse import urlparse
+
+import httpx
+
+from stackos.integrations._base import BaseIntegration, IntegrationCallResult
+from stackos.mcp.errors import IntegrationDownError
+
+
+class BytePlusArkIntegration(BaseIntegration):
+    """Wrapper for BytePlus ModelArk media endpoints."""
+
+    kind = "byteplus-ark"
+    vendor = "byteplus-ark"
+    default_qps = 1.0
+
+    DEFAULT_REGION = "ap-southeast-1"
+    REGION_BASE_URLS: ClassVar[dict[str, str]] = {
+        "ap-southeast-1": "https://ark.ap-southeast.bytepluses.com/api/v3",
+        "eu-west-1": "https://ark.eu-west.bytepluses.com/api/v3",
+    }
+    DEFAULT_SEEDREAM_MODEL = "seedream-5-0-lite-260128"
+    SEEDREAM_MODELS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "seedream-5-0-lite-260128",
+            "seedream-4-5-251128",
+            "seedream-4-0-250828",
+        }
+    )
+    EU_WEST_MODELS: ClassVar[frozenset[str]] = frozenset({"seedream-5-0-lite-260128"})
+    SIZE_KEYWORDS_BY_MODEL: ClassVar[dict[str, frozenset[str]]] = {
+        "seedream-5-0-lite-260128": frozenset({"2K", "3K", "4K"}),
+        "seedream-4-5-251128": frozenset({"2K", "4K"}),
+        "seedream-4-0-250828": frozenset({"1K", "2K", "4K"}),
+    }
+    SEQUENTIAL_IMAGE_GENERATION_VALUES: ClassVar[frozenset[str]] = frozenset({"disabled", "auto"})
+    OUTPUT_FORMATS: ClassVar[frozenset[str]] = frozenset({"jpeg", "png"})
+    INPUT_IMAGE_FORMATS: ClassVar[frozenset[str]] = frozenset({"jpg", "jpeg", "png", "webp"})
+    MAX_INPUT_IMAGES = 14
+    MAX_INPUT_IMAGE_BYTES = 30_000_000
+    CUSTOM_SIZE_MIN_PIXELS_BY_MODEL: ClassVar[dict[str, int]] = {
+        "seedream-5-0-lite-260128": 2560 * 1440,
+        "seedream-4-5-251128": 2560 * 1440,
+        "seedream-4-0-250828": 1280 * 720,
+    }
+    CUSTOM_SIZE_MAX_PIXELS = 4096 * 4096
+    CUSTOM_SIZE_MIN_RATIO = 1 / 16
+    CUSTOM_SIZE_MAX_RATIO = 16
+    MIN_INPUT_IMAGE_SIDE = 15
+    MAX_INPUT_IMAGE_PIXELS = 6000 * 6000
+
+    _OUTPUT_EXTENSIONS: ClassVar[dict[str, str]] = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }
+    _COSTS_USD: ClassVar[dict[str, float]] = {
+        "seedream-5-0-lite-260128": 0.035,
+        "seedream-4-5-251128": 0.04,
+        "seedream-4-0-250828": 0.03,
+    }
+
+    def __init__(
+        self,
+        *,
+        payload: bytes,
+        project_id: int,
+        http: httpx.AsyncClient,
+        asset_dir: Path | None = None,
+        asset_url_prefix: str = "/generated-assets",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(payload=payload, project_id=project_id, http=http, **kwargs)
+        self._asset_dir = asset_dir
+        self._asset_url_prefix = asset_url_prefix.rstrip("/")
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.payload.decode('utf-8')}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    def _estimate_cost_usd(self, op: str, **kwargs: Any) -> float:
+        del op
+        body = kwargs.get("json")
+        if not isinstance(body, dict):
+            return 0.0
+        return self.estimate_image_cost_usd(model=str(body.get("model") or ""))
+
+    @classmethod
+    def estimate_image_cost_usd(
+        cls,
+        *,
+        model: str = DEFAULT_SEEDREAM_MODEL,
+        generated_images: int = 1,
+    ) -> float:
+        price = cls._COSTS_USD.get(model, cls._COSTS_USD[cls.DEFAULT_SEEDREAM_MODEL])
+        return max(0, generated_images) * price
+
+    def _extract_actual_cost_usd(
+        self,
+        op: str,
+        *,
+        request: Any,
+        response: Any,
+        estimated: float,
+    ) -> float:
+        del op
+        if not isinstance(response, dict):
+            return estimated
+        model = (
+            str(request.get("model") or self.DEFAULT_SEEDREAM_MODEL)
+            if isinstance(request, dict)
+            else self.DEFAULT_SEEDREAM_MODEL
+        )
+        generated = _generated_image_count(response)
+        if generated is None:
+            return estimated
+        return self.estimate_image_cost_usd(model=model, generated_images=generated)
+
+    def _record_call(
+        self,
+        *,
+        op: str,
+        request: Any,
+        response: Any,
+        duration_ms: int,
+        error: str | None,
+        cost_cents: int,
+    ) -> None:
+        super()._record_call(
+            op=op,
+            request=request,
+            response=_sanitize_media_fields(response),
+            duration_ms=duration_ms,
+            error=error,
+            cost_cents=cost_cents,
+        )
+
+    async def generate_image(
+        self,
+        *,
+        prompt: str,
+        model: str = DEFAULT_SEEDREAM_MODEL,
+        size: str = "2K",
+        region: str = DEFAULT_REGION,
+        sequential_image_generation: str = "disabled",
+        max_images: int | None = None,
+        watermark: bool | None = None,
+        output_format: str | None = None,
+    ) -> IntegrationCallResult:
+        return await self._generate_images(
+            prompt=prompt,
+            input_image_paths=[],
+            model=model,
+            size=size,
+            region=region,
+            sequential_image_generation=sequential_image_generation,
+            max_images=max_images,
+            watermark=watermark,
+            output_format=output_format,
+        )
+
+    async def edit_image(
+        self,
+        *,
+        prompt: str,
+        input_image_paths: list[Path],
+        model: str = DEFAULT_SEEDREAM_MODEL,
+        size: str = "2K",
+        region: str = DEFAULT_REGION,
+        sequential_image_generation: str = "disabled",
+        max_images: int | None = None,
+        watermark: bool | None = None,
+        output_format: str | None = None,
+    ) -> IntegrationCallResult:
+        if not input_image_paths:
+            raise IntegrationDownError(
+                "BytePlus Seedream image edit requires at least one input image",
+                data={"vendor": self.vendor},
+            )
+        return await self._generate_images(
+            prompt=prompt,
+            input_image_paths=input_image_paths,
+            model=model,
+            size=size,
+            region=region,
+            sequential_image_generation=sequential_image_generation,
+            max_images=max_images,
+            watermark=watermark,
+            output_format=output_format,
+        )
+
+    async def _generate_images(
+        self,
+        *,
+        prompt: str,
+        input_image_paths: list[Path],
+        model: str,
+        size: str,
+        region: str,
+        sequential_image_generation: str,
+        max_images: int | None,
+        watermark: bool | None,
+        output_format: str | None,
+    ) -> IntegrationCallResult:
+        images = self._image_payloads(input_image_paths)
+        body: dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "size": size,
+            "response_format": "url",
+            "sequential_image_generation": sequential_image_generation,
+        }
+        if images:
+            body["image"] = images[0] if len(images) == 1 else images
+        if sequential_image_generation == "auto" and max_images is not None:
+            body["sequential_image_generation_options"] = {"max_images": max_images}
+        if watermark is not None:
+            body["watermark"] = watermark
+        if model == self.DEFAULT_SEEDREAM_MODEL and output_format is not None:
+            body["output_format"] = output_format
+
+        result = await self.call(
+            op="image.edit" if input_image_paths else "image.generate",
+            method="POST",
+            url=f"{self.base_url_for_region(region)}/images/generations",
+            json_body=body,
+            headers=self._auth_headers(),
+            request_log_body={
+                "model": model,
+                "prompt": prompt,
+                "size": size,
+                "region": region,
+                "input_image_count": len(input_image_paths),
+                "input_image_names": [path.name for path in input_image_paths],
+                "response_format": "url",
+                "sequential_image_generation": sequential_image_generation,
+                **(
+                    {"sequential_image_generation_options": {"max_images": max_images}}
+                    if sequential_image_generation == "auto" and max_images is not None
+                    else {}
+                ),
+                **({"watermark": watermark} if watermark is not None else {}),
+                **({"output_format": output_format} if output_format is not None else {}),
+            },
+        )
+        data = await self._persist_response_images(result.data)
+        return IntegrationCallResult(
+            data=data,
+            cost_usd=result.cost_usd,
+            duration_ms=result.duration_ms,
+        )
+
+    @classmethod
+    def base_url_for_region(cls, region: str) -> str:
+        return cls.REGION_BASE_URLS.get(region, cls.REGION_BASE_URLS[cls.DEFAULT_REGION])
+
+    def _image_payloads(self, paths: list[Path]) -> list[str]:
+        if not paths:
+            return []
+        return [
+            f"data:{mime_type};base64,{base64.b64encode(raw).decode('ascii')}"
+            for raw, mime_type in self.ensure_image_preflight(paths)
+        ]
+
+    @classmethod
+    def ensure_image_preflight(cls, paths: list[Path]) -> list[tuple[bytes, str]]:
+        if len(paths) > cls.MAX_INPUT_IMAGES:
+            raise IntegrationDownError(
+                f"BytePlus Seedream accepts at most {cls.MAX_INPUT_IMAGES} reference images",
+                data={"vendor": cls.vendor, "count": len(paths)},
+            )
+        images: list[tuple[bytes, str]] = []
+        for path in paths:
+            suffix = path.suffix.lower().lstrip(".")
+            if suffix not in cls.INPUT_IMAGE_FORMATS:
+                raise IntegrationDownError(
+                    "BytePlus Seedream input images must be JPEG, PNG, or WEBP",
+                    data={"vendor": cls.vendor, "file": path.name},
+                )
+            try:
+                raw = path.read_bytes()
+            except OSError as exc:
+                raise IntegrationDownError(
+                    "BytePlus Seedream input image could not be read",
+                    data={"vendor": cls.vendor, "file": path.name},
+                ) from exc
+            if len(raw) > cls.MAX_INPUT_IMAGE_BYTES:
+                raise IntegrationDownError(
+                    "BytePlus Seedream input images must be at most 30 MB each",
+                    data={
+                        "vendor": cls.vendor,
+                        "file": path.name,
+                        "bytes": len(raw),
+                        "max_bytes": cls.MAX_INPUT_IMAGE_BYTES,
+                    },
+                )
+            if not _matches_image_signature(raw, suffix):
+                raise IntegrationDownError(
+                    "BytePlus Seedream input images must be valid JPEG, PNG, or WEBP bytes",
+                    data={"vendor": cls.vendor, "file": path.name},
+                )
+            dimensions = _image_dimensions(raw, suffix)
+            if dimensions is None:
+                raise IntegrationDownError(
+                    "BytePlus Seedream input images must include readable dimensions",
+                    data={"vendor": cls.vendor, "file": path.name},
+                )
+            width, height = dimensions
+            pixels = width * height
+            ratio = width / height
+            if (
+                width < cls.MIN_INPUT_IMAGE_SIDE
+                or height < cls.MIN_INPUT_IMAGE_SIDE
+                or pixels > cls.MAX_INPUT_IMAGE_PIXELS
+                or ratio < cls.CUSTOM_SIZE_MIN_RATIO
+                or ratio > cls.CUSTOM_SIZE_MAX_RATIO
+            ):
+                raise IntegrationDownError(
+                    (
+                        "BytePlus Seedream input images must be at least 15 px per side, "
+                        "at most 36M total pixels, and within 1:16-16:1 aspect ratio"
+                    ),
+                    data={
+                        "vendor": cls.vendor,
+                        "file": path.name,
+                        "width": width,
+                        "height": height,
+                    },
+                )
+            images.append((raw, _mime_type_for_suffix(suffix)))
+        return images
+
+    @classmethod
+    def size_keywords_for_model(cls, model: str) -> frozenset[str]:
+        return cls.SIZE_KEYWORDS_BY_MODEL.get(
+            model,
+            cls.SIZE_KEYWORDS_BY_MODEL[cls.DEFAULT_SEEDREAM_MODEL],
+        )
+
+    @classmethod
+    def validate_size(cls, size: str, *, model: str = DEFAULT_SEEDREAM_MODEL) -> bool:
+        if size in cls.size_keywords_for_model(model):
+            return True
+        match = re.fullmatch(r"([1-9]\d{1,4})x([1-9]\d{1,4})", size)
+        if match is None:
+            return False
+        width = int(match.group(1))
+        height = int(match.group(2))
+        pixels = width * height
+        ratio = width / height
+        min_pixels = cls.CUSTOM_SIZE_MIN_PIXELS_BY_MODEL.get(
+            model,
+            cls.CUSTOM_SIZE_MIN_PIXELS_BY_MODEL[cls.DEFAULT_SEEDREAM_MODEL],
+        )
+        return (
+            min_pixels <= pixels <= cls.CUSTOM_SIZE_MAX_PIXELS
+            and cls.CUSTOM_SIZE_MIN_RATIO <= ratio <= cls.CUSTOM_SIZE_MAX_RATIO
+        )
+
+    async def _persist_response_images(self, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        items = data.get("data")
+        if not isinstance(items, list):
+            return data
+        if self._asset_dir is None and _contains_media_output(items):
+            raise IntegrationDownError(
+                "BytePlus Seedream image outputs require generated-assets persistence",
+                data={"vendor": self.vendor},
+            )
+        persisted: list[Any] = []
+        for item in items:
+            if not isinstance(item, dict):
+                persisted.append(item)
+                continue
+            if isinstance(item.get("error"), dict):
+                persisted.append(item)
+                continue
+            provider_url = item.get("url")
+            if isinstance(provider_url, str) and provider_url:
+                persisted.append(await self._persist_provider_url(item, provider_url))
+                continue
+            raw_b64 = item.get("b64_json")
+            if isinstance(raw_b64, str) and raw_b64:
+                persisted.append(self._persist_b64_item(item, raw_b64))
+                continue
+            persisted.append(item)
+        clean = {key: value for key, value in data.items() if key != "data"}
+        clean["data"] = persisted
+        return clean
+
+    async def _persist_provider_url(
+        self,
+        item: dict[str, Any],
+        provider_url: str,
+    ) -> dict[str, Any]:
+        try:
+            response = await self._http.get(provider_url)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise IntegrationDownError(
+                "BytePlus Seedream image URL could not be downloaded",
+                data={"vendor": self.vendor},
+            ) from exc
+        file_info = self._write_image(
+            response.content,
+            mime_type=response.headers.get("content-type"),
+            source_url=provider_url,
+        )
+        clean = {key: value for key, value in item.items() if key != "url"}
+        clean.update(file_info)
+        clean["provider_url_persisted"] = True
+        return clean
+
+    def _persist_b64_item(self, item: dict[str, Any], raw_b64: str) -> dict[str, Any]:
+        try:
+            raw = base64.b64decode(raw_b64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise IntegrationDownError(
+                "BytePlus Seedream returned invalid base64 image data",
+                data={"vendor": self.vendor},
+            ) from exc
+        file_info = self._write_image(raw, mime_type=_mime_type_for_raw(raw), source_url="")
+        clean = {key: value for key, value in item.items() if key != "b64_json"}
+        clean.update(file_info)
+        clean["provider_b64_persisted"] = True
+        return clean
+
+    def _write_image(
+        self,
+        raw: bytes,
+        *,
+        mime_type: str | None,
+        source_url: str,
+    ) -> dict[str, str]:
+        digest = hashlib.sha256(raw).hexdigest()
+        file_format = _file_format(mime_type, source_url)
+        filename = f"byteplus-ark-{digest[:32]}.{file_format}"
+        assert self._asset_dir is not None
+        target_dir = self._asset_dir / "byteplus-ark"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / filename
+        if not path.exists():
+            path.write_bytes(raw)
+        return {
+            "url": f"{self._asset_url_prefix}/byteplus-ark/{filename}",
+            "file_format": file_format,
+        }
+
+    async def test_credentials(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "vendor": self.vendor,
+            "status": "format-only",
+            "summary": (
+                "BytePlus ModelArk does not document a free media credential probe; "
+                "StackOS verified credential storage format without making a billable "
+                "image request."
+            ),
+            "probe_mode": "non_billable_format_only",
+            "next_action": "Run a BytePlus Seedream image action to verify the live API key.",
+        }
+
+
+def _generated_image_count(response: dict[str, Any]) -> int | None:
+    usage = response.get("usage")
+    if isinstance(usage, dict):
+        raw_generated = usage.get("generated_images")
+        if isinstance(raw_generated, int) and not isinstance(raw_generated, bool):
+            return max(0, raw_generated)
+        if isinstance(raw_generated, str):
+            try:
+                return max(0, int(raw_generated))
+            except ValueError:
+                pass
+    items = response.get("data")
+    if isinstance(items, list):
+        count = sum(
+            1
+            for item in items
+            if isinstance(item, dict)
+            and (isinstance(item.get("url"), str) or isinstance(item.get("b64_json"), str))
+        )
+        if count > 0:
+            return count
+    return None
+
+
+def _mime_type_for_suffix(suffix: str) -> str:
+    if suffix in {"jpg", "jpeg"}:
+        return "image/jpeg"
+    if suffix == "webp":
+        return "image/webp"
+    return "image/png"
+
+
+def _mime_type_for_raw(raw: bytes) -> str:
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/jpeg"
+
+
+def _matches_image_signature(raw: bytes, suffix: str) -> bool:
+    if suffix in {"jpg", "jpeg"}:
+        return raw.startswith(b"\xff\xd8\xff")
+    if suffix == "png":
+        return raw.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix == "webp":
+        return len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    return False
+
+
+def _image_dimensions(raw: bytes, suffix: str) -> tuple[int, int] | None:
+    if suffix == "png":
+        return _png_dimensions(raw)
+    if suffix in {"jpg", "jpeg"}:
+        return _jpeg_dimensions(raw)
+    if suffix == "webp":
+        return _webp_dimensions(raw)
+    return None
+
+
+def _png_dimensions(raw: bytes) -> tuple[int, int] | None:
+    if len(raw) < 24 or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if raw[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+
+
+def _jpeg_dimensions(raw: bytes) -> tuple[int, int] | None:
+    if not raw.startswith(b"\xff\xd8"):
+        return None
+    offset = 2
+    sof_markers = {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+    while offset + 3 < len(raw):
+        if raw[offset] != 0xFF:
+            offset += 1
+            continue
+        while offset < len(raw) and raw[offset] == 0xFF:
+            offset += 1
+        if offset >= len(raw):
+            return None
+        marker = raw[offset]
+        offset += 1
+        if marker in {0x01, 0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9}:
+            continue
+        if offset + 2 > len(raw):
+            return None
+        segment_length = int.from_bytes(raw[offset : offset + 2], "big")
+        if segment_length < 2 or offset + segment_length > len(raw):
+            return None
+        if marker in sof_markers:
+            if segment_length < 7:
+                return None
+            height = int.from_bytes(raw[offset + 3 : offset + 5], "big")
+            width = int.from_bytes(raw[offset + 5 : offset + 7], "big")
+            return width, height
+        offset += segment_length
+    return None
+
+
+def _webp_dimensions(raw: bytes) -> tuple[int, int] | None:
+    if len(raw) < 20 or raw[:4] != b"RIFF" or raw[8:12] != b"WEBP":
+        return None
+    offset = 12
+    while offset + 8 <= len(raw):
+        chunk_type = raw[offset : offset + 4]
+        chunk_size = int.from_bytes(raw[offset + 4 : offset + 8], "little")
+        data_offset = offset + 8
+        data_end = data_offset + chunk_size
+        if data_end > len(raw):
+            return None
+        data = raw[data_offset:data_end]
+        if chunk_type == b"VP8X" and len(data) >= 10:
+            width = 1 + int.from_bytes(data[4:7], "little")
+            height = 1 + int.from_bytes(data[7:10], "little")
+            return width, height
+        if chunk_type == b"VP8L" and len(data) >= 5 and data[0] == 0x2F:
+            width = 1 + (((data[2] & 0x3F) << 8) | data[1])
+            height = 1 + (((data[4] & 0x0F) << 10) | (data[3] << 2) | ((data[2] & 0xC0) >> 6))
+            return width, height
+        if chunk_type == b"VP8 " and len(data) >= 10 and data[3:6] == b"\x9d\x01\x2a":
+            width = int.from_bytes(data[6:8], "little") & 0x3FFF
+            height = int.from_bytes(data[8:10], "little") & 0x3FFF
+            return width, height
+        offset = data_end + (chunk_size % 2)
+    return None
+
+
+def _file_format(mime_type: str | None, source_url: str) -> str:
+    if isinstance(mime_type, str):
+        clean_mime = mime_type.split(";", 1)[0].strip().lower()
+        if clean_mime in BytePlusArkIntegration._OUTPUT_EXTENSIONS:
+            return BytePlusArkIntegration._OUTPUT_EXTENSIONS[clean_mime]
+    suffix = Path(urlparse(source_url).path).suffix.lower().lstrip(".")
+    if suffix in {"jpg", "jpeg", "png", "webp"}:
+        return "jpg" if suffix == "jpeg" else suffix
+    return "jpg"
+
+
+def _contains_media_output(items: list[Any]) -> bool:
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if isinstance(item.get("url"), str) and item["url"]:
+            return True
+        if isinstance(item.get("b64_json"), str) and item["b64_json"]:
+            return True
+    return False
+
+
+def _sanitize_media_fields(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[downloaded-to-generated-assets]"
+            if key == "url"
+            else "[persisted-to-generated-assets]"
+            if key in {"b64_json", "image"}
+            else _sanitize_media_fields(nested)
+            for key, nested in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_media_fields(item) for item in value]
+    return value
+
+
+__all__ = ["BytePlusArkIntegration"]

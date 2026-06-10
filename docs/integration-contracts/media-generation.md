@@ -9,7 +9,8 @@ updated during connector delivery. `utils.image.generate` / `utils.image.edit`
 `utils.xai.video.generate`, plus Google Gemini image actions
 `utils.google.image.generate` and `utils.google.image.edit`, plus Ideogram
 image actions `utils.ideogram.image.generate` and
-`utils.ideogram.image.remix`, are executable.
+`utils.ideogram.image.remix`, plus BytePlus Seedream image actions
+`utils.byteplus.image.generate` and `utils.byteplus.image.edit`, are executable.
 Provider-neutral
 `utils.video.generate` remains deferred (`deferred-video-backend-selection`).
 
@@ -318,34 +319,48 @@ already registered and integrated.
 
 ### 5. Seedream 4.5 / 5.0 Lite — ByteDance (requested include)
 
-- Status: GA on BytePlus ModelArk (international first-party platform).
-  Seedream 4.5 shipped Nov 2025; 5.0 Lite shipped early 2026; full 5.0 is
-  app-only so far. Not on the current LMArena top-12 but the strongest
-  reference-preserving editor of the non-Western providers.
+- Status: executable in StackOS as `utils.byteplus.image.generate` and
+  `utils.byteplus.image.edit` through provider key `byteplus-ark`. GA on
+  BytePlus ModelArk (international first-party platform). Seedream 4.5 shipped
+  Nov 2025; 5.0 Lite shipped early 2026; full 5.0 remains deferred in StackOS
+  until pricing/account availability is modeled. Not on the current LMArena
+  top-12 but the strongest reference-preserving editor of the non-Western
+  providers.
 - API shape: synchronous `POST /images/generations` on ModelArk data-plane
   base URLs such as `https://ark.ap-southeast.bytepluses.com/api/v3` and
   `https://ark.eu-west.bytepluses.com/api/v3`, bearer API-key auth. Seedream
-  5 Lite / 4.5 / 4.0 can optionally stream output; StackOS v1 should either
-  implement streaming explicitly or list it as unsupported.
+  5 Lite / 4.5 / 4.0 can optionally stream output; StackOS v1 lists streaming
+  partial images as unsupported rather than silently downgrading behavior.
 - Models: use exact connector model ids from the rendered official ModelArk
   tables. The verified v5 ids are `seedream-5-0-260128` and the Lite alias
   `seedream-5-0-lite-260128`; `seedream-5-0-lite` is a family/page label, not
   an exact action model id. Other verified ids are `seedream-4-5-251128`,
   `seedream-4-0-250828`, `seedream-3-0-t2i-250415`, and
-  `seededit-3-0-i2i-250628`.
+  `seededit-3-0-i2i-250628`. StackOS v1 exposes only priced image-generation
+  ids `seedream-5-0-lite-260128`, `seedream-4-5-251128`, and
+  `seedream-4-0-250828`; non-lite 5.0, Seedream 3.0, and Seededit are deferred.
 - Modes: text-to-image, single image-to-image, multi-reference composition,
   batch/sequential generation, and dense-text/typography-oriented generation.
 - Size control: `size` accepts abstract resolution or exact `WxH`. For
   Seedream 5/4.5/4.0 family, default is `2048x2048`, total pixels must be
   3,686,400-16,777,216, and aspect ratio must be 1/16-16. Shortcuts include
   `2K | 3K | 4K` for Seedream 5 Lite, with older/current variants exposing
-  `1K | 2K | 4K` or `2K | 4K`.
+  `1K | 2K | 4K` or `2K | 4K`. StackOS validates those shortcut and custom
+  pixel limits by model; Seedream 4.0 custom sizes use the documented lower
+  921,600-pixel minimum.
 - Inputs and outputs: prompt recommended under 600 English words. Inputs may
   be URL or base64; general image formats include JPEG/PNG, while Seedream
   5 Lite / 4.5 / 4.0 also support WEBP/BMP/TIFF/GIF/HEIC/HEIF. Images must be
-  >14 px, <=30 MB, <=6000x6000; Seedream 5 Lite supports up to 14 reference
-  images. Outputs can be 24-hour URLs or `b64_json`; `output_format=png|jpeg`
-  is supported only for Seedream 5 Lite.
+  >14 px per side, <=30 MB, and <=36,000,000 total pixels; Seedream 5 Lite
+  supports up to 14 reference images. StackOS v1 accepts generated-assets
+  JPEG/PNG/WEBP refs only and
+  validates official dimensions/aspect ratio before provider calls. It defers
+  external URL inputs plus BMP/TIFF/GIF/HEIC/HEIF uploads until their audit path
+  is modeled. Outputs can be 24-hour URLs or `b64_json`; StackOS downloads/
+  persists both forms immediately and returns generated-assets refs.
+  `output_format=png|jpeg` is supported only for Seedream 5 Lite. Sequential
+  generation reserves budget for requested outputs and enforces BytePlus's
+  combined input reference plus generated image cap of 15.
 - Watermark, billing, and safety: watermark defaults true and can be disabled.
   Billing is per successfully generated output image; failed or moderated
   outputs are not billed. Official pricing lists `seedream-5-0-lite-260128`
@@ -360,8 +375,8 @@ already registered and integrated.
   <https://docs.byteplus.com/en/docs/ModelArk/1298459>. Evidence note:
   rendered official BytePlus docs verify endpoint/auth shape, exact model ids,
   size/reference limits, 24-hour URL expiry, output formats, watermark
-  defaults, and pricing. Build remains gated on operator account, billing, and
-  stored-credential confirmation.
+  defaults, and pricing. Live smoke remains gated on operator account, billing,
+  model activation, and stored-credential confirmation.
 
 ### 6. Grok Imagine Image — xAI (requested include)
 
@@ -670,7 +685,8 @@ How the shortlist maps onto the StackOS pattern when integration starts:
 1. Kling 3.0 aspect-ratio enum, per-second pricing, watermark, and commercial
    terms — developer docs block automated review; verify in-console after
    registration.
-2. BytePlus build scope: decide whether Seedream v1 exposes streaming and
-   legacy model ids, and whether Seedance v1 exposes full multimodal
-   edit/extension/callback behavior or starts with text/image-to-video polling.
+2. BytePlus Seedance video build scope: decide whether v1 exposes full
+   multimodal edit/extension/callback behavior or starts with text/image-to-
+   video polling. Seedream image v1 scope is executable and documents deferred
+   streaming, external URLs, extra upload formats, non-lite 5.0, and Seededit.
 3. HappyHorse Model Studio beta access criteria and GA timeline.

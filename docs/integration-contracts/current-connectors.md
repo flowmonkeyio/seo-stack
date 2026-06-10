@@ -3,9 +3,10 @@
 Audit date: 2026-06-10
 
 Scope: executable connector contracts for OpenAI Images, xAI Imagine, Reve,
-Google Gemini Image, Firecrawl, Jina Reader, Reddit, DataForSEO, Serper.dev,
-Ahrefs, WordPress, Ghost, sitemap, Trackbooth, and generic HTTP, plus connection-only setup
-providers that intentionally do not expose actions yet. This file is an
+Google Gemini Image, Ideogram, BytePlus Seedream, Firecrawl, Jina Reader,
+Reddit, DataForSEO, Serper.dev, Ahrefs, WordPress, Ghost, sitemap, Trackbooth,
+and generic HTTP, plus connection-only setup providers that intentionally do
+not expose actions yet. This file is an
 integration-point audit only. It does not change manifests, tests, or runtime
 behavior.
 
@@ -24,6 +25,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | Reve | [Docs overview](https://api.reve.com/console/docs), [create](https://api.reve.com/console/docs/create), [edit](https://api.reve.com/console/docs/edit), [remix](https://api.reve.com/console/docs/remix), [pricing](https://api.reve.com/console/pricing) | Reve examples use bearer auth with an API key from the Reve console | Image endpoints are synchronous and return `request_id`, `content_violation`, `credits_used`, and `credits_remaining`; pricing page documents base credit costs |
 | Google Gemini Image | [Nano Banana image generation](https://ai.google.dev/gemini-api/docs/image-generation), [image understanding/input](https://ai.google.dev/gemini-api/docs/image-understanding), [generateContent API](https://ai.google.dev/api/generate-content), [pricing](https://ai.google.dev/gemini-api/docs/pricing) | Gemini Developer API examples use `x-goog-api-key` with an API key from Google AI Studio | Image endpoints are synchronous `models/{model}:generateContent`; generated image parts arrive as inline MIME/base64 data; pricing docs define image output prices and tokenized input caveats |
 | Ideogram | [Generate v4](https://developer.ideogram.ai/api-reference/api-reference/generate-v4), [Remix v4](https://developer.ideogram.ai/api-reference/api-reference/remix-v4), [pricing](https://ideogram.ai/api-pricing/) | Ideogram examples use an `Api-Key` header with an API key from the Ideogram API dashboard | v4 image endpoints are synchronous multipart calls that return temporary URLs; docs define 23 2K resolutions, speed tiers, remix upload limits, and output prices |
+| BytePlus Seedream | [Image generation API](https://docs.byteplus.com/en/docs/ModelArk/1541523), [model list](https://docs.byteplus.com/en/docs/ModelArk/1330310), [pricing](https://docs.byteplus.com/en/docs/ModelArk/1544106), [base URL/auth](https://docs.byteplus.com/en/docs/ModelArk/1298459) | ModelArk uses bearer API-key auth from the BytePlus console; organization verification and model activation may be required | Image endpoint is synchronous `POST /api/v3/images/generations`; outputs may be 24-hour URLs or base64; pricing is per successfully generated output image |
 | Firecrawl | [v2 introduction](https://docs.firecrawl.dev/api-reference/v2-introduction), [scrape](https://docs.firecrawl.dev/api-reference/v2-endpoint/scrape), [crawl](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-post), [crawl status](https://docs.firecrawl.dev/api-reference/v2-endpoint/crawl-get), [map](https://docs.firecrawl.dev/api-reference/v2-endpoint/map), [extract](https://docs.firecrawl.dev/api-reference/v2-endpoint/extract) | v2 introduction and endpoint pages use bearer auth | [Errors](https://docs.firecrawl.dev/api-reference/errors), [rate limits](https://docs.firecrawl.dev/rate-limits) |
 | Jina Reader | [Reader API](https://jina.ai/en-US/reader/), [Reader repo](https://github.com/jina-ai/reader) | Reader API documents free and authenticated tiers | Reader API documents RPM tiers |
 | Reddit | [reddit.com API docs](https://www.reddit.com/dev/api/), [Reddit Data API Wiki](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki), [Data API Terms](https://redditinc.com/policies/data-api-terms), [OAuth2 wiki](https://github.com/reddit-archive/reddit/wiki/oauth2) | OAuth2 wiki and Data API Wiki | API docs listing pagination; Data API Wiki and Terms for usage limits/policy |
@@ -46,6 +48,7 @@ Important consequence: provider docs should shape action schemas and connector c
 | `reve` | `utils.reve.image.generate`, `utils.reve.image.edit`, `utils.reve.image.remix` | `stackos/actions/reve_images.py`, `stackos/integrations/reve_images.py` | `stackos/plugins/manifest.py` built-in utils Reve media actions | API key payload; budget enforced by `reve` kind; JSON base64 image outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because Reve does not document a free live credential probe. |
 | `google-gemini-image` | `utils.google.image.generate`, `utils.google.image.edit` | `stackos/actions/google_gemini_image.py`, `stackos/integrations/google_gemini_image.py` | `stackos/plugins/manifest.py` built-in utils Google Gemini image actions | API key payload; budget enforced by `google-gemini-image` kind; inline MIME/base64 outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because Google does not document a free live image credential probe. |
 | `ideogram` | `utils.ideogram.image.generate`, `utils.ideogram.image.remix` | `stackos/actions/ideogram_images.py`, `stackos/integrations/ideogram_images.py` | `stackos/plugins/manifest.py` built-in utils Ideogram image actions | API key payload; budget enforced by `ideogram` kind; temporary provider URLs are downloaded immediately, stripped from outputs/audit, persisted to generated assets, and registered as generic image artifacts. `auth.test` is format-only because Ideogram does not document a free live image probe. |
+| `byteplus-ark` | `utils.byteplus.image.generate`, `utils.byteplus.image.edit` | `stackos/actions/byteplus_seedream.py`, `stackos/integrations/byteplus_ark.py` | `stackos/plugins/manifest.py` built-in utils BytePlus Seedream image actions | API key payload; budget enforced by `byteplus-ark` kind; provider URLs/base64 outputs are persisted to generated assets and registered as generic image artifacts. `auth.test` is format-only because ModelArk does not document a free live media probe. |
 | `firecrawl` | `utils.web.scrape`, `utils.web.crawl`, `utils.web.map` | `stackos/actions/firecrawl.py`, `stackos/integrations/firecrawl.py:24` | `stackos/plugins/manifest.py` built-in utils actions | Bearer API key payload; budget enforced by `firecrawl`; `utils.web.extract` is deferred, not executable. |
 | `jina` | `utils.web.read` | `stackos/actions/jina.py`, `stackos/integrations/jina_reader.py:17` | `stackos/plugins/manifest.py:384`, `stackos/plugins/manifest.py:506` | Optional bearer key: action sets `requires_credential: false` and `allows_credential: true`. |
 | `reddit` | `utils.reddit.search-subreddit`, `utils.reddit.top-questions` | `stackos/actions/reddit.py`, `stackos/integrations/reddit.py:29` | `stackos/plugins/manifest.py:390`, `stackos/plugins/manifest.py:542`, `stackos/plugins/manifest.py:558` | Credential payload is JSON OAuth app data, not a plain API key. |
@@ -252,6 +255,45 @@ Recommended corrections:
 
 - Add live operator smoke evidence after a real Ideogram credential is
   connected.
+
+### BytePlus Seedream
+
+Current: `utils.byteplus.image.generate` and `utils.byteplus.image.edit` map to
+`BytePlusSeedreamImageActionConnector`. The connector uses the reusable
+`BytePlusArkIntegration` wrapper for ModelArk `POST /api/v3/images/generations`,
+validates exact priced Seedream model ids, BytePlus region support,
+model-specific abstract size shortcuts, custom `WxH` size limits,
+sequential-generation controls, combined reference-plus-output count,
+`output_format` model support, and generated-assets JPEG/PNG/WEBP input refs
+with official dimension limits before provider calls. It requests URL output,
+downloads 24-hour provider URLs immediately, also persists `b64_json` fallback
+outputs, strips provider media payloads from agent-visible output/audit, and
+registers generic `image` artifacts.
+
+Gaps/mismatches:
+
+- Resolved: the StackOS provider key is `byteplus-ark`, covering the ModelArk
+  wrapper and the Seedream image action connector.
+- Resolved: StackOS v1 exposes only priced official model ids
+  `seedream-5-0-lite-260128`, `seedream-4-5-251128`, and
+  `seedream-4-0-250828`; non-lite `seedream-5-0-260128` remains deferred
+  until pricing and account availability are modeled.
+- Resolved: custom size validation follows official total-pixel and aspect-ratio
+  limits, while shortcuts are model-specific: 5 Lite accepts `2K`/`3K`/`4K`,
+  4.5 accepts `2K`/`4K`, and 4.0 accepts `1K`/`2K`/`4K`.
+- Resolved: pre-call budget estimates use official per-output image prices and
+  reserve the requested maximum generated image count for sequential calls;
+  action-call cost records reconcile against `usage.generated_images` or
+  persisted output count, while the budget ledger remains a conservative
+  precharge/top-up guardrail.
+- Remaining: streaming partial images, external URL inputs, BMP/TIFF/GIF/HEIC/
+  HEIF uploads, `seededit-3-0-i2i` specialized controls, and Seedance video
+  remain deferred until dedicated schemas and tests land.
+
+Recommended corrections:
+
+- Add live operator smoke evidence after a real BytePlus ModelArk credential,
+  billing, and model activation are confirmed.
 
 ### Firecrawl
 

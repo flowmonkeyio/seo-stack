@@ -10,6 +10,7 @@ from stackos.action_availability import (
 )
 from stackos.actions.ahrefs import AhrefsActionConnector
 from stackos.actions.apollo import ApolloActionConnector
+from stackos.actions.byteplus_seedream import BytePlusSeedreamImageActionConnector
 from stackos.actions.clay import ClayActionConnector
 from stackos.actions.connectors import (
     DEFAULT_ACTION_CONNECTORS,
@@ -68,6 +69,7 @@ DEFAULT_ACTION_CONNECTORS.register(XAIImagineActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(ReveImagesActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(GoogleGeminiImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(IdeogramImagesActionConnector())
+DEFAULT_ACTION_CONNECTORS.register(BytePlusSeedreamImageActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(FirecrawlActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(JinaActionConnector())
 DEFAULT_ACTION_CONNECTORS.register(RedditActionConnector())
@@ -115,6 +117,7 @@ __all__ = [
     "ActionValidationOut",
     "AhrefsActionConnector",
     "ApolloActionConnector",
+    "BytePlusSeedreamImageActionConnector",
     "ClayActionConnector",
     "DataForSeoActionConnector",
     "ExecutableActionManifest",

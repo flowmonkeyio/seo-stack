@@ -48,6 +48,13 @@
   official 10 MB cap, and official per-output rendering-speed budget estimates
   reconciled against returned image count. Ideogram `auth.test` is non-billable
   format-only because the provider does not document a free live image probe.
+- Added BytePlus Seedream actions `utils.byteplus.image.generate` and
+  `utils.byteplus.image.edit` through the reusable `byteplus-ark` ModelArk
+  wrapper, with generated-assets persistence, generic image artifact
+  registration, run-plan grant coverage, official model/region/size/reference
+  validation, priced Seedream 5 Lite / 4.5 / 4.0 budget estimates, and
+  successful-output cost reconciliation. BytePlus `auth.test` is non-billable
+  format-only because ModelArk does not document a free media credential probe.
 
 ## 1.0.0 - 2026-05-26
 

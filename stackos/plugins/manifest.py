@@ -726,6 +726,42 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                 },
             ),
             ProviderManifest(
+                key="byteplus-ark",
+                name="BytePlus ModelArk",
+                description="BytePlus ModelArk media generation provider.",
+                auth_type="api-key",
+                auth_methods=[
+                    AuthMethodManifest(
+                        key="api_key",
+                        label="API key",
+                        auth_type="api-key",
+                        payload_format="raw",
+                        payload_field="api_key",
+                        fields=[
+                            AuthFieldManifest(
+                                key="api_key",
+                                label="BytePlus ModelArk API Key",
+                                type="secret",
+                                secret=True,
+                                required=True,
+                            )
+                        ],
+                    )
+                ],
+                config={
+                    "setup_note": (
+                        "Store the BytePlus ModelArk API key. StackOS resolves it "
+                        "inside the daemon for Seedream image actions and future "
+                        "ModelArk media actions."
+                    ),
+                    "docs": [
+                        "https://docs.byteplus.com/en/docs/ModelArk/1541523",
+                        "https://docs.byteplus.com/en/docs/ModelArk/1330310",
+                        "https://docs.byteplus.com/en/docs/ModelArk/1544106",
+                    ],
+                },
+            ),
+            ProviderManifest(
                 key="video-generation",
                 name="Video Generation",
                 description=(
@@ -2630,6 +2666,297 @@ _CODE_PLUGIN_MANIFESTS: tuple[PluginManifest, ...] = (
                         "docs": [
                             "https://developer.ideogram.ai/api-reference/api-reference/remix-v4",
                             "https://ideogram.ai/api-pricing/",
+                        ],
+                    },
+                },
+            ),
+            ActionManifest(
+                key="byteplus.image.generate",
+                name="Generate BytePlus Seedream Image",
+                description="Generate and persist image artifacts through BytePlus Seedream.",
+                provider="byteplus-ark",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "seedream-5-0-lite-260128",
+                                "seedream-4-5-251128",
+                                "seedream-4-0-250828",
+                            ],
+                        },
+                        "size": {
+                            "type": "string",
+                            "description": (
+                                "Model-supported shortcut or custom WxH satisfying "
+                                "BytePlus Seedream pixel/aspect limits."
+                            ),
+                        },
+                        "region": {
+                            "type": "string",
+                            "enum": ["ap-southeast-1", "eu-west-1"],
+                        },
+                        "sequential_image_generation": {
+                            "type": "string",
+                            "enum": ["disabled", "auto"],
+                        },
+                        "max_images": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15,
+                        },
+                        "watermark": {"type": "boolean"},
+                        "output_format": {
+                            "type": "string",
+                            "enum": ["jpeg", "png"],
+                            "description": ("Only supported by seedream-5-0-lite-260128."),
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "byteplus-seedream",
+                    "operation": "image.generate",
+                    "requires_credential": True,
+                    "budget_kind": "byteplus-ark",
+                    "enforce_budget": True,
+                    "default_model": "seedream-5-0-lite-260128",
+                    "agent_guidance": (
+                        "Use this action for BytePlus Seedream text-to-image. "
+                        "Generated provider URLs expire after 24 hours and are "
+                        "persisted immediately."
+                    ),
+                    "capability_metadata": {
+                        "modalities": {"input": ["text"], "output": ["image"]},
+                        "modes": ["text-to-image", "optional-batch-generation"],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/api/v3/images/generations",
+                            "base_urls": {
+                                "ap-southeast-1": (
+                                    "https://ark.ap-southeast.bytepluses.com/api/v3"
+                                ),
+                                "eu-west-1": "https://ark.eu-west.bytepluses.com/api/v3",
+                            },
+                            "persistence": (
+                                "BytePlus temporary image URLs are downloaded "
+                                "immediately, written to generated assets, and "
+                                "registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "size_keywords_by_model": {
+                                "seedream-5-0-lite-260128": ["2K", "3K", "4K"],
+                                "seedream-4-5-251128": ["2K", "4K"],
+                                "seedream-4-0-250828": ["1K", "2K", "4K"],
+                            },
+                            "custom_size_min_pixels_by_model": {
+                                "seedream-5-0-lite-260128": 3_686_400,
+                                "seedream-4-5-251128": 3_686_400,
+                                "seedream-4-0-250828": 921_600,
+                            },
+                            "custom_size_max_pixels": 16_777_216,
+                            "custom_size_aspect_ratio": {
+                                "minimum": 0.0625,
+                                "maximum": 16,
+                            },
+                            "sequential_image_generation": ["disabled", "auto"],
+                            "max_generated_plus_reference_images": 15,
+                            "temporary_provider_urls": "download-and-strip",
+                        },
+                        "models": {
+                            "seedream-5-0-lite-260128": {
+                                "label": "Seedream 5.0 Lite",
+                                "regions": ["ap-southeast-1", "eu-west-1"],
+                                "pricing_usd_per_successful_output": 0.035,
+                                "output_formats": ["jpeg", "png"],
+                            },
+                            "seedream-4-5-251128": {
+                                "label": "Seedream 4.5",
+                                "regions": ["ap-southeast-1"],
+                                "pricing_usd_per_successful_output": 0.04,
+                            },
+                            "seedream-4-0-250828": {
+                                "label": "Seedream 4.0",
+                                "regions": ["ap-southeast-1"],
+                                "pricing_usd_per_successful_output": 0.03,
+                            },
+                        },
+                        "unsupported_provider_features": [
+                            "streaming output",
+                            "non-lite seedream-5-0-260128 until pricing is modeled",
+                            "seededit-3-0-i2i specialized controls",
+                            "prompt optimization controls",
+                            "input image formats beyond JPEG/PNG/WEBP",
+                            "external image URLs as inputs",
+                        ],
+                        "docs": [
+                            "https://docs.byteplus.com/en/docs/ModelArk/1541523",
+                            "https://docs.byteplus.com/en/docs/ModelArk/1330310",
+                            "https://docs.byteplus.com/en/docs/ModelArk/1544106",
+                        ],
+                    },
+                },
+            ),
+            ActionManifest(
+                key="byteplus.image.edit",
+                name="Edit BytePlus Seedream Image",
+                description=(
+                    "Generate a BytePlus Seedream image from a prompt and one or more "
+                    "generated-assets reference images."
+                ),
+                provider="byteplus-ark",
+                capability="image-generation",
+                risk_level="cost",
+                input_schema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["prompt", "input_image_refs"],
+                    "properties": {
+                        "prompt": {"type": "string", "minLength": 1},
+                        "input_image_refs": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 14,
+                            "items": {"type": "string"},
+                        },
+                        "model": {
+                            "type": "string",
+                            "enum": [
+                                "seedream-5-0-lite-260128",
+                                "seedream-4-5-251128",
+                                "seedream-4-0-250828",
+                            ],
+                        },
+                        "size": {
+                            "type": "string",
+                            "description": (
+                                "Model-supported shortcut or custom WxH satisfying "
+                                "BytePlus Seedream pixel/aspect limits."
+                            ),
+                        },
+                        "region": {
+                            "type": "string",
+                            "enum": ["ap-southeast-1", "eu-west-1"],
+                        },
+                        "sequential_image_generation": {
+                            "type": "string",
+                            "enum": ["disabled", "auto"],
+                        },
+                        "max_images": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 15,
+                        },
+                        "watermark": {"type": "boolean"},
+                        "output_format": {
+                            "type": "string",
+                            "enum": ["jpeg", "png"],
+                            "description": ("Only supported by seedream-5-0-lite-260128."),
+                        },
+                    },
+                },
+                output_schema=_IMAGE_ACTION_OUTPUT_SCHEMA,
+                config={
+                    "schema_version": "stackos.action.v1",
+                    "connector": "byteplus-seedream",
+                    "operation": "image.edit",
+                    "requires_credential": True,
+                    "budget_kind": "byteplus-ark",
+                    "enforce_budget": True,
+                    "default_model": "seedream-5-0-lite-260128",
+                    "agent_guidance": (
+                        "Use this action for Seedream image-to-image or "
+                        "multi-reference generation from generated-assets refs."
+                    ),
+                    "capability_metadata": {
+                        "modalities": {"input": ["text", "image"], "output": ["image"]},
+                        "modes": [
+                            "image-to-image",
+                            "multi-reference-image-generation",
+                            "optional-batch-generation",
+                        ],
+                        "execution": {
+                            "mode": "sync",
+                            "provider_endpoint": "/api/v3/images/generations",
+                            "persistence": (
+                                "BytePlus temporary image URLs are downloaded "
+                                "immediately, written to generated assets, and "
+                                "registered as generic image artifacts."
+                            ),
+                        },
+                        "limits": {
+                            "max_input_images": 14,
+                            "max_input_image_bytes": 30_000_000,
+                            "input_image_formats": ["jpg", "jpeg", "png", "webp"],
+                            "provider_supported_extra_input_formats_deferred": [
+                                "bmp",
+                                "tiff",
+                                "gif",
+                                "heic",
+                                "heif",
+                            ],
+                            "reference_plus_output_images_max": 15,
+                            "min_input_image_side_px": 15,
+                            "max_input_image_pixels": 36_000_000,
+                            "input_image_aspect_ratio": {
+                                "minimum": 0.0625,
+                                "maximum": 16,
+                            },
+                            "size_keywords_by_model": {
+                                "seedream-5-0-lite-260128": ["2K", "3K", "4K"],
+                                "seedream-4-5-251128": ["2K", "4K"],
+                                "seedream-4-0-250828": ["1K", "2K", "4K"],
+                            },
+                            "custom_size_min_pixels_by_model": {
+                                "seedream-5-0-lite-260128": 3_686_400,
+                                "seedream-4-5-251128": 3_686_400,
+                                "seedream-4-0-250828": 921_600,
+                            },
+                            "custom_size_max_pixels": 16_777_216,
+                            "custom_size_aspect_ratio": {
+                                "minimum": 0.0625,
+                                "maximum": 16,
+                            },
+                            "temporary_provider_urls": "download-and-strip",
+                        },
+                        "models": {
+                            "seedream-5-0-lite-260128": {
+                                "label": "Seedream 5.0 Lite",
+                                "regions": ["ap-southeast-1", "eu-west-1"],
+                                "pricing_usd_per_successful_output": 0.035,
+                                "output_formats": ["jpeg", "png"],
+                            },
+                            "seedream-4-5-251128": {
+                                "label": "Seedream 4.5",
+                                "regions": ["ap-southeast-1"],
+                                "pricing_usd_per_successful_output": 0.04,
+                            },
+                            "seedream-4-0-250828": {
+                                "label": "Seedream 4.0",
+                                "regions": ["ap-southeast-1"],
+                                "pricing_usd_per_successful_output": 0.03,
+                            },
+                        },
+                        "unsupported_provider_features": [
+                            "streaming output",
+                            "non-lite seedream-5-0-260128 until pricing is modeled",
+                            "seededit-3-0-i2i specialized controls",
+                            "prompt optimization controls",
+                            "input image formats beyond JPEG/PNG/WEBP",
+                            "external image URLs as inputs",
+                        ],
+                        "docs": [
+                            "https://docs.byteplus.com/en/docs/ModelArk/1541523",
+                            "https://docs.byteplus.com/en/docs/ModelArk/1330310",
+                            "https://docs.byteplus.com/en/docs/ModelArk/1544106",
                         ],
                     },
                 },

@@ -104,9 +104,11 @@ def test_builtin_plugin_manifests_validate() -> None:
     assert "reve" in utils_providers
     assert "google-gemini-image" in utils_providers
     assert "ideogram" in utils_providers
+    assert "byteplus-ark" in utils_providers
     assert _auth_field_keys(utils_providers["reve"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["google-gemini-image"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["ideogram"]) == ["api_key"]
+    assert _auth_field_keys(utils_providers["byteplus-ark"]) == ["api_key"]
     assert _auth_field_keys(utils_providers["openrouter"]) == [
         "api_key",
         "http_referer",
@@ -354,6 +356,50 @@ def test_builtin_plugin_manifests_validate() -> None:
         "png",
         "webp",
     ]
+    byteplus_generate = utils_actions["byteplus.image.generate"]
+    assert byteplus_generate.provider == "byteplus-ark"
+    assert byteplus_generate.config["connector"] == "byteplus-seedream"
+    assert byteplus_generate.config["operation"] == "image.generate"
+    assert byteplus_generate.config["budget_kind"] == "byteplus-ark"
+    byteplus_generate_capabilities = byteplus_generate.config["capability_metadata"]
+    assert (
+        byteplus_generate_capabilities["models"]["seedream-5-0-lite-260128"][
+            "pricing_usd_per_successful_output"
+        ]
+        == 0.035
+    )
+    assert (
+        byteplus_generate_capabilities["models"]["seedream-4-5-251128"][
+            "pricing_usd_per_successful_output"
+        ]
+        == 0.04
+    )
+    assert byteplus_generate_capabilities["limits"]["size_keywords_by_model"][
+        "seedream-4-0-250828"
+    ] == ["1K", "2K", "4K"]
+    assert (
+        byteplus_generate_capabilities["limits"]["custom_size_min_pixels_by_model"][
+            "seedream-4-0-250828"
+        ]
+        == 921_600
+    )
+    assert (
+        "non-lite seedream-5-0-260128 until pricing is modeled"
+        in byteplus_generate_capabilities["unsupported_provider_features"]
+    )
+    byteplus_edit = utils_actions["byteplus.image.edit"]
+    assert byteplus_edit.input_schema["required"] == ["prompt", "input_image_refs"]
+    byteplus_edit_capabilities = byteplus_edit.config["capability_metadata"]
+    assert byteplus_edit_capabilities["limits"]["max_input_images"] == 14
+    assert byteplus_edit_capabilities["limits"]["max_input_image_bytes"] == 30_000_000
+    assert byteplus_edit_capabilities["limits"]["input_image_formats"] == [
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+    ]
+    assert byteplus_edit_capabilities["limits"]["min_input_image_side_px"] == 15
+    assert byteplus_edit_capabilities["limits"]["max_input_image_pixels"] == 36_000_000
     assert "video-generation" in utils_providers
     assert _auth_field_keys(utils_providers["video-generation"]) == ["api_key"]
     video_generate = utils_actions["video.generate"]
